@@ -47,6 +47,48 @@ echo "Configuring packet forwarder for localhost..."
 # Update local_conf.json to forward to localhost:1700 for ChirpStack Bridge
 cp /tmp/local_conf.json /opt/ttn-gateway/packet_forwarder/lora_pkt_fwd/local_conf.json
 
+# Fix the Gateway ID to use actual MAC address instead of default AA555A0000000000
+# This script will run on first boot to set the correct Gateway EUI
+cat > /usr/local/bin/update-gateway-id.sh << 'SCRIPT'
+#!/bin/bash
+# Update Gateway ID based on eth0 MAC address
+
+# Get MAC address from eth0
+MAC=$(cat /sys/class/net/eth0/address 2>/dev/null || echo "aa:55:5a:00:00:00")
+
+# Convert MAC to EUI64 format (insert FFFE in the middle)
+MAC_CLEAN=$(echo $MAC | tr -d ':' | tr '[:lower:]' '[:upper:]')
+GATEWAY_EUI="${MAC_CLEAN:0:6}FFFE${MAC_CLEAN:6:6}"
+
+# Update global_conf.json with the correct Gateway ID
+sed -i "s/\"gateway_ID\": \"[^\"]*\"/\"gateway_ID\": \"$GATEWAY_EUI\"/" /opt/ttn-gateway/packet_forwarder/lora_pkt_fwd/global_conf.json
+
+echo "Gateway ID set to: $GATEWAY_EUI"
+SCRIPT
+
+chmod +x /usr/local/bin/update-gateway-id.sh
+
+# Create a systemd service to run this before ttn-gateway starts
+cat > /etc/systemd/system/update-gateway-id.service << 'SERVICE'
+[Unit]
+Description=Update LoRaWAN Gateway ID from MAC address
+Before=ttn-gateway.service
+DefaultDependencies=no
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/update-gateway-id.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+SERVICE
+
+systemctl enable update-gateway-id.service
+
+# Run it now during build (will use build machine's MAC, but will be corrected on first boot)
+/usr/local/bin/update-gateway-id.sh
+
 echo "Installing ChirpStack Gateway Bridge..."
 
 # Install ChirpStack Gateway Bridge
