@@ -3,13 +3,23 @@
 # Parkeze LLC
 # MOTD Script
 
-# Print stylized logo
 import pyfiglet
+import os
+from dotenv import load_dotenv
+
+# Load environment variables from credentials file
+load_dotenv("/home/parkeze/.gateway-credentials.env")
+
+# Print stylized logo
 print(pyfiglet.figlet_format("Parkeze", font="slant"))
 
-# Print some blank lines
-print("\n" * 2)
+# Read Gateway ID from environment variable
+gateway_id = os.getenv('MQTT_GATEWAY_ID', 'NOT SET UP')
 
-# Print message
-print("Parkeze LLC LoRaWAN Gateway")
+# Check if it's still the default placeholder
+if gateway_id == 'your-gateway-id':
+    gateway_id = 'NOT SET UP'
+
+# Print message with Gateway ID
+print(f"Parkeze LLC LoRaWAN Gateway - {gateway_id}")
 print("Authorized Use Only")

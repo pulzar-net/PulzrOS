@@ -1,0 +1,160 @@
+#!/usr/bin/env python3
+
+"""
+ChirpStack Gateway Auto-Provisioning Script
+Registers the gateway with ChirpStack using the API
+"""
+
+import os
+import sys
+import json
+import subprocess
+import logging
+from pathlib import Path
+from dotenv import load_dotenv
+import requests
+
+# Constants
+CREDS_FILE = "/home/parkeze/.gateway-credentials.env"
+PROVISION_MARKER = "/var/lib/chirpstack-provisioned"
+
+# Default/placeholder values that indicate credentials aren't configured
+DEFAULT_VALUES = ['your-gateway-id', 'your-password', 'your-tenant-id', 'your-token']
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger('chirpstack-provision')
+
+def get_gateway_eui():
+    """Get Gateway EUI from MAC address"""
+    # Try eth0 first, then wlan0
+    for interface in ['eth0', 'wlan0']:
+        try:
+            result = subprocess.run(
+                ['ip', 'link', 'show', interface],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            # Parse MAC address from output
+            for line in result.stdout.split('\n'):
+                if 'ether' in line:
+                    mac = line.split()[1]
+                    # Convert MAC to EUI64 format (insert FFFE in the middle)
+                    parts = mac.replace(':', '').upper()
+                    eui = f"{parts[:6]}FFFE{parts[6:]}"
+                    return eui
+        except subprocess.CalledProcessError:
+            continue
+    
+    logger.error("No network interface found. Cannot determine gateway ID.")
+    sys.exit(1)
+
+def register_gateway(eui, gateway_name, api_url, tenant_id, api_token):
+    """Register gateway with ChirpStack API"""
+    payload = {
+        "gateway": {
+            "gatewayId": eui,
+            "name": gateway_name,
+            "description": "Parkeze LoRaWAN Gateway - Auto-provisioned",
+            "location": {
+                "latitude": 0,
+                "longitude": 0,
+                "altitude": 0
+            },
+            "tenantId": tenant_id,
+            "statsInterval": 30
+        }
+    }
+    
+    headers = {
+        "Authorization": f"Bearer {api_token}",
+        "Content-Type": "application/json"
+    }
+    
+    try:
+        logger.info(f"Registering gateway {eui} with ChirpStack API...")
+        response = requests.post(
+            f"{api_url}/api/gateways",
+            json=payload,
+            headers=headers,
+            timeout=30
+        )
+        
+        if response.status_code in [200, 201]:
+            logger.info("Gateway registered successfully!")
+            return True
+        elif response.status_code == 409:
+            logger.info("Gateway already registered.")
+            return True
+        else:
+            logger.error(f"Failed to register gateway. HTTP {response.status_code}")
+            logger.error(f"Response: {response.text}")
+            return False
+            
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Failed to connect to ChirpStack API: {e}")
+        return False
+
+def main():
+    # Check if already provisioned
+    if Path(PROVISION_MARKER).exists():
+        logger.info("Gateway already provisioned. Exiting.")
+        sys.exit(0)
+    
+    # Load environment variables from credentials file
+    if not Path(CREDS_FILE).exists():
+        logger.error(f"Credentials file not found: {CREDS_FILE}")
+        logger.info("Will retry in 5 minutes...")
+        sys.exit(1)
+    
+    load_dotenv(CREDS_FILE)
+    
+    # Get Gateway EUI
+    eui = get_gateway_eui()
+    logger.info(f"Gateway EUI: {eui}")
+    
+    # Get configuration from environment
+    gateway_name = os.getenv('MQTT_GATEWAY_ID', '')
+    password = os.getenv('MQTT_PASSWORD', '')
+    api_url = os.getenv('CS_API_URL', '')
+    tenant_id = os.getenv('CS_TENANT_ID', '')
+    api_token = os.getenv('CS_API_TOKEN', '')
+    
+    # Check if credentials are still defaults
+    if any(val in DEFAULT_VALUES for val in [gateway_name, password, tenant_id, api_token]):
+        logger.warning("Credentials contain default placeholder values.")
+        logger.info(f"Please configure credentials in {CREDS_FILE}")
+        logger.info("Will retry in 5 minutes...")
+        sys.exit(1)
+    
+    # Check if credentials contain environment variable syntax
+    if any('${' in val for val in [tenant_id, api_token]):
+        logger.warning("Credentials still contain environment variable placeholders.")
+        logger.info(f"Please set actual values in {CREDS_FILE}")
+        logger.info("Will retry in 5 minutes...")
+        sys.exit(1)
+    
+    # Check if all required fields are present
+    if not all([gateway_name, api_url, tenant_id, api_token]):
+        logger.error("ChirpStack API credentials incomplete.")
+        logger.info(f"Please configure: MQTT_GATEWAY_ID, CS_API_URL, CS_TENANT_ID, CS_API_TOKEN in {CREDS_FILE}")
+        logger.info("Will retry in 5 minutes...")
+        sys.exit(1)
+    
+    # Register gateway
+    logger.info(f"Gateway Name: {gateway_name}")
+    if register_gateway(eui, gateway_name, api_url, tenant_id, api_token):
+        # Create marker file to prevent re-provisioning
+        Path(PROVISION_MARKER).touch()
+        logger.info("Provisioning complete!")
+        sys.exit(0)
+    else:
+        logger.error("Provisioning failed. Will retry in 5 minutes...")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()

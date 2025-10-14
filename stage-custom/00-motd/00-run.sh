@@ -4,9 +4,9 @@
 install -m 755 files/tmp/generate-motd "${ROOTFS_DIR}/usr/local/bin/"
 
 on_chroot << EOF
-# Install pyfiglet
+# Install pyfiglet and python-dotenv
 apt-get update
-apt-get install -y python3-pyfiglet
+apt-get install -y python3-pyfiglet python3-dotenv
 
 # Set up dynamic MOTD - clear static motd and use update-motd.d
 rm -f /etc/motd
