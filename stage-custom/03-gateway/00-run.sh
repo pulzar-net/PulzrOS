@@ -47,6 +47,10 @@ echo "Configuring packet forwarder for localhost..."
 # Update local_conf.json to forward to localhost:1700 for ChirpStack Bridge
 cp /tmp/local_conf.json /opt/ttn-gateway/packet_forwarder/lora_pkt_fwd/local_conf.json
 
+# Configure for US915 frequency plan by default
+echo "Configuring RAK5146 for US915 (902-928 MHz)..."
+cp /opt/rak_common_for_gateway/lora/rak5146/global_conf_usb/global_conf.us_902_928.json /opt/ttn-gateway/packet_forwarder/lora_pkt_fwd/global_conf.json
+
 # Fix the Gateway ID to use actual MAC address instead of default AA555A0000000000
 # This script will run on first boot to set the correct Gateway EUI
 cat > /usr/local/bin/update-gateway-id.sh << 'SCRIPT'
