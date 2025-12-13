@@ -1,10 +1,10 @@
 [integration.mqtt]
-event_topic_template="us915_0/gateway/{{ .GatewayID }}/event/{{ .EventType }}"
-state_topic_template="us915_0/gateway/{{ .GatewayID }}/state/{{ .StateType }}"
-command_topic_template="us915_0/gateway/{{ .GatewayID }}/command/#"
+event_topic_template="PLACEHOLDER_REGION/gateway/{{ .GatewayID }}/event/{{ .EventType }}"
+state_topic_template="PLACEHOLDER_REGION/gateway/{{ .GatewayID }}/state/{{ .StateType }}"
+command_topic_template="PLACEHOLDER_REGION/gateway/{{ .GatewayID }}/command/#"
 
 [integration.mqtt.auth.generic]
-servers=["ssl://mqtt.parkezesolutions.com:8883"]
+servers=["PLACEHOLDER_MQTT_SERVER"]
 username="PLACEHOLDER_MQTT_GATEWAY_ID"
 password="PLACEHOLDER_MQTT_PASSWORD"
 
