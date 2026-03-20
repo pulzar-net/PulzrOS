@@ -1,3 +1,6 @@
+[integration]
+marshaler="protobuf"
+
 [integration.mqtt]
 event_topic_template="PLACEHOLDER_REGION/gateway/{{ .GatewayID }}/event/{{ .EventType }}"
 state_topic_template="PLACEHOLDER_REGION/gateway/{{ .GatewayID }}/state/{{ .StateType }}"
@@ -7,4 +10,4 @@ command_topic_template="PLACEHOLDER_REGION/gateway/{{ .GatewayID }}/command/#"
 servers=["PLACEHOLDER_MQTT_SERVER"]
 username="PLACEHOLDER_MQTT_GATEWAY_ID"
 password="PLACEHOLDER_MQTT_PASSWORD"
-
+client_id="PLACEHOLDER_MQTT_CLIENT_ID"
