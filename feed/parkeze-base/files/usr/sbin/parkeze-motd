@@ -1,0 +1,132 @@
+#!/bin/sh
+#
+# The login banner.
+#
+#   parkeze-motd            print it
+#   parkeze-motd --no-logo  just the facts, for a narrow terminal
+#
+# The wordmark is rendered by figlet at print time rather than being a block of
+# ASCII art pasted into this file. Two reasons, and the second is the real one:
+#
+#   * a hardcoded block is a thing to re-paste by hand whenever the wordmark
+#     or the font changes, and it always drifts;
+#   * a hardcoded block cannot adapt. Rendering here means the banner can drop
+#     the logo on a 40-column serial terminal instead of wrapping it into
+#     unreadable confetti, which is exactly the terminal an installer is on.
+#
+# Everything below the logo is read live. A banner that reports the state the
+# gateway was in when the image was built is worse than no banner — this is
+# often the first and only thing somebody sees about a device.
+
+. /etc/parkeze/board.conf 2>/dev/null
+
+WIDTH="${COLUMNS:-80}"
+LOGO=1
+[ "$1" = "--no-logo" ] && LOGO=0
+
+# ANSI only when we are actually on a terminal. Piping this into a file or a
+# ticket should not fill it with escape sequences.
+if [ -t 1 ]; then
+    B='\033[1m'; DIM='\033[2m'; GREEN='\033[32m'; YELLOW='\033[33m'
+    RED='\033[31m'; OFF='\033[0m'
+else
+    B=''; DIM=''; GREEN=''; YELLOW=''; RED=''; OFF=''
+fi
+
+say() { printf "$@"; }
+
+# ── the wordmark ────────────────────────────────────────────────────────────
+
+logo() {
+    command -v figlet >/dev/null 2>&1 || return 1
+
+    # slant is 39 columns for "Parkeze". Below about 46 the logo wraps and
+    # becomes noise, so a narrow terminal gets the plain name instead.
+    [ "${WIDTH}" -lt 46 ] && return 1
+
+    # -f slant is the house font. If the image was built without that font —
+    # OpenWrt's figlet package does not guarantee the full font set — fall
+    # through to whatever the default is rather than printing figlet's error
+    # into somebody's login.
+    figlet -f slant "Parkeze" 2>/dev/null || figlet "Parkeze" 2>/dev/null
+}
+
+# ── state ───────────────────────────────────────────────────────────────────
+
+adoption_line() {
+    local state org
+    state="$(uci -q get parkeze.adoption.state)"
+    org="$(uci -q get parkeze.adoption.org)"
+
+    case "${state}" in
+        adopted)
+            say "  ${DIM}Adopted${OFF}      ${GREEN}%s${OFF}\n" "${org:-unknown org}"
+            ;;
+        *)
+            say "  ${DIM}Adopted${OFF}      ${YELLOW}not yet — scan the code below${OFF}\n"
+            ;;
+    esac
+}
+
+concentrator_line() {
+    local status present slots channels colour text
+    status="$(uci -q get parkeze.concentrator.status)"
+    present="$(uci -q get parkeze.concentrator.present || echo 0)"
+    slots="$(uci -q get parkeze.concentrator.slots || echo 0)"
+    channels="$(uci -q get parkeze.concentrator.channels || echo 0)"
+
+    case "${status}" in
+        present) colour="${GREEN}"; text="${channels} channels" ;;
+        partial) colour="${YELLOW}"
+                 text="${channels} channels — only ${present} of ${slots} concentrators" ;;
+        *)       colour="${RED}";  text="none detected" ;;
+    esac
+    say "  ${DIM}LoRaWAN${OFF}      ${colour}%s${OFF}\n" "${text}"
+}
+
+backhaul_line() {
+    # Reads tailscaled's own view and the routing table. Nothing here goes near
+    # the network, so printing a banner never costs cellular data — see
+    # docs/backhaul.md for why that matters on this fleet.
+    local colour text
+    if tailscale --socket=/var/run/tailscale/tailscaled.sock status --json 2>/dev/null \
+       | grep -q '"BackendState": *"Running"'; then
+        colour="${GREEN}"; text="wired (Tailscale)"
+    elif ip route show 2>/dev/null | grep -qE '^default.*(wwan|rmnet|ppp)'; then
+        colour="${YELLOW}"; text="cellular only — metered"
+    else
+        colour="${RED}"; text="unreachable"
+    fi
+    say "  ${DIM}Backhaul${OFF}     ${colour}%s${OFF}\n" "${text}"
+}
+
+# ── output ──────────────────────────────────────────────────────────────────
+
+echo
+if [ "${LOGO}" = 1 ] && logo; then
+    :
+else
+    say "  ${B}Parkeze${OFF}\n"
+fi
+
+say "  ${DIM}%s${OFF}\n\n" \
+    "ParkezeOS ${PARKEZE_VERSION:-dev} · ${BOARD_NAME:-unknown board}"
+
+say "  ${DIM}Host${OFF}         %s\n" "$(uci -q get parkeze.identity.hostname || cat /proc/sys/kernel/hostname)"
+say "  ${DIM}Gateway EUI${OFF}  %s\n" "$(uci -q get parkeze.identity.gateway_eui || echo unknown)"
+say "  ${DIM}Console${OFF}      https://%s/\n" "$(uci -q get network.lan.ipaddr || echo 192.168.61.1)"
+adoption_line
+concentrator_line
+backhaul_line
+
+# The first-boot password, shown only while it is still the first-boot
+# password. It is deleted the moment somebody changes it, so this disappears on
+# its own rather than advertising a stale credential forever.
+if [ -s /etc/parkeze/console/initial-password ]; then
+    echo
+    say "  ${YELLOW}This gateway is on its initial password. Change it at first sign-in.${OFF}\n"
+    say "  ${DIM}Username${OFF}     %s\n" "$(cat /etc/parkeze/console/username 2>/dev/null || echo parkeze)"
+    say "  ${DIM}Password${OFF}     ${B}%s${OFF}\n" "$(cat /etc/parkeze/console/initial-password)"
+fi
+
+echo

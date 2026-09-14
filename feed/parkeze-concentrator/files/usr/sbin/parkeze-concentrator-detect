@@ -1,0 +1,255 @@
+#!/bin/sh
+#
+# Work out what is in each concentrator slot, and record it in UCI.
+#
+#   parkeze-concentrator-detect            probe and write UCI
+#   parkeze-concentrator-detect --dry-run  probe and print, change nothing
+#
+# SLOTS
+#
+# A gateway has one or more slots; a slot is one SX130x and the eight channels
+# it carries. An 8-channel gateway has one, a RAK7289CV2 has two. The board
+# declares them in PARKEZE_CONCENTRATOR_SLOTS — see boards/common/board.conf.
+#
+# A slot is either fixed ("spi:/dev/spidev0.0:17") or "auto". Fixed slots are
+# not probed at all: on a product the hardware cannot change, and asking a
+# question we already know the answer to only adds a way to get it wrong. Auto
+# slots are what a Pi has, where somebody can swap a HAT for a USB stick
+# between boots.
+#
+# NO BUS IS PREFERRED. SPI, USB and UART are all normal on a Pi. The probe
+# order is cheapest-first — it is about how long detection takes, not about
+# which hardware we expect to find — and an operator override always wins over
+# whatever the probe concluded.
+
+. /lib/functions.sh
+. /etc/parkeze/board.conf
+
+DRY_RUN=0
+[ "$1" = "--dry-run" ] && DRY_RUN=1
+
+log() { logger -t concentrator -p daemon.info "$*"; [ "${DRY_RUN}" = 1 ] && echo "$*"; }
+
+PROFILE_DIR=/usr/share/parkeze/concentrator
+
+# ── Probes ──────────────────────────────────────────────────────────────────
+#
+# Each probe echoes a model id and returns 0, or returns 1. Model ids are the
+# keys under ${PROFILE_DIR} — a probe that invents an id with no matching
+# profile produces a gateway that detects hardware and then cannot configure
+# it, so keep the two in step.
+
+probe_usb() {
+    # RAK5146 / RAK2287 USB and the WM1302 USB variant all present as a CP210x
+    # or FTDI bridge in front of an SX1302/SX1303. The USB IDs are the reliable
+    # discriminator; the concentrator itself is invisible until the bridge is up.
+    #
+    # Enumerated per-device rather than by grepping all the idVendor files at
+    # once: several devices are always attached, and we need each device's
+    # vendor paired with its own product, not the set of both.
+    for dev in /sys/bus/usb/devices/*/; do
+        [ -f "${dev}/idVendor" ] || continue
+        local vid pid product
+        vid="$(cat "${dev}/idVendor")"; pid="$(cat "${dev}/idProduct")"
+        case "${vid}:${pid}" in
+            # Silicon Labs CP2102N — RAK5146 USB, RAK2287 USB adapter.
+            10c4:ea60)
+                product="$(cat "${dev}/product" 2>/dev/null || echo '')"
+                case "${product}" in
+                    *WisGate*|*RAK*|*LoRa*|*Concentrator*) echo "sx1302_usb"; return 0 ;;
+                esac
+                log "unlabelled CP210x at ${dev} — assuming concentrator"
+                echo "sx1302_usb"; return 0
+                ;;
+            # FTDI FT2232H — WM1302 USB and some RAK2245 breakouts.
+            0403:6010) echo "sx1302_usb"; return 0 ;;
+        esac
+    done
+    return 1
+}
+
+probe_spi() {
+    # An SX130x on SPI cannot be enumerated: SPI has no discovery. So we do the
+    # only thing that actually answers the question — reset the part and read
+    # its version register. Anything else (checking that spidev exists,
+    # checking for a HAT EEPROM) tests the wiring, not the chip.
+    local spidev="$1" reset="$2" power="$3"
+    [ -c "${spidev}" ] || { log "no ${spidev}"; return 1; }
+
+    PARKEZE_SX130X_RESET_GPIO="${reset}" \
+    PARKEZE_SX130X_POWER_EN_GPIO="${power}" \
+        parkeze-sx130x-reset || { log "reset line ${reset} failed"; return 1; }
+
+    local version
+    version="$(sx130x_probe "${spidev}" 2>/dev/null)" || return 1
+    case "${version}" in
+        0x10|16) echo "sx1301_spi"; return 0 ;;
+        0x12|18) echo "sx1302_spi"; return 0 ;;
+        0x13|19) echo "sx1303_spi"; return 0 ;;
+        *) log "SPI ${spidev} answered with unknown version ${version}"; return 1 ;;
+    esac
+}
+
+probe_uart() {
+    # The UART parts speak the register protocol wrapped in a framing layer
+    # sx130x_probe does not implement, so this cannot confirm one is there.
+    #
+    # It is NOT skipped for that reason though — a UART concentrator is a
+    # perfectly normal thing to have on a Pi, and the honest handling is to
+    # report that we cannot tell rather than to guess either way. Selecting it
+    # explicitly in the console is how a UART part comes up, and the console
+    # labels it as such rather than letting somebody pick it and wonder why
+    # detection disagrees.
+    local port="$1"
+    [ -c "${port}" ] || return 1
+    return 1
+}
+
+# ── One slot ────────────────────────────────────────────────────────────────
+
+# detect_slot <index> <spec>
+#   spec: "auto" | "<bus>:<device>:<reset>[:<power>]"
+detect_slot() {
+    local index="$1" spec="$2"
+    local bus device reset power detected=""
+
+    if [ "${spec}" = "auto" ]; then
+        # A kit. Probe every bus in the configured order.
+        device=""; reset="${PARKEZE_SX130X_RESET_GPIO}"
+        power="${PARKEZE_SX130X_POWER_EN_GPIO}"
+        for try in ${PARKEZE_CONCENTRATOR_PROBE_ORDER:-usb spi uart}; do
+            log "slot ${index}: probing ${try}"
+            case "${try}" in
+                usb)  detected="$(probe_usb)" && bus=usb  && device="usb" ;;
+                spi)  detected="$(probe_spi "${PARKEZE_SPI_DEV:-/dev/spidev0.0}" \
+                                            "${reset}" "${power}")" \
+                          && bus=spi && device="${PARKEZE_SPI_DEV:-/dev/spidev0.0}" ;;
+                uart) detected="$(probe_uart "${PARKEZE_UART_DEV:-/dev/ttyAMA0}")" \
+                          && bus=uart && device="${PARKEZE_UART_DEV:-/dev/ttyAMA0}" ;;
+            esac
+            [ -n "${detected}" ] && break
+        done
+    else
+        # A product. Trust the board.
+        bus="${spec%%:*}"
+        local rest="${spec#*:}"
+        device="${rest%%:*}"
+        rest="${rest#*:}"
+        reset="${rest%%:*}"
+        case "${rest}" in *:*) power="${rest#*:}" ;; *) power="" ;; esac
+        [ "${reset}" = "-" ] && reset=""
+
+        # Still read the chip version where we can, so a dead concentrator on a
+        # product board reports as broken rather than as present-and-silent.
+        # Trusting the board about *what is fitted* is not the same as assuming
+        # it is working.
+        case "${bus}" in
+            spi)  detected="$(probe_spi "${device}" "${reset}" "${power}")" ;;
+            usb)  detected="$(probe_usb)" ;;
+            uart) detected="sx1302_uart" ;;   # cannot be probed; the board says so
+        esac
+        if [ -z "${detected}" ]; then
+            log "slot ${index}: board declares ${bus} ${device} but it did not answer"
+        fi
+    fi
+
+    # ── record ──────────────────────────────────────────────────────────────
+    local section="slot${index}"
+    [ "${DRY_RUN}" = 1 ] && { echo "slot ${index}: ${detected:-nothing} on ${bus:-?} ${device:-?}"; return 0; }
+
+    uci -q batch <<EOF
+set parkeze.${section}=slot
+set parkeze.${section}.index='${index}'
+set parkeze.${section}.bus='${bus}'
+set parkeze.${section}.device='${device}'
+set parkeze.${section}.reset_gpio='${reset}'
+set parkeze.${section}.power_gpio='${power}'
+set parkeze.${section}.detected='${detected}'
+EOF
+
+    if [ -z "${detected}" ]; then
+        uci -q set "parkeze.${section}.status=absent"
+        uci -q set "parkeze.${section}.active="
+        return 1
+    fi
+
+    if [ ! -f "${PROFILE_DIR}/${detected}.json" ]; then
+        log "slot ${index}: detected ${detected} but no profile ships for it"
+        uci -q set "parkeze.${section}.status=unsupported"
+        uci -q set "parkeze.${section}.active="
+        return 1
+    fi
+
+    # An operator override is a decision, and a decision outranks a probe. We
+    # still record what the probe saw, so the console can show "you selected X,
+    # the hardware looks like Y" rather than silently disagreeing with itself.
+    #
+    # Only honoured on a configurable board: on a product the hardware cannot
+    # change, so a stale override from a support session must not survive.
+    local override=""
+    [ "${PARKEZE_CONCENTRATOR_CONFIGURABLE}" = "1" ] \
+        && override="$(uci -q get "parkeze.${section}.override")"
+
+    uci -q set "parkeze.${section}.status=present"
+    if [ -n "${override}" ] && [ "${override}" != "${detected}" ]; then
+        log "slot ${index}: operator override ${override} kept over detected ${detected}"
+        uci -q set "parkeze.${section}.active=${override}"
+    else
+        uci -q set "parkeze.${section}.active=${detected}"
+    fi
+    return 0
+}
+
+# ── Every slot ──────────────────────────────────────────────────────────────
+
+index=0
+present=0
+total=0
+channels=0
+
+for spec in ${PARKEZE_CONCENTRATOR_SLOTS:-auto}; do
+    total=$((total + 1))
+    if detect_slot "${index}" "${spec}"; then
+        present=$((present + 1))
+        active="$(uci -q get "parkeze.slot${index}.active")"
+        slot_ch="$(jsonfilter -i "${PROFILE_DIR}/${active}.json" -e '@.channels' 2>/dev/null)"
+        channels=$((channels + ${slot_ch:-8}))
+    fi
+    index=$((index + 1))
+done
+
+[ "${DRY_RUN}" = 1 ] && exit 0
+
+# Clear any slot sections left over from a board that used to have more of
+# them. Without this, reflashing a 16-channel unit's config onto an 8-channel
+# one leaves a phantom slot the console renders and the forwarder cannot start.
+stale="${index}"
+while uci -q get "parkeze.slot${stale}" >/dev/null 2>&1; do
+    uci -q delete "parkeze.slot${stale}"
+    stale=$((stale + 1))
+done
+
+uci -q batch <<EOF
+set parkeze.concentrator=concentrator
+set parkeze.concentrator.slots='${total}'
+set parkeze.concentrator.present='${present}'
+set parkeze.concentrator.channels='${channels}'
+set parkeze.concentrator.configurable='${PARKEZE_CONCENTRATOR_CONFIGURABLE:-1}'
+EOF
+
+# A partial detection on a multi-slot board is its own state, and a loud one:
+# the gateway works, at half its channel count, and nothing about the uplink
+# counts makes that obvious.
+if [ "${present}" = 0 ]; then
+    uci -q set parkeze.concentrator.status='absent'
+elif [ "${present}" -lt "${total}" ]; then
+    uci -q set parkeze.concentrator.status='partial'
+    log "WARNING: only ${present} of ${total} concentrators responded — this gateway is running at ${channels} channels"
+else
+    uci -q set parkeze.concentrator.status='present'
+fi
+
+uci commit parkeze
+log "detection complete: ${present}/${total} slots, ${channels} channels"
+
+[ "${present}" -gt 0 ]

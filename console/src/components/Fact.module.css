@@ -1,0 +1,42 @@
+.list {
+  display: grid;
+  /* The label column sizes to the longest label and then stops, so values
+     start at the same x on every card without a hardcoded width that breaks
+     the first time somebody adds a longer label. */
+  grid-template-columns: minmax(120px, max-content) 1fr;
+  gap: 7px 18px;
+  align-items: baseline;
+  margin: 0;
+}
+
+.fact { display: contents; }
+
+.label {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.value {
+  font-size: 13px;
+  color: var(--text-primary);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+  font-size: 12px;
+  color: var(--text-primary);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.muted { color: var(--text-tertiary); }
+
+/* One column on a phone. Two columns of a 12px label and a value is unreadable
+   below about 380px, and this console is used on a phone more than anywhere. */
+@media (max-width: 420px) {
+  .list { grid-template-columns: 1fr; gap: 2px 0; }
+  .fact { display: block; margin-bottom: 9px; }
+  .label { display: block; margin-bottom: 1px; }
+}

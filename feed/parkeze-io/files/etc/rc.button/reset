@@ -1,0 +1,70 @@
+#!/bin/sh
+#
+# The reset button.
+#
+#   short press (< 3s)    report status on the LEDs, and nothing else
+#   3s to hold-threshold   nothing — the release window, so a slip is harmless
+#   held past threshold    factory reset
+#
+# OpenWrt calls this with ACTION=pressed then ACTION=released, and SEEN holding
+# the seconds between them.
+#
+# WHY A SHORT PRESS DOES SOMETHING HARMLESS
+#
+# Because otherwise the only way to find out what the button does is to hold
+# it, and the thing it does when held is destroy the gateway's configuration.
+# A button whose safe behaviour is undiscoverable gets discovered unsafely.
+
+. /etc/parkeze/board.conf
+
+HOLD="${PARKEZE_BUTTON_RESET_HOLD:-10}"
+
+case "${ACTION}" in
+pressed)
+    # Acknowledge immediately so the installer knows the button registered.
+    /usr/sbin/parkeze-led status blink 100 100
+    ;;
+released)
+    if [ "${SEEN}" -lt 3 ]; then
+        # Status report: three slow pulses of the cloud LED if we are
+        # manageable, three fast if not. Readable without a laptop.
+        if /usr/sbin/parkeze-backhaul-check >/dev/null 2>&1; then
+            for _ in 1 2 3; do
+                /usr/sbin/parkeze-led cloud on;  sleep 1
+                /usr/sbin/parkeze-led cloud off; sleep 1
+            done
+        else
+            for _ in 1 2 3 4 5 6; do
+                /usr/sbin/parkeze-led cloud on;  sleep 1
+                /usr/sbin/parkeze-led cloud off; sleep 1
+            done
+        fi
+        logger -t button "status requested from reset button"
+
+    elif [ "${SEEN}" -ge "${HOLD}" ]; then
+        logger -t button -p daemon.warn "factory reset requested from reset button (held ${SEEN}s)"
+
+        # Everything on at once, so it is unmistakable that something drastic
+        # is happening and there is a moment to pull power if it was a mistake.
+        for led in power status lora lora2 cloud cellular; do
+            /usr/sbin/parkeze-led "${led}" on
+        done
+        sleep 3
+
+        # Release the gateway locally first: this clears the tailnet key, the
+        # recovery anchor and the adoption state, and re-enables local
+        # sign-in. Doing it before the overlay wipe means a gateway whose
+        # firstboot is interrupted still comes back locally reachable rather
+        # than adopted-and-unreachable.
+        /usr/sbin/parkeze-adopt --release >/dev/null 2>&1
+
+        jffs2reset -y && reboot
+    else
+        # Released in the dead zone. Say nothing happened, clearly.
+        logger -t button "reset button released after ${SEEN}s — no action (hold ${HOLD}s for factory reset)"
+        /usr/sbin/parkeze-led status heartbeat
+    fi
+    ;;
+esac
+
+exit 0

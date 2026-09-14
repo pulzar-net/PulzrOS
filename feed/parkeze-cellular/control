@@ -1,0 +1,11 @@
+Package: parkeze-cellular
+Version: @VERSION@-@BUILD@
+Depends: uqmi, kmod-usb-net-qmi-wwan, ucode
+Source: parkeze
+Section: net
+Priority: optional
+Maintainer: Joseph Telaak <joseph@parkeze.com>
+Architecture: all
+Description: Cellular backhaul management and data frugality.
+ Brings up the modem, and keeps the gateway's own traffic on the metered link
+ to the minimum that still allows it to be managed.

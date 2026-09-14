@@ -1,0 +1,34 @@
+#!/bin/sh
+#
+# The polling loop behind /etc/init.d/parkeze-claim. Split out so the backoff
+# is readable and so it can be run by hand while debugging an install.
+
+log() { logger -t claim -p daemon.info "$*"; }
+
+started="$(date +%s)"
+
+interval_for() {
+    # Seconds since start -> how long to wait before the next poll.
+    local elapsed="$1"
+    if   [ "${elapsed}" -lt 120 ];  then echo 5
+    elif [ "${elapsed}" -lt 900 ];  then echo 30
+    elif [ "${elapsed}" -lt 3600 ]; then echo 300
+    else echo 3600
+    fi
+}
+
+log "waiting to be claimed — code $(parkeze-claim status | jsonfilter -e '@.claimId')"
+
+while :; do
+    if [ "$(uci -q get parkeze.adoption.state)" = "adopted" ]; then
+        log "adopted; polling stops"
+        # Take the service down rather than looping forever doing nothing.
+        /etc/init.d/parkeze-claim stop >/dev/null 2>&1 &
+        exit 0
+    fi
+
+    parkeze-claim poll >/dev/null 2>&1 || true
+
+    elapsed=$(( $(date +%s) - started ))
+    sleep "$(interval_for "${elapsed}")"
+done

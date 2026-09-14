@@ -1,0 +1,246 @@
+# Build every board.
+#
+# Runs natively on Linux runners, so none of the Docker machinery build.sh uses
+# on a Mac is involved here — the runner *is* the Linux box.
+#
+# Shape: one cheap `check` job that must pass, then a matrix of board builds.
+# The matrix is discovered from boards/ rather than listed here, so adding a
+# board is still a single directory and never an edit to this file.
+
+name: build
+
+on:
+  push:
+    branches: [main]
+    # Tagging cuts a release with every board's image attached.
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      boards:
+        description: 'Boards to build (space separated). Empty builds all.'
+        required: false
+        type: string
+
+concurrency:
+  # A new push supersedes an in-flight build of the same ref. Image builds are
+  # minutes each across five boards; queueing them up serves nobody.
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: console/package-lock.json
+
+      - name: Install console dependencies
+        working-directory: console
+        run: npm ci
+
+      - name: Typecheck the console
+        working-directory: console
+        run: npm run typecheck
+
+      - name: Build the console
+        working-directory: console
+        run: npm run build
+
+      # ucode is not packaged for Ubuntu, so it is built. Small and quick, and
+      # the alternative is discovering a syntax error in the gateway API by
+      # flashing hardware.
+      - name: Build ucode
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential libjson-c-dev
+          git clone --depth 1 https://github.com/jow-/ucode /tmp/ucode
+          cmake -B /tmp/ucode/build -DCMAKE_BUILD_TYPE=Release -DFS_SUPPORT=ON \
+                -DMATH_SUPPORT=ON -DUBUS_SUPPORT=OFF -DUCI_SUPPORT=OFF \
+                -DDIGEST_SUPPORT=OFF -DSTRUCT_SUPPORT=OFF -DNL80211_SUPPORT=OFF \
+                -DRTNL_SUPPORT=OFF -DLOG_SUPPORT=OFF /tmp/ucode
+          cmake --build /tmp/ucode/build -j"$(nproc)"
+
+      - name: Check the ucode console API
+        run: UCODE=/tmp/ucode/build/ucode scripts/check-ucode.sh
+
+      # Device scripts run under busybox ash, not bash. Checked with `sh -n`
+      # (dash on Ubuntu, which is close enough to catch bashisms) while the
+      # build scripts are checked as bash.
+      - name: Check shell syntax
+        run: |
+          fail=0
+          for f in build.sh scripts/*.sh; do
+            bash -n "$f" || { echo "::error file=$f::bash syntax error"; fail=1; }
+          done
+          while IFS= read -r f; do
+            sh -n "$f" || { echo "::error file=$f::POSIX sh syntax error"; fail=1; }
+          done < <(find feed boards -type f \
+                     \( -name '*.conf' -o -path '*/usr/sbin/*' \
+                        -o -path '*/etc/init.d/*' -o -path '*/etc/uci-defaults/*' \
+                        -o -path '*/hotplug.d/*' -o -path '*/rc.button/*' \
+                        -o -path '*/profile.d/*' \))
+          exit $fail
+
+      - name: Check JSON
+        run: |
+          fail=0
+          while IFS= read -r f; do
+            python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$f" \
+              || { echo "::error file=$f::invalid JSON"; fail=1; }
+          done < <(find feed -name '*.json')
+          exit $fail
+
+      # A device script with a bash shebang would work on the build host and
+      # fail on a gateway, where /bin/sh is busybox ash and bash is absent.
+      - name: No bash in device scripts
+        run: |
+          if grep -rln '#!/bin/bash\|#!/usr/bin/env bash' feed/; then
+            echo "::error::device scripts must be POSIX sh — OpenWrt ships ash, not bash"
+            exit 1
+          fi
+
+  # The board list, as JSON, so the matrix below is whatever is in boards/.
+  boards:
+    name: Discover boards
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.list.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: list
+        env:
+          # Through the environment rather than interpolated into the script:
+          # a workflow_dispatch input is arbitrary text, and pasting it into a
+          # shell line is a command injection waiting for someone to type a
+          # backtick.
+          REQUESTED: ${{ inputs.boards }}
+        run: |
+          if [ -n "${REQUESTED}" ]; then
+            printf '%s' "${REQUESTED}" | tr ' ' '\n' > /tmp/boards
+          else
+            ./build.sh --list > /tmp/boards
+          fi
+
+          # One board per line into jq, rather than relying on the shell to
+          # word-split an unquoted variable — that behaviour differs between
+          # shells and produced a single matrix entry containing every board
+          # name when this was first written.
+          json="$(grep -v '^[[:space:]]*$' /tmp/boards | jq -R . | jq -sc .)"
+
+          [ "$(echo "${json}" | jq 'length')" -gt 0 ] \
+            || { echo "::error::no boards to build"; exit 1; }
+
+          echo "matrix=${json}" >> "$GITHUB_OUTPUT"
+          echo "Building: $(tr '\n' ' ' < /tmp/boards)"
+
+  image:
+    name: ${{ matrix.board }}
+    needs: [check, boards]
+    runs-on: ubuntu-latest
+    strategy:
+      # One board failing should not hide whether the others build — a broken
+      # RAK profile must not mask a working Pi image.
+      fail-fast: false
+      matrix:
+        board: ${{ fromJSON(needs.boards.outputs.matrix) }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: console/package-lock.json
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libncurses-dev zstd unzip \
+                                  file wget python3 rsync
+
+      # The ImageBuilder tarball is ~150MB per target and does not change
+      # between runs — it is a pinned release. Keyed on the target so the two
+      # Pi subtargets and the RAK one cache separately.
+      - name: Cache ImageBuilder
+        uses: actions/cache@v4
+        with:
+          path: .build/imagebuilder
+          key: imagebuilder-${{ matrix.board }}-${{ hashFiles('boards/**/board.conf', 'boards/common/*.conf') }}
+          restore-keys: imagebuilder-${{ matrix.board }}-
+
+      # The fleet recovery PUBLIC key. Without it images build fine but cannot
+      # be adopted offline, and build.sh says so loudly rather than failing —
+      # which is right for a fork or a PR from someone without the secret.
+      - name: Install the fleet recovery anchor
+        env:
+          RECOVERY_PUBKEY: ${{ secrets.PARKEZE_RECOVERY_PUBKEY }}
+        run: |
+          if [ -n "${RECOVERY_PUBKEY}" ]; then
+            printf '%s\n' "${RECOVERY_PUBKEY}" > "${RUNNER_TEMP}/recovery.pub"
+            echo "PARKEZE_RECOVERY_PUBKEY=${RUNNER_TEMP}/recovery.pub" >> "$GITHUB_ENV"
+          else
+            echo "::warning::No PARKEZE_RECOVERY_PUBKEY secret — this image cannot be adopted offline."
+          fi
+
+      - name: Build ${{ matrix.board }}
+        run: ./build.sh "${{ matrix.board }}"
+
+      - name: Summarise
+        run: |
+          {
+            echo "### ${{ matrix.board }}"
+            echo
+            echo '| Image | Size |'
+            echo '|---|---|'
+            find "out/${{ matrix.board }}" -maxdepth 1 -type f \
+                 \( -name '*.img.gz' -o -name '*.bin' \) -printf '| `%f` | %s bytes |\n' \
+              | sort
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: parkezeos-${{ matrix.board }}
+          path: |
+            out/${{ matrix.board }}/*.img.gz
+            out/${{ matrix.board }}/*.bin
+            out/${{ matrix.board }}/sha256sums
+          # Long enough to flash a unit next week, short enough that the
+          # storage quota is not spent on every push to a branch.
+          retention-days: 14
+          if-no-files-found: error
+
+  release:
+    name: Release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Collect
+        run: |
+          mkdir -p release
+          find artifacts -type f \( -name '*.img.gz' -o -name '*.bin' \) \
+               -exec cp {} release/ \;
+          ( cd release && sha256sum * > sha256sums.txt )
+          ls -la release
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          generate_release_notes: true

@@ -1,0 +1,9 @@
+#!/bin/sh
+# Silence the stock OpenWrt banner.
+#
+# /etc/profile cats /etc/banner before it sources profile.d, so leaving it in
+# place means every login shows OpenWrt's wordmark and then ours. Emptied
+# rather than deleted: some tooling expects the file to exist, and an empty
+# file is a clearer statement of intent than a missing one.
+: > /etc/banner
+exit 0

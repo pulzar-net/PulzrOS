@@ -1,0 +1,14 @@
+#!/bin/sh
+#
+# Re-decide about DHCP whenever the LAN port changes state.
+#
+# The interesting event is a cable being moved: a gateway configured on a bench
+# with a laptop, then patched into the site LAN, must stop serving DHCP before
+# anybody notices it started. Running on ifup covers that.
+
+[ "${INTERFACE}" = "lan" ] || exit 0
+[ "${ACTION}" = "ifup" ] || exit 0
+
+# Backgrounded: the probe waits up to nine seconds for a DHCP offer, and
+# hotplug handlers block the interface bringing itself up.
+( /usr/sbin/parkeze-lan-guard >/dev/null 2>&1 ) &

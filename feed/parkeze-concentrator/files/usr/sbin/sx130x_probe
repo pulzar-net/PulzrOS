@@ -1,0 +1,63 @@
+#!/bin/sh
+#
+# Read the version register of an SX130x and print it as 0xNN.
+#
+#   sx130x_probe /dev/spidev0.0
+#   sx130x_probe --uart /dev/ttyAMA0
+#
+# Exists so that concentrator detection can ask the chip rather than infer from
+# the wiring. Implemented over spi-tools' `spi-pipe` rather than as a compiled
+# helper: it is a two-byte transfer, and keeping it in shell keeps every
+# package in this feed architecture-independent.
+#
+# Register 0x00 is CHIP_VERSION on the SX1301/2/3. The read transaction is a
+# byte with the top bit clear (read) and the register in the low seven bits,
+# followed by a dummy byte during which the part shifts the value out.
+
+DEV=""
+MODE="spi"
+
+case "$1" in
+  --uart) MODE="uart"; DEV="$2" ;;
+  *)      DEV="$1" ;;
+esac
+
+[ -n "${DEV}" ] || { echo "usage: sx130x_probe [--uart] <device>" >&2; exit 2; }
+[ -c "${DEV}" ] || exit 1
+
+if [ "${MODE}" = "uart" ]; then
+  # The UART parts speak the same register protocol wrapped in a framing layer
+  # that we do not implement here. Rather than pretend, report that we cannot
+  # tell: the caller treats a non-zero exit as "not this bus", which is the
+  # honest answer until somebody puts a UART concentrator on the bench.
+  #
+  # Do not be tempted to `return 0` here to make a UART board come up — that
+  # turns "unknown" into "detected" and the failure moves to the packet
+  # forwarder, where it is much harder to read.
+  exit 1
+fi
+
+command -v spi-pipe >/dev/null 2>&1 || {
+  echo "spi-pipe not installed" >&2
+  exit 1
+}
+
+# Two bytes out (register address, dummy), two bytes back. The second byte of
+# the response is the register value.
+response="$(printf '\000\000' | spi-pipe -d "${DEV}" -s "${PARKEZE_SPI_SPEED:-2000000}" -b 2 2>/dev/null | od -An -tx1 | tr -d ' \n')"
+
+[ -n "${response}" ] || exit 1
+
+# od gives us four hex chars for two bytes; the value is the second pair.
+value="$(echo "${response}" | cut -c3-4)"
+[ -n "${value}" ] || exit 1
+
+# An absent or unpowered part reads back all-ones or all-zeros on a floating
+# bus. Neither is a valid chip version, and reporting one as a detection is how
+# a gateway ends up "detecting" a concentrator that is not plugged in.
+case "${value}" in
+  ff|00) exit 1 ;;
+esac
+
+echo "0x${value}"
+exit 0

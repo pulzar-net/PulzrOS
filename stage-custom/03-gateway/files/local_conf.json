@@ -1,7 +1,0 @@
-{
-    "gateway_conf": {
-        "server_address": "127.0.0.1",
-        "serv_port_up": 1700,
-        "serv_port_down": 1700
-    }
-}

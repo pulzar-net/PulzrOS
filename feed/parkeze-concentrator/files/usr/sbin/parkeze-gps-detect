@@ -1,0 +1,145 @@
+#!/bin/sh
+#
+# Find the GNSS receiver, if there is one, and record it in UCI.
+#
+#   parkeze-gps-detect            probe and write UCI
+#   parkeze-gps-detect --dry-run  probe and print
+#
+# WHERE GPS LIVES ON THESE GATEWAYS
+#
+#   SPI HAT (RAK2287/5146 SPI, WM1302)   the GNSS module on the HAT is wired to
+#                                        the Pi's own UART. This is the common
+#                                        case and the reason UART is probed
+#                                        first.
+#   USB concentrator (RAK5146 USB)       the stick presents a second tty
+#                                        alongside the concentrator's own.
+#   RAK WisGate                          fixed, declared by the board.
+#
+# THE CONFLICT WORTH KNOWING ABOUT
+#
+# A UART *concentrator* and a UART *GNSS* cannot both have the Pi's serial
+# port. If the board is configured for a UART concentrator, this refuses to
+# claim the same device rather than producing two subsystems that each work
+# until the other one starts. Put the GPS on USB in that configuration.
+
+. /lib/functions.sh
+. /etc/parkeze/board.conf
+
+DRY_RUN=0
+[ "$1" = "--dry-run" ] && DRY_RUN=1
+
+log() { logger -t gps -p daemon.info "$*"; [ "${DRY_RUN}" = 1 ] && echo "$*"; }
+
+# Ports already claimed by a concentrator, which must not be probed for GPS.
+concentrator_ports() {
+    local index=0 slots
+    slots="$(uci -q get parkeze.concentrator.slots || echo 0)"
+    while [ "${index}" -lt "${slots}" ]; do
+        uci -q get "parkeze.slot${index}.device"
+        index=$((index + 1))
+    done
+}
+
+is_claimed() {
+    local candidate="$1" taken
+    for taken in $(concentrator_ports); do
+        [ "${candidate}" = "${taken}" ] && return 0
+    done
+    return 1
+}
+
+# Does this tty emit NMEA?
+#
+# The only honest test is to listen. A GNSS receiver with no sky view still
+# emits sentences — it just reports no fix — so this detects the *receiver*,
+# not the fix, which is the right thing: a gateway in a rack being configured
+# before it goes on a roof should still show its GPS as present.
+probe_nmea() {
+    local port="$1" baud="${2:-9600}"
+    [ -c "${port}" ] || return 1
+
+    stty -F "${port}" "${baud}" raw -echo 2>/dev/null || return 1
+
+    # Two seconds is four or five sentence bursts at the usual 1Hz, which is
+    # enough to see one and short enough that probing four candidate ports at
+    # two baud rates does not add half a minute to every boot.
+    local sample
+    sample="$(timeout 2 head -c 512 "${port}" 2>/dev/null)"
+
+    # $GPxxx, $GNxxx, $GLxxx, $GAxxx — the talker ID varies by constellation
+    # and by receiver, so match the shape rather than a specific prefix.
+    echo "${sample}" | grep -qE '\$G[PNLABQ][A-Z]{3},' && return 0
+    return 1
+}
+
+# ── candidates ──────────────────────────────────────────────────────────────
+
+candidates() {
+    if [ -n "${PARKEZE_GPS_DEV}" ]; then
+        echo "${PARKEZE_GPS_DEV}"
+        return
+    fi
+    # UART first: on a Pi with an SPI HAT that is where the GNSS is, and it is
+    # the configuration most of the fleet runs.
+    echo "${PARKEZE_UART_DEV:-/dev/ttyAMA0}"
+    echo /dev/ttyS0
+    for tty in /dev/ttyUSB* /dev/ttyACM*; do
+        [ -c "${tty}" ] && echo "${tty}"
+    done
+}
+
+# ── decide ──────────────────────────────────────────────────────────────────
+
+found=""
+found_baud=""
+
+if [ "${PARKEZE_GPS}" = "none" ]; then
+    log "GPS disabled for this board"
+elif [ -n "${PARKEZE_GPS}" ] && [ "${PARKEZE_GPS}" != "auto" ]; then
+    # Fixed hardware. Trust the board, but still confirm the receiver answers —
+    # knowing what is fitted is not the same as knowing it works.
+    found="${PARKEZE_GPS_DEV}"
+    found_baud="${PARKEZE_GPS_BAUD:-9600}"
+    probe_nmea "${found}" "${found_baud}" || {
+        log "board declares GPS on ${found} but it emitted no NMEA"
+        found=""
+    }
+else
+    for port in $(candidates); do
+        if is_claimed "${port}"; then
+            log "skipping ${port} — a concentrator has it"
+            continue
+        fi
+        # 9600 is the near-universal default; 115200 is what the faster u-blox
+        # modules ship at and what several RAK HATs are configured to.
+        for baud in 9600 115200; do
+            if probe_nmea "${port}" "${baud}"; then
+                found="${port}"; found_baud="${baud}"
+                log "GNSS found on ${port} at ${baud}"
+                break
+            fi
+        done
+        [ -n "${found}" ] && break
+    done
+fi
+
+[ "${DRY_RUN}" = 1 ] && { echo "${found:-none} ${found_baud}"; exit 0; }
+
+uci -q set parkeze.gps=gps
+if [ -z "${found}" ]; then
+    uci -q batch <<EOF
+set parkeze.gps.status='absent'
+set parkeze.gps.device=''
+EOF
+    uci commit parkeze
+    log "no GNSS receiver found"
+    exit 1
+fi
+
+uci -q batch <<EOF
+set parkeze.gps.status='present'
+set parkeze.gps.device='${found}'
+set parkeze.gps.baud='${found_baud}'
+EOF
+uci commit parkeze
+exit 0

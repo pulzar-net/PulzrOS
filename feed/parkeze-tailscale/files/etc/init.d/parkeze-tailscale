@@ -1,0 +1,86 @@
+#!/bin/sh /etc/rc.common
+#
+# tailscaled, confined to the wired WAN.
+#
+# Ordered after the network so that the routing table this depends on can
+# actually be built, and after parkeze-adopt so that an auth key issued during
+# adoption is on disk before we try to use it.
+
+START=96
+STOP=10
+USE_PROCD=1
+
+PROG=/usr/sbin/tailscaled
+STATE_DIR=/etc/parkeze/tailscale
+STATE_FILE="${STATE_DIR}/tailscaled.state"
+SOCKET=/var/run/tailscale/tailscaled.sock
+
+. /etc/parkeze/board.conf
+
+boot() {
+    # On boot the wired WAN is usually not up yet. Start anyway: the hotplug
+    # handler applies the route the moment it comes up, and a tailscaled that
+    # is already running joins in seconds rather than waiting for the next
+    # service poll.
+    start
+}
+
+start_service() {
+    [ "${PARKEZE_TAILSCALE_ENABLED}" = "1" ] || {
+        logger -t tailscale "disabled in board configuration"
+        return 0
+    }
+
+    # Refuse to run if the confinement is not in place. A tailscaled that comes
+    # up unconfined on a cellular-only gateway is the one failure mode this
+    # whole package exists to prevent, so it fails closed.
+    if [ "${PARKEZE_TAILSCALE_ALLOW_CELLULAR}" != "1" ]; then
+        parkeze-tailscale-route apply || {
+            logger -t tailscale -p daemon.err \
+              "could not pin tailnet egress to the wired WAN; refusing to start"
+            return 1
+        }
+    fi
+
+    mkdir -p "${STATE_DIR}" /var/run/tailscale
+    chown "${PARKEZE_TAILSCALE_USER:-tailscale}" "${STATE_DIR}" /var/run/tailscale
+    chmod 0700 "${STATE_DIR}"
+
+    procd_open_instance tailscaled
+    procd_set_param command "${PROG}" \
+        --state="${STATE_FILE}" \
+        --socket="${SOCKET}" \
+        --tun=userspace-networking \
+        --no-logs-no-support
+    # userspace-networking rather than a kernel TUN: the gateway is a tailnet
+    # *endpoint*, never a subnet router or exit node. Nothing behind it should
+    # be reachable through it — a site's parking hardware is not ours to
+    # expose — and userspace mode makes that structural instead of an ACL we
+    # have to remember to get right.
+
+    procd_set_param user "${PARKEZE_TAILSCALE_USER:-tailscale}"
+    procd_set_param stdout 1
+    procd_set_param stderr 1
+    procd_set_param respawn 3600 5 0
+    procd_close_instance
+
+    # Bring the node up once the daemon is listening. Done here rather than in
+    # a separate service because `tailscale up` is idempotent and cheap, and a
+    # second unit that can be started without this one is a way to get a node
+    # that is running but never authenticated.
+    ( sleep 3; /usr/sbin/parkeze-tailscale-up ) &
+}
+
+stop_service() {
+    parkeze-tailscale-route flush
+}
+
+reload_service() {
+    stop
+    start
+}
+
+service_triggers() {
+    procd_add_reload_interface_trigger "${PARKEZE_WAN_ETH_IFACE:-wan}"
+    procd_add_config_trigger "config.change" "parkeze" /etc/init.d/parkeze-tailscale reload
+}

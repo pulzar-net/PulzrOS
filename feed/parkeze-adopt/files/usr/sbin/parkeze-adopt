@@ -1,0 +1,205 @@
+#!/bin/sh
+#
+# Claim this gateway into a parkeze.net organisation.
+#
+#   parkeze-adopt <adoption-code>
+#   parkeze-adopt --status
+#   parkeze-adopt --release        (local only; parkeze.net keeps its record)
+#
+# WHAT ADOPTION CHANGES
+#
+#   * The gateway receives a Tailscale auth key, joins the tailnet, and becomes
+#     manageable over the wired path.
+#   * It receives MQTT credentials for its own EUI.
+#   * It installs the fleet recovery public key, which is what makes offline
+#     recovery possible later. A gateway adopted without this can only be
+#     recovered by reflashing it.
+#   * Local password sign-in is DISABLED. From here on the way in is SSO while
+#     online and signed challenge-response while offline. See
+#     console/lib/auth.uc for the reasoning.
+#
+# The adoption code is short-lived and single-use, minted by parkeze.net when
+# an operator starts onboarding. It is not a credential — it authorises exactly
+# one gateway to claim exactly one pending record.
+
+. /etc/parkeze/board.conf
+
+NET_URL="${PARKEZE_NET_URL:-https://parkeze.net}"
+STATE=/etc/parkeze
+
+die() { echo "$*" >&2; exit 1; }
+
+status() {
+    printf '{"state":"%s","org":"%s","since":"%s","eui":"%s"}\n' \
+        "$(uci -q get parkeze.adoption.state)" \
+        "$(uci -q get parkeze.adoption.org)" \
+        "$(uci -q get parkeze.adoption.since)" \
+        "$(uci -q get parkeze.identity.gateway_eui)"
+}
+
+release() {
+    # Local-side only. parkeze.net still holds the gateway record and the
+    # tailnet node; releasing here just returns this box to local management so
+    # it can be re-adopted or repurposed. Deliberately does not call the API —
+    # a gateway must not be able to remove itself from the fleet, or a
+    # compromised one would.
+    uci -q batch <<EOF
+set parkeze.adoption.state='unadopted'
+set parkeze.adoption.org=''
+set parkeze.adoption.since=''
+set parkeze.console.local_login='1'
+EOF
+    uci commit parkeze
+    rm -f "${STATE}/tailscale/authkey" "${STATE}/recovery.pub"
+    tailscale --socket=/var/run/tailscale/tailscaled.sock logout 2>/dev/null
+    echo "Released. Local sign-in is enabled again."
+}
+
+# ── installing a bundle ─────────────────────────────────────────────────────
+
+install_bundle() {
+    local response="$1"
+    local org authkey recovery mqtt_user mqtt_pass mqtt_host
+
+    org="$(echo "${response}" | jsonfilter -e '@.org')"
+    authkey="$(echo "${response}" | jsonfilter -e '@.tailscaleAuthKey')"
+    recovery="$(echo "${response}" | jsonfilter -e '@.recoveryPublicKey')"
+    mqtt_user="$(echo "${response}" | jsonfilter -e '@.mqtt.username')"
+    mqtt_pass="$(echo "${response}" | jsonfilter -e '@.mqtt.password')"
+    mqtt_host="$(echo "${response}" | jsonfilter -e '@.mqtt.host')"
+
+    # The recovery anchor is not optional. Without it this gateway can never be
+    # recovered offline, and we would only find that out on the day it matters.
+    #
+    # An image built with the fleet public key baked in already has one, which
+    # is the normal case now — this catches the older images that do not.
+    if [ -z "${recovery}" ] && [ ! -s "${STATE}/recovery.pub" ]; then
+        uci -q set parkeze.adoption.state='unadopted'; uci commit parkeze
+        die "No recovery anchor available; refusing to adopt. Local sign-in is left enabled."
+    fi
+
+    mkdir -p "${STATE}/tailscale"
+    if [ -n "${recovery}" ]; then
+        echo "${recovery}" > "${STATE}/recovery.pub"
+        chmod 0644 "${STATE}/recovery.pub"
+    fi
+
+    if [ -n "${authkey}" ]; then
+        echo "${authkey}" > "${STATE}/tailscale/authkey"
+        chmod 0600 "${STATE}/tailscale/authkey"
+    fi
+
+    uci -q batch <<EOF
+set parkeze.adoption.state='adopted'
+set parkeze.adoption.org='${org}'
+set parkeze.adoption.since='$(date -u +%Y-%m-%dT%H:%M:%SZ)'
+set parkeze.console.local_login='0'
+set parkeze.mqtt.host='${mqtt_host}'
+set parkeze.mqtt.username='${mqtt_user}'
+set parkeze.mqtt.password='${mqtt_pass}'
+EOF
+    uci commit parkeze
+
+    # The cleartext first-boot password is meaningless now that local sign-in
+    # is off, and leaving it on disk is a liability with no upside.
+    rm -f "${STATE}/console/initial-password" "${STATE}/console/password-is-initial"
+
+    /etc/init.d/parkeze-tailscale restart >/dev/null 2>&1
+    /etc/init.d/parkeze-packet-forwarder restart >/dev/null 2>&1
+    /etc/init.d/parkeze-claim stop >/dev/null 2>&1
+
+    logger -t adopt "adopted into ${org}"
+    echo "Adopted into ${org}. Local sign-in is now disabled; manage this gateway from parkeze.net."
+    status
+}
+
+# ── applying a bundle ───────────────────────────────────────────────────────
+
+apply_bundle() {
+    # The adoption bundle, however it arrived: pulled by parkeze-claim after
+    # somebody scanned the QR, or carried back by hand for a gateway that has
+    # never had internet.
+    #
+    # `--verify-signature` is for the hand-carried case. Online, the bundle
+    # came over TLS from a host we resolved ourselves, so its provenance is the
+    # transport. Offline it came through a human with a phone, so it has to
+    # carry its own proof — an Ed25519 signature over the bundle body, checked
+    # against the fleet public key baked into the image at build time.
+    local file="${1:?bundle file}" verify=0
+    [ "${2:-}" = "--verify-signature" ] && verify=1
+
+    [ -s "${file}" ] || die "empty adoption bundle"
+
+    if [ "${verify}" = 1 ]; then
+        local body signature pubkey=/etc/parkeze/recovery.pub
+        [ -f "${pubkey}" ] || die "This image carries no fleet key, so an \
+offline bundle cannot be verified. Adopt this gateway while it has internet."
+
+        body="$(jsonfilter -i "${file}" -e '@.bundle')"
+        signature="$(jsonfilter -i "${file}" -e '@.signature')"
+        [ -n "${body}" ] && [ -n "${signature}" ] \
+            || die "That bundle is not signed."
+
+        printf '%s' "${body}" > /tmp/.bundle-body
+        echo "${signature}" | base64 -d > /tmp/.bundle-sig 2>/dev/null \
+            || { rm -f /tmp/.bundle-body; die "Malformed signature."; }
+
+        if ! openssl pkeyutl -verify -pubin -inkey "${pubkey}" -rawin \
+                 -in /tmp/.bundle-body -sigfile /tmp/.bundle-sig >/dev/null 2>&1; then
+            rm -f /tmp/.bundle-body /tmp/.bundle-sig
+            die "That bundle's signature is not valid for this fleet."
+        fi
+        rm -f /tmp/.bundle-sig
+
+        # The verified body is a base64 JSON document; from here it is read
+        # exactly like the online one.
+        echo "${body}" | base64 -d > /tmp/.bundle.json 2>/dev/null \
+            || die "Malformed bundle."
+        rm -f /tmp/.bundle-body
+        file=/tmp/.bundle.json
+    fi
+
+    local eui_in_bundle
+    eui_in_bundle="$(jsonfilter -i "${file}" -e '@.eui')"
+    if [ -n "${eui_in_bundle}" ] && \
+       [ "${eui_in_bundle}" != "$(uci -q get parkeze.identity.gateway_eui)" ]; then
+        rm -f /tmp/.bundle.json
+        die "That bundle was issued for a different gateway (${eui_in_bundle})."
+    fi
+
+    install_bundle "$(cat "${file}")"
+    rm -f /tmp/.bundle.json
+}
+
+case "${1:-}" in
+    --status)       status; exit 0 ;;
+    --release)      release; exit 0 ;;
+    --from-bundle)  apply_bundle "$2" "$3"; exit 0 ;;
+    '')             die "usage: parkeze-adopt <adoption-code>" ;;
+esac
+
+CODE="$1"
+EUI="$(uci -q get parkeze.identity.gateway_eui)"
+SERIAL="$(uci -q get parkeze.identity.serial)"
+[ -n "${EUI}" ] || die "This gateway has no EUI. Identity setup did not run."
+
+[ "$(uci -q get parkeze.adoption.state)" = "adopted" ] \
+    && die "Already adopted. Release it first if you mean to re-adopt."
+
+uci -q set parkeze.adoption.state='adopting'; uci commit parkeze
+
+# The request carries what parkeze.net needs to create the gateway record, and
+# nothing that would let a bystander impersonate the gateway later. There is no
+# device secret in this direction: the adoption code is the only bearer, which
+# is why it is one-use and short-lived.
+response="$(curl -fsS --max-time 45 \
+    -X POST "${NET_URL}/api/v1/gateway-ops/adopt" \
+    -H 'Content-Type: application/json' \
+    -d "$(printf '{"code":"%s","eui":"%s","serial":"%s","board":"%s","version":"%s"}' \
+          "${CODE}" "${EUI}" "${SERIAL}" "${BOARD_ID}" "${PARKEZE_VERSION}")" \
+    2>&1)" || {
+    uci -q set parkeze.adoption.state='unadopted'; uci commit parkeze
+    die "Adoption failed: ${response}"
+}
+
+install_bundle "${response}"

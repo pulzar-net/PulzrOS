@@ -1,0 +1,254 @@
+#!/bin/sh
+#
+# One-touch provisioning: the device half.
+#
+#   parkeze-claim status        what state this gateway is in, as JSON
+#   parkeze-claim qr [--ascii]  the QR payload, or a terminal QR
+#   parkeze-claim register      tell parkeze.net this gateway is waiting
+#   parkeze-claim poll          has somebody claimed us? if so, adopt
+#   parkeze-claim reset         throw away the claim identity and start over
+#   parkeze-claim apply <blob>  complete an adoption offline, from a signed
+#                               bundle the operator carried back
+#
+# ── HOW IT WORKS ───────────────────────────────────────────────────────────
+#
+# The goal is that installing a gateway is: power it on, scan the code, pick
+# the site. No typing, no credentials on the device, no serial cable.
+#
+#   1. At first boot the gateway mints a claim identity:
+#
+#        claim_id      public. Goes in the QR. Names this pending claim.
+#        claim_secret  private. NEVER leaves the device and is never in the
+#                      QR — it is what proves, later, that the thing asking
+#                      for the adoption bundle is the gateway somebody
+#                      actually scanned and not a bystander who photographed
+#                      the screen.
+#        commitment    sha256(claim_secret), which is what parkeze.net stores.
+#
+#   2. If the gateway has internet it registers the claim, and the QR is a
+#      short URL: parkeze.net already knows the EUI, the board and the
+#      commitment.
+#
+#      If it does not, the QR carries those inline instead. Slightly longer,
+#      still one scan, and it means a gateway in a basement can be claimed
+#      from a phone that has signal.
+#
+#   3. The installer scans, signs in to parkeze.net, and picks an
+#      organisation. That marks the claim adopted.
+#
+#   4. The gateway polls and finds it has been claimed, pulls its bundle —
+#      tailnet auth key, MQTT credentials, the fleet recovery anchor — and
+#      finishes adoption on its own. Nobody goes back to the device.
+#
+# ── WHY THE SECRET MATTERS ─────────────────────────────────────────────────
+#
+# Without it, the QR alone would be enough to fetch the bundle, and a QR is
+# visible to anyone who walks past a rack. With it, seeing the code lets you
+# *claim* the gateway into your organisation (which requires a Parkeze login
+# and is audited) but not *become* it.
+
+set -e
+
+. /etc/parkeze/board.conf
+
+STATE=/etc/parkeze/claim
+NET_URL="${PARKEZE_NET_URL:-https://parkeze.net}"
+
+log() { logger -t claim -p daemon.info "$*"; }
+die() { echo "$*" >&2; exit 1; }
+
+# ── identity ────────────────────────────────────────────────────────────────
+
+mint() {
+    mkdir -p "${STATE}"
+    chmod 0700 "${STATE}"
+
+    # Crockford-ish base32 over random bytes, grouped for reading aloud. The
+    # alphabet excludes I, L, O and U — the first three because they are
+    # indistinguishable from 1 and 0 in most fonts, and U because it turns up
+    # in words nobody wants printed on a device.
+    local raw
+    raw="$(head -c 16 /dev/urandom | hexdump -ve '1/1 "%02x"')"
+    local id=""
+    local i=0
+    while [ "${i}" -lt 12 ]; do
+        local byte alphabet
+        byte="$(printf '%d' "0x${raw:$((i * 2)):2}")"
+        alphabet="0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+        id="${id}$(echo "${alphabet}" | cut -c$((byte % 32 + 1)))"
+        i=$((i + 1))
+    done
+    # 4-4-4, the way a licence key is read out over a phone.
+    id="$(echo "${id}" | sed 's/\(....\)\(....\)\(....\)/\1-\2-\3/')"
+
+    head -c 32 /dev/urandom | hexdump -ve '1/1 "%02x"' > "${STATE}/secret"
+    chmod 0600 "${STATE}/secret"
+    echo "${id}" > "${STATE}/id"
+    echo "pending" > "${STATE}/state"
+
+    log "minted claim ${id}"
+}
+
+ensure_identity() {
+    [ -s "${STATE}/id" ] && [ -s "${STATE}/secret" ] && return 0
+    mint
+}
+
+claim_id()   { cat "${STATE}/id" 2>/dev/null; }
+commitment() { sha256sum "${STATE}/secret" 2>/dev/null | cut -d' ' -f1; }
+registered() { [ -f "${STATE}/registered" ]; }
+
+# ── the QR payload ──────────────────────────────────────────────────────────
+
+payload() {
+    ensure_identity
+    local id eui
+    id="$(claim_id)"
+    eui="$(uci -q get parkeze.identity.gateway_eui)"
+
+    if registered; then
+        # parkeze.net already knows everything about this claim. Short is
+        # better: a smaller QR scans from further away and in worse light,
+        # which matters when the code is on a screen inside a cabinet.
+        echo "${NET_URL}/adopt#${id}"
+    else
+        # Never reached the internet. Carry what parkeze.net needs to create
+        # the pending claim from the scan alone. The commitment is truncated
+        # to 24 hex characters — 96 bits, far beyond what a collision attack
+        # on a single short-lived claim could use, and it keeps the QR in a
+        # version that still scans comfortably.
+        printf '%s/adopt#o1.%s.%s.%s.%s\n' \
+            "${NET_URL}" "${id}" "${eui}" "$(commitment | cut -c1-24)" "${BOARD_ID}"
+    fi
+}
+
+qr() {
+    local data
+    data="$(payload)"
+
+    case "${1:-}" in
+        --ascii|--utf8)
+            command -v qrencode >/dev/null 2>&1 || die "qrencode is not installed"
+            # ANSI over UTF8: half-block rendering is compact enough to fit an
+            # 80x24 terminal, which a serial console usually is.
+            qrencode -t ANSIUTF8 -m 1 -- "${data}"
+            echo
+            echo "  ${data}"
+            ;;
+        --svg)
+            command -v qrencode >/dev/null 2>&1 || die "qrencode is not installed"
+            # For the web console. SVG rather than PNG so it stays crisp on a
+            # phone and can be handed back inside a JSON response as text —
+            # no binary endpoint, no second request.
+            qrencode -t SVG -m 1 -o - -- "${data}"
+            ;;
+        *)
+            echo "${data}"
+            ;;
+    esac
+}
+
+# ── talking to parkeze.net ──────────────────────────────────────────────────
+
+register() {
+    ensure_identity
+    registered && { log "already registered"; return 0; }
+
+    local response
+    response="$(curl -fsS --max-time 20 \
+        -X POST "${NET_URL}/api/v1/gateway-ops/claim/register" \
+        -H 'Content-Type: application/json' \
+        -d "$(printf '{"claimId":"%s","commitment":"%s","eui":"%s","serial":"%s","board":"%s","version":"%s"}' \
+              "$(claim_id)" "$(commitment)" \
+              "$(uci -q get parkeze.identity.gateway_eui)" \
+              "$(uci -q get parkeze.identity.serial)" \
+              "${BOARD_ID}" "${PARKEZE_VERSION}")" 2>&1)" || {
+        # Not an error worth shouting about: an un-provisioned gateway with no
+        # uplink is the normal state five minutes into an install. The QR
+        # falls back to the offline form and everything still works.
+        log "could not register claim (offline?): ${response}"
+        return 1
+    }
+
+    touch "${STATE}/registered"
+    log "claim registered with parkeze.net"
+    return 0
+}
+
+poll() {
+    ensure_identity
+    [ "$(uci -q get parkeze.adoption.state)" = "adopted" ] && return 0
+
+    registered || register || return 1
+
+    local response
+    response="$(curl -fsS --max-time 20 \
+        -X POST "${NET_URL}/api/v1/gateway-ops/claim/poll" \
+        -H 'Content-Type: application/json' \
+        -d "$(printf '{"claimId":"%s","secret":"%s"}' \
+              "$(claim_id)" "$(cat "${STATE}/secret")")" 2>&1)" || {
+        log "poll failed: ${response}"
+        return 1
+    }
+
+    local state
+    state="$(echo "${response}" | jsonfilter -e '@.state' 2>/dev/null)"
+
+    case "${state}" in
+        adopted)
+            log "claimed — completing adoption"
+            echo "${response}" > "${STATE}/bundle.json"
+            parkeze-adopt --from-bundle "${STATE}/bundle.json"
+            rm -f "${STATE}/bundle.json"
+            echo "adopted" > "${STATE}/state"
+            ;;
+        pending)
+            # Normal. Somebody has not scanned it yet.
+            ;;
+        *)
+            log "unexpected claim state '${state}'"
+            return 1
+            ;;
+    esac
+    return 0
+}
+
+apply_offline() {
+    # The gateway never got internet, so the operator carried the bundle back
+    # from parkeze.net by hand. It is signed with the fleet key, whose public
+    # half is baked into the image — see docs/provisioning.md for why that is
+    # both safe and necessary here.
+    local blob="${1:?usage: parkeze-claim apply <bundle>}"
+    [ -f "${blob}" ] || { echo "${blob}" > /tmp/.claim-bundle; blob=/tmp/.claim-bundle; }
+    parkeze-adopt --from-bundle "${blob}" --verify-signature
+    rm -f /tmp/.claim-bundle
+    echo "adopted" > "${STATE}/state"
+}
+
+status() {
+    ensure_identity
+    local adoption
+    adoption="$(uci -q get parkeze.adoption.state || echo unadopted)"
+    printf '{"claimId":"%s","state":"%s","registered":%s,"url":"%s","online":%s}\n' \
+        "$(claim_id)" \
+        "${adoption}" \
+        "$(registered && echo true || echo false)" \
+        "$(payload)" \
+        "$(parkeze-backhaul-check >/dev/null 2>&1 && echo true || echo false)"
+}
+
+reset_claim() {
+    rm -rf "${STATE}"
+    mint
+    echo "New claim code: $(claim_id)"
+}
+
+case "${1:-status}" in
+    status)   status ;;
+    qr)       qr "$2" ;;
+    register) register ;;
+    poll)     poll ;;
+    apply)    apply_offline "$2" ;;
+    reset)    reset_claim ;;
+    *)        die "usage: parkeze-claim {status|qr|register|poll|apply|reset}" ;;
+esac

@@ -1,0 +1,46 @@
+@import './tokens.css';
+
+/* Base. Component styling lives in CSS modules beside each component, the way
+   parkeze.net does it — this file holds only what is genuinely global. */
+
+* { box-sizing: border-box; }
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  /* Inter and Outfit are webfonts on parkeze.net. A gateway console has to
+     render with no internet at all, so they are asked for locally and fall
+     through to the system stack rather than blocking first paint on a font
+     that will never arrive. */
+  font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+h1, h2, h3 {
+  font-family: Outfit, Inter, -apple-system, BlinkMacSystemFont, sans-serif;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+
+a { color: var(--accent); }
+
+code, .mono {
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+  font-size: 12px;
+}
+
+:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+.fade-in { animation: fadeIn 0.18s ease; }
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(3px); }
+  to   { opacity: 1; transform: none; }
+}

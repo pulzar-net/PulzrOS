@@ -1,0 +1,116 @@
+#!/bin/sh
+#
+# Drive one logical LED.
+#
+#   parkeze-led <name> on|off|blink <ms-on> <ms-off>|flash|heartbeat
+#   parkeze-led --list                 what this board actually has
+#   parkeze-led --test                 walk every LED, for bring-up
+#
+# Logical names — power, status, lora, cloud, cellular — are mapped to physical
+# LEDs by the board (PARKEZE_LED_* in board.conf). Everything else in the system
+# speaks logical names only, so a board with three LEDs and a board with five
+# run the same code and a board that lacks one simply does nothing when it is
+# asked for.
+#
+# That last property matters more than it looks: a Pi has two LEDs and a
+# RAK7289CV2 has six. Without a mapping layer, every caller would need to know
+# which board it is on, and the Pi case would be a pile of conditionals.
+
+. /etc/parkeze/board.conf
+
+LEDS=/sys/class/leds
+
+# Resolve a logical name to a physical LED directory, or empty.
+resolve() {
+    local logical="$1" physical=""
+    case "${logical}" in
+        power)    physical="${PARKEZE_LED_POWER}" ;;
+        status)   physical="${PARKEZE_LED_STATUS}" ;;
+        lora)     physical="${PARKEZE_LED_LORA}" ;;
+        lora2)    physical="${PARKEZE_LED_LORA2}" ;;
+        cloud)    physical="${PARKEZE_LED_CLOUD}" ;;
+        cellular) physical="${PARKEZE_LED_CELLULAR}" ;;
+        *)        return 1 ;;
+    esac
+    [ -n "${physical}" ] || return 1
+    [ -d "${LEDS}/${physical}" ] || return 1
+    echo "${LEDS}/${physical}"
+}
+
+max_brightness() {
+    cat "$1/max_brightness" 2>/dev/null || echo 1
+}
+
+case "${1:-}" in
+    --list)
+        printf '%-10s %-24s %s\n' LOGICAL PHYSICAL PRESENT
+        for logical in power status lora lora2 cloud cellular; do
+            path="$(resolve "${logical}" 2>/dev/null)" && state=yes || state=no
+            eval "physical=\${PARKEZE_LED_$(echo "${logical}" | tr '[:lower:]' '[:upper:]')}"
+            printf '%-10s %-24s %s\n' "${logical}" "${physical:--}" "${state}"
+        done
+        echo
+        echo "Physical LEDs this kernel exposes:"
+        ls -1 "${LEDS}" 2>/dev/null | sed 's/^/  /' || echo "  (none)"
+        exit 0
+        ;;
+    --test)
+        # Bring-up aid. The LED map is the single most likely thing in a new
+        # board file to be wrong, and this is how you find out in ten seconds
+        # rather than by wondering why the cloud light never comes on.
+        for logical in power status lora lora2 cloud cellular; do
+            path="$(resolve "${logical}" 2>/dev/null)" || continue
+            echo "${logical} -> ${path}"
+            echo none > "${path}/trigger" 2>/dev/null
+            echo "$(max_brightness "${path}")" > "${path}/brightness" 2>/dev/null
+            sleep 1
+            echo 0 > "${path}/brightness" 2>/dev/null
+        done
+        exit 0
+        ;;
+esac
+
+NAME="${1:?usage: parkeze-led <name> <state>}"
+STATE="${2:?usage: parkeze-led <name> <state>}"
+
+path="$(resolve "${NAME}")" || exit 0   # absent LED: not an error, just nothing
+
+trigger() { echo "$1" > "${path}/trigger" 2>/dev/null; }
+bright()  { echo "$1" > "${path}/brightness" 2>/dev/null; }
+
+case "${STATE}" in
+    on)
+        trigger none
+        bright "$(max_brightness "${path}")"
+        ;;
+    off)
+        trigger none
+        bright 0
+        ;;
+    blink)
+        # Kernel-side timer, so the blink keeps going without a process
+        # babysitting it. A userspace blink loop on a gateway is a wakeup every
+        # few hundred milliseconds forever, which is a real cost on a board
+        # this small.
+        trigger timer
+        echo "${3:-500}" > "${path}/delay_on" 2>/dev/null
+        echo "${4:-500}" > "${path}/delay_off" 2>/dev/null
+        ;;
+    flash)
+        # A single visible pulse — one uplink, one blink.
+        trigger oneshot
+        echo 1 > "${path}/invert" 2>/dev/null
+        echo 60 > "${path}/delay_on" 2>/dev/null
+        echo 60 > "${path}/delay_off" 2>/dev/null
+        echo 1 > "${path}/shot" 2>/dev/null
+        ;;
+    heartbeat)
+        trigger heartbeat
+        ;;
+    *)
+        echo "unknown LED state '${STATE}'" >&2
+        exit 2
+        ;;
+esac
+
+exit 0

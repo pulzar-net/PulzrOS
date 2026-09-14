@@ -1,0 +1,67 @@
+#!/bin/sh
+#
+# Give this gateway a stable identity on first boot.
+#
+# Runs once (uci-defaults scripts delete themselves on success). Everything
+# here is derived from hardware, so a reflash produces the same identity and a
+# gateway that comes back from an RMA is still recognisably itself.
+
+. /etc/parkeze/board.conf
+
+# ── Serial ──────────────────────────────────────────────────────────────────
+# Preference order matters. The Pi's CPU serial is stable across reflashes and
+# unique per unit; a MAC address is stable but can be spoofed or, on some
+# boards, is assigned from a pool at boot. Fall back to a random value only if
+# both are missing, and record that we did — a randomly-identified gateway
+# loses its identity on reflash and support needs to know that.
+serial="$(sed -n 's/^Serial\s*:\s*0*//p' /proc/cpuinfo | head -n1)"
+serial_source="cpuinfo"
+
+if [ -z "${serial}" ]; then
+    serial="$(cat /sys/class/net/eth0/address 2>/dev/null | tr -d ':')"
+    serial_source="eth0"
+fi
+if [ -z "${serial}" ]; then
+    serial="$(head -c8 /dev/urandom | hexdump -ve '1/1 "%02x"')"
+    serial_source="random"
+fi
+
+short="$(echo "${serial}" | tail -c9)"
+hostname="${PARKEZE_HOSTNAME_PREFIX:-parkeze}-${short}"
+
+# ── LoRaWAN Gateway EUI ─────────────────────────────────────────────────────
+# Sixteen hex characters, which is what ChirpStack and parkeze.net key a
+# gateway on. Derived from the ethernet MAC in the conventional EUI-64 way
+# (insert FFFE in the middle) so that the EUI printed on a label, the EUI the
+# packet forwarder announces, and the EUI in our database are the same string.
+mac="$(cat /sys/class/net/eth0/address 2>/dev/null | tr -d ':' | tr 'a-f' 'A-F')"
+if [ -n "${mac}" ] && [ ${#mac} -eq 12 ]; then
+    eui="$(echo "${mac}" | cut -c1-6)FFFE$(echo "${mac}" | cut -c7-12)"
+else
+    # No usable MAC. Derive from the serial instead of shipping the vendor
+    # placeholder AA555A0000000000, which collides across every unit that
+    # never got this right and is genuinely painful to untangle in ChirpStack.
+    eui="$(echo "${serial}" | md5sum | cut -c1-16 | tr 'a-f' 'A-F')"
+fi
+
+uci -q batch <<EOF
+set system.@system[0].hostname='${hostname}'
+set system.@system[0].timezone='EST5EDT,M3.2.0,M11.1.0'
+set system.@system[0].zonename='America/New_York'
+set system.@system[0].log_size='64'
+
+set parkeze.identity=identity
+set parkeze.identity.serial='${serial}'
+set parkeze.identity.serial_source='${serial_source}'
+set parkeze.identity.hostname='${hostname}'
+set parkeze.identity.gateway_eui='$(echo "${eui}" | tr 'A-F' 'a-f')'
+set parkeze.identity.board='${BOARD_ID}'
+set parkeze.identity.board_name='${BOARD_NAME}'
+EOF
+
+uci commit system
+uci commit parkeze
+
+echo "${hostname}" > /proc/sys/kernel/hostname
+
+exit 0

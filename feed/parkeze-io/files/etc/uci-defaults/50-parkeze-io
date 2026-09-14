@@ -1,0 +1,20 @@
+#!/bin/sh
+# Register the board's buttons with OpenWrt's button handler.
+#
+# The LEDs need no UCI: parkeze-io-daemon drives them directly through sysfs,
+# because their states are derived from things (concentrator status, which
+# backhaul is up) that no kernel trigger knows about.
+
+. /etc/parkeze/board.conf
+
+[ -n "${PARKEZE_BUTTON_RESET}" ] && uci -q batch <<EOF
+set system.reset_button=button
+set system.reset_button.button='${PARKEZE_BUTTON_RESET}'
+set system.reset_button.action='released'
+set system.reset_button.handler='/etc/rc.button/reset'
+set system.reset_button.min='0'
+set system.reset_button.max='60'
+EOF
+
+uci -q commit system
+exit 0

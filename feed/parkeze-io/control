@@ -1,0 +1,12 @@
+Package: parkeze-io
+Version: @VERSION@-@BUILD@
+Depends: ucode, ucode-mod-uci, ucode-mod-fs
+Source: parkeze
+Section: base
+Priority: optional
+Maintainer: Joseph Telaak <joseph@parkeze.com>
+Architecture: all
+Description: Front-panel LEDs and buttons.
+ Maps logical indicators — power, status, lora, cloud, cellular — onto whatever
+ LEDs a board actually has, and drives them from real system state. Handles the
+ reset button, including the held-down factory reset.

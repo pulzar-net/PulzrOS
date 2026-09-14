@@ -1,0 +1,24 @@
+#!/bin/sh /etc/rc.common
+#
+# The front panel.
+#
+# Started late: it reports on the concentrator and the backhaul, so starting it
+# before those exist just means the first poll reports a fault that is really
+# "not up yet". The fast blink it shows on boot covers that window honestly.
+
+START=98
+STOP=05
+USE_PROCD=1
+
+start_service() {
+    procd_open_instance io
+    procd_set_param command /usr/sbin/parkeze-io-daemon
+    procd_set_param stdout 1
+    procd_set_param stderr 1
+    procd_set_param respawn 30 5 0
+    procd_close_instance
+}
+
+service_triggers() {
+    procd_add_config_trigger "config.change" "parkeze" /etc/init.d/parkeze-io restart
+}

@@ -1,0 +1,162 @@
+#!/bin/sh /etc/rc.common
+#
+# The Semtech packet forwarder — one instance per concentrator slot.
+#
+# WHY ONE INSTANCE PER SLOT
+#
+# Semtech's HAL drives exactly one SX130x per process. So a 16-channel gateway
+# (a RAK7289CV2: two SX1302s) runs two forwarders, and an 8-channel gateway
+# runs one. Treating the single-concentrator case as the general case would
+# have made the 16-channel board a fork of this file; instead the loop below
+# runs once on most boards and twice on that one.
+#
+# HOW TWO FORWARDERS BECOME ONE GATEWAY
+#
+# Each instance talks to a local UDP port (1680 + slot). With one slot that
+# port is simply the bridge's own 1700 and nothing else is involved.
+#
+# With more than one, both instances would otherwise announce themselves to the
+# bridge as separate gateways with the same EUI, and whichever statistics
+# arrived last would win. So a multiplexer sits in front: it fans the two
+# upstreams into one, and the network server sees a single sixteen-channel
+# gateway rather than two eight-channel ones that keep overwriting each other.
+#
+# See docs/concentrators.md for the fallback if the multiplexer is unavailable.
+
+START=97
+STOP=15
+USE_PROCD=1
+
+CONF_DIR=/var/run/parkeze/lora
+BRIDGE_PORT=1700
+
+start_service() {
+    local slots present
+
+    # Re-run detection first. A concentrator can be hot-plugged on a Pi, and
+    # starting against a stale UCI value is how you get a forwarder running
+    # happily against hardware that is no longer there.
+    /usr/sbin/parkeze-concentrator-detect >/dev/null 2>&1
+
+    # GNSS too, for the same reason: a receiver can be plugged in between
+    # boots, and slot 0's config depends on whether one is there.
+    /usr/sbin/parkeze-gps-detect >/dev/null 2>&1
+
+    slots="$(uci -q get parkeze.concentrator.slots || echo 0)"
+    present="$(uci -q get parkeze.concentrator.present || echo 0)"
+
+    if [ "${present}" = 0 ]; then
+        logger -t lora -p daemon.warn "no concentrator responded; not starting"
+        return 0
+    fi
+
+    if [ "${present}" -lt "${slots}" ]; then
+        # Start anyway — half a gateway beats none — but say so loudly, because
+        # nothing downstream makes a missing concentrator obvious.
+        logger -t lora -p daemon.err \
+          "only ${present} of ${slots} concentrators responded; running at reduced channel count"
+    fi
+
+    local multiplexed=0
+    [ "${present}" -gt 1 ] && multiplexed=1
+
+    local index=0
+    while [ "${index}" -lt "${slots}" ]; do
+        start_slot "${index}" "${multiplexed}"
+        index=$((index + 1))
+    done
+
+    [ "${multiplexed}" = 1 ] && start_multiplexer "${slots}"
+    return 0
+}
+
+start_slot() {
+    local index="$1" multiplexed="$2"
+    local section="slot${index}"
+    local active status forwarder upstream_port dir
+
+    status="$(uci -q get "parkeze.${section}.status")"
+    active="$(uci -q get "parkeze.${section}.active")"
+    [ "${status}" = "present" ] && [ -n "${active}" ] || {
+        logger -t lora "slot ${index}: ${status:-unknown}; skipping"
+        return 0
+    }
+
+    forwarder="$(jsonfilter -i "/usr/share/parkeze/concentrator/${active}.json" \
+                 -e '@.forwarder')"
+
+    # With one concentrator the forwarder talks straight to the bridge. With
+    # several it talks to the multiplexer, which owns the bridge port.
+    if [ "${multiplexed}" = 1 ]; then
+        upstream_port=$((1680 + index))
+    else
+        upstream_port="${BRIDGE_PORT}"
+    fi
+
+    dir="${CONF_DIR}/${section}"
+    mkdir -p "${dir}"
+    /usr/sbin/parkeze-lora-config "${index}" "${dir}" "${upstream_port}" || {
+        logger -t lora -p daemon.err "slot ${index}: could not render config"
+        return 1
+    }
+
+    # Reset before the forwarder opens the part, every time and not only at
+    # detection — a restart against a part left in an odd state after a crash
+    # reads back garbage.
+    PARKEZE_SX130X_RESET_GPIO="$(uci -q get "parkeze.${section}.reset_gpio")" \
+    PARKEZE_SX130X_POWER_EN_GPIO="$(uci -q get "parkeze.${section}.power_gpio")" \
+        /usr/sbin/parkeze-sx130x-reset
+
+    procd_open_instance "lora${index}"
+    case "${forwarder}" in
+        sx1302_hal)   procd_set_param command /usr/bin/lora_pkt_fwd -c "${dir}" ;;
+        lora_pkt_fwd) procd_set_param command /usr/bin/lora_pkt_fwd_legacy -c "${dir}" ;;
+        *) logger -t lora -p daemon.err "slot ${index}: unknown forwarder '${forwarder}'"
+           procd_close_instance; return 1 ;;
+    esac
+    procd_set_param stdout 1
+    procd_set_param stderr 1
+    # A concentrator that will not initialise usually will not initialise on
+    # the next try either. Back off rather than spinning: a tight respawn loop
+    # on a cellular gateway fills the log partition and, if the forwarder is
+    # chatty enough, the SIM.
+    procd_set_param respawn 60 10 0
+    procd_close_instance
+
+    logger -t lora "slot ${index}: ${active} -> udp/${upstream_port}"
+}
+
+start_multiplexer() {
+    local slots="$1" index=0 args=""
+
+    while [ "${index}" -lt "${slots}" ]; do
+        [ "$(uci -q get "parkeze.slot${index}.status")" = "present" ] \
+            && args="${args} -p $((1680 + index))"
+        index=$((index + 1))
+    done
+
+    if [ ! -x /usr/bin/gwmp-mux ]; then
+        # Fail loudly rather than quietly running two forwarders that fight
+        # over one EUI. Half a gateway that reports honestly is recoverable;
+        # two gateways silently overwriting each other's statistics is the kind
+        # of fault that gets diagnosed as "flaky coverage" for a month.
+        logger -t lora -p daemon.err \
+          "gwmp-mux is not installed but this gateway has multiple concentrators. \
+Only slot 0 will reach the network server. See docs/concentrators.md."
+        return 1
+    fi
+
+    procd_open_instance loramux
+    procd_set_param command /usr/bin/gwmp-mux -u "127.0.0.1:${BRIDGE_PORT}" ${args}
+    procd_set_param stdout 1
+    procd_set_param stderr 1
+    procd_set_param respawn 60 5 0
+    procd_close_instance
+
+    logger -t lora "multiplexing ${slots} concentrators onto udp/${BRIDGE_PORT}"
+}
+
+service_triggers() {
+    procd_add_config_trigger "config.change" "parkeze" \
+        /etc/init.d/parkeze-packet-forwarder restart
+}

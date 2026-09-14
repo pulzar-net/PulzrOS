@@ -1,0 +1,19 @@
+#!/bin/sh
+#
+# A USB concentrator plugged in after boot should just work.
+#
+# Narrowed to the two bridge chips our concentrators use, because this fires
+# for every USB event on the box — including the cellular modem re-attaching,
+# and restarting the packet forwarder every time the SIM bounces would be both
+# pointless and disruptive.
+
+case "${ACTION}" in add|remove) ;; *) exit 0 ;; esac
+
+case "${PRODUCT}" in
+    10c4/ea60/*|403/6010/*) ;;
+    *) exit 0 ;;
+esac
+
+logger -t concentrator "USB concentrator ${ACTION}; re-detecting"
+/usr/sbin/parkeze-concentrator-detect >/dev/null 2>&1
+/etc/init.d/parkeze-packet-forwarder restart >/dev/null 2>&1 &

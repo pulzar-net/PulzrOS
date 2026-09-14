@@ -1,0 +1,41 @@
+#!/bin/sh /etc/rc.common
+#
+# The setup AP watchdog.
+#
+# Started late: it asks whether the backhaul is up, and doing that before the
+# network has settled just means the first check reports a fault that is
+# really "not up yet". The first poll is one interval in for that reason.
+
+START=99
+STOP=05
+USE_PROCD=1
+
+boot() {
+    # On a gateway that has never been adopted, raise the AP straight away
+    # rather than waiting out the fallback timer. There is nothing to protect
+    # yet and somebody is very likely standing there with a phone, trying to
+    # claim it — see docs/provisioning.md.
+    if [ "$(uci -q get parkeze.adoption.state)" != "adopted" ] \
+       && [ "$(uci -q get parkeze.ap.enabled)" != "0" ] \
+       && [ "$(uci -q get parkeze.ap.onboarding)" != "0" ]; then
+        /usr/sbin/parkeze-ap up 0 >/dev/null 2>&1
+    fi
+    start
+}
+
+start_service() {
+    procd_open_instance ap
+    procd_set_param command /usr/sbin/parkeze-ap-watchdog
+    procd_set_param stdout 1
+    procd_set_param stderr 1
+    procd_set_param respawn 60 10 0
+    procd_close_instance
+}
+
+stop_service() {
+    /usr/sbin/parkeze-ap down >/dev/null 2>&1
+}
+
+service_triggers() {
+    procd_add_config_trigger "config.change" "parkeze" /etc/init.d/parkeze-ap restart
+}

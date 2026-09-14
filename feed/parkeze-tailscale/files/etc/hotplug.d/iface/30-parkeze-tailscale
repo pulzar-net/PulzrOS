@@ -1,0 +1,22 @@
+#!/bin/sh
+#
+# Re-pin tailnet egress whenever the wired WAN changes state.
+#
+# Both directions matter. On ifup we install the default route into our table
+# so the tunnel can come back. On ifdown we flush it, which is what actually
+# stops tailscaled from finding its way onto the cellular link during the
+# window before anything else notices ethernet is gone.
+
+. /etc/parkeze/board.conf
+
+[ "${INTERFACE}" = "${PARKEZE_WAN_ETH_IFACE:-wan}" ] || exit 0
+[ "${PARKEZE_TAILSCALE_ENABLED}" = "1" ] || exit 0
+[ "${PARKEZE_TAILSCALE_ALLOW_CELLULAR}" = "1" ] && exit 0
+
+case "${ACTION}" in
+    ifup)   /usr/sbin/parkeze-tailscale-route apply ;;
+    ifdown) /usr/sbin/parkeze-tailscale-route apply ;;
+esac
+# `apply` handles both: with no wired gateway it empties the table and leaves
+# the unreachable rule standing, which is precisely the ifdown behaviour. One
+# code path means the down case is exercised every time the up case is.

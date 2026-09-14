@@ -1,0 +1,14 @@
+{
+  "name": "SX1303 (SPI)",
+  "chip": "sx1303",
+  "interface": "spi",
+  "forwarder": "sx1302_hal",
+  "antennas": 2,
+  "channels": 8,
+  "lbt": true,
+  "known_as": [
+    "RAK5166",
+    "RAK2287 SX1303"
+  ],
+  "comment": "SX1302 with fine-timestamping. Driven by the same HAL; the extra capability is not used yet."
+}

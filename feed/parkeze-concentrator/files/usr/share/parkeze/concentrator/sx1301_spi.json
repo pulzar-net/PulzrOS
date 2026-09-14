@@ -1,0 +1,15 @@
+{
+  "name": "SX1301 (SPI)",
+  "chip": "sx1301",
+  "interface": "spi",
+  "forwarder": "lora_pkt_fwd",
+  "antennas": 1,
+  "channels": 8,
+  "lbt": false,
+  "known_as": [
+    "RAK2245",
+    "RAK831",
+    "IMST iC880A"
+  ],
+  "comment": "Legacy. Detected and configurable, but a single-chain part on old firmware \u2014 do not spec it into new sites."
+}

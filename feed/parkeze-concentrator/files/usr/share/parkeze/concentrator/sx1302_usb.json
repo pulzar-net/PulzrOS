@@ -1,0 +1,15 @@
+{
+  "name": "SX1302 (USB)",
+  "chip": "sx1302",
+  "interface": "usb",
+  "forwarder": "sx1302_hal",
+  "antennas": 2,
+  "channels": 8,
+  "lbt": true,
+  "known_as": [
+    "RAK5146 USB",
+    "RAK2287 USB",
+    "WM1302 USB"
+  ],
+  "comment": "The common Pi 4 build. Enumerates as a CP210x or FT2232H bridge."
+}

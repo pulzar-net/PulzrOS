@@ -1,0 +1,112 @@
+.shell {
+  display: flex;
+  min-height: 100vh;
+}
+
+.sidebar {
+  width: 210px;
+  flex: 0 0 210px;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border-primary);
+  display: flex;
+  flex-direction: column;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 15px 15px 13px;
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.mark {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  background: var(--accent);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-family: Outfit, sans-serif;
+  font-weight: 700;
+  font-size: 14px;
+  flex: 0 0 auto;
+}
+
+.brandName { font-family: Outfit, sans-serif; font-size: 15px; font-weight: 600; color: var(--text-primary); }
+.brandSub  { font-size: 11px; color: var(--text-tertiary); }
+
+.nav { padding: 9px 8px; display: flex; flex-direction: column; gap: 2px; }
+
+.navItem {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 10px;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+
+.navItem:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+.active, .active:hover { background: var(--accent-subtle); color: var(--accent); }
+
+.foot {
+  margin-top: auto;
+  padding: 11px 14px;
+  border-top: 1px solid var(--border-primary);
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.footMeta { color: var(--text-tertiary); font-size: 11px; }
+
+.main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+
+.topbar {
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--border-primary);
+  background: var(--bg-primary);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.topbarTitle { font-size: 12.5px; color: var(--text-tertiary); }
+.topbarActions { display: flex; gap: 8px; }
+
+.content { padding: 20px; flex: 1; }
+
+/* Phone: the sidebar becomes a scrolling tab strip across the top. A 210px
+   rail on a 375px screen leaves no room for the content it is navigating. */
+@media (max-width: 760px) {
+  .shell { flex-direction: column; }
+  .sidebar {
+    width: 100%;
+    flex: none;
+    height: auto;
+    position: static;
+    flex-direction: row;
+    align-items: center;
+    gap: 4px;
+    overflow-x: auto;
+  }
+  .brand { border-bottom: none; border-right: 1px solid var(--border-primary); flex: 0 0 auto; }
+  .nav { flex-direction: row; padding: 8px; }
+  .navItem { white-space: nowrap; }
+  .foot { display: none; }
+  .topbarTitle { display: none; }
+  .content { padding: 14px; }
+}

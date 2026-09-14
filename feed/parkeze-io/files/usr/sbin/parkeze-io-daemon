@@ -1,0 +1,153 @@
+#!/bin/sh
+#
+# Drive the front panel from real system state.
+#
+# THE BLINK CODES
+#
+# A gateway is usually installed somewhere with no screen and no laptop, so the
+# LEDs are the entire diagnostic surface for whoever is standing in front of
+# it. They are chosen so that the three questions an installer actually has —
+# is it on, can it talk to us, is the radio working — each have their own
+# light, and so that the answer is readable from across a car park.
+#
+#   power     solid            up
+#
+#   status    heartbeat        healthy and adopted
+#             blink 1Hz        up but wants attention: not adopted, or running
+#                              at reduced channel count
+#             blink 5Hz        fault: no concentrator at all
+#
+#   cloud     solid            reachable over the wired path (Tailscale)
+#             blink 1s/1s      reachable over cellular only — working, but
+#                              every byte is billed
+#             off              no management path at all
+#
+#   cellular  solid            modem attached
+#             blink            attaching
+#             off              no modem, or disabled
+#
+#   lora      flash            one flash per uplink heard
+#
+# ON A BOARD WITH FEWER LEDS
+#
+# A Pi has two. `cloud` and `cellular` have nowhere to go, so their state is
+# folded into `status`: an adopted gateway with no management path blinks the
+# attention code rather than the healthy heartbeat. Nothing pretends the board
+# has lights it does not have, and nothing goes unreported.
+#
+# COST
+#
+# The poll below is deliberately cheap and deliberately local. It reads UCI,
+# sysfs and tailscaled's own socket — nothing here touches the network, and in
+# particular nothing here spends cellular data to decide what colour a light
+# should be.
+
+. /etc/parkeze/board.conf
+
+INTERVAL="${PARKEZE_IO_INTERVAL:-5}"
+STATS=/var/run/parkeze/lora/uplinks
+
+led() { /usr/sbin/parkeze-led "$@"; }
+
+has_led() {
+    eval "test -n \"\${PARKEZE_LED_$(echo "$1" | tr '[:lower:]' '[:upper:]')}\""
+}
+
+backhaul_state() {
+    # wired | cellular | none. Same order of preference as net-api uses, so the
+    # light and the console agree about which path is in play.
+    if tailscale --socket=/var/run/tailscale/tailscaled.sock status --json 2>/dev/null \
+       | grep -q '"BackendState": *"Running"'; then
+        echo wired; return
+    fi
+    if ip route show 2>/dev/null | grep -qE '^default.*(wwan|rmnet|ppp)'; then
+        echo cellular; return
+    fi
+    echo none
+}
+
+concentrator_state() {
+    # ok | partial | none
+    local status
+    status="$(uci -q get parkeze.concentrator.status)"
+    case "${status}" in
+        present) echo ok ;;
+        partial) echo partial ;;
+        *)       echo none ;;
+    esac
+}
+
+modem_state() {
+    # up | attaching | absent
+    [ -c /dev/cdc-wdm0 ] || { echo absent; return; }
+    if ip route show 2>/dev/null | grep -qE '^default.*(wwan|rmnet|ppp)'; then
+        echo up
+    else
+        echo attaching
+    fi
+}
+
+# ── uplink flashes ──────────────────────────────────────────────────────────
+# The forwarder does not offer a hook, so the count is read and differenced.
+# One flash per poll when anything arrived, rather than one per packet: a
+# gateway hearing forty uplinks in five seconds should look busy, not seizure-
+# inducing, and flashing forty times would take longer than the poll anyway.
+last_uplinks=0
+
+uplink_count() {
+    [ -f "${STATS}" ] && cat "${STATS}" 2>/dev/null || echo 0
+}
+
+# ── boot ────────────────────────────────────────────────────────────────────
+
+led power on
+led status blink 100 100      # fast blink while we work out what is going on
+
+trap 'led status off; led cloud off; exit 0' TERM INT
+
+while :; do
+    backhaul="$(backhaul_state)"
+    concentrator="$(concentrator_state)"
+    adopted="$(uci -q get parkeze.adoption.state)"
+
+    # ── cloud ───────────────────────────────────────────────────────────────
+    case "${backhaul}" in
+        wired)    led cloud on ;;
+        cellular) led cloud blink 1000 1000 ;;
+        none)     led cloud off ;;
+    esac
+
+    # ── cellular ────────────────────────────────────────────────────────────
+    case "$(modem_state)" in
+        up)        led cellular on ;;
+        attaching) led cellular blink 300 300 ;;
+        absent)    led cellular off ;;
+    esac
+
+    # ── status ──────────────────────────────────────────────────────────────
+    # Worst thing first. A gateway with no concentrator AND no backhaul should
+    # show the concentrator fault, because that is the one somebody standing in
+    # front of it can do something about.
+    if [ "${concentrator}" = none ]; then
+        led status blink 100 100
+    elif [ "${concentrator}" = partial ]; then
+        led status blink 500 500
+    elif [ "${adopted}" != adopted ]; then
+        led status blink 500 500
+    elif ! has_led cloud && [ "${backhaul}" = none ]; then
+        # No cloud LED on this board, so status carries the bad news.
+        led status blink 500 500
+    else
+        led status heartbeat
+    fi
+
+    # ── lora ────────────────────────────────────────────────────────────────
+    now="$(uplink_count)"
+    if [ "${now}" -gt "${last_uplinks}" ] 2>/dev/null; then
+        led lora flash
+        led lora2 flash
+    fi
+    last_uplinks="${now}"
+
+    sleep "${INTERVAL}"
+done

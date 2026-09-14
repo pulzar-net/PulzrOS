@@ -1,0 +1,14 @@
+{
+  "name": "SX1302 (UART)",
+  "chip": "sx1302",
+  "interface": "uart",
+  "forwarder": "sx1302_hal",
+  "antennas": 2,
+  "channels": 8,
+  "lbt": true,
+  "known_as": [
+    "WM1302 UART",
+    "RAK2287 UART"
+  ],
+  "comment": "Ships as a selectable option but is not auto-detectable \u2014 see sx130x_probe. Choosing it in the console is the only way it comes up."
+}

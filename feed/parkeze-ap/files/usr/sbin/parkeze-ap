@@ -1,0 +1,221 @@
+#!/bin/sh
+#
+# The setup access point.
+#
+#   parkeze-ap status              JSON
+#   parkeze-ap up [--window N]     raise it, for N seconds (0 = until told)
+#   parkeze-ap down                take it down
+#   parkeze-ap key                 print this unit's AP passphrase
+#   parkeze-ap ssid                print this unit's SSID
+#
+# ── WHAT THIS IS FOR ───────────────────────────────────────────────────────
+#
+# A gateway on a pole that has dropped off the network is otherwise a ladder
+# and a laptop. The AP is the way back in: associate, get a captive portal,
+# either give it WiFi credentials or hand it back to LAN configuration.
+#
+# ── THE SECURITY PROBLEM, AND HOW IT IS RESOLVED ───────────────────────────
+#
+# An access point on a device in a public car park is a radio anyone in range
+# can talk to. The naive version of this feature — an open AP with a captive
+# portal that can reconfigure the gateway — is a fleet-wide remote takeover
+# with no authentication at all.
+#
+# The rule here is: **the AP is only as open as the gateway has something to
+# lose.**
+#
+#   UNADOPTED   The device holds no credentials: no tailnet key, no MQTT
+#               password, no organisation. There is nothing to steal, and the
+#               only useful thing anybody can do is claim it — which needs a
+#               Parkeze login and is audited. So the AP is OPEN and the portal
+#               is the provisioning flow. This is the out-of-box experience and
+#               it costs nothing to give away.
+#
+#   ADOPTED     The device now holds real credentials. So:
+#                 * the AP is WPA2, with a passphrase derived from this unit's
+#                   own secret — different on every gateway, printed on the
+#                   MOTD and readable from the console by anyone already
+#                   authorised;
+#                 * and the portal STILL demands the offline recovery
+#                   signature before it will change anything.
+#
+#               Two independent factors, and neither is guessable from the
+#               street. See docs/access.md.
+#
+# ── WHY FORCING A GATEWAY OFFLINE GAINS NOTHING ────────────────────────────
+#
+# The obvious attack on a fallback like this is to cut or jam the uplink until
+# the gateway raises its AP. That works — and is useless, because an adopted
+# gateway's AP is WPA2 with a key the attacker does not have, and the portal
+# behind it wants a signature from parkeze.net. All the attacker achieves is a
+# log line that gets reported the moment the gateway is back.
+
+set -e
+
+. /etc/parkeze/board.conf
+
+STATE=/var/run/parkeze/ap
+log() { logger -t ap -p daemon.notice "$*"; }
+
+adopted() { [ "$(uci -q get parkeze.adoption.state)" = "adopted" ]; }
+enabled() { [ "$(uci -q get parkeze.ap.enabled)" != "0" ]; }
+
+radio() {
+    # The first wifi-device UCI knows about. Boards without WiFi have none, and
+    # every entry point here exits cleanly in that case rather than erroring —
+    # a RAK unit with no radio should not log a failure once a minute.
+    uci -q show wireless 2>/dev/null \
+        | sed -n "s/^wireless\.\([^.]*\)=wifi-device$/\1/p" | head -n1
+}
+
+# ── identity ────────────────────────────────────────────────────────────────
+
+ssid() {
+    local configured mac
+    configured="$(uci -q get parkeze.ap.ssid)"
+    [ -n "${configured}" ] && { echo "${configured}"; return; }
+
+    # parkeze_<last six of the MAC>. Per-unit, so a van full of gateways being
+    # staged does not present six identically-named networks, and stable across
+    # reflashes because it comes from hardware.
+    mac="$(cat /sys/class/net/eth0/address 2>/dev/null | tr -d ':' | tr 'A-Z' 'a-z')"
+    [ -n "${mac}" ] || mac="$(uci -q get parkeze.identity.serial | tail -c7)"
+    echo "parkeze_$(echo "${mac}" | tail -c7)"
+}
+
+key() {
+    # The WPA2 passphrase, on an adopted gateway.
+    #
+    # Derived from a per-unit secret generated at first boot, NOT from the
+    # serial or the MAC. Both of those are printed on the case and visible in
+    # beacon frames — deriving the key from them would mean anyone who can see
+    # the network can compute the way onto it, which is the same as having no
+    # key at all.
+    local secret_file=/etc/parkeze/ap/secret
+    [ -s "${secret_file}" ] || return 1
+
+    # 16 characters of unambiguous base32. Long enough that offline cracking a
+    # WPA2 handshake is not worth anyone's afternoon, short enough to read off
+    # a screen and type into a phone.
+    sha256sum "${secret_file}" | cut -c1-32 \
+        | tr '0123456789abcdef' 'ABCDEFGHJKMNPQRS' | cut -c1-16
+}
+
+ensure_secret() {
+    local dir=/etc/parkeze/ap
+    [ -s "${dir}/secret" ] && return 0
+    mkdir -p "${dir}"; chmod 0700 "${dir}"
+    head -c 32 /dev/urandom | hexdump -ve '1/1 "%02x"' > "${dir}/secret"
+    chmod 0600 "${dir}/secret"
+    log "generated AP secret"
+}
+
+# ── bringing it up ──────────────────────────────────────────────────────────
+
+up() {
+    local window="${1:-}"
+    local dev; dev="$(radio)"
+
+    [ -n "${dev}" ] || { log "no wifi radio on this board"; return 0; }
+    enabled || { log "AP is disabled in configuration; refusing to raise it"; return 1; }
+
+    ensure_secret
+    local net_ssid net_key encryption
+    net_ssid="$(ssid)"
+
+    if adopted; then
+        net_key="$(key)" || { log "no AP secret; refusing to raise an open AP on an adopted gateway"; return 1; }
+        encryption="psk2+ccmp"
+        log "raising ${net_ssid} (WPA2 — adopted gateway)"
+    else
+        # Nothing on this device is worth protecting yet, and an open network
+        # is what makes the out-of-box flow one tap. See the header.
+        net_key=""
+        encryption="none"
+        log "raising ${net_ssid} (open — gateway is not adopted)"
+    fi
+
+    uci -q batch <<EOF
+set wireless.${dev}.disabled='0'
+delete wireless.parkeze_ap
+set wireless.parkeze_ap=wifi-iface
+set wireless.parkeze_ap.device='${dev}'
+set wireless.parkeze_ap.mode='ap'
+set wireless.parkeze_ap.network='setup'
+set wireless.parkeze_ap.ssid='${net_ssid}'
+set wireless.parkeze_ap.encryption='${encryption}'
+$([ -n "${net_key}" ] && echo "set wireless.parkeze_ap.key='${net_key}'")
+set wireless.parkeze_ap.isolate='1'
+set wireless.parkeze_ap.disabled='0'
+EOF
+    # isolate=1 stops associated clients talking to each other. Two installers
+    # on the same AP have no business reaching each other's laptops, and on an
+    # open AP it also stops a bystander probing whoever else has connected.
+
+    uci commit wireless
+    wifi reload >/dev/null 2>&1 || wifi up >/dev/null 2>&1
+
+    mkdir -p "${STATE}"
+    date +%s > "${STATE}/raised"
+    [ -n "${window}" ] && echo "${window}" > "${STATE}/window"
+
+    /usr/sbin/parkeze-portal on
+    /usr/sbin/parkeze-led status blink 200 800 2>/dev/null || true
+    return 0
+}
+
+down() {
+    local dev; dev="$(radio)"
+    [ -n "${dev}" ] || return 0
+
+    uci -q delete wireless.parkeze_ap
+    uci commit wireless
+    wifi reload >/dev/null 2>&1
+
+    rm -f "${STATE}/raised" "${STATE}/window"
+    /usr/sbin/parkeze-portal off
+    log "AP down"
+    return 0
+}
+
+status() {
+    local dev raised window remaining clients
+    dev="$(radio)"
+
+    if [ -z "${dev}" ]; then
+        printf '{"capable":false,"reason":"This board has no WiFi radio."}\n'
+        return
+    fi
+
+    raised="$(cat "${STATE}/raised" 2>/dev/null || echo '')"
+    window="$(cat "${STATE}/window" 2>/dev/null || echo 0)"
+    remaining=0
+    if [ -n "${raised}" ] && [ "${window}" -gt 0 ]; then
+        remaining=$(( raised + window - $(date +%s) ))
+        [ "${remaining}" -lt 0 ] && remaining=0
+    fi
+
+    # Associated stations, so somebody watching the console can tell whether
+    # the person they are talking to on the phone has actually connected.
+    clients="$(iw dev "$(uci -q get wireless.parkeze_ap.ifname || echo wlan0)" \
+               station dump 2>/dev/null | grep -c '^Station' || echo 0)"
+
+    printf '{"capable":true,"enabled":%s,"up":%s,"ssid":"%s","secured":%s,"clients":%s,"remainingSeconds":%s,"fallback":%s,"fallbackAfter":%s}\n' \
+        "$(enabled && echo true || echo false)" \
+        "$([ -n "${raised}" ] && echo true || echo false)" \
+        "$(ssid)" \
+        "$(adopted && echo true || echo false)" \
+        "${clients:-0}" \
+        "${remaining}" \
+        "$([ "$(uci -q get parkeze.ap.fallback)" != "0" ] && echo true || echo false)" \
+        "$(uci -q get parkeze.ap.fallback_after || echo 900)"
+}
+
+case "${1:-status}" in
+    status) status ;;
+    up)     shift; [ "${1:-}" = "--window" ] && shift; up "${1:-}" ;;
+    down)   down ;;
+    key)    key || { echo "no AP secret yet" >&2; exit 1; } ;;
+    ssid)   ssid ;;
+    *) echo "usage: parkeze-ap {status|up|down|key|ssid}" >&2; exit 2 ;;
+esac

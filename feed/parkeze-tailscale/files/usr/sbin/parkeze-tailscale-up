@@ -1,0 +1,61 @@
+#!/bin/sh
+#
+# Authenticate this node to the Parkeze tailnet, if it has a key and is not
+# already up. Safe to run repeatedly; the init script calls it on every start.
+
+. /etc/parkeze/board.conf
+
+KEY_FILE=/etc/parkeze/tailscale/authkey
+SOCKET=/var/run/tailscale/tailscaled.sock
+TS="tailscale --socket=${SOCKET}"
+
+log() { logger -t tailscale -p daemon.info "$*"; }
+
+# Already authenticated? `tailscale status` exits non-zero when logged out.
+if ${TS} status >/dev/null 2>&1; then
+    log "already up"
+    exit 0
+fi
+
+if [ ! -s "${KEY_FILE}" ]; then
+    # Not an error. An un-adopted gateway has no key and should sit quietly
+    # until somebody claims it; see parkeze-adopt.
+    log "no auth key — gateway is not adopted yet"
+    exit 0
+fi
+
+HOSTNAME="$(uci -q get parkeze.identity.hostname || cat /proc/sys/kernel/hostname)"
+
+# --advertise-tags rather than a user-owned node: the key is issued by
+# parkeze.net's service account, and tagged nodes do not expire the way
+# user-owned ones do. A gateway on a pole that logs itself out after 180 days
+# is an unnecessary truck roll.
+#
+# --accept-routes=false so that a subnet route advertised by anything else on
+# the tailnet cannot start pulling this gateway's traffic.
+# --shields-up so nothing on the tailnet can open a connection *to* the
+# gateway except the nodes our ACL explicitly allows.
+# Output is captured rather than piped to logger, because a pipeline's exit
+# status is the *last* command's — piping into logger would make this always
+# look like it succeeded, and a gateway that failed to join would report that
+# it had.
+output="$(${TS} up \
+    --authkey="$(cat "${KEY_FILE}")" \
+    --hostname="${HOSTNAME}" \
+    --advertise-tags="tag:gateway" \
+    --accept-routes=false \
+    --accept-dns=false \
+    --shields-up \
+    --timeout=60s 2>&1)"
+status=$?
+[ -n "${output}" ] && echo "${output}" | logger -t tailscale
+if [ "${status}" = 0 ]; then
+    log "joined tailnet as ${HOSTNAME}"
+    # One-time keys are spent now. Leaving a spent key on disk is a small
+    # liability and a large source of confusion when re-adopting.
+    rm -f "${KEY_FILE}"
+else
+    log "tailscale up failed (${status}); will retry on next start"
+fi
+
+exit 0

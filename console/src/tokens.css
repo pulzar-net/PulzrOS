@@ -1,0 +1,108 @@
+/* ================================================================
+   ParkezeOS gateway console — design tokens
+
+   Lifted verbatim from parkeze.net/console/src/index.css, which in
+   turn copies my.parkeze.com. Three products, one set of values.
+   Do not drift: if a token changes there, change it here.
+
+   Everything below this block is the gateway console's own, and is
+   deliberately small — components use the tokens directly rather
+   than building a second design system on top of them.
+   ================================================================ */
+
+:root {
+  /* ---- surfaces ---- */
+  --bg-primary:     #ffffff;
+  --bg-secondary:   #f8fafc;
+  --bg-tertiary:    #f1f5f9;
+  --bg-elevated:    #ffffff;
+  --bg-modal:       #ffffff;
+
+  /* ---- text ---- */
+  --text-primary:   #0f172a;
+  --text-secondary: #475569;
+  --text-tertiary:  #94a3b8;
+  --text-inverse:   #ffffff;
+
+  /* ---- borders ---- */
+  --border-primary:   #e2e8f0;
+  --border-secondary: #cbd5e1;
+  --border-focus:     #10b981;
+
+  /* ---- cards ---- */
+  --card-bg:       #ffffff;
+  --card-border:   #e2e8f0;
+  --card-shadow:   0 1px 2px rgba(0,0,0,.04), 0 1px 3px rgba(0,0,0,.06);
+  --card-shadow-hover: 0 4px 12px -2px rgba(0,0,0,.08), 0 2px 4px rgba(0,0,0,.04);
+
+  /* ---- status ---- */
+  --status-success: #10b981;
+  --status-warning: #f59e0b;
+  --status-error:   #ef4444;
+  --status-info:    #3b82f6;
+
+  /* ---- accent ---- */
+  --accent:         #10b981;
+  --accent-hover:   #059669;
+  --accent-subtle:  rgba(16,185,129,.08);
+
+  /* ---- radius ---- */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+
+  /* ---- layout ---- */
+  --header-bar-height: 36px;
+  /* Every text box, dropdown and inline control on a form is this tall.
+     Named because a form whose fields disagree by two pixels reads as
+     broken, and they used to. */
+  --control-height: 34px;
+
+  /* ---- network signal scale ----
+     RSSI / SNR quality, weak → strong. Net-specific: the dashboard has no
+     equivalent, but these are derived from the shared status colours so a
+     coverage map still reads as Parkeze. */
+  --signal-none:   #cbd5e1;
+  --signal-weak:   #ef4444;
+  --signal-fair:   #f59e0b;
+  --signal-good:   #84cc16;
+  --signal-strong: #10b981;
+}
+
+html.dark {
+  --bg-primary:     #0c111d;
+  --bg-secondary:   #141a27;
+  --bg-tertiary:    #1c2333;
+  --bg-elevated:    #1a2235;
+  --bg-modal:       #141a27;
+
+  --text-primary:   #e8edf5;
+  --text-secondary: #8b99b0;
+  --text-tertiary:  #5b6a82;
+  --text-inverse:   #0c111d;
+
+  --border-primary:   #1e2a3a;
+  --border-secondary: #2a3a4e;
+  --border-focus:     #10b981;
+
+  --card-bg:       #141a27;
+  --card-border:   #1e2a3a;
+  --card-shadow:   0 1px 2px rgba(0,0,0,.2), 0 2px 6px rgba(0,0,0,.15);
+  --card-shadow-hover: 0 4px 16px rgba(0,0,0,.3), 0 2px 6px rgba(0,0,0,.2);
+
+  --status-success: #34d399;
+  --status-warning: #fbbf24;
+  --status-error:   #f87171;
+  --status-info:    #60a5fa;
+
+  --accent:         #34d399;
+  --accent-hover:   #10b981;
+  --accent-subtle:  rgba(52,211,153,.08);
+
+  --signal-none:   #2a3a4e;
+  --signal-weak:   #f87171;
+  --signal-fair:   #fbbf24;
+  --signal-good:   #a3e635;
+  --signal-strong: #34d399;
+}

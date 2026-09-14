@@ -1,141 +1,131 @@
-# ParkezeOS - Cellular-Optimized Raspberry Pi OS
+# ParkezeOS
 
-A custom Raspberry Pi OS build optimized for cellular backhaul deployments with Docker support and comprehensive network optimization.
+A Parkeze-branded OpenWrt distribution for LoRaWAN gateways, managed by
+[parkeze.net](../parkeze.net).
 
-## 🎯 Purpose
+Replaces the previous Raspberry Pi OS / pi-gen build entirely. Nothing of it is
+carried over.
 
-ParkezeOS is designed for IoT gateways and edge computing devices that rely on cellular connections for internet access. It minimizes data usage while providing a full Docker-enabled Linux environment.
+## What it is
 
-## 📶 Cellular Optimization Features
+- **OpenWrt 24.10**, assembled with ImageBuilder from a pinned release.
+- **No LuCI.** The Parkeze console replaces it: a React app served as static
+  files by uhttpd over a ucode API, sharing design tokens verbatim with
+  parkeze.net so the two are visibly one product.
+- **One-touch provisioning.** Power on, scan the QR, pick the site. The gateway
+  adopts itself; nobody types a credential into it.
+- **Multi-board from one tree.** A board is a page of deltas over a shared
+  config, not a fork. Pi 3/4/5 as kits, two RAK units as fixed hardware.
+- **Concentrator slots**, so an 8-channel Pi and a 16-channel RAK7289CV2 run
+  the same code. Auto-detection across SPI, USB and UART on kit boards, with
+  everything operator-correctable from the console.
+- **Full front panel** — LEDs and buttons mapped per board, driven from real
+  state, with a lamp test for bring-up.
+- **GNSS** over UART or USB, auto-detected, feeding real GPS time to the packet
+  forwarder — and honest about the difference between a live fix and the
+  position the gateway is announcing.
+- **Generated login banner** — the wordmark is rendered by figlet at print
+  time, not pasted into a file, and the facts under it are read live.
+- **Two management paths** — Tailscale over wired, 1NCE over cellular — with
+  Tailscale structurally prevented from ever touching the metered link.
+- **A way back in** — a setup AP and captive portal for a gateway that has
+  dropped off the network, open only while it has no credentials to lose, and
+  a LAN DHCP server that refuses to run on somebody else's network.
 
-### Network Traffic Minimization
-- **Automatic updates disabled** - No surprise data usage from package updates
-- **Optimized time sync** - Reduced NTP polling frequency
-- **Discovery services disabled** - No unnecessary network broadcasts
-- **Compressed logging** - Minimal log storage and transmission
-- **Telemetry disabled** - No data sent to third parties
-
-### Docker Configuration
-- **Limited concurrent operations** - Reduces peak bandwidth usage
-- **Optimized registry calls** - Minimizes Docker Hub requests
-- **Local logging only** - No remote log shipping
-- **Efficient image builds** - BuildKit enabled for smaller transfers
-
-## 🛠️ Built-in Cellular Tools
-
-### `cellular-monitor` Command
-Monitor and manage cellular data usage:
-
-```bash
-# Show current data usage
-cellular-monitor show
-
-# Log usage data (runs automatically every 15 minutes)
-cellular-monitor log
-
-# Apply low-bandwidth optimizations
-cellular-monitor optimize
-
-# Reset usage tracking
-cellular-monitor reset
-```
-
-### `network-optimize` Command
-Apply runtime network optimizations for cellular connections:
+## Quick start
 
 ```bash
-# Optimize TCP settings and disable unnecessary services
-sudo network-optimize
+./build.sh --list          # what is buildable
+./build.sh rpi4            # build one board
+./build.sh --all           # build everything
 ```
 
-### Usage Monitoring
-- **Automatic logging** every 15 minutes via systemd timer
-- **Threshold alerts** when usage exceeds configured limits
-- **Per-interface statistics** for all cellular connections
-- **Historical tracking** with log rotation
+`build.sh` builds the React console, packages the feed, and assembles images,
+in that order.
 
-## 🔧 System Configuration
+Images land in `out/<board>/`. First build downloads and checksum-verifies an
+ImageBuilder (~150MB, cached); after that a build is a few minutes.
 
-### Default Settings
-- **User**: `parkeze` / **Password**: `parkeze`
-- **Timezone**: America/New_York
-- **Locale**: en_US.UTF-8
-- **WiFi Country**: US
-- **SSH**: Enabled
-- **Serial Console**: Enabled (115200 baud on GPIO 14/15)
+**Image assembly requires Linux.** OpenWrt's ImageBuilder is a tree of prebuilt
+x86_64 ELF binaries with no macOS build, so `build.sh` refuses to run on a Mac
+and prints a `docker run` line that does the same job. The package feed
+(`scripts/build-feed.sh`) *does* build natively on macOS, which is enough to
+iterate on the console and the packages — verified, including executable bits
+and the opkg index.
 
-### Disabled Services
-- Automatic package updates (apt-daily)
-- Avahi daemon (network discovery)
-- ModemManager auto-probing
-- Snapd (if present)
-- Various telemetry services
+Requires `node` (20+), `curl` and `zstd`, plus GNU `tar` for byte-reproducible
+packages: `brew install node zstd gnu-tar`. Without gnu-tar the packages are
+still correct, just not byte-reproducible.
 
-### Docker Support
-- **Docker CE** installed via official script
-- **Rootless Docker** available for user `parkeze`
-- **Cellular-optimized** daemon configuration
-- **BuildKit** enabled for efficient builds
+To bake the fleet recovery anchor into the image — required for offline
+adoption — point `PARKEZE_RECOVERY_PUBKEY` at the public half of the key from
+`parkeze.net/tools/generate-recovery-key.sh`.
 
-## 📱 Cellular Connection Setup
+## Layout
 
-### Supported Interfaces
-The monitoring tools automatically detect cellular interfaces:
-- `wwan*` - WWAN modems
-- `ppp*` - PPP connections
-- `rmnet*` - Qualcomm modems
-
-### Data Usage Tracking
-Usage logs are stored in `/var/log/cellular-usage.log` with format:
 ```
-2025-09-11 15:30:00,RX:1048576,TX:2097152,Total:3MB
+boards/           one per board; common/ holds everything shared
+  common/board.conf        sourced by every board
+  common/raspberrypi.conf  the kit boards
+  common/rakwireless.conf  the fixed-hardware boards
+console/          the React console. Built to static files by build.sh and
+                  packaged into parkeze-console; no Node on the gateway.
+feed/             the Parkeze OpenWrt package feed
+  parkeze-base          identity, network defaults, branding
+  parkeze-console       the LuCI replacement: ucode API + the built SPA
+  parkeze-concentrator  slot detection, profiles, packet forwarders
+  parkeze-cellular      modem, data frugality, backhaul health
+  parkeze-tailscale     tailnet node, pinned to the wired uplink
+  parkeze-adopt         one-touch provisioning and adoption
+  parkeze-io            front-panel LEDs and buttons
+  parkeze-ap            setup AP, captive portal, LAN DHCP guard
+scripts/          build-feed.sh, check-ucode.sh, ucode stubs
+docs/             the design decisions worth writing down
 ```
 
-### Optimization Levels
-1. **Default** - Basic cellular optimizations applied
-2. **Low Bandwidth** - Additional restrictions via `cellular-monitor optimize`
-3. **Emergency** - Manual service disabling via `network-optimize`
+## Documentation
 
-## 🚀 Getting Started
+- [`docs/backhaul.md`](docs/backhaul.md) — the two uplinks, the two management
+  paths, and why Tailscale is structurally barred from cellular.
+- [`docs/auth.md`](docs/auth.md) — how you get into a gateway, including the
+  offline Ed25519 recovery flow and why a stored break-glass password would be
+  the wrong answer.
+- [`docs/access.md`](docs/access.md) — the setup AP, the captive portal, and
+  why forcing a gateway offline to raise its radio gains an attacker nothing.
+- [`docs/provisioning.md`](docs/provisioning.md) — one-touch provisioning end
+  to end, the two secrets it rests on, and what happens when a gateway has no
+  internet.
+- [`docs/concentrators.md`](docs/concentrators.md) — slots, why 16 channels is
+  two concentrators, and kit versus product boards.
+- [`docs/boards.md`](docs/boards.md) — adding a board, and adding a
+  concentrator.
 
-1. **Flash ParkezeOS** to SD card and boot Raspberry Pi
-2. **Connect via SSH** or serial console (user: `parkeze`, pass: `parkeze`)
-3. **Check cellular status**: `cellular-monitor show`
-4. **Optimize if needed**: `cellular-monitor optimize`
-5. **Deploy Docker applications** with confidence in data usage control
+## Development
 
-## 📊 Typical Data Savings
+The console has two halves. The React app typechecks and builds normally:
 
-Compared to standard Raspberry Pi OS:
-- **50-80% reduction** in background traffic
-- **No automatic updates** consuming unexpected data
-- **Minimal time sync** overhead (hourly vs. every few minutes)
-- **Controlled Docker operations** preventing bandwidth spikes
-- **Local logging only** - no remote telemetry
+```bash
+cd console && npm install && npm run typecheck && npm run build
+npm run dev            # against a gateway: PARKEZE_GATEWAY=https://<ip> npm run dev
+```
 
-## 🏗️ Build Information
+Its API is ucode, which does not exist on a Mac. Syntax-check that before
+flashing anything:
 
-Built using pi-gen with custom stages:
-- **Stage 0-2**: Standard Raspberry Pi OS base
-- **stage-custom/00-motd**: Custom boot message with system info
-- **stage-custom/01-system-config**: Timezone, locale, user setup, cellular optimization
-- **stage-custom/02-docker**: Docker installation with cellular-aware configuration
+```bash
+git clone --depth 1 https://github.com/jow-/ucode /tmp/ucode
+cmake -B /tmp/ucode/build -DFS_SUPPORT=ON /tmp/ucode && cmake --build /tmp/ucode/build
+UCODE=/tmp/ucode/build/ucode scripts/check-ucode.sh
+```
 
-## 📞 Support
+That resolves `fs`, `uci`, `ubus` and `digest` against the stubs in
+`scripts/ucode-stubs/`, so it catches importing a function that does not exist
+as well as plain syntax errors. Keep the stubs honest when you reach for a new
+one.
 
-This is a specialized build for cellular IoT deployments. For cellular-specific issues:
-1. Check data usage: `cellular-monitor show`
-2. Review optimization status: `systemctl status cellular-monitor.timer`
-3. Apply emergency optimization: `sudo network-optimize`
-4. Check cellular interfaces: `ip link show | grep -E "wwan|ppp|rmnet"`
+## Status
 
-## 🔒 Security Notes
-
-- **Default credentials** should be changed immediately
-- **SSH is enabled** - secure with key-based authentication
-- **Serial console enabled** - physical access provides root access
-- **Cellular optimizations** may affect some network-dependent services
-
----
-
-**ParkezeOS** - Optimized for the Edge, Designed for Cellular 📶
+Everything here is written but **none of it has been run on hardware**. The
+build pipeline, the ucode modules and the cryptography have been verified as
+far as they can be off-device — see the note at the end of the handover for
+exactly what was and was not checked.

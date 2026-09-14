@@ -1,0 +1,16 @@
+{
+  "name": "SX1302 (SPI)",
+  "chip": "sx1302",
+  "interface": "spi",
+  "forwarder": "sx1302_hal",
+  "antennas": 2,
+  "channels": 8,
+  "lbt": true,
+  "known_as": [
+    "RAK5146 SPI",
+    "RAK2287 SPI",
+    "WM1302 SPI",
+    "Seeed WM1302"
+  ],
+  "comment": "The common Pi HAT build, and what the RAK7268C has soldered down. A RAK7289CV2 has two of these, one per slot."
+}

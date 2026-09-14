@@ -1,0 +1,62 @@
+#!/bin/sh
+#
+# First-boot console setup: a TLS certificate, and an initial local password
+# that is unique to this unit.
+
+. /etc/parkeze/board.conf
+
+STATE=/etc/parkeze/console
+mkdir -p "${STATE}"
+chmod 0700 "${STATE}"
+
+# ── TLS ─────────────────────────────────────────────────────────────────────
+# Self-signed and generated on the device, so no two gateways share a key.
+# A browser will warn, which is correct and unavoidable for a device on a
+# private address — the alternative is shipping a real certificate and its
+# private key in a public firmware image, which is worse in every way.
+#
+# The parkeze.net proxy terminates its own TLS and does not rely on this being
+# trusted; this exists so that a laptop plugged directly into the LAN port is
+# not sending a password in the clear.
+if [ ! -f "${STATE}/cert.pem" ]; then
+    hostname="$(uci -q get parkeze.identity.hostname || echo parkeze)"
+    px5g selfsigned -der \
+        -days 3650 -newkey rsa:2048 \
+        -certout "${STATE}/cert.pem" -keyout "${STATE}/key.pem" \
+        -subj "/C=US/ST=NY/O=Parkeze/CN=${hostname}.local" 2>/dev/null \
+    || openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
+        -keyout "${STATE}/key.pem" -out "${STATE}/cert.pem" \
+        -subj "/C=US/ST=NY/O=Parkeze/CN=${hostname}.local" 2>/dev/null
+    chmod 0600 "${STATE}/key.pem"
+fi
+
+# ── Initial credential ──────────────────────────────────────────────────────
+# A per-unit random password, not a fleet-wide default.
+#
+# The previous ParkezeOS shipped parkeze/parkeze on every image, which means
+# one published README is root on the entire fleet. A random password printed
+# where the installer can find it costs one label and closes that entirely.
+#
+# It is written in the clear to a root-only file *as well as* being hashed,
+# because the installer has to be able to read it off the device on first
+# setup. The console deletes the cleartext copy the moment the password is
+# changed, and refuses to consider the gateway set up until that happens.
+if [ ! -f "${STATE}/password" ]; then
+    initial="$(tr -dc 'A-HJ-NP-Za-km-z2-9' < /dev/urandom | head -c 14)"
+    echo 'parkeze' > "${STATE}/username"
+    echo "${initial}" > "${STATE}/initial-password"
+    chmod 0600 "${STATE}/initial-password"
+
+    salt="$(tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 16)"
+    busybox mkpasswd -m sha512crypt -S "\$6\$rounds=100000\$${salt}" "${initial}" \
+        > "${STATE}/password"
+    chmod 0600 "${STATE}/password"
+    touch "${STATE}/password-is-initial"
+
+    # Not written into a banner file here: parkeze-motd reads
+    # initial-password directly and prints it on every login until it is
+    # changed, at which point it disappears on its own. Baking it into
+    # /etc/banner meant a gateway advertised a credential it no longer had.
+fi
+
+exit 0

@@ -1,0 +1,13 @@
+Package: parkeze-ap
+Version: @VERSION@-@BUILD@
+Depends: ucode, ucode-mod-uci, hostapd-basic-mbedtls, wpa-supplicant-mbedtls, iw, dnsmasq-full, jsonfilter
+Source: parkeze
+Section: net
+Priority: optional
+Maintainer: Joseph Telaak <joseph@parkeze.com>
+Architecture: all
+Description: Setup access point and captive portal.
+ Raises a self-titled access point so a gateway can be reconfigured when it has
+ dropped off the network, with a captive portal that joins a WiFi network or
+ hands the unit back to LAN configuration. Open only while the gateway has no
+ credentials to lose; WPA2 with a per-device key once it is adopted.

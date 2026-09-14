@@ -1,0 +1,36 @@
+# Parkeze gateway state. Written by uci-defaults on first boot and by the
+# console thereafter; this file is the shipped skeleton.
+#
+# What lives here versus /etc/parkeze/board.conf: board.conf is what the image
+# was *built* as and never changes on the device. This is what the gateway
+# has *become* — adoption, operator overrides, discovered hardware.
+
+config identity 'identity'
+	option serial ''
+	option gateway_eui ''
+	option hostname ''
+
+config adoption 'adoption'
+	# unadopted | adopting | adopted
+	option state 'unadopted'
+	option org ''
+	option since ''
+
+config console 'console'
+	# Local sign-in. Turned off automatically on adoption — see
+	# console/lib/auth.uc for why an adopted gateway must not accept a
+	# password that can be extracted from its flash.
+	option local_login '1'
+
+config concentrator 'concentrator'
+	option status 'unknown'
+	option detected ''
+	option override ''
+	option active ''
+
+config lorawan 'lorawan'
+	option region 'US915'
+
+config mqtt 'mqtt'
+	option host ''
+	option port '8883'

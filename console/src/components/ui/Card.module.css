@@ -1,0 +1,51 @@
+.card {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--card-shadow);
+  overflow: hidden;
+}
+
+/* Consecutive cards had nothing between them, so a page of three read as one
+   box with rules through it. Adjacent-sibling rather than a bottom margin: a
+   card inside a grid gets its spacing from the grid, and a trailing margin
+   under the last one is dead space at the foot of every page. */
+.card + .card {
+  margin-top: 14px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.title {
+  /* Inline-flex, not inline: these lead with an icon, and as inline content
+     the icon and its title wrap onto separate lines the moment the flex header
+     gives the heading its min-content width. */
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.note {
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+}
+
+.actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.body {
+  padding: 14px;
+}

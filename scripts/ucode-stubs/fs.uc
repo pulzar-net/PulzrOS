@@ -1,0 +1,27 @@
+// Stub of ucode's fs module. See README.md.
+export function open(path, mode) {}
+export function fdopen(fd, mode) {}
+export function opendir(path) {}
+export function popen(command, mode) {}
+export function readlink(path) {}
+export function stat(path) {}
+export function lstat(path) {}
+export function mkdir(path, mode) {}
+export function rmdir(path) {}
+export function symlink(dest, path) {}
+export function unlink(path) {}
+export function getcwd() {}
+export function chdir(path) {}
+export function chmod(path, mode) {}
+export function chown(path, uid, gid) {}
+export function rename(oldpath, newpath) {}
+export function glob(pattern) {}
+export function dirname(path) {}
+export function basename(path) {}
+export function lsdir(path, pattern) {}
+export function mkstemp(template) {}
+export function access(path, mode) {}
+export function readfile(path, limit) {}
+export function writefile(path, data, limit) {}
+export function realpath(path) {}
+export function pipe() {}

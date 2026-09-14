@@ -1,0 +1,57 @@
+#!/bin/sh
+#
+# Is parkeze.net reachable, and by which path?
+#
+#   parkeze-backhaul-check          exit 0 if manageable, 1 if not
+#   parkeze-backhaul-check --json   report both paths
+#
+# BUDGET
+#
+# This runs periodically and one of the two paths it tests is billed by the
+# megabyte. So the cellular test is a single DNS-less TCP handshake to a known
+# address and nothing more — no HTTP request, no TLS, no payload. A handshake
+# is about 200 bytes round trip; an HTTPS GET to a health endpoint is closer to
+# 6KB once you count the certificate chain, which is thirty times the cost for
+# an answer that is no better.
+#
+# The wired path is free, so it gets the fuller check.
+
+. /etc/parkeze/board.conf
+
+JSON=0
+[ "$1" = "--json" ] && JSON=1
+
+CHECK_HOST="${PARKEZE_HEALTH_HOST:-parkeze.net}"
+CHECK_PORT="${PARKEZE_HEALTH_PORT:-443}"
+
+# ── wired ───────────────────────────────────────────────────────────────────
+# Tailscale's own view is the honest answer for this path: it is the thing we
+# actually manage over, so "can tailscaled reach its coordination server" is
+# the question, not "does the internet exist".
+wired_up=false
+ts_state="$(tailscale --socket=/var/run/tailscale/tailscaled.sock status --json 2>/dev/null \
+            | jsonfilter -e '@.BackendState' 2>/dev/null)"
+[ "${ts_state}" = "Running" ] && wired_up=true
+
+# ── cellular ────────────────────────────────────────────────────────────────
+# Only tested if the wired path is down. When Tailscale is up we already know
+# we are manageable, and spending cellular bytes to confirm a second path we
+# are not using is precisely the waste this whole design avoids.
+cell_up=false
+if [ "${wired_up}" != "true" ]; then
+    if ip link show "$(uci -q get network.wwan.device >/dev/null; echo wwan0)" >/dev/null 2>&1 \
+       || ip route show table main | grep -q wwan; then
+        # -w gives up rather than holding the link open on a dead network.
+        if nc -w 5 -z "${CHECK_HOST}" "${CHECK_PORT}" >/dev/null 2>&1; then
+            cell_up=true
+        fi
+    fi
+fi
+
+if [ "${JSON}" = 1 ]; then
+    printf '{"wired":%s,"cellular":%s,"tailscaleState":"%s","manageable":%s}\n' \
+        "${wired_up}" "${cell_up}" "${ts_state:-Unknown}" \
+        "$([ "${wired_up}" = true ] || [ "${cell_up}" = true ] && echo true || echo false)"
+fi
+
+[ "${wired_up}" = true ] || [ "${cell_up}" = true ]

@@ -1,0 +1,25 @@
+.bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 20px;
+  background: color-mix(in srgb, var(--status-warning) 14%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--status-warning) 34%, transparent);
+  font-size: 12.5px;
+  color: var(--text-primary);
+}
+
+.text { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.detail { color: var(--text-secondary); }
+.clock {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+
+@media (max-width: 760px) {
+  .detail { display: none; }
+  .bar { padding: 7px 14px; }
+}

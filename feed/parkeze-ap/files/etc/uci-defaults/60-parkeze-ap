@@ -1,0 +1,93 @@
+#!/bin/sh
+#
+# The setup network, the AP defaults, and the LAN DHCP policy.
+
+. /etc/parkeze/board.conf
+
+# ── the setup network ───────────────────────────────────────────────────────
+# Its own interface and its own firewall zone, deliberately separate from the
+# LAN. A client on the setup AP can reach this gateway's console and nothing
+# else — not the LAN, not the WAN, not the tailnet. See parkeze-portal.
+uci -q batch <<EOF
+delete network.setup
+set network.setup=interface
+set network.setup.proto='static'
+set network.setup.ipaddr='${PARKEZE_SETUP_IPADDR:-192.168.62.1}'
+set network.setup.netmask='255.255.255.0'
+set network.setup.device='br-setup'
+
+delete network.device_setup
+set network.device_setup=device
+set network.device_setup.name='br-setup'
+set network.device_setup.type='bridge'
+
+delete dhcp.setup
+set dhcp.setup=dhcp
+set dhcp.setup.interface='setup'
+set dhcp.setup.start='100'
+set dhcp.setup.limit='50'
+set dhcp.setup.leasetime='1h'
+EOF
+
+# The setup zone: input to the router only, no forwarding anywhere.
+#
+# `forward REJECT` and no zone-to-zone rule is what stops the open AP on an
+# unadopted gateway becoming a free anonymous internet connection attached to
+# somebody's site.
+uci -q batch <<EOF
+delete firewall.setup_zone
+set firewall.setup_zone=zone
+set firewall.setup_zone.name='setup'
+set firewall.setup_zone.network='setup'
+set firewall.setup_zone.input='REJECT'
+set firewall.setup_zone.output='ACCEPT'
+set firewall.setup_zone.forward='REJECT'
+
+delete firewall.setup_dns
+set firewall.setup_dns=rule
+set firewall.setup_dns.name='Setup DNS'
+set firewall.setup_dns.src='setup'
+set firewall.setup_dns.dest_port='53'
+set firewall.setup_dns.target='ACCEPT'
+
+delete firewall.setup_dhcp
+set firewall.setup_dhcp=rule
+set firewall.setup_dhcp.name='Setup DHCP'
+set firewall.setup_dhcp.src='setup'
+set firewall.setup_dhcp.dest_port='67'
+set firewall.setup_dhcp.proto='udp'
+set firewall.setup_dhcp.target='ACCEPT'
+
+delete firewall.setup_console
+set firewall.setup_console=rule
+set firewall.setup_console.name='Setup console'
+set firewall.setup_console.src='setup'
+set firewall.setup_console.dest_port='80 443'
+set firewall.setup_console.proto='tcp'
+set firewall.setup_console.target='ACCEPT'
+EOF
+
+# ── AP policy ───────────────────────────────────────────────────────────────
+uci -q batch <<EOF
+set parkeze.ap=ap
+set parkeze.ap.enabled='${PARKEZE_AP_ENABLED:-1}'
+set parkeze.ap.onboarding='1'
+set parkeze.ap.fallback='${PARKEZE_AP_FALLBACK:-1}'
+set parkeze.ap.fallback_after='${PARKEZE_AP_FALLBACK_AFTER:-900}'
+set parkeze.ap.window='${PARKEZE_AP_WINDOW:-1800}'
+
+set parkeze.lan=lan
+set parkeze.lan.dhcp_mode='${PARKEZE_LAN_DHCP_MODE:-auto}'
+EOF
+
+# Fails closed until the guard has actually probed. A gateway that serves DHCP
+# for the first nine seconds after every boot would do so onto whatever it is
+# plugged into, which is the one thing this must never do.
+uci -q set dhcp.lan.ignore='1'
+
+uci commit network
+uci commit firewall
+uci commit dhcp
+uci commit parkeze
+
+exit 0

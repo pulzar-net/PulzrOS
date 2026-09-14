@@ -1,0 +1,145 @@
+#!/bin/sh
+#
+# GNSS position and fix state.
+#
+#   parkeze-gps status    JSON: fix, satellites, position, source
+#   parkeze-gps read      one-shot read straight from the receiver
+#   parkeze-gps sync      write the current position into UCI as the
+#                         gateway's reference coordinates
+#
+# ── WHO OWNS THE SERIAL PORT ───────────────────────────────────────────────
+#
+# The packet forwarder opens the GNSS tty itself when it is configured with
+# `gps_tty_path`, and it does not share. That is the right arrangement — the
+# forwarder needs GPS *time* and PPS for fine timestamping, not just a
+# position, and only the process holding the port can have those.
+#
+# It does mean this cannot read the receiver while the forwarder is running.
+# So position comes from two places depending on who has the port:
+#
+#   forwarder running   the cached position, which parkeze-forwarder-stats
+#                       scrapes from the forwarder's own periodic log line.
+#   forwarder stopped   a direct read.
+#
+# A cached position going stale is not a problem worth solving: gateways do not
+# move, and one that has moved has bigger problems than a stale coordinate.
+
+. /etc/parkeze/board.conf
+
+CACHE=/var/run/parkeze/gps.json
+
+device() { uci -q get parkeze.gps.device; }
+baud()   { uci -q get parkeze.gps.baud || echo 9600; }
+
+forwarder_running() {
+    /etc/init.d/parkeze-packet-forwarder running >/dev/null 2>&1
+}
+
+# Parse a burst of NMEA into the fields we care about.
+#
+# GGA carries fix quality, satellite count and altitude; RMC carries the
+# position in the same degrees-minutes form and a validity flag. Reading GGA
+# alone is the common shortcut and it is wrong on receivers that report a
+# position before the fix is usable.
+parse_nmea() {
+    awk -F, '
+        /^\$G[PNLABQ]GGA/ {
+            if ($7 != "" && $7 != "0") { fix=$7; sats=$8+0; alt=$10+0;
+                                          lat=$3; lat_h=$4; lon=$5; lon_h=$6 }
+        }
+        /^\$G[PNLABQ]RMC/ { if ($3 == "A") valid=1 }
+        END {
+            if (fix == "" || !valid) { print "0 0 0 0 0"; exit }
+            # ddmm.mmmm -> decimal degrees.
+            ld = int(lat / 100); lm = lat - (ld * 100); dlat = ld + lm / 60
+            od = int(lon / 100); om = lon - (od * 100); dlon = od + om / 60
+            if (lat_h == "S") dlat = -dlat
+            if (lon_h == "W") dlon = -dlon
+            printf "%s %d %.6f %.6f %.1f\n", fix, sats, dlat, dlon, alt
+        }'
+}
+
+read_receiver() {
+    local port; port="$(device)"
+    [ -c "${port}" ] || return 1
+    forwarder_running && return 1
+
+    stty -F "${port}" "$(baud)" raw -echo 2>/dev/null || return 1
+    # Long enough to catch a GGA and an RMC even at 1Hz with a slow start.
+    timeout 4 head -c 2048 "${port}" 2>/dev/null | parse_nmea
+}
+
+emit() {
+    local fix="$1" sats="$2" lat="$3" lon="$4" alt="$5" source="$6"
+    local status; status="$(uci -q get parkeze.gps.status || echo absent)"
+
+    if [ "${status}" != "present" ]; then
+        printf '{"present":false,"fix":false,"reason":"No GNSS receiver detected."}\n'
+        return
+    fi
+    if [ "${fix:-0}" = "0" ]; then
+        printf '{"present":true,"fix":false,"device":"%s","source":"%s","reason":"Receiver is present but has no fix. Check the antenna has sky view."}\n' \
+            "$(device)" "${source}"
+        return
+    fi
+    printf '{"present":true,"fix":true,"quality":%s,"satellites":%s,"latitude":%s,"longitude":%s,"altitude":%s,"device":"%s","source":"%s"}\n' \
+        "${fix}" "${sats}" "${lat}" "${lon}" "${alt}" "$(device)" "${source}"
+}
+
+case "${1:-status}" in
+status)
+    if forwarder_running; then
+        # The forwarder has the port. Use whatever it last reported.
+        if [ -s "${CACHE}" ]; then
+            cat "${CACHE}"
+        else
+            printf '{"present":true,"fix":false,"device":"%s","source":"forwarder","reason":"The packet forwarder holds the receiver and has not reported a position yet."}\n' \
+                "$(device)"
+        fi
+    else
+        set -- $(read_receiver 2>/dev/null || echo "0 0 0 0 0")
+        emit "$1" "$2" "$3" "$4" "$5" direct
+    fi
+    ;;
+
+read)
+    forwarder_running && {
+        echo "The packet forwarder holds $(device). Stop it first, or use 'status'." >&2
+        exit 1
+    }
+    set -- $(read_receiver 2>/dev/null || echo "0 0 0 0 0")
+    emit "$1" "$2" "$3" "$4" "$5" direct
+    ;;
+
+sync)
+    # Freeze the current position as the gateway's reference coordinates.
+    #
+    # Used for the fake_gps path: a gateway with no GNSS still needs to report
+    # a location to the network server, and one that *has* GNSS can have its
+    # position captured once at install and then reported without depending on
+    # a fix every boot.
+    result="$(parkeze-gps status)"
+    lat="$(echo "${result}" | jsonfilter -e '@.latitude' 2>/dev/null)"
+    lon="$(echo "${result}" | jsonfilter -e '@.longitude' 2>/dev/null)"
+    alt="$(echo "${result}" | jsonfilter -e '@.altitude' 2>/dev/null)"
+
+    [ -n "${lat}" ] && [ -n "${lon}" ] || {
+        echo "No fix — nothing to record." >&2; exit 1; }
+
+    uci -q batch <<EOF
+set parkeze.location=location
+set parkeze.location.latitude='${lat}'
+set parkeze.location.longitude='${lon}'
+set parkeze.location.altitude='${alt:-0}'
+set parkeze.location.source='gnss'
+set parkeze.location.fixed_at='$(date -u +%Y-%m-%dT%H:%M:%SZ)'
+EOF
+    uci commit parkeze
+    echo "Recorded ${lat}, ${lon} (${alt:-0} m)."
+    ;;
+
+*)
+    echo "usage: parkeze-gps {status|read|sync}" >&2
+    exit 2
+    ;;
+esac

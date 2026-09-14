@@ -1,0 +1,54 @@
+#!/bin/sh
+#
+# Pulse the SX130x reset line, and raise the power-enable line if the board has
+# one. Returns 0 if the lines were driven, 1 if the board does not describe
+# them or the GPIO could not be claimed.
+#
+# This is separate from the probe because it is needed in three places — the
+# probe, the packet forwarder's startup, and an operator hitting "reset
+# concentrator" in the console — and a concentrator that is not reset before
+# first SPI access reads back as absent. Nearly every "my HAT is not detected"
+# report is this line not being pulsed, or being pulsed on the wrong GPIO.
+
+. /etc/parkeze/board.conf
+
+RESET_GPIO="${PARKEZE_SX130X_RESET_GPIO}"
+POWER_GPIO="${PARKEZE_SX130X_POWER_EN_GPIO}"
+
+[ -n "${RESET_GPIO}" ] || exit 1
+
+# OpenWrt 24.10 has the character-device GPIO interface (gpioset from
+# libgpiod). The old /sys/class/gpio sysfs interface is deprecated upstream and
+# gone on some targets, so prefer gpioset and fall back only if it is missing.
+drive() {
+  local line="$1" value="$2"
+  if command -v gpioset >/dev/null 2>&1; then
+    # gpiochip0 is the SoC's own controller on every board we ship. A board
+    # with the concentrator on a secondary controller needs a chip setting in
+    # board.conf; none does today.
+    gpioset "${PARKEZE_GPIOCHIP:-gpiochip0}" "${line}=${value}" 2>/dev/null
+    return $?
+  fi
+
+  # sysfs fallback.
+  [ -d "/sys/class/gpio/gpio${line}" ] || echo "${line}" > /sys/class/gpio/export 2>/dev/null
+  [ -d "/sys/class/gpio/gpio${line}" ] || return 1
+  echo out > "/sys/class/gpio/gpio${line}/direction" 2>/dev/null
+  echo "${value}" > "/sys/class/gpio/gpio${line}/value" 2>/dev/null
+}
+
+# Power first, if the board gates it. A reset pulse into an unpowered part does
+# nothing and the probe that follows reads zeros.
+if [ -n "${POWER_GPIO}" ]; then
+  drive "${POWER_GPIO}" 1 || exit 1
+  # The SX1302 datasheet asks for a stable supply before reset is released.
+  # 100ms is far more than it needs and costs nothing at boot.
+  usleep 100000 2>/dev/null || sleep 1
+fi
+
+drive "${RESET_GPIO}" 1 || exit 1
+usleep 100000 2>/dev/null || sleep 1
+drive "${RESET_GPIO}" 0 || exit 1
+usleep 100000 2>/dev/null || sleep 1
+
+exit 0

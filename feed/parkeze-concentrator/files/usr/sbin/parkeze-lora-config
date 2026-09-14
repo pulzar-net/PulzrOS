@@ -1,0 +1,166 @@
+#!/bin/sh
+#
+# Render the packet forwarder configuration for one slot.
+#
+#   parkeze-lora-config <slot-index> <output-dir> <upstream-port>
+#
+# Writes global_conf.json and local_conf.json into <output-dir>. Three inputs
+# are combined, and keeping them separate is the whole reason a Pi with a
+# WM1302 in the US and a RAK7289CV2 in the EU share this file:
+#
+#   the part      /usr/share/parkeze/concentrator/<model>.json — chip, radio
+#                 count, whether it does listen-before-talk.
+#   the region    /usr/share/parkeze/region/<REGION>.json — channel plan.
+#   the board     /etc/parkeze/board.conf and UCI — which SPI node, which
+#                 reset line, this gateway's EUI.
+#
+# The output is written under /var/run, not /etc: it is derived, and a copy on
+# flash would be one more thing that can disagree with the configuration it was
+# derived from.
+
+set -e
+
+SLOT="${1:?slot index}"
+OUT="${2:?output dir}"
+PORT="${3:-1700}"
+
+. /etc/parkeze/board.conf
+
+PROFILE_DIR=/usr/share/parkeze/concentrator
+REGION_DIR=/usr/share/parkeze/region
+
+# Which tty a USB concentrator came up as. Not hardcoded to ttyUSB0: on a
+# gateway that also has a cellular modem, the modem frequently claims the lower
+# numbers, and a forwarder pointed at the modem fails in a way that reads like
+# a dead concentrator.
+usb_concentrator_path() {
+    for tty in /dev/ttyUSB* /dev/ttyACM*; do
+        [ -c "${tty}" ] || continue
+        # Walk to the USB device this tty belongs to and check the vendor.
+        local sys vid
+        sys="$(readlink -f "/sys/class/tty/$(basename "${tty}")/device" 2>/dev/null)"
+        while [ -n "${sys}" ] && [ "${sys}" != "/" ]; do
+            if [ -f "${sys}/idVendor" ]; then
+                vid="$(cat "${sys}/idVendor")"
+                case "${vid}" in
+                    10c4|0403) echo "${tty}"; return 0 ;;
+                esac
+                break
+            fi
+            sys="$(dirname "${sys}")"
+        done
+    done
+    # Nothing identifiable. Say so rather than guessing ttyUSB0.
+    echo ""
+    return 1
+}
+
+section="slot${SLOT}"
+active="$(uci -q get "parkeze.${section}.active")"
+bus="$(uci -q get "parkeze.${section}.bus")"
+device="$(uci -q get "parkeze.${section}.device")"
+region="$(uci -q get parkeze.lorawan.region || echo US915)"
+eui="$(uci -q get parkeze.identity.gateway_eui)"
+
+[ -n "${active}" ] || { echo "slot ${SLOT} has no active concentrator" >&2; exit 1; }
+
+profile="${PROFILE_DIR}/${active}.json"
+plan="${REGION_DIR}/${region}.json"
+
+[ -f "${profile}" ] || { echo "no profile ${profile}" >&2; exit 1; }
+[ -f "${plan}" ]    || { echo "no region plan ${plan}" >&2; exit 1; }
+
+mkdir -p "${OUT}"
+
+# ── global_conf.json ────────────────────────────────────────────────────────
+#
+# The region plan is the bulk of it and is copied through as-is. Only the
+# handful of fields that depend on *this* board get substituted, which keeps
+# the plans readable and diffable against Semtech's published ones.
+
+lbt_supported="$(jsonfilter -i "${profile}" -e '@.lbt')"
+lbt_required="$(jsonfilter -i "${plan}" -e '@.lbt_required')"
+
+# A region that mandates listen-before-talk on a part that cannot do it is a
+# configuration error, not something to paper over — transmitting without LBT
+# where it is required is a regulatory problem, not a performance one.
+if [ "${lbt_required}" = "true" ] && [ "${lbt_supported}" != "true" ]; then
+    echo "region ${region} requires listen-before-talk but ${active} does not support it" >&2
+    exit 1
+fi
+
+case "${bus}" in
+    spi)  com_type="SPI";  com_path="${device}" ;;
+    usb)  com_type="USB";  com_path="$(usb_concentrator_path)" ;;
+    uart) com_type="USB";  com_path="${device}" ;;   # the HAL calls UART "USB"
+    *)    echo "slot ${SLOT} has unknown bus '${bus}'" >&2; exit 1 ;;
+esac
+
+# jsonfilter reads; there is no jsonfilter equivalent for writing, and pulling
+# in a JSON library for five substitutions is not worth the flash. sed against
+# known keys is adequate because the input is our own file, not user data.
+sed -e "s|\"com_type\":[^,]*|\"com_type\": \"${com_type}\"|" \
+    -e "s|\"com_path\":[^,]*|\"com_path\": \"${com_path}\"|" \
+    -e "s|\"gateway_ID\":[^,]*|\"gateway_ID\": \"${eui}\"|" \
+    "${plan}" > "${OUT}/global_conf.json"
+
+# ── local_conf.json ─────────────────────────────────────────────────────────
+#
+# Where this forwarder sends. With one concentrator that is the bridge; with
+# several it is the multiplexer, which is why the port is an argument rather
+# than a constant.
+#
+# The EUI is the *gateway's*, identical across slots on a 16-channel unit. That
+# is deliberate: the two concentrators are one gateway, and it is the
+# multiplexer's job to make them look like one upstream. Giving each slot its
+# own EUI would produce two half-gateways in ChirpStack.
+
+# ── GNSS ────────────────────────────────────────────────────────────────────
+#
+# Only slot 0 is given the receiver. On a two-concentrator gateway both
+# forwarders would otherwise open the same tty, and the second one loses — with
+# the failure showing up as intermittently missing GPS rather than as an error.
+# One physical gateway has one position, so one forwarder holds the GNSS.
+#
+# `gps_tty_path` gives the forwarder real GPS time and PPS, which is what fine
+# timestamping needs. Without a receiver we fall back to `fake_gps` and the
+# reference coordinates recorded at install — a gateway still has to tell the
+# network server where it is.
+gps_device="$(uci -q get parkeze.gps.device)"
+gps_status="$(uci -q get parkeze.gps.status)"
+
+if [ "${SLOT}" = "0" ] && [ "${gps_status}" = "present" ] && [ -c "${gps_device}" ]; then
+    gps_block="\"gps_tty_path\": \"${gps_device}\","
+    fake_gps="false"
+else
+    gps_block=""
+    fake_gps="true"
+fi
+
+ref_lat="$(uci -q get parkeze.location.latitude || echo 0)"
+ref_lon="$(uci -q get parkeze.location.longitude || echo 0)"
+ref_alt="$(uci -q get parkeze.location.altitude || echo 0)"
+
+cat > "${OUT}/local_conf.json" <<EOF
+{
+  "gateway_conf": {
+    "gateway_ID": "${eui}",
+    "server_address": "127.0.0.1",
+    "serv_port_up": ${PORT},
+    "serv_port_down": ${PORT},
+    "keepalive_interval": 10,
+    "stat_interval": 30,
+    "push_timeout_ms": 100,
+    "forward_crc_valid": true,
+    "forward_crc_error": false,
+    "forward_crc_disabled": false,
+    ${gps_block}
+    "fake_gps": ${fake_gps},
+    "ref_latitude": ${ref_lat},
+    "ref_longitude": ${ref_lon},
+    "ref_altitude": ${ref_alt}
+  }
+}
+EOF
+
+exit 0

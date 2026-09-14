@@ -1,0 +1,58 @@
+{
+  "parkeze_region": "US915",
+  "lbt_required": false,
+  "SX130x_conf": {
+    "com_type": "SPI",
+    "com_path": "/dev/spidev0.0",
+    "lorawan_public": true,
+    "clksrc": 0,
+    "antenna_gain": 0,
+    "full_duplex": false,
+    "radio_0": {
+      "enable": true,
+      "type": "SX1250",
+      "freq": 904300000,
+      "rssi_offset": -215.4,
+      "rssi_tcomp": {"coeff_a": 0, "coeff_b": 0, "coeff_c": 20.41, "coeff_d": 2162.56, "coeff_e": 0},
+      "tx_enable": true,
+      "tx_freq_min": 923000000,
+      "tx_freq_max": 928000000,
+      "tx_gain_lut": [
+        {"rf_power": 12, "pa_gain": 1, "pwr_idx": 6},
+        {"rf_power": 16, "pa_gain": 1, "pwr_idx": 10},
+        {"rf_power": 20, "pa_gain": 1, "pwr_idx": 14},
+        {"rf_power": 24, "pa_gain": 1, "pwr_idx": 19},
+        {"rf_power": 27, "pa_gain": 1, "pwr_idx": 23}
+      ]
+    },
+    "radio_1": {
+      "enable": true,
+      "type": "SX1250",
+      "freq": 905000000,
+      "rssi_offset": -215.4,
+      "rssi_tcomp": {"coeff_a": 0, "coeff_b": 0, "coeff_c": 20.41, "coeff_d": 2162.56, "coeff_e": 0},
+      "tx_enable": false
+    },
+    "chan_multiSF_0": {"enable": true, "radio": 0, "if": -400000},
+    "chan_multiSF_1": {"enable": true, "radio": 0, "if": -200000},
+    "chan_multiSF_2": {"enable": true, "radio": 0, "if": 0},
+    "chan_multiSF_3": {"enable": true, "radio": 0, "if": 200000},
+    "chan_multiSF_4": {"enable": true, "radio": 1, "if": -300000},
+    "chan_multiSF_5": {"enable": true, "radio": 1, "if": -100000},
+    "chan_multiSF_6": {"enable": true, "radio": 1, "if": 100000},
+    "chan_multiSF_7": {"enable": true, "radio": 1, "if": 300000},
+    "chan_Lora_std": {
+      "enable": true, "radio": 0, "if": 300000,
+      "bandwidth": 500000, "spread_factor": 8,
+      "implicit_hdr": false, "implicit_payload_length": 17,
+      "implicit_crc_en": false, "implicit_coderate": 1
+    },
+    "chan_FSK": {"enable": false}
+  },
+  "gateway_conf": {
+    "gateway_ID": "0000000000000000",
+    "server_address": "127.0.0.1",
+    "serv_port_up": 1700,
+    "serv_port_down": 1700
+  }
+}

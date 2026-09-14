@@ -1,0 +1,115 @@
+#!/bin/sh
+#
+# Confine tailscaled's traffic to the wired WAN.
+#
+#   parkeze-tailscale-route apply     install the mark, rule and table
+#   parkeze-tailscale-route flush     remove them
+#   parkeze-tailscale-route status    report whether the wired path is usable
+#
+# WHY THIS EXISTS
+#
+# Cellular data is billed by the megabyte and the SIM is the *control* path of
+# last resort. Tailscale, left alone, is exactly the kind of software that
+# would quietly keep a tunnel alive over whatever route it can find — DERP
+# relays, keepalives every few seconds, and a coordination-server poll that
+# never stops. On a metered SIM that is a bill, not a backhaul.
+#
+# So the wired path is not merely *preferred* for Tailscale, it is the only one
+# permitted. When ethernet is down, tailscaled's packets have nowhere to go and
+# the node drops off the tailnet. That is the intended behaviour, not a
+# degradation: parkeze.net notices the node went offline and manages the
+# gateway over the cellular/1NCE path instead, which is the path that is
+# designed to be cheap and small.
+#
+# HOW
+#
+# tailscaled runs as its own unprivileged user. Packets it originates are
+# marked by their uid, a routing rule sends marked packets to a table of our
+# own, and that table contains a default route via the wired WAN and nothing
+# else. No wired route, no table entry, no egress.
+#
+# Marking on uid rather than on the tailscale0 interface is deliberate: the
+# traffic we are trying to confine is the *encrypted outer* traffic tailscaled
+# sends to peers and DERP, which does not traverse tailscale0 at all. A rule
+# written against tailscale0 confines the wrong direction and looks correct
+# right up until the SIM bill arrives.
+
+set -e
+
+. /lib/functions/network.sh
+. /etc/parkeze/board.conf
+
+TS_USER="${PARKEZE_TAILSCALE_USER:-tailscale}"
+TABLE_ID="${PARKEZE_TAILSCALE_TABLE:-97}"
+MARK="${PARKEZE_TAILSCALE_MARK:-0x9700}"
+MASK="0xff00"
+WIRED_IFACE="${PARKEZE_WAN_ETH_IFACE:-wan}"
+
+log() { logger -t tailscale-route -p daemon.info "$*"; }
+
+wired_gateway() {
+  # The L3 device and gateway of the wired WAN, as netifd currently sees them.
+  # Read live rather than from UCI: a DHCP lease that has not come up yet has a
+  # configured interface and no gateway, and installing a default route to a
+  # gateway that does not answer is worse than having no route.
+  local gw dev
+  network_get_gateway gw "${WIRED_IFACE}" || return 1
+  network_get_physdev dev "${WIRED_IFACE}" || return 1
+  [ -n "${gw}" ] && [ -n "${dev}" ] || return 1
+  echo "${gw} ${dev}"
+}
+
+apply() {
+  local spec gw dev
+  if ! spec="$(wired_gateway)"; then
+    log "wired WAN has no gateway — leaving the table empty so tailnet traffic is dropped rather than escaping to cellular"
+    ip route flush table "${TABLE_ID}" 2>/dev/null || true
+    install_rule
+    return 0
+  fi
+  gw="${spec% *}"; dev="${spec#* }"
+
+  ip route flush table "${TABLE_ID}" 2>/dev/null || true
+  ip route add default via "${gw}" dev "${dev}" table "${TABLE_ID}"
+  log "tailnet egress pinned to ${dev} via ${gw}"
+
+  install_rule
+}
+
+install_rule() {
+  # Idempotent: this runs on every ifup of the wired WAN.
+  ip rule del fwmark "${MARK}/${MASK}" table "${TABLE_ID}" 2>/dev/null || true
+  ip rule add fwmark "${MARK}/${MASK}" table "${TABLE_ID}" priority 30000
+
+  # An unreachable fallback *below* the main table, so that a marked packet
+  # never falls through to main and out over cellular when our table is empty.
+  # Without this the whole scheme leaks in exactly the situation it exists for.
+  ip rule del fwmark "${MARK}/${MASK}" unreachable 2>/dev/null || true
+  ip rule add fwmark "${MARK}/${MASK}" unreachable priority 30001
+}
+
+flush() {
+  ip rule del fwmark "${MARK}/${MASK}" table "${TABLE_ID}" 2>/dev/null || true
+  ip rule del fwmark "${MARK}/${MASK}" unreachable 2>/dev/null || true
+  ip route flush table "${TABLE_ID}" 2>/dev/null || true
+  log "tailnet routing confinement removed"
+}
+
+status() {
+  # Used by the console and by the status reporter. Prints JSON because both
+  # consumers parse it and neither wants to scrape prose.
+  local gw dev usable="false" reason="wired WAN is down"
+  if spec="$(wired_gateway)"; then
+    gw="${spec% *}"; dev="${spec#* }"
+    usable="true"; reason=""
+  fi
+  printf '{"wiredUsable":%s,"iface":"%s","gateway":"%s","device":"%s","reason":"%s"}\n' \
+    "${usable}" "${WIRED_IFACE}" "${gw:-}" "${dev:-}" "${reason}"
+}
+
+case "${1:-}" in
+  apply)  apply ;;
+  flush)  flush ;;
+  status) status ;;
+  *) echo "usage: $0 {apply|flush|status}" >&2; exit 2 ;;
+esac
