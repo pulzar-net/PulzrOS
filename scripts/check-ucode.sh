@@ -29,6 +29,17 @@ command -v "${UCODE}" >/dev/null 2>&1 || {
 # Stub modules stand in for the native ones. See scripts/ucode-stubs/README.md.
 STUBS="$(cd "$(dirname "$0")/ucode-stubs" && pwd)"
 
+# Confirm the interpreter actually runs before blaming the source. A ucode
+# built from source links libucode.so beside it; a binary copied or restored
+# without that library starts nowhere, and reporting it once here beats
+# reporting the same loader error against every file in the feed.
+if ! "${UCODE}" -e 'print("")' >/dev/null 2>&1; then
+  echo "error: ${UCODE} cannot run." >&2
+  "${UCODE}" -e 'print("")' 2>&1 | sed 's/^/  /' >&2
+  echo "  A source build needs libucode.so alongside the binary." >&2
+  exit 2
+fi
+
 fail=0
 count=0
 while IFS= read -r file; do

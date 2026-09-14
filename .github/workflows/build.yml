@@ -73,12 +73,16 @@ jobs:
 
       # ucode is not packaged for Ubuntu, so it is built — but only once ever,
       # since the cache key is the upstream commit this pins to.
+      # The whole build directory, not just the binary: ucode links against
+      # libucode.so.0 beside it and the native modules (fs.so, math.so) that
+      # scripts/test-figlet.sh loads. Caching the binary alone produced a cache
+      # hit that skipped the build and left an executable that could not start.
       - name: Cache ucode
         id: ucode-cache
         uses: actions/cache@v4
         with:
-          path: /tmp/ucode/build/ucode
-          key: ucode-${{ runner.os }}-v1
+          path: /tmp/ucode/build
+          key: ucode-${{ runner.os }}-v2
 
       - name: Build ucode
         if: steps.ucode-cache.outputs.cache-hit != 'true'
