@@ -5,6 +5,11 @@
 # because their states are derived from things (concentrator status, which
 # backhaul is up) that no kernel trigger knows about.
 
+# OpenWrt's prepare_rootfs runs every uci-defaults script during image
+# assembly, with IPKG_INSTROOT set and absolute paths resolving to the build
+# host. Everything below belongs to the device, so defer it to first boot.
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+
 . /etc/parkeze/board.conf
 
 [ -n "${PARKEZE_BUTTON_RESET}" ] && uci -q batch <<EOF

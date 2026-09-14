@@ -1,5 +1,12 @@
 #!/bin/sh
 # Seed the concentrator section and run the first detection.
+
+# OpenWrt's prepare_rootfs runs every uci-defaults script during image
+# assembly, with IPKG_INSTROOT set and absolute paths resolving to the build
+# host. Guarded before anything else, including the board.conf source below —
+# that path would otherwise resolve to the runner's filesystem.
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+
 . /etc/parkeze/board.conf
 
 uci -q batch <<EOF

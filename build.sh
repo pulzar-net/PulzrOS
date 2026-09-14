@@ -6,6 +6,15 @@
 #   ./build.sh rpi3 rpi4            # several
 #   ./build.sh --all                # every board in boards/
 #   ./build.sh --list               # what is buildable
+#   ./build.sh --list-json          # ...with targets, for CI
+#
+#   ./build.sh --stage console      # just the web console
+#   ./build.sh --stage feed         # just the packages
+#   ./build.sh --stage image rpi4   # just the image, using what is on disk
+#
+# The stages exist so CI can build the console and the packages once and share
+# them across every board. Running without --stage does all three, which is
+# what you want locally.
 #
 # On macOS the last step runs in a Linux container automatically — see
 # reexec_for_assembly. You need Docker installed; nothing else changes.
@@ -40,6 +49,29 @@ die()  { printf '\033[31merror\033[0m %s\n' "$*" >&2; exit 1; }
 list_boards() {
   find "${BOARDS_DIR}" -mindepth 1 -maxdepth 1 -type d ! -name common \
     -exec basename {} \; | sort
+}
+
+# Every board with the fields CI needs, as JSON.
+#
+# The target and subtarget are what an ImageBuilder download is keyed on, not
+# the board — several boards can share one. Emitting them here means the
+# workflow never has to parse board.conf itself, and a board whose target
+# changes updates its own cache key without anybody editing the workflow.
+list_boards_json() {
+  local first=1
+  printf '['
+  for board in $(list_boards); do
+    (
+      # shellcheck disable=SC1090
+      . "${BOARDS_DIR}/${board}/board.conf"
+      printf '{"board":"%s","name":"%s","target":"%s","subtarget":"%s","arch":"%s","imagebuilder":"%s-%s-%s"}' \
+        "${BOARD_ID}" "${BOARD_NAME}" "${OPENWRT_TARGET}" "${OPENWRT_SUBTARGET}" \
+        "${OPENWRT_ARCH}" "${OPENWRT_VERSION}" "${OPENWRT_TARGET}" "${OPENWRT_SUBTARGET}"
+    )
+    [ "${first}" = 1 ] && first=0 || true
+    [ "${board}" = "$(list_boards | tail -n1)" ] || printf ','
+  done
+  printf ']\n'
 }
 
 # ── ImageBuilder ────────────────────────────────────────────────────────────
@@ -208,7 +240,7 @@ EOF
     -e PARKEZE_IN_CONTAINER=1 \
     -e PARKEZE_RECOVERY_PUBKEY \
     "${DOCKER_IMAGE}" \
-    ./build.sh --assemble-only "${boards[@]}" \
+    ./build.sh --stage image "${boards[@]}" \
     || die "assembly failed inside the container"
 
   log "Images: out/"
@@ -429,21 +461,38 @@ build_board() {
 
 main() {
   local boards=()
-  local assemble_only=0
+  # all | console | feed | image. CI runs them as separate jobs so the console
+  # and the packages are built once and shared by every board, rather than
+  # rebuilt five times; a developer runs them together and never sees this.
+  local stage=all
 
-  # Internal. Set by reexec_for_assembly so the containerised half skips the
-  # host-side steps that have already run.
-  if [ "${1:-}" = "--assemble-only" ]; then
-    assemble_only=1
+  if [ "${1:-}" = "--stage" ]; then
+    stage="${2:?--stage needs a name: console, feed or image}"
+    case "${stage}" in
+      console|feed|image) ;;
+      *) die "unknown stage '${stage}' (console, feed, image)" ;;
+    esac
+    shift 2
+  elif [ "${1:-}" = "--assemble-only" ]; then
+    # The name reexec_for_assembly used before stages existed. Kept because a
+    # container started by an older checkout may still invoke it.
+    stage=image
     shift
   fi
 
   case "${1:-}" in
-    --list) list_boards; exit 0 ;;
-    --all)  mapfile -t boards < <(list_boards) ;;
-    ''|-h|--help)
-      sed -n '2,22p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    --list)      list_boards; exit 0 ;;
+    --list-json) list_boards_json; exit 0 ;;
+    --all)       mapfile -t boards < <(list_boards) ;;
+    -h|--help)
+      sed -n '2,24p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
       exit 0 ;;
+    '')
+      # No board is fine for the stages that do not need one.
+      case "${stage}" in
+        console|feed) ;;
+        *) sed -n '2,24p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+      esac ;;
     *) boards=("$@") ;;
   esac
 
@@ -454,11 +503,30 @@ main() {
   mkdir -p "${BUILD_DIR}" "${OUT_DIR}"
   export BOARDS_DIR
 
-  if [ "${assemble_only}" = 0 ]; then
-    build_console
-    install_fleet_key
-    build_feed
-  fi
+  case "${stage}" in
+    console)
+      build_console
+      log "Done. Console only."
+      return 0 ;;
+    feed)
+      # The fleet key is part of the rootfs overlay, not the packages, but it
+      # costs nothing and keeps `--stage feed` a complete "everything that is
+      # not assembly" step for a CI job that has the secret.
+      install_fleet_key
+      build_feed
+      log "Done. Feed only."
+      return 0 ;;
+    image)
+      # Re-run in a fresh CI job, so the overlay has to be reconstructed even
+      # though the console and packages arrived as artifacts.
+      install_fleet_key ;;
+    all)
+      build_console
+      install_fleet_key
+      build_feed ;;
+  esac
+
+  [ "${#boards[@]}" -gt 0 ] || die "no board given"
 
   # On a Mac the console and the feed are done; hand the rest to a container
   # and do not come back.

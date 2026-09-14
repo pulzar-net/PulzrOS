@@ -1,11 +1,26 @@
 # Build every board.
 #
-# Runs natively on Linux runners, so none of the Docker machinery build.sh uses
-# on a Mac is involved here — the runner *is* the Linux box.
+# ── SHAPE ──────────────────────────────────────────────────────────────────
 #
-# Shape: one cheap `check` job that must pass, then a matrix of board builds.
-# The matrix is discovered from boards/ rather than listed here, so adding a
-# board is still a single directory and never an edit to this file.
+#   check     lint and typecheck. Fast, and gates everything else.
+#   console   build the React app ONCE.
+#   feed      build the .ipk packages ONCE.
+#   image     per-board matrix, consuming both of the above.
+#   release   on a tag, collect every board's image.
+#
+# The point of splitting console and feed out is that neither depends on the
+# board. Every package in feed/ is `Architecture: all` — interpreted shell,
+# ucode and static files, no compile step — so one build genuinely serves all
+# five boards. Building them inside the matrix instead meant five identical npm
+# installs, five identical Vite builds and five identical package runs, which
+# was most of the wall clock for none of the value.
+#
+# The ImageBuilder cache is keyed on target/subtarget rather than on board,
+# because that is what the download actually is: the two RAK boards share one,
+# so five boards need four downloads and the second RAK board is free.
+#
+# Runners are Linux, so none of the Docker machinery build.sh uses on a Mac is
+# involved here — the runner is the Linux box.
 
 name: build
 
@@ -31,7 +46,12 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  # One place to change the Node version, rather than three.
+  NODE_VERSION: '22'
+
 jobs:
+  # ───────────────────────────────────────────────────────────────────────
   check:
     name: Checks
     runs-on: ubuntu-latest
@@ -40,26 +60,28 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: console/package-lock.json
 
-      - name: Install console dependencies
+      - run: npm ci
         working-directory: console
-        run: npm ci
 
       - name: Typecheck the console
         working-directory: console
         run: npm run typecheck
 
-      - name: Build the console
-        working-directory: console
-        run: npm run build
+      # ucode is not packaged for Ubuntu, so it is built — but only once ever,
+      # since the cache key is the upstream commit this pins to.
+      - name: Cache ucode
+        id: ucode-cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/ucode/build/ucode
+          key: ucode-${{ runner.os }}-v1
 
-      # ucode is not packaged for Ubuntu, so it is built. Small and quick, and
-      # the alternative is discovering a syntax error in the gateway API by
-      # flashing hardware.
       - name: Build ucode
+        if: steps.ucode-cache.outputs.cache-hit != 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake build-essential libjson-c-dev
@@ -73,9 +95,8 @@ jobs:
       - name: Check the ucode console API
         run: UCODE=/tmp/ucode/build/ucode scripts/check-ucode.sh
 
-      # Device scripts run under busybox ash, not bash. Checked with `sh -n`
-      # (dash on Ubuntu, which is close enough to catch bashisms) while the
-      # build scripts are checked as bash.
+      # Device scripts run under busybox ash. Checked with `sh -n` (dash on
+      # Ubuntu, close enough to catch bashisms); build scripts as bash.
       - name: Check shell syntax
         run: |
           fail=0
@@ -100,8 +121,8 @@ jobs:
           done < <(find feed -name '*.json')
           exit $fail
 
-      # A device script with a bash shebang would work on the build host and
-      # fail on a gateway, where /bin/sh is busybox ash and bash is absent.
+      # A bash shebang would work on the build host and fail on a gateway,
+      # where /bin/sh is busybox ash and bash is absent.
       - name: No bash in device scripts
         run: |
           if grep -rln '#!/bin/bash\|#!/usr/bin/env bash' feed/; then
@@ -109,79 +130,72 @@ jobs:
             exit 1
           fi
 
-  # The board list, as JSON, so the matrix below is whatever is in boards/.
-  boards:
-    name: Discover boards
-    runs-on: ubuntu-latest
-    outputs:
-      matrix: ${{ steps.list.outputs.matrix }}
-    steps:
-      - uses: actions/checkout@v4
-      - id: list
-        env:
-          # Through the environment rather than interpolated into the script:
-          # a workflow_dispatch input is arbitrary text, and pasting it into a
-          # shell line is a command injection waiting for someone to type a
-          # backtick.
-          REQUESTED: ${{ inputs.boards }}
+      # OpenWrt's prepare_rootfs executes every uci-defaults script during
+      # image assembly, with IPKG_INSTROOT set and absolute paths resolving to
+      # the *build host*. An unguarded script there fails the image build at
+      # best, and at worst bakes host state — or one shared password — into
+      # every gateway flashed from that image. Both have happened; hence a
+      # check rather than a comment.
+      - name: uci-defaults must defer to first boot
         run: |
-          if [ -n "${REQUESTED}" ]; then
-            printf '%s' "${REQUESTED}" | tr ' ' '\n' > /tmp/boards
-          else
-            ./build.sh --list > /tmp/boards
-          fi
+          fail=0
+          while IFS= read -r f; do
+            if ! grep -q 'IPKG_INSTROOT' "$f"; then
+              echo "::error file=$f::missing the IPKG_INSTROOT guard"
+              fail=1
+              continue
+            fi
+            guard=$(grep -n 'IPKG_INSTROOT' "$f" | head -1 | cut -d: -f1)
+            first=$(grep -nvE '^\s*#|^\s*$' "$f" | grep -v '^1:#!' | head -1 | cut -d: -f1)
+            if [ "$guard" -gt "$first" ]; then
+              echo "::error file=$f,line=$first::code runs before the IPKG_INSTROOT guard"
+              fail=1
+            fi
+          done < <(find feed -path '*/etc/uci-defaults/*' -type f)
+          exit $fail
 
-          # One board per line into jq, rather than relying on the shell to
-          # word-split an unquoted variable — that behaviour differs between
-          # shells and produced a single matrix entry containing every board
-          # name when this was first written.
-          json="$(grep -v '^[[:space:]]*$' /tmp/boards | jq -R . | jq -sc .)"
-
-          [ "$(echo "${json}" | jq 'length')" -gt 0 ] \
-            || { echo "::error::no boards to build"; exit 1; }
-
-          echo "matrix=${json}" >> "$GITHUB_OUTPUT"
-          echo "Building: $(tr '\n' ' ' < /tmp/boards)"
-
-  image:
-    name: ${{ matrix.board }}
-    needs: [check, boards]
+  # ───────────────────────────────────────────────────────────────────────
+  console:
+    name: Console
+    needs: check
     runs-on: ubuntu-latest
-    strategy:
-      # One board failing should not hide whether the others build — a broken
-      # RAK profile must not mask a working Pi image.
-      fail-fast: false
-      matrix:
-        board: ${{ fromJSON(needs.boards.outputs.matrix) }}
-
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: console/package-lock.json
 
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential libncurses-dev zstd unzip \
-                                  file wget python3 rsync
+      - name: Build
+        run: ./build.sh --stage console
 
-      # The ImageBuilder tarball is ~150MB per target and does not change
-      # between runs — it is a pinned release. Keyed on the target so the two
-      # Pi subtargets and the RAK one cache separately.
-      - name: Cache ImageBuilder
-        uses: actions/cache@v4
+      # The built app, for the feed job to package. Not the whole repo — just
+      # what the console stage produced.
+      - uses: actions/upload-artifact@v4
         with:
-          path: .build/imagebuilder
-          key: imagebuilder-${{ matrix.board }}-${{ hashFiles('boards/**/board.conf', 'boards/common/*.conf') }}
-          restore-keys: imagebuilder-${{ matrix.board }}-
+          name: console
+          path: feed/parkeze-console/files/www
+          retention-days: 1
+          if-no-files-found: error
 
-      # The fleet recovery PUBLIC key. Without it images build fine but cannot
-      # be adopted offline, and build.sh says so loudly rather than failing —
-      # which is right for a fork or a PR from someone without the secret.
+  # ───────────────────────────────────────────────────────────────────────
+  feed:
+    name: Packages
+    needs: console
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: console
+          path: feed/parkeze-console/files/www
+
+      # The recovery PUBLIC key. Without it images still build, but cannot be
+      # adopted offline — build.sh warns rather than failing, which is right
+      # for a fork or a PR from somebody without the secret.
       - name: Install the fleet recovery anchor
         env:
           RECOVERY_PUBKEY: ${{ secrets.PARKEZE_RECOVERY_PUBKEY }}
@@ -190,22 +204,127 @@ jobs:
             printf '%s\n' "${RECOVERY_PUBKEY}" > "${RUNNER_TEMP}/recovery.pub"
             echo "PARKEZE_RECOVERY_PUBKEY=${RUNNER_TEMP}/recovery.pub" >> "$GITHUB_ENV"
           else
-            echo "::warning::No PARKEZE_RECOVERY_PUBKEY secret — this image cannot be adopted offline."
+            echo "::warning::No PARKEZE_RECOVERY_PUBKEY secret — images cannot be adopted offline."
           fi
 
-      - name: Build ${{ matrix.board }}
-        run: ./build.sh "${{ matrix.board }}"
+      - name: Build the package feed
+        run: ./build.sh --stage feed
+
+      # Both halves of the overlay travel together: the .ipk repository, and
+      # the recovery key that install_fleet_key dropped into the board files.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: feed
+          path: |
+            .build/packages
+            boards/common/files
+          retention-days: 1
+          if-no-files-found: error
+
+  # ───────────────────────────────────────────────────────────────────────
+  boards:
+    name: Discover boards
+    needs: check
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.list.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: list
+        env:
+          # Through the environment rather than interpolated into the script: a
+          # workflow_dispatch input is arbitrary text, and pasting it into a
+          # shell line is a command injection waiting for a backtick.
+          REQUESTED: ${{ inputs.boards }}
+        run: |
+          # Each entry carries its target and subtarget, so the image job can
+          # key its ImageBuilder cache on the download rather than on the board.
+          all="$(./build.sh --list-json)"
+
+          if [ -n "${REQUESTED}" ]; then
+            wanted="$(printf '%s' "${REQUESTED}" | tr ' ' '\n' \
+                      | grep -v '^[[:space:]]*$' | jq -R . | jq -sc .)"
+            matrix="$(jq -c --argjson w "${wanted}" \
+                       '[.[] | select(.board as $b | $w | index($b))]' <<<"${all}")"
+          else
+            matrix="${all}"
+          fi
+
+          [ "$(jq 'length' <<<"${matrix}")" -gt 0 ] \
+            || { echo "::error::no boards matched"; exit 1; }
+
+          echo "matrix=${matrix}" >> "$GITHUB_OUTPUT"
+          jq -r '.[] | "  \(.board)  \(.target)/\(.subtarget)"' <<<"${matrix}"
+
+  # ───────────────────────────────────────────────────────────────────────
+  image:
+    name: ${{ matrix.board }}
+    needs: [feed, boards]
+    runs-on: ubuntu-latest
+    strategy:
+      # One board failing should not hide whether the others build — a broken
+      # RAK profile must not mask a working Pi image.
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.boards.outputs.matrix) }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: console
+          path: feed/parkeze-console/files/www
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: feed
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libncurses-dev zstd unzip \
+                                  file wget python3 rsync
+
+      # Keyed on the ImageBuilder itself — version, target, subtarget — not on
+      # the board. rak7268c and rak7289cv2 are the same download, so the second
+      # of them is a cache hit.
+      - name: Cache the ImageBuilder
+        uses: actions/cache@v4
+        with:
+          path: .build/imagebuilder
+          key: imagebuilder-${{ matrix.imagebuilder }}
+
+      - name: Assemble ${{ matrix.board }}
+        run: ./build.sh --stage image "${{ matrix.board }}"
+
+      # ImageBuilder failures are often a package that will not resolve, and
+      # the useful line scrolls past in a wall of "Configuring ...". Surface it.
+      - name: Explain a failure
+        if: failure()
+        run: |
+          echo "### ${{ matrix.board }} failed" >> "$GITHUB_STEP_SUMMARY"
+          log=".build/imagebuilder/${{ matrix.imagebuilder }}/logs/package/install.txt"
+          if [ -f "$log" ]; then
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            tail -40 "$log" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "Packages requested:" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          ls .build/packages/*.ipk 2>/dev/null | xargs -n1 basename >> "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Summarise
         run: |
           {
-            echo "### ${{ matrix.board }}"
+            echo "### ${{ matrix.board }} · ${{ matrix.target }}/${{ matrix.subtarget }}"
             echo
             echo '| Image | Size |'
             echo '|---|---|'
             find "out/${{ matrix.board }}" -maxdepth 1 -type f \
-                 \( -name '*.img.gz' -o -name '*.bin' \) -printf '| `%f` | %s bytes |\n' \
-              | sort
+                 \( -name '*.img.gz' -o -name '*.bin' \) \
+                 -printf '| `%f` | %s bytes |\n' | sort
           } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
@@ -220,6 +339,7 @@ jobs:
           retention-days: 14
           if-no-files-found: error
 
+  # ───────────────────────────────────────────────────────────────────────
   release:
     name: Release
     if: startsWith(github.ref, 'refs/tags/')
@@ -230,6 +350,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
+          pattern: parkezeos-*
           path: artifacts
 
       - name: Collect
@@ -237,7 +358,7 @@ jobs:
           mkdir -p release
           find artifacts -type f \( -name '*.img.gz' -o -name '*.bin' \) \
                -exec cp {} release/ \;
-          ( cd release && sha256sum * > sha256sums.txt )
+          ( cd release && sha256sum ./* > sha256sums.txt )
           ls -la release
 
       - uses: softprops/action-gh-release@v2

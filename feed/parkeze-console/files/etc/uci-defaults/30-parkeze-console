@@ -3,6 +3,21 @@
 # First-boot console setup: a TLS certificate, and an initial local password
 # that is unique to this unit.
 
+# ── Do not run during image assembly ────────────────────────────────────────
+#
+# OpenWrt's prepare_rootfs executes every /etc/uci-defaults script while the
+# image is being built, with IPKG_INSTROOT pointing at the staging rootfs. Any
+# absolute path in here therefore hits the *build host*, not the gateway.
+#
+# For this package that is not merely wrong, it is dangerous: identity comes
+# from /proc/cpuinfo, and the console's first-boot credentials and TLS key are
+# generated here. Run at build time, every gateway flashed from one image would
+# share one password and one private key, and would believe it was the CI
+# runner.
+#
+# So: defer to first boot, which is the only place any of this makes sense.
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+
 . /etc/parkeze/board.conf
 
 STATE=/etc/parkeze/console
