@@ -361,6 +361,13 @@ jobs:
       # card. This renames the right one, produces the .img.xz Pi Imager wants,
       # and emits that board's entry for the OS list.
       - name: Package for humans
+        env:
+          # Only set when the images are published somewhere anonymously
+          # reachable. Raspberry Pi Imager fetches with no credentials, so with
+          # a private repo there is nowhere for it to fetch from and no OS list
+          # is produced. See docs/flashing.md.
+          PARKEZE_IMAGE_BASE_URL: ${{ vars.PARKEZE_IMAGE_BASE_URL }}
+          PARKEZE_IMAGER_ICON_URL: ${{ vars.PARKEZE_IMAGER_ICON_URL }}
         run: ./scripts/package-images.sh "${{ matrix.board }}" "$(cat VERSION)"
 
       - name: Summarise
@@ -423,7 +430,9 @@ jobs:
           # behaves differently between shells, which has already cost this
           # repo one silently-wrong matrix.
           if [ -z "$(find artifacts -name '*.oslist.json' -print -quit)" ]; then
-            echo "::warning::no OS list fragments — no Pi boards in this release?"
+            echo "No OS list: PARKEZE_IMAGE_BASE_URL is not set, so there is"
+            echo "nowhere anonymous for Raspberry Pi Imager to fetch from."
+            echo "The images are still attached and work with every SD writer."
             exit 0
           fi
           find artifacts -name '*.oslist.json' -print0 \

@@ -89,18 +89,37 @@ download_sha="$(sha "${DEST}/${base}.img.xz")"
 # One fragment per board; the release job concatenates them into os_list.json.
 # Written here because this is where the checksums are already computed.
 #
+# ONLY WHEN THERE IS SOMEWHERE PUBLIC TO SERVE THE IMAGES FROM.
+#
+# Raspberry Pi Imager fetches the OS list and the images with no credentials,
+# so every URL in this file has to be reachable anonymously. This repository is
+# private and its release assets are not — pointing Imager at a GitHub release
+# URL gets a 404 and an empty OS menu, with nothing on screen saying why.
+#
+# So the base URL is required rather than defaulted. Set it to wherever the
+# images are actually published:
+#
+#   PARKEZE_IMAGE_BASE_URL=https://downloads.parkeze.net/os/v0.1.0
+#
+# With it unset we emit no fragment at all, and the release simply carries the
+# image files — which is the honest outcome, and still works with every SD
+# writer including Imager's "Use custom".
+#
 # `init_format: none` matters: without it Pi Imager offers to preset a hostname,
 # WiFi and SSH keys, writes them into a Raspberry Pi OS-shaped config that
 # OpenWrt does not read, and the user concludes the image is broken.
-if [ -n "${BOARD_PI_IMAGER_DEVICES:-}" ]; then
+if [ -z "${PARKEZE_IMAGE_BASE_URL:-}" ]; then
+  log "  no PARKEZE_IMAGE_BASE_URL — skipping the Pi Imager entry"
+  log "  (Imager needs anonymously-reachable URLs; this repo is private)"
+elif [ -n "${BOARD_PI_IMAGER_DEVICES:-}" ]; then
   devices="$(printf '%s' "${BOARD_PI_IMAGER_DEVICES}" \
              | tr ' ' '\n' | grep -v '^$' | sed 's/.*/"&"/' | paste -sd, -)"
   cat > "${DEST}/${base}.oslist.json" <<EOF
 {
   "name": "ParkezeOS ${VERSION} (${BOARD_NAME})",
   "description": "Parkeze LoRaWAN gateway — ${BOARD_NAME}. Adopts itself into parkeze.net; scan the code it shows on first boot.",
-  "icon": "https://parkeze.net/parkeze-imager-icon.png",
-  "url": "https://github.com/parkezesolutions/ParkezeOS/releases/download/v${VERSION}/${base}.img.xz",
+  "icon": "${PARKEZE_IMAGER_ICON_URL:-${PARKEZE_IMAGE_BASE_URL%/}/parkeze.png}",
+  "url": "${PARKEZE_IMAGE_BASE_URL%/}/${base}.img.xz",
   "release_date": "$(date -u +%Y-%m-%d)",
   "extract_size": ${extract_size},
   "extract_sha256": "${extract_sha}",

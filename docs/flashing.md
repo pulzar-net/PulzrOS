@@ -9,32 +9,53 @@ directly: Raspberry Pi Imager, balenaEtcher, Rufus, `dd`. Nothing special.
 > and a Pi will not boot one. If a tool asks for an ISO it is the wrong tool
 > for an SD card. What you want is the `.img.gz` or `.img.xz`.
 
-### Raspberry Pi Imager, with ParkezeOS in the menu
+### Raspberry Pi Imager
 
-Point Imager at our OS list once and ParkezeOS appears alongside Raspberry Pi
-OS, with the right image picked for whichever Pi you select:
+Download the image, then **Choose OS → Use custom** and pick the `.img.xz`.
+Imager decompresses it for you; there is no need to unzip anything first.
 
-1. Open Raspberry Pi Imager.
-2. Hold **Ctrl+Shift+X** → **Options** → set the repository URL to:
+```bash
+gh run download --repo parkezesolutions/ParkezeOS -n parkezeos-rpi4
+```
 
-   ```
-   https://github.com/parkezesolutions/ParkezeOS/releases/latest/download/os_list.json
-   ```
+or grab the artifact from the Actions run in the browser.
 
-3. **Choose OS** → ParkezeOS.
+Leave Imager's OS customisation alone — the gear icon that offers to preset a
+hostname, WiFi and SSH keys. It writes a Raspberry Pi OS-shaped config that
+OpenWrt does not read, so nothing you set there applies and the image looks
+broken. ParkezeOS configures itself on first boot instead.
 
-Imager then downloads, verifies the checksum and writes it. Because each entry
-declares which Pi models it fits, **it will not let you write the Pi 5 image to
-a Pi 3** — which is the failure that otherwise presents as a black screen and
-an afternoon.
+<details>
+<summary>Why ParkezeOS is not in Imager's OS menu</summary>
 
-Leave Imager's OS customisation alone. The entries set `init_format: none` so
-it should not offer it; if it does, skip it. It writes a Raspberry Pi OS-shaped
-config that OpenWrt does not read, and the result looks like a broken image.
+Imager can be pointed at a custom OS list, which would put ParkezeOS in the
+menu next to Raspberry Pi OS and refuse to write a Pi 5 image to a Pi 3.
+
+It fetches that list, and every image in it, **with no credentials**. This
+repository is private and so are its release assets, so Imager gets a 404 and
+shows an empty menu with nothing on screen explaining why. Making it work means
+publishing the images somewhere anonymously reachable — which is a decision
+about distribution, not a build setting.
+
+The build supports it when that decision is made. Set a base URL and CI emits
+`os_list.json` alongside the images:
+
+```
+PARKEZE_IMAGE_BASE_URL=https://downloads.parkeze.net/os/v0.1.0
+```
+
+With it unset — the default — no OS list is produced, because a list of URLs
+that 404 is worse than no list. The images themselves carry no secrets: a
+gateway holds nothing until it is adopted, and the only key in the image is the
+fleet recovery **public** key. So publishing them is a business decision rather
+than a security one.
+
+</details>
 
 ### Just download a file
 
-From the [latest release](https://github.com/parkezesolutions/ParkezeOS/releases/latest):
+From a CI artifact — `gh run download -n parkezeos-rpi4`, or the Actions run
+in the browser — or from a tagged release if one has been cut:
 
 | File | For |
 |---|---|

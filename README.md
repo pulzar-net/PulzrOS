@@ -45,17 +45,19 @@ in that order.
 
 ## Flashing one
 
-The images are raw disk images, so any SD writer takes them. In Raspberry Pi
-Imager, add this repository URL once and ParkezeOS appears in the OS menu with
-the right image per Pi model:
-
-```
-https://github.com/parkezesolutions/ParkezeOS/releases/latest/download/os_list.json
+```bash
+./flash.sh --download rpi4     # fetch the latest CI image and write it to a card
 ```
 
-Or `./flash.sh --download rpi4`, which fetches the latest CI image and writes
-it — refusing internal disks and never guessing the target. Either way, see
-[`docs/flashing.md`](docs/flashing.md).
+Refuses internal disks, never guesses the target, and asks you to type the disk
+identifier rather than press `y`.
+
+Or use any SD writer: these are raw disk images (not ISOs — a Pi will not boot
+one of those). Download the artifact and open the `.img.xz` in Raspberry Pi
+Imager's *Use custom*, Etcher, or Rufus.
+
+See [`docs/flashing.md`](docs/flashing.md), including why ParkezeOS does not
+appear in Imager's OS menu while this repository is private.
 
 ## Building
 
