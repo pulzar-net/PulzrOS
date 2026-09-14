@@ -95,6 +95,14 @@ jobs:
       - name: Check the ucode console API
         run: UCODE=/tmp/ucode/build/ucode scripts/check-ucode.sh
 
+      # The upstream indexes are ~10MB and a pinned release never changes them.
+      - name: Cache the upstream package indexes
+        uses: actions/cache@v4
+        with:
+          path: .build/pkgindex
+          key: pkgindex-${{ hashFiles('boards/**/board.conf') }}
+          restore-keys: pkgindex-
+
       # Device scripts run under busybox ash. Checked with `sh -n` (dash on
       # Ubuntu, close enough to catch bashisms); build scripts as bash.
       - name: Check shell syntax
@@ -104,6 +112,11 @@ jobs:
             bash -n "$f" || { echo "::error file=$f::bash syntax error"; fail=1; }
           done
           while IFS= read -r f; do
+            # Shebang-aware: /usr/sbin also holds ucode programs, and feeding
+            # one to `sh -n` reports a syntax error in perfectly good ucode.
+            case "$(head -c 32 "$f")" in
+              '#!'*ucode*) continue ;;
+            esac
             sh -n "$f" || { echo "::error file=$f::POSIX sh syntax error"; fail=1; }
           done < <(find feed boards -type f \
                      \( -name '*.conf' -o -path '*/usr/sbin/*' \
@@ -129,6 +142,21 @@ jobs:
             echo "::error::device scripts must be POSIX sh — OpenWrt ships ash, not bash"
             exit 1
           fi
+
+      # Three packages that do not exist in 24.10 — figlet, libgpiod-utils and
+      # uqmi — shipped at once, and the only symptom was five image jobs
+      # failing after four minutes with the cause buried under a page of
+      # "Configuring ...". This asks the release's own indexes instead, in
+      # seconds, before anything is built.
+      - name: Packages must exist upstream
+        run: ./scripts/check-deps.sh
+
+      # The wordmark renderer is a reimplementation of somebody else's format,
+      # which is only trustworthy while it is checked against the original.
+      - name: FIGlet renderer matches figlet
+        run: |
+          sudo apt-get install -y figlet
+          UCODE=/tmp/ucode/build/ucode scripts/test-figlet.sh
 
       # OpenWrt's prepare_rootfs executes every uci-defaults script during
       # image assembly, with IPKG_INSTROOT set and absolute paths resolving to

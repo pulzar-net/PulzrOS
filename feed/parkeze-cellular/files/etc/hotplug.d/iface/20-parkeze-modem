@@ -1,0 +1,5 @@
+#!/bin/sh
+# Re-bind the cellular interface when a modem appears or moves ports.
+[ "${ACTION}" = "ifup" ] || exit 0
+[ "${INTERFACE}" = "wwan" ] && exit 0    # avoid recursing on our own ifup
+( /usr/sbin/parkeze-modem-detect >/dev/null 2>&1 ) &

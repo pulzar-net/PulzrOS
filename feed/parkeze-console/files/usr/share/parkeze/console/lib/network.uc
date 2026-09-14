@@ -63,22 +63,42 @@ export function status() {
 }
 
 function modem() {
-    // uqmi against the QMI control device. Absent modem is a normal state —
-    // a wired-only board has none — so this returns null rather than erroring.
-    const dev = '/dev/cdc-wdm0';
-    if (!readfile('/sys/class/net') && !dev) return null;
+    // mmcli, not uqmi: OpenWrt 24.10 ships no uqmi and cellular now goes
+    // through ModemManager. An absent modem is a normal state — a wired-only
+    // board has none — so this returns null rather than erroring.
+    const found = runJson('/usr/sbin/parkeze-modem-detect --status');
+    if (!found || !found.present) return null;
 
-    const signal = runJson(sprintf('uqmi -d %s --get-signal-info 2>/dev/null', dev));
-    const serving = runJson(sprintf('uqmi -d %s --get-serving-system 2>/dev/null', dev));
-    if (!signal && !serving) return null;
+    // `mmcli --output-keyvalue` is the stable machine-readable form; the human
+    // output reflows between releases and is not worth parsing.
+    const raw = run(sprintf('mmcli -m %d --output-keyvalue 2>/dev/null', found.index));
+    if (!raw) return { model: found.model, registration: null };
 
+    const field = {};
+    for (let line in split(raw, '\n')) {
+        const at = index(line, ':');
+        if (at < 0) continue;
+        field[trim(substr(line, 0, at))] = trim(substr(line, at + 1));
+    }
+
+    // Signal quality is a percentage from ModemManager; the dBm figures come
+    // from the extended signal API and are only present once `mmcli
+    // --signal-setup` has run, so they are reported when available and skipped
+    // when not rather than faked from the percentage.
     return {
-        registration: serving ? serving.registration : null,
-        network:      serving ? serving.plmn_description : null,
-        technology:   signal ? signal.type : null,
-        rssi:         signal ? signal.rssi : null,
-        rsrp:         signal ? signal.rsrp : null,
-        snr:          signal ? signal.snr : null,
+        model: found.model,
+        imei: found.imei,
+        registration: field['modem.generic.state'] || null,
+        network: field['modem.3gpp.operator-name'] || null,
+        technology: field['modem.generic.access-technologies.value[1]'] || null,
+        quality: field['modem.generic.signal-quality.value']
+                 ? int(field['modem.generic.signal-quality.value']) : null,
+        rssi: field['modem.signal.lte.rssi']
+              ? int(field['modem.signal.lte.rssi']) : null,
+        rsrp: field['modem.signal.lte.rsrp']
+              ? int(field['modem.signal.lte.rsrp']) : null,
+        snr: field['modem.signal.lte.snr']
+             ? int(field['modem.signal.lte.snr']) : null,
     };
 }
 

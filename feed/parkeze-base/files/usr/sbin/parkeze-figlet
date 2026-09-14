@@ -1,0 +1,272 @@
+#!/usr/bin/ucode -R
+// A FIGlet renderer.
+//
+//   parkeze-figlet [-f FONT] TEXT
+//
+// ── WHY THIS EXISTS ────────────────────────────────────────────────────────
+//
+// The login banner renders its wordmark from a font at print time rather than
+// carrying a pasted block of ASCII art, so that changing the wordmark or the
+// font is a one-line change and never a re-paste.
+//
+// The obvious way to do that is to depend on figlet. OpenWrt does not package
+// figlet — not in base, packages, luci, routing or telephony, for any
+// architecture — which is how the first attempt at this bricked every image
+// build with "cannot find dependency figlet for parkeze-base".
+//
+// The alternatives were: pre-render at build time and ship the output (safe,
+// but then the image carries fixed art and the banner cannot adapt to a narrow
+// terminal), or implement the renderer. The renderer is ~150 lines, is
+// architecture-independent like everything else in this feed, and is verified
+// byte-for-byte against real figlet in the test suite.
+//
+// ── WHAT IT IMPLEMENTS ─────────────────────────────────────────────────────
+//
+// Horizontal smushing, which is what makes a slanted font look right: adjacent
+// characters overlap by as much as their shapes allow. Without it the letters
+// sit in separate boxes and the wordmark reads as a ransom note.
+//
+// Verified byte-for-byte against figlet 2.2.5 by scripts/test-figlet.sh, over
+// the wordmark, board names, digits and the full punctuation set that exercises
+// every smushing rule.
+//
+// NOT implemented: figlet's line wrapping at terminal width. Multi-word input
+// that would overflow renders as one long line here and as two stacked blocks
+// there. We render one short word, so this has never mattered — but it is the
+// one place the two disagree, and the test suite pins it by passing `-w 9999`.
+//
+// The layout rules are FIGlet's, from figlet.c's smushem()/smushamt():
+//
+//   1  EQUAL         identical characters merge to themselves
+//   2  UNDERSCORE    _ yields to | / \ [ ] { } ( ) < >
+//   4  HIERARCHY     a class ordering; the higher class wins
+//   8  OPPOSITE      [] {} () facing pairs merge to |
+//  16  BIG_X         /\ -> |, \/ -> Y, >< -> X
+//  32  HARDBLANK     two hardblanks merge
+//
+// slant.flf asks for 1|2|4|8. Vertical smushing is not implemented: no font we
+// ship uses it, and it would be dead code that looked load-bearing.
+
+import { readfile } from 'fs';
+
+const SM_EQUAL = 1, SM_LOWLINE = 2, SM_HIERARCHY = 4, SM_PAIR = 8,
+      SM_BIGX = 16, SM_HARDBLANK = 32, SM_KERN = 64, SM_SMUSH = 128;
+
+function die(message) {
+    warn(message + '\n');
+    exit(1);
+}
+
+// ── the font ────────────────────────────────────────────────────────────────
+
+function loadFont(path) {
+    const raw = readfile(path);
+    if (!raw) die(sprintf('cannot read font %s', path));
+
+    const lines = split(raw, '\n');
+    const header = split(lines[0], ' ');
+
+    // "flf2a$ 6 5 16 15 10 0 18319 96"
+    //  ^sig+hardblank height baseline maxlen oldlayout comments dir fulllayout
+    if (substr(header[0], 0, 5) != 'flf2a')
+        die(sprintf('%s is not a FIGlet font', path));
+
+    const font = {
+        hardblank: substr(header[0], 5, 1),
+        height: int(header[1]),
+        comments: int(header[5]),
+        chars: {},
+    };
+
+    // Layout: prefer full_layout when the header carries it, exactly as figlet
+    // does — old_layout is the pre-2.0 encoding and is only a fallback.
+    const oldLayout = int(header[4]);
+    if (length(header) > 7 && header[7] != null && header[7] != '') {
+        font.smush = int(header[7]);
+    } else if (oldLayout == 0) {
+        font.smush = SM_KERN;
+    } else if (oldLayout < 0) {
+        font.smush = 0;
+    } else {
+        font.smush = (oldLayout & 31) | SM_SMUSH;
+    }
+
+    // Characters 32..126, in order, `height` lines each.
+    let at = 1 + font.comments;
+    for (let code = 32; code <= 126; code++) {
+        const glyph = [];
+        for (let row = 0; row < font.height; row++) {
+            let line = lines[at++];
+            if (line == null) return font;      // truncated font; take what we have
+            // Strip the endmark, and the doubled endmark on a glyph's last row.
+            // The endmark is whatever the line ends with, not necessarily '@'.
+            const mark = substr(line, length(line) - 1, 1);
+            while (length(line) && substr(line, length(line) - 1, 1) == mark)
+                line = substr(line, 0, length(line) - 1);
+            glyph[row] = line;
+        }
+        font.chars[code] = glyph;
+    }
+    return font;
+}
+
+// ── smushing ────────────────────────────────────────────────────────────────
+
+function inSet(ch, set) {
+    return index(set, ch) >= 0;
+}
+
+// What two touching characters become, or null if they cannot touch.
+function smushem(font, left, right) {
+    if (left == ' ') return right;
+    if (right == ' ') return left;
+
+    if (!(font.smush & SM_SMUSH)) return null;
+
+    // Universal smushing: no rules selected, so the later character wins.
+    if ((font.smush & 63) == 0) {
+        if (left == font.hardblank) return right;
+        if (right == font.hardblank) return left;
+        return right;
+    }
+
+    if (font.smush & SM_HARDBLANK)
+        if (left == font.hardblank && right == font.hardblank) return left;
+    if (left == font.hardblank || right == font.hardblank) return null;
+
+    if (font.smush & SM_EQUAL)
+        if (left == right) return left;
+
+    if (font.smush & SM_LOWLINE) {
+        if (left == '_' && inSet(right, '|/\\[]{}()<>')) return right;
+        if (right == '_' && inSet(left, '|/\\[]{}()<>')) return left;
+    }
+
+    if (font.smush & SM_HIERARCHY) {
+        // Six classes, low to high: | then /\ then [] then {} then () then <>.
+        const classes = ['|', '/\\', '[]', '{}', '()', '<>'];
+        for (let i = 0; i < length(classes); i++) {
+            const lower = classes[i];
+            let higher = '';
+            for (let j = i + 1; j < length(classes); j++) higher += classes[j];
+            if (inSet(left, lower) && inSet(right, higher)) return right;
+            if (inSet(right, lower) && inSet(left, higher)) return left;
+        }
+    }
+
+    if (font.smush & SM_PAIR) {
+        if (left == '[' && right == ']') return '|';
+        if (left == ']' && right == '[') return '|';
+        if (left == '{' && right == '}') return '|';
+        if (left == '}' && right == '{') return '|';
+        if (left == '(' && right == ')') return '|';
+        if (left == ')' && right == '(') return '|';
+    }
+
+    if (font.smush & SM_BIGX) {
+        if (left == '/'  && right == '\\') return '|';
+        if (left == '\\' && right == '/')  return 'Y';
+        if (left == '>'  && right == '<')  return 'X';
+    }
+
+    return null;
+}
+
+// How far the incoming glyph may slide left into what is already rendered.
+function smushAmount(font, out, glyph, outWidth, prevWidth, currWidth) {
+    if (!(font.smush & (SM_SMUSH | SM_KERN))) return 0;
+
+    let maxSmush = currWidth;
+
+    for (let row = 0; row < font.height; row++) {
+        const line = out[row];
+
+        // Rightmost non-space of what is already there.
+        let lineEnd = outWidth;
+        while (lineEnd > 0 && substr(line, lineEnd - 1, 1) == ' ') lineEnd--;
+        const left = lineEnd > 0 ? substr(line, lineEnd - 1, 1) : '';
+
+        // Leftmost non-space of the glyph.
+        let charStart = 0;
+        while (charStart < length(glyph[row])
+               && substr(glyph[row], charStart, 1) == ' ') charStart++;
+        const right = charStart < length(glyph[row])
+                      ? substr(glyph[row], charStart, 1) : '';
+
+        let amount = charStart + outWidth - lineEnd;
+
+        if (left == '' || left == ' ') {
+            amount++;
+        } else if (right != '') {
+            // One further column only if the two touching glyphs may merge.
+            // figlet also refuses to smush when either glyph is a single
+            // column wide, which is what keeps spaces from swallowing letters.
+            if (prevWidth >= 2 && currWidth >= 2
+                && smushem(font, left, right) != null) amount++;
+        }
+
+        if (amount < maxSmush) maxSmush = amount;
+    }
+    return maxSmush < 0 ? 0 : maxSmush;
+}
+
+// ── rendering ───────────────────────────────────────────────────────────────
+
+function render(font, text) {
+    let out = [];
+    for (let row = 0; row < font.height; row++) out[row] = '';
+    let outWidth = 0;
+    let prevWidth = 0;
+
+    for (let i = 0; i < length(text); i++) {
+        const code = ord(text, i);
+        const glyph = font.chars[code] || font.chars[32];
+        if (!glyph) continue;
+
+        const currWidth = length(glyph[0]);
+        const amount = smushAmount(font, out, glyph, outWidth, prevWidth, currWidth);
+
+        for (let row = 0; row < font.height; row++) {
+            let line = out[row];
+            // Overlay the overlapping columns, then append the remainder.
+            let merged = substr(line, 0, outWidth - amount);
+            for (let k = 0; k < amount; k++) {
+                const at = outWidth - amount + k;
+                const l = at >= 0 && at < length(line) ? substr(line, at, 1) : ' ';
+                const r = substr(glyph[row], k, 1);
+                const s = smushem(font, l, r);
+                merged += (s == null) ? l : s;
+            }
+            out[row] = merged + substr(glyph[row], amount);
+        }
+
+        outWidth = length(out[0]);
+        prevWidth = currWidth;
+    }
+
+    // Hardblanks exist so a glyph can hold a space that resists smushing. They
+    // are spaces in the output.
+    const rendered = [];
+    for (let row = 0; row < font.height; row++)
+        rendered[row] = replace(out[row], font.hardblank, ' ');
+    return rendered;
+}
+
+// ── entry ───────────────────────────────────────────────────────────────────
+
+let font = '/usr/share/parkeze/fonts/slant.flf';
+let words = [];
+
+let literal = false;
+for (let i = 0; i < length(ARGV); i++) {
+    // `--` ends the options, so text that begins with a dash can still be
+    // rendered. Everything after it is taken literally.
+    if (!literal && ARGV[i] == '--') { literal = true; continue; }
+    if (!literal && ARGV[i] == '-f') { font = ARGV[++i]; continue; }
+    words[length(words)] = ARGV[i];
+}
+
+const text = join(' ', words);
+if (!length(text)) die('usage: parkeze-figlet [-f FONT] TEXT');
+
+for (let line in render(loadFont(font), text)) print(line + '\n');

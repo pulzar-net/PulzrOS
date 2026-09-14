@@ -85,9 +85,15 @@ export interface InterfaceStatus {
 }
 
 export interface Modem {
+  model?: string | null;
+  imei?: string | null;
   registration: string | null;
   network: string | null;
   technology: string | null;
+  /** ModemManager's 0-100 quality. Always available. */
+  quality?: number | null;
+  /** dBm figures, only once `mmcli --signal-setup` has run — reported when
+      present rather than derived from the percentage. */
   rssi: number | null;
   rsrp: number | null;
   snr: number | null;

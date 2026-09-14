@@ -41,7 +41,17 @@ while IFS= read -r file; do
     echo "WARN ${file}"
     echo "${out}" | sed 's/^/     /'
   fi
-done < <(find feed -name '*.uc' | sort)
+done < <(
+  {
+    find feed -name '*.uc'
+    # Standalone ucode programs live in usr/sbin with no .uc suffix and are
+    # identified by their shebang. parkeze-figlet is one.
+    find feed -type f -path '*/usr/sbin/*' -print0 \
+      | while IFS= read -r -d '' f; do
+          head -c 32 "$f" | grep -q ucode && printf '%s\n' "$f"
+        done
+  } | sort -u
+)
 
 echo
 if [ "${fail}" -gt 0 ]; then

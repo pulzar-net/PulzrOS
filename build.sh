@@ -483,7 +483,9 @@ main() {
   case "${1:-}" in
     --list)      list_boards; exit 0 ;;
     --list-json) list_boards_json; exit 0 ;;
-    --all)       mapfile -t boards < <(list_boards) ;;
+    # `mapfile` is bash 4 and macOS ships bash 3.2, so --all silently did
+    # nothing there. A read loop works on both.
+    --all)       while IFS= read -r b; do boards+=("${b}"); done < <(list_boards) ;;
     -h|--help)
       sed -n '2,24p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
       exit 0 ;;

@@ -21,6 +21,8 @@
 . /etc/parkeze/board.conf 2>/dev/null
 
 WIDTH="${COLUMNS:-80}"
+FONT="${PARKEZE_MOTD_FONT:-/usr/share/parkeze/fonts/slant.flf}"
+WORDMARK="${PARKEZE_MOTD_WORDMARK:-Parkeze}"
 LOGO=1
 [ "$1" = "--no-logo" ] && LOGO=0
 
@@ -38,17 +40,18 @@ say() { printf "$@"; }
 # ── the wordmark ────────────────────────────────────────────────────────────
 
 logo() {
-    command -v figlet >/dev/null 2>&1 || return 1
+    # parkeze-figlet, not figlet: OpenWrt packages no figlet for any
+    # architecture, so the renderer ships with us. It reads the same slant.flf
+    # and produces byte-identical output — see scripts/test-figlet.sh.
+    [ -x /usr/sbin/parkeze-figlet ] || return 1
+    [ -f "${FONT}" ] || return 1
 
-    # slant is 39 columns for "Parkeze". Below about 46 the logo wraps and
-    # becomes noise, so a narrow terminal gets the plain name instead.
+    # slant is 39 columns for "Parkeze". Below about 46 it would wrap and
+    # become noise, so a narrow terminal gets the plain name instead. The
+    # renderer does not wrap, which is exactly why this check is here.
     [ "${WIDTH}" -lt 46 ] && return 1
 
-    # -f slant is the house font. If the image was built without that font —
-    # OpenWrt's figlet package does not guarantee the full font set — fall
-    # through to whatever the default is rather than printing figlet's error
-    # into somebody's login.
-    figlet -f slant "Parkeze" 2>/dev/null || figlet "Parkeze" 2>/dev/null
+    /usr/sbin/parkeze-figlet -f "${FONT}" -- "${WORDMARK}" 2>/dev/null
 }
 
 # ── state ───────────────────────────────────────────────────────────────────
