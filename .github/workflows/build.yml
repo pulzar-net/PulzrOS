@@ -271,7 +271,17 @@ jobs:
         run: |
           # Each entry carries its target and subtarget, so the image job can
           # key its ImageBuilder cache on the download rather than on the board.
-          all="$(./build.sh --list-json)"
+          # --list-json reports every board including the ones with no upstream
+          # device support; the matrix takes only what can actually be built,
+          # so a board waiting on a DTS does not turn the run red.
+          all="$(./build.sh --list-json | jq -c '[.[] | select(.status == "supported")]')"
+          held="$(./build.sh --list-json | jq -r '.[] | select(.status != "supported") | "  \(.board): \(.status)"')"
+          if [ -n "${held}" ]; then
+            echo "Not built (no upstream device profile):"
+            echo "${held}"
+            { echo "### Boards held back"; echo; echo '```'; echo "${held}"; echo '```'; } \
+              >> "$GITHUB_STEP_SUMMARY"
+          fi
 
           if [ -n "${REQUESTED}" ]; then
             wanted="$(printf '%s' "${REQUESTED}" | tr ' ' '\n' \

@@ -46,9 +46,24 @@ log()  { printf '\033[36m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[33m warn\033[0m %s\n' "$*" >&2; }
 die()  { printf '\033[31merror\033[0m %s\n' "$*" >&2; exit 1; }
 
-list_boards() {
+# Every board directory, buildable or not.
+all_boards() {
   find "${BOARDS_DIR}" -mindepth 1 -maxdepth 1 -type d ! -name common \
     -exec basename {} \; | sort
+}
+
+board_status() {
+  ( . "${BOARDS_DIR}/${1}/board.conf" >/dev/null 2>&1
+    echo "${BOARD_STATUS:-supported}" )
+}
+
+# Boards that can actually be built. `--all` and CI use this, so a board with
+# no upstream device support does not turn the whole run red.
+list_boards() {
+  for board in $(all_boards); do
+    [ "$(board_status "${board}")" = "supported" ] && echo "${board}"
+  done
+  return 0
 }
 
 # Every board with the fields CI needs, as JSON.
@@ -60,16 +75,17 @@ list_boards() {
 list_boards_json() {
   local first=1
   printf '['
-  for board in $(list_boards); do
+  for board in $(all_boards); do
     (
       # shellcheck disable=SC1090
       . "${BOARDS_DIR}/${board}/board.conf"
-      printf '{"board":"%s","name":"%s","target":"%s","subtarget":"%s","arch":"%s","imagebuilder":"%s-%s-%s"}' \
-        "${BOARD_ID}" "${BOARD_NAME}" "${OPENWRT_TARGET}" "${OPENWRT_SUBTARGET}" \
+      printf '{"board":"%s","name":"%s","status":"%s","target":"%s","subtarget":"%s","arch":"%s","imagebuilder":"%s-%s-%s"}' \
+        "${BOARD_ID}" "${BOARD_NAME}" "${BOARD_STATUS:-supported}" \
+        "${OPENWRT_TARGET}" "${OPENWRT_SUBTARGET}" \
         "${OPENWRT_ARCH}" "${OPENWRT_VERSION}" "${OPENWRT_TARGET}" "${OPENWRT_SUBTARGET}"
     )
     [ "${first}" = 1 ] && first=0 || true
-    [ "${board}" = "$(list_boards | tail -n1)" ] || printf ','
+    [ "${board}" = "$(all_boards | tail -n1)" ] || printf ','
   done
   printf ']\n'
 }
@@ -425,6 +441,19 @@ build_board() {
     . "${conf}"
 
     : "${OPENWRT_PROFILE:?board.conf must set OPENWRT_PROFILE}"
+
+    if [ "${BOARD_STATUS:-supported}" != "supported" ]; then
+      cat >&2 <<EOF
+error: ${BOARD_ID} cannot be built from a stock OpenWrt ImageBuilder.
+
+       OpenWrt 24.10 has no device profile for it, so there is nothing for
+       \`make image\` to assemble — it would fail with
+       'Profile "${OPENWRT_PROFILE}" does not exist!'.
+
+       See the header of the board's config for what it would take.
+EOF
+      exit 1
+    fi
     log "Building ${BOARD_NAME} (${BOARD_ID}) — ${OPENWRT_TARGET}/${OPENWRT_SUBTARGET}"
 
     fetch_imagebuilder
