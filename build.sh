@@ -481,9 +481,55 @@ EOF
       BIN_DIR="${OUT_DIR}/${BOARD_ID}" \
       -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
 
+    verify_rootfs "${ib}"
+
     log "Images: out/${BOARD_ID}/"
     ls -1 "${OUT_DIR}/${BOARD_ID}"/*.img.gz 2>/dev/null || true
   )
+}
+
+# Confirm our packages actually put files in the image.
+#
+# This exists because they once did not. The .ipk files were ar archives, which
+# is what every description of the format says and what Debian uses — but
+# OpenWrt's opkg only reads the gzipped-tar form. It installed all eight
+# packages from our index, wrote them into /usr/lib/opkg/status, created an
+# empty file list for each, and extracted nothing. The build succeeded, the
+# image booted, and it contained no part of ParkezeOS.
+#
+# Nothing in the build reported a problem, so the check is here: look in the
+# rootfs ImageBuilder actually assembled and insist a file we ship is present.
+verify_rootfs() {
+  local ib="$1"
+  local root
+  root="$(find "${ib}/build_dir" -maxdepth 2 -type d -name 'root-*' 2>/dev/null | head -n1)"
+
+  if [ -z "${root}" ]; then
+    warn "could not find the staging rootfs; skipping the payload check"
+    return 0
+  fi
+
+  # One file from a package with no dependencies of its own, so a failure here
+  # means the packaging is broken rather than a dependency being unavailable.
+  local witness="${root}/usr/sbin/parkeze-motd"
+  if [ ! -f "${witness}" ]; then
+    cat >&2 <<EOF
+error: the image built, but contains none of our files.
+
+       ${witness} is missing from the assembled rootfs, which means the
+       parkeze-* packages installed their metadata and no payload.
+
+       Check the .ipk format — it must be a gzipped tar, not an ar archive:
+
+         file .build/packages/parkeze-base_*.ipk
+         # expected: gzip compressed data
+EOF
+    exit 1
+  fi
+
+  local count
+  count="$(find "${root}" -path '*parkeze*' -type f | wc -l | tr -d ' ')"
+  log "Payload check: ${count} Parkeze files in the rootfs"
 }
 
 # ── Entry point ─────────────────────────────────────────────────────────────

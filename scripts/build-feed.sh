@@ -53,6 +53,45 @@ tar_create() {
   fi
 }
 
+tar_create_files() {
+  # tar_create_files <output.tar.gz> <file>... — archives named files, in the
+  # order given, each with a ./ prefix so the layout matches OpenWrt's own.
+  local out="$1"; shift
+  local paths=()
+  local f
+  for f in "$@"; do paths+=("./${f}"); done
+  if [ "${REPRODUCIBLE}" = 1 ]; then
+    "${TAR}" --numeric-owner --owner=0 --group=0 --mtime="@0" \
+        -czf "${out}" "${paths[@]}"
+  else
+    "${TAR}" -czf "${out}" "${paths[@]}"
+  fi
+}
+
+# An ipk opkg cannot read fails silently — it installs the metadata and no
+# files — so the format is asserted at build time rather than discovered on a
+# gateway. `file` is used deliberately: bsdtar reads ar archives too and would
+# report success on the broken form.
+check_ipk_format() {
+  local ipk="$1" kind
+  kind="$(file -b "${ipk}")"
+  case "${kind}" in
+    *gzip*) ;;
+    *) echo "error: ${ipk} is '${kind}', not a gzipped tar." >&2
+       echo "       OpenWrt's opkg only reads the tar.gz form; an ar archive" >&2
+       echo "       installs zero files without reporting an error." >&2
+       exit 1 ;;
+  esac
+
+  # And it must actually carry a payload.
+  local entries
+  entries="$(tar -xzOf "${ipk}" ./data.tar.gz 2>/dev/null | tar -tzf - 2>/dev/null | wc -l)"
+  if [ "${entries}" -lt 2 ]; then
+    echo "error: ${ipk} has an empty data.tar.gz (${entries} entries)." >&2
+    exit 1
+  fi
+}
+
 # sha256: coreutils on Linux, shasum on macOS. Neither is present on both.
 if command -v sha256sum >/dev/null 2>&1; then
   sha256() { sha256sum "$1" | cut -d' ' -f1; }
@@ -108,10 +147,32 @@ for pkgdir in "${FEED_DIR}"/*/; do
     [ "${script}" = conffiles ] || chmod 0755 "${stage}/CONTROL/${script}"
   done
 
-  # ipk layout: an ar archive of debian-binary, control.tar.gz, data.tar.gz.
+  # ── the .ipk container ────────────────────────────────────────────────────
+  #
+  # A GZIPPED TAR of debian-binary, data.tar.gz and control.tar.gz. NOT an ar
+  # archive.
+  #
+  # Debian's .deb is ar, opkg descends from dpkg, and every description of the
+  # ipk format says "ar archive" — so the first version of this built one with
+  # `ar -rc`. OpenWrt's opkg does not read that. It installed the packages
+  # from our Packages index, recorded them in /usr/lib/opkg/status, wrote an
+  # empty .list for each, and extracted no files at all. The image built
+  # cleanly, booted, and contained none of ParkezeOS.
+  #
+  # Nothing warns about this. The only way to see it is to compare against a
+  # real OpenWrt package:
+  #
+  #   $ file uhttpd_2025.07.06_aarch64.ipk
+  #   gzip compressed data                     <- what opkg wants
+  #   $ file parkeze-base_0.1.0_all.ipk
+  #   Debian binary package (format 2.0)       <- what we were producing
+  #
+  # `tar -tzf` is no help either: bsdtar reads ar archives quite happily and
+  # reports success on both. check_ipk_format below uses `file`.
+  #
   # --numeric-owner and a fixed mtime keep the output reproducible: two builds
-  # of an unchanged tree should produce byte-identical packages, so that a
-  # rebuilt image can be diffed against a shipped one meaningfully.
+  # of an unchanged tree should produce byte-identical packages, so a rebuilt
+  # image can be diffed against a shipped one meaningfully.
   ( cd "${stage}/data" && tar_create "${stage}/data.tar.gz" )
   ( cd "${stage}/CONTROL" && tar_create "${stage}/control.tar.gz" )
   echo "2.0" > "${stage}/debian-binary"
@@ -125,7 +186,11 @@ for pkgdir in "${FEED_DIR}"/*/; do
   # several — which is how a stale control file gets read while debugging and
   # sends you looking for a bug that was fixed two builds ago.
   rm -f "${REPO_DIR}/${name}"_*.ipk
-  ( cd "${stage}" && ar -rc "${out}" debian-binary control.tar.gz data.tar.gz )
+
+  # Member order matches what OpenWrt itself produces.
+  ( cd "${stage}" && tar_create_files "${out}" debian-binary data.tar.gz control.tar.gz )
+
+  check_ipk_format "${out}"
 
   echo "  packaged ${name} ${VERSION}-${BUILD} (${arch})"
 done
@@ -138,7 +203,7 @@ done
   for ipk in *.ipk; do
     [ -e "${ipk}" ] || continue
     tmp="$(mktemp -d)"
-    ar -p "${ipk}" control.tar.gz | tar -xzf - -C "${tmp}"
+    tar -xzOf "${ipk}" ./control.tar.gz | tar -xzf - -C "${tmp}"
     cat "${tmp}/control" >> Packages
     printf 'Filename: %s\n' "${ipk}" >> Packages
     printf 'Size: %s\n' "$(wc -c < "${ipk}" | tr -d ' ')" >> Packages
