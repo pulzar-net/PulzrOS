@@ -48,6 +48,66 @@ is_claimed() {
     return 1
 }
 
+# Which serial ports the kernel is using as a console.
+#
+# Probing one of these is destructive: the probe reconfigures the port to
+# 9600 raw, and on a Pi the console is ttyAMA0 at 115200, so a GPS probe
+# silently kills the serial console — the exact thing you reach for when a
+# gateway will not boot.
+console_ports() {
+    local arg port
+    for arg in $(cat /proc/cmdline 2>/dev/null); do
+        case "${arg}" in
+            console=*)
+                port="${arg#console=}"
+                port="${port%%,*}"
+                case "${port}" in tty[0-9]*) continue ;; esac   # tty1 etc, not serial
+                echo "/dev/${port}"
+                # serial0 and serial1 are symlinks on a Pi; resolve them too.
+                [ -L "/dev/${port}" ] && echo "/dev/$(readlink "/dev/${port}")"
+                ;;
+        esac
+    done
+}
+
+is_console() {
+    local candidate="$1" used
+    for used in $(console_ports); do
+        [ "${candidate}" = "${used}" ] && return 0
+    done
+    return 1
+}
+
+# Read at most `size` bytes from a port, giving up after `seconds`.
+#
+# `timeout` is not available: it is not a busybox applet in this build and
+# there is no coreutils. Without it the original probe expanded to
+# "timeout: not found", read nothing, and reported no GNSS on every board —
+# quietly, because a failed probe is a normal outcome.
+bounded_read() {
+    local port="$1" seconds="$2" size="$3" out="$4"
+
+    # Job-control notices from the kill below would otherwise land in the boot
+    # log as a bare "Terminated", which reads like a fault rather than a probe
+    # finishing normally.
+    head -c "${size}" "${port}" > "${out}" 2>/dev/null &
+    local pid=$!
+    local waited=0
+    while kill -0 "${pid}" 2>/dev/null; do
+        if [ "${waited}" -ge "${seconds}" ]; then
+            kill -TERM "${pid}" 2>/dev/null
+            # A read blocked in the kernel on a silent tty ignores TERM.
+            sleep 1
+            kill -KILL "${pid}" 2>/dev/null
+            break
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+    wait "${pid}" 2>/dev/null
+    return 0
+} 2>/dev/null
+
 # Does this tty emit NMEA?
 #
 # The only honest test is to listen. A GNSS receiver with no sky view still
@@ -58,17 +118,41 @@ probe_nmea() {
     local port="$1" baud="${2:-9600}"
     [ -c "${port}" ] || return 1
 
+    # Never touch the console. On a Pi with an SPI concentrator HAT the HAT's
+    # GNSS *is* wired to the console UART, so this is a real hardware conflict
+    # rather than a corner case: you can have the serial console or UART GNSS,
+    # not both. The console wins unless the board says otherwise, because
+    # losing it is how a gateway becomes undiagnosable.
+    if is_console "${port}"; then
+        if [ "${PARKEZE_GPS_ALLOW_CONSOLE_UART:-0}" != "1" ]; then
+            log "skipping ${port} — it is the kernel console"
+            log "  (set PARKEZE_GPS_ALLOW_CONSOLE_UART=1 to give it up for GNSS)"
+            return 1
+        fi
+        log "claiming the console port ${port} for GNSS, as configured"
+    fi
+
+    # Saved and restored: a probe that leaves a port at the wrong baud breaks
+    # whatever owns it next.
+    local saved
+    saved="$(stty -F "${port}" -g 2>/dev/null)"
     stty -F "${port}" "${baud}" raw -echo 2>/dev/null || return 1
 
-    # Two seconds is four or five sentence bursts at the usual 1Hz, which is
-    # enough to see one and short enough that probing four candidate ports at
-    # two baud rates does not add half a minute to every boot.
-    local sample
-    sample="$(timeout 2 head -c 512 "${port}" 2>/dev/null)"
+    # Two seconds is four or five sentence bursts at the usual 1Hz — enough to
+    # see one, short enough that probing several ports at two baud rates does
+    # not add half a minute to every boot.
+    local tmp=/tmp/.gps-probe
+    bounded_read "${port}" 2 512 "${tmp}"
+
+    [ -n "${saved}" ] && stty -F "${port}" "${saved}" 2>/dev/null
 
     # $GPxxx, $GNxxx, $GLxxx, $GAxxx — the talker ID varies by constellation
     # and by receiver, so match the shape rather than a specific prefix.
-    echo "${sample}" | grep -qE '\$G[PNLABQ][A-Z]{3},' && return 0
+    if grep -qE '\$G[PNLABQ][A-Z]{3},' "${tmp}" 2>/dev/null; then
+        rm -f "${tmp}"
+        return 0
+    fi
+    rm -f "${tmp}"
     return 1
 }
 
