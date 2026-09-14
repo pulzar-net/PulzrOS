@@ -43,6 +43,17 @@ carried over.
 `build.sh` builds the React console, packages the feed, and assembles images,
 in that order.
 
+## Flashing one
+
+```bash
+./flash.sh --download rpi4     # fetch the latest CI image and write it to a card
+```
+
+Refuses internal disks, never guesses the target, and asks you to type the disk
+identifier rather than press `y`. See [`docs/flashing.md`](docs/flashing.md).
+
+## Building
+
 Images land in `out/<board>/`. First build downloads and checksum-verifies an
 ImageBuilder (~150MB, cached); after that a build is a few minutes.
 
@@ -92,6 +103,8 @@ docs/             the design decisions worth writing down
   the wrong answer.
 - [`docs/access.md`](docs/access.md) — the setup AP, the captive portal, and
   why forcing a gateway offline to raise its radio gains an attacker nothing.
+- [`docs/flashing.md`](docs/flashing.md) — getting an image onto a board, and
+  the first-boot experience.
 - [`docs/provisioning.md`](docs/provisioning.md) — one-touch provisioning end
   to end, the two secrets it rests on, and what happens when a gateway has no
   internet.
