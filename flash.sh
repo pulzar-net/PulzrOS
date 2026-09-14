@@ -50,12 +50,18 @@ sdcard_boards() {
 # ── finding an image ────────────────────────────────────────────────────────
 
 images_for() {
-  # squashfs-factory first — see BOARD_IMAGE_PREFERENCE in boards/common.
-  local board="$1" dir="${OUT_DIR}/$1"
-  [ -d "${dir}" ] || return 1
+  # Two layouts to cope with: out/release/ holds the packaged images a CI
+  # artifact unpacks into, and out/<board>/ holds raw ImageBuilder output from
+  # a local build. Sysupgrade images are excluded — writing one to a blank card
+  # produces something that does not boot, and it is the easiest mistake here.
+  local board="$1"
   local preferred; preferred="$(board_field "${board}" BOARD_IMAGE_PREFERENCE)"
-  { find "${dir}" -maxdepth 1 -name "*${preferred}*.img.gz" 2>/dev/null
-    find "${dir}" -maxdepth 1 -name '*.img.gz' 2>/dev/null; } | awk '!seen[$0]++'
+  {
+    find "${OUT_DIR}/release" -maxdepth 1 -name "ParkezeOS-*-${board}.img.gz" 2>/dev/null
+    find "${OUT_DIR}/release" -maxdepth 1 -name "ParkezeOS-*-${board}.img.xz" 2>/dev/null
+    find "${OUT_DIR}/${board}" -maxdepth 1 -name "*${preferred}*.img.gz" 2>/dev/null
+    find "${OUT_DIR}/${board}" -maxdepth 1 -name '*.img.gz' 2>/dev/null
+  } | grep -v sysupgrade | awk '!seen[$0]++'
 }
 
 download_image() {
@@ -69,9 +75,9 @@ download_image() {
   [ -n "${run}" ] || die "no successful build found in ${REPO}"
 
   log "Downloading parkezeos-${board} from run ${run}"
-  mkdir -p "${OUT_DIR}/${board}"
+  mkdir -p "${OUT_DIR}/release"
   gh run download "${run}" --repo "${REPO}" --name "parkezeos-${board}" \
-     --dir "${OUT_DIR}/${board}" \
+     --dir "${OUT_DIR}/release" \
     || die "could not download parkezeos-${board} — was that board built?"
 }
 
@@ -194,10 +200,17 @@ write_image() {
   # gunzip streams into dd so no decompressed copy is ever written to disk.
   # `status=progress` is GNU/`bs=4m` BSD; both are handled rather than
   # assuming coreutils.
+  local decompress
+  case "${image}" in
+    *.xz) decompress="xz -dc" ;;
+    *.gz) decompress="gunzip -c" ;;
+    *)    decompress="cat" ;;
+  esac
+
   if [ "$(uname -s)" = Darwin ]; then
-    gunzip -c "${image}" | sudo dd of="${raw}" bs=4m 2>&1 | tail -3
+    ${decompress} "${image}" | sudo dd of="${raw}" bs=4m 2>&1 | tail -3
   else
-    gunzip -c "${image}" | sudo dd of="${raw}" bs=4M conv=fsync status=progress 2>&1 | tail -3
+    ${decompress} "${image}" | sudo dd of="${raw}" bs=4M conv=fsync status=progress 2>&1 | tail -3
   fi
 
   log "Flushing"
@@ -266,9 +279,11 @@ fi
 candidates=()
 while IFS= read -r f; do candidates+=("${f}"); done < <(images_for "${BOARD}" || true)
 if [ "${#candidates[@]}" -eq 0 ]; then
-  die "no image in out/${BOARD}/.
+  die "no image for ${BOARD}.
        Build one:     ./build.sh ${BOARD}
-       Or fetch one:  ./flash.sh --download ${BOARD}"
+       Or fetch one:  ./flash.sh --download ${BOARD}
+       Or skip this script entirely and use Raspberry Pi Imager —
+       see docs/flashing.md."
 fi
 
 IMAGE="${candidates[0]}"

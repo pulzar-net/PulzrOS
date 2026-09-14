@@ -357,6 +357,12 @@ jobs:
           ls .build/packages/*.ipk 2>/dev/null | xargs -n1 basename >> "$GITHUB_STEP_SUMMARY" || true
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
+      # ImageBuilder's filenames say everything except which file to write to a
+      # card. This renames the right one, produces the .img.xz Pi Imager wants,
+      # and emits that board's entry for the OS list.
+      - name: Package for humans
+        run: ./scripts/package-images.sh "${{ matrix.board }}" "$(cat VERSION)"
+
       - name: Summarise
         run: |
           {
@@ -364,18 +370,18 @@ jobs:
             echo
             echo '| Image | Size |'
             echo '|---|---|'
-            find "out/${{ matrix.board }}" -maxdepth 1 -type f \
-                 \( -name '*.img.gz' -o -name '*.bin' \) \
+            find out/release -maxdepth 1 -type f \
+                 \( -name "*${{ matrix.board }}*.img.gz" -o -name "*${{ matrix.board }}*.img.xz" \) \
                  -printf '| `%f` | %s bytes |\n' | sort
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # The friendly build: one image to write, one to upgrade with, checksums,
+      # and the OS list fragment. Not the raw ImageBuilder output, which is
+      # four cryptic files nobody can choose between.
       - uses: actions/upload-artifact@v4
         with:
           name: parkezeos-${{ matrix.board }}
-          path: |
-            out/${{ matrix.board }}/*.img.gz
-            out/${{ matrix.board }}/*.bin
-            out/${{ matrix.board }}/sha256sums
+          path: out/release/*
           # Long enough to flash a unit next week, short enough that the
           # storage quota is not spent on every push to a branch.
           retention-days: 14
@@ -398,10 +404,35 @@ jobs:
       - name: Collect
         run: |
           mkdir -p release
-          find artifacts -type f \( -name '*.img.gz' -o -name '*.bin' \) \
+          find artifacts -type f \( -name '*.img.gz' -o -name '*.img.xz' \) \
                -exec cp {} release/ \;
           ( cd release && sha256sum ./* > sha256sums.txt )
           ls -la release
+
+      # Raspberry Pi Imager can be pointed at a custom OS list, which makes
+      # ParkezeOS appear in its menu alongside Raspberry Pi OS — no hunting for
+      # a file, and it refuses to write the Pi 5 image to a Pi 3 because each
+      # entry declares which models it fits.
+      #
+      # Assembled from the per-board fragments, which were written where the
+      # checksums had already been computed.
+      - name: Build the Raspberry Pi Imager OS list
+        run: |
+          # -print0 into xargs rather than an unquoted variable: relying on the
+          # shell to word-split a list of filenames breaks on spaces and
+          # behaves differently between shells, which has already cost this
+          # repo one silently-wrong matrix.
+          if [ -z "$(find artifacts -name '*.oslist.json' -print -quit)" ]; then
+            echo "::warning::no OS list fragments — no Pi boards in this release?"
+            exit 0
+          fi
+          find artifacts -name '*.oslist.json' -print0 \
+            | sort -z \
+            | xargs -0 jq -s '{os_list: .}' > release/os_list.json
+          jq -r '.os_list[] | "  \(.name)"' release/os_list.json
+          # A malformed list makes Imager fail silently, so it is validated here
+          # rather than discovered by somebody staring at an empty menu.
+          jq -e '.os_list | length > 0' release/os_list.json > /dev/null
 
       - uses: softprops/action-gh-release@v2
         with:

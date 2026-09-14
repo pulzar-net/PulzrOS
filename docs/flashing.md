@@ -1,14 +1,59 @@
 # Flashing a gateway
 
-## Raspberry Pi — an SD card
+## Raspberry Pi — use whatever you already use
+
+The images CI builds are **raw disk images**, so every SD writer takes them
+directly: Raspberry Pi Imager, balenaEtcher, Rufus, `dd`. Nothing special.
+
+> **Not an ISO.** An ISO is an optical-disc filesystem with no partition table
+> and a Pi will not boot one. If a tool asks for an ISO it is the wrong tool
+> for an SD card. What you want is the `.img.gz` or `.img.xz`.
+
+### Raspberry Pi Imager, with ParkezeOS in the menu
+
+Point Imager at our OS list once and ParkezeOS appears alongside Raspberry Pi
+OS, with the right image picked for whichever Pi you select:
+
+1. Open Raspberry Pi Imager.
+2. Hold **Ctrl+Shift+X** → **Options** → set the repository URL to:
+
+   ```
+   https://github.com/parkezesolutions/ParkezeOS/releases/latest/download/os_list.json
+   ```
+
+3. **Choose OS** → ParkezeOS.
+
+Imager then downloads, verifies the checksum and writes it. Because each entry
+declares which Pi models it fits, **it will not let you write the Pi 5 image to
+a Pi 3** — which is the failure that otherwise presents as a black screen and
+an afternoon.
+
+Leave Imager's OS customisation alone. The entries set `init_format: none` so
+it should not offer it; if it does, skip it. It writes a Raspberry Pi OS-shaped
+config that OpenWrt does not read, and the result looks like a broken image.
+
+### Just download a file
+
+From the [latest release](https://github.com/parkezesolutions/ParkezeOS/releases/latest):
+
+| File | For |
+|---|---|
+| `ParkezeOS-<version>-rpi4.img.xz` | writing to a blank card. Smaller download. |
+| `ParkezeOS-<version>-rpi4.img.gz` | the same image, for a tool that dislikes xz. |
+| `ParkezeOS-<version>-rpi4-sysupgrade.img.gz` | **upgrading** a gateway already running ParkezeOS, from its console. Not for a blank card. |
+| `sha256sums.txt` | verify before writing. |
+
+Open the `.img.xz` in Etcher or Imager's *Use custom* and write it. No need to
+decompress first — both handle it.
+
+### Or the script in this repo
 
 ```bash
 ./flash.sh --download rpi4     # fetch the latest CI image and write it
 ```
 
-That is the whole thing. It picks the right image, shows you the removable
-disks, refuses the internal one, and asks you to type the disk identifier
-before it writes.
+Worth it when you are flashing a lot of cards, because it picks the right
+image, refuses internal disks, and never guesses the target.
 
 If you have built locally, drop `--download`:
 
@@ -39,8 +84,8 @@ undo, so:
 
 ### Which image
 
-Four are built per board. `flash.sh` picks **squashfs-factory** and that is
-almost always what you want:
+ImageBuilder produces four per board; releases only publish the two that
+anybody wants, renamed. For the record, the four are:
 
 | | what it is |
 |---|---|
