@@ -13,16 +13,16 @@
 # which tells you everything except which one to write to a card. Downloading a
 # CI artifact and being handed four of those is not a usable release.
 #
-# So this picks the one that belongs on a blank card, renames it to something
-# legible, and emits the metadata Raspberry Pi Imager needs to offer ParkezeOS
-# as a selectable OS rather than making anybody hunt for a file at all.
+# So this picks the one that belongs on a blank card and renames it to something
+# legible, alongside the sysupgrade image and checksums.
 #
 # ── FORMATS ────────────────────────────────────────────────────────────────
 #
 # Both .img.gz and .img.xz, because the tools disagree:
 #
 #   .img.gz   what OpenWrt produced. Etcher, Rufus and dd all take it.
-#   .img.xz   roughly 40% smaller, and what Pi Imager's own OS list uses.
+#   .img.xz   roughly 40% smaller. Raspberry Pi Imager, Etcher and Rufus all
+#             decompress it inline, so there is nothing to unzip first.
 #
 # Not an ISO. An ISO is an optical-disc filesystem with no partition table; a
 # Pi will not boot one. These are raw disk images, which is what every SD
@@ -68,71 +68,18 @@ log "Packaging ${BOARD}"
 
 cp "${factory}" "${DEST}/${base}.img.gz"
 
-# Pi Imager wants the uncompressed size and checksum, so the image is expanded
-# once here rather than by every consumer.
-tmp="$(mktemp -d)"
-gunzip -c "${factory}" > "${tmp}/${base}.img"
-extract_size="$(wc -c < "${tmp}/${base}.img" | tr -d ' ')"
-extract_sha="$(sha "${tmp}/${base}.img")"
-
+# Recompressed rather than shipped as-is: xz is about 40% smaller than the gz
+# ImageBuilder produced, which matters when the download is ~90MB and somebody
+# is fetching it over a hotel connection. Every SD writer takes either.
 log "  compressing xz (this is the slow part)"
-xz -T0 -6 -c "${tmp}/${base}.img" > "${DEST}/${base}.img.xz"
+tmp="$(mktemp -d)"
+gunzip -c "${factory}" | xz -T0 -6 -c > "${DEST}/${base}.img.xz"
 rm -rf "${tmp}"
-
-download_size="$(wc -c < "${DEST}/${base}.img.xz" | tr -d ' ')"
-download_sha="$(sha "${DEST}/${base}.img.xz")"
 
 [ -n "${sysupgrade}" ] && cp "${sysupgrade}" "${DEST}/${base}-sysupgrade.img.gz"
 
-# ── the Pi Imager entry ─────────────────────────────────────────────────────
-#
-# One fragment per board; the release job concatenates them into os_list.json.
-# Written here because this is where the checksums are already computed.
-#
-# ONLY WHEN THERE IS SOMEWHERE PUBLIC TO SERVE THE IMAGES FROM.
-#
-# Raspberry Pi Imager fetches the OS list and the images with no credentials,
-# so every URL in this file has to be reachable anonymously. This repository is
-# private and its release assets are not — pointing Imager at a GitHub release
-# URL gets a 404 and an empty OS menu, with nothing on screen saying why.
-#
-# So the base URL is required rather than defaulted. Set it to wherever the
-# images are actually published:
-#
-#   PARKEZE_IMAGE_BASE_URL=https://downloads.parkeze.net/os/v0.1.0
-#
-# With it unset we emit no fragment at all, and the release simply carries the
-# image files — which is the honest outcome, and still works with every SD
-# writer including Imager's "Use custom".
-#
-# `init_format: none` matters: without it Pi Imager offers to preset a hostname,
-# WiFi and SSH keys, writes them into a Raspberry Pi OS-shaped config that
-# OpenWrt does not read, and the user concludes the image is broken.
-if [ -z "${PARKEZE_IMAGE_BASE_URL:-}" ]; then
-  log "  no PARKEZE_IMAGE_BASE_URL — skipping the Pi Imager entry"
-  log "  (Imager needs anonymously-reachable URLs; this repo is private)"
-elif [ -n "${BOARD_PI_IMAGER_DEVICES:-}" ]; then
-  devices="$(printf '%s' "${BOARD_PI_IMAGER_DEVICES}" \
-             | tr ' ' '\n' | grep -v '^$' | sed 's/.*/"&"/' | paste -sd, -)"
-  cat > "${DEST}/${base}.oslist.json" <<EOF
-{
-  "name": "ParkezeOS ${VERSION} (${BOARD_NAME})",
-  "description": "Parkeze LoRaWAN gateway — ${BOARD_NAME}. Adopts itself into parkeze.net; scan the code it shows on first boot.",
-  "icon": "${PARKEZE_IMAGER_ICON_URL:-${PARKEZE_IMAGE_BASE_URL%/}/parkeze.png}",
-  "url": "${PARKEZE_IMAGE_BASE_URL%/}/${base}.img.xz",
-  "release_date": "$(date -u +%Y-%m-%d)",
-  "extract_size": ${extract_size},
-  "extract_sha256": "${extract_sha}",
-  "image_download_size": ${download_size},
-  "image_download_sha256": "${download_sha}",
-  "devices": [${devices}],
-  "init_format": "none"
-}
-EOF
-fi
-
 ( cd "${DEST}" && for f in "${base}"*; do
-    case "${f}" in *.sha256|*.oslist.json) continue ;; esac
+    case "${f}" in *.sha256) continue ;; esac
     sha "${f}" > "${f}.sha256"
   done )
 

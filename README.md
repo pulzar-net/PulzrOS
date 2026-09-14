@@ -56,8 +56,7 @@ Or use any SD writer: these are raw disk images (not ISOs — a Pi will not boot
 one of those). Download the artifact and open the `.img.xz` in Raspberry Pi
 Imager's *Use custom*, Etcher, or Rufus.
 
-See [`docs/flashing.md`](docs/flashing.md), including why ParkezeOS does not
-appear in Imager's OS menu while this repository is private.
+See [`docs/flashing.md`](docs/flashing.md).
 
 ## Building
 
