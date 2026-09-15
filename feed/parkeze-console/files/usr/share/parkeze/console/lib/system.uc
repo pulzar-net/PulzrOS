@@ -5,9 +5,22 @@ let readfile = _m_fs.readfile;
 let _m_uci = require('uci');
 let cursor = _m_uci.cursor;
 let _m_util = loadfile('/usr/share/parkeze/console/lib/util.uc', { raw_mode: true })();
+
+// ── forward declarations ────────────────────────────────────────────────────
+//
+// ucode does not hoist function declarations. A `function f()` defined below
+// a function that calls it is simply not in scope there, and the call fails at
+// RUNTIME with "left-hand side is not a function" — never at compile time, so
+// nothing catches it until the request that needs it.
+//
+// Declaring the names first makes every one of them a known local before any
+// body is compiled, so closures capture the binding rather than a missing
+// global and definition order stops mattering. auth.uc alone had six of these.
+let boardConf, summary, thermal, logs, reboot;
+
 let run = _m_util.run;; let runJson = _m_util.runJson;; let ubus = _m_util.ubus;
 
-function boardConf() {
+boardConf = function() {
     // /etc/parkeze/board.conf is shell, not JSON. Parsed here rather than
     // sourced, because sourcing attacker-controllable shell would be a
     // remote-code-execution hole — and while this file is written by our own
@@ -21,9 +34,9 @@ function boardConf() {
         if (m) out[m[1]] = m[2];
     }
     return out;
-}
+};
 
-function summary() {
+summary = function() {
     const uci = cursor();
     const board = boardConf();
     const info = ubus('system', 'info');
@@ -63,16 +76,16 @@ function summary() {
             temperature: thermal(),
         },
     };
-}
+};
 
-function thermal() {
+thermal = function() {
     const raw = readfile('/sys/class/thermal/thermal_zone0/temp');
     if (!raw) return null;
     const milli = int(trim(raw));
     return milli > 1000 ? milli / 1000 : milli;
-}
+};
 
-function logs(queryString) {
+logs = function(queryString) {
     // logread, most recent first. The console paginates; this caps the read so
     // a gateway with a chatty packet forwarder cannot return a 40MB response
     // to a browser over a metered link.
@@ -82,15 +95,15 @@ function logs(queryString) {
 
     const out = run(sprintf('logread -l %d', lines));
     return { lines: out ? split(out, '\n') : [] };
-}
+};
 
-function reboot() {
+reboot = function() {
     // Detached, so the HTTP response is actually delivered before the box goes
     // down. A synchronous reboot leaves the browser showing a network error
     // and the operator unsure whether the command landed.
     run('(sleep 2; /sbin/reboot) >/dev/null 2>&1 &');
     return { ok: true, message: 'Rebooting.' };
-}
+};
 
 // ── module exports ──────────────────────────────────────────────────────────
 //

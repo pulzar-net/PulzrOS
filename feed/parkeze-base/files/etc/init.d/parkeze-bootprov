@@ -42,23 +42,49 @@
 START=14
 
 STATE=/etc/parkeze/console
-MNT=/tmp/.bootpart
+MNT=""
 
 PW_IN="parkeze-password.txt"
 PW_OUT="parkeze-initial-password.txt"
 KEYS="parkeze-authorized-keys"
 
-# Mounting IS the filesystem test — no blkid or block-mount dependency, and a
-# partition that is not FAT simply fails and we move on.
+# Find the boot partition, wherever it already is.
+#
+# The first version always tried to mount it itself and failed with "Resource
+# busy" on every Pi, because OpenWrt's bcm27xx target already mounts it at
+# /boot — so provisioning silently did nothing and no credential ever reached
+# the card. Use an existing mount when there is one; only mount our own when
+# there is not.
+#
+# When we do mount: mounting IS the filesystem test, so no blkid or block-mount
+# dependency, and a partition that is not FAT simply fails and we move on.
+BOOT_OWNED=""          # set when we mounted it ourselves and must unmount
+
 mount_boot() {
-	local dev mode="${1:-ro}"
+	local dev mode="${1:-ro}" existing
+
+	# Already mounted by the system? Use it. Remount rw only if we need to
+	# write and it is currently read-only.
+	existing="$(awk '$3 == "vfat" { print $2; exit }' /proc/mounts 2>/dev/null)"
+	if [ -n "${existing}" ]; then
+		MNT="${existing}"
+		BOOT_DEV="$(awk '$3 == "vfat" { print $1; exit }' /proc/mounts)"
+		BOOT_OWNED=""
+		if [ "${mode}" = "rw" ] && ! awk -v m="${existing}" '$2 == m && $4 ~ /(^|,)rw(,|$)/' /proc/mounts | grep -q .; then
+			mount -o remount,rw "${existing}" 2>/dev/null || return 1
+		fi
+		return 0
+	fi
+
+	MNT=/tmp/.bootpart
 	mkdir -p "${MNT}"
 	for dev in /dev/mmcblk0p1 /dev/mmcblk1p1 /dev/sda1 /dev/sdb1; do
 		[ -b "${dev}" ] || continue
-		mount -t vfat -o "${mode}",noatime "${dev}" "${MNT}" 2>/dev/null && {
+		if mount -t vfat -o "${mode}",noatime "${dev}" "${MNT}" 2>/dev/null; then
 			BOOT_DEV="${dev}"
+			BOOT_OWNED=1
 			return 0
-		}
+		fi
 	done
 	rmdir "${MNT}" 2>/dev/null
 	return 1
@@ -66,6 +92,9 @@ mount_boot() {
 
 umount_boot() {
 	sync
+	# Only unmount what we mounted. Unmounting /boot out from under the system
+	# because we borrowed it would be a poor trade for tidiness.
+	[ -n "${BOOT_OWNED}" ] || return 0
 	umount "${MNT}" 2>/dev/null
 	rmdir "${MNT}" 2>/dev/null
 }

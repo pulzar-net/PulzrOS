@@ -11,12 +11,25 @@
 let _m_fs = require('fs');
 let readfile = _m_fs.readfile;; let lsdir = _m_fs.lsdir;
 let _m_util = loadfile('/usr/share/parkeze/console/lib/util.uc', { raw_mode: true })();
+
+// ── forward declarations ────────────────────────────────────────────────────
+//
+// ucode does not hoist function declarations. A `function f()` defined below
+// a function that calls it is simply not in scope there, and the call fails at
+// RUNTIME with "left-hand side is not a function" — never at compile time, so
+// nothing catches it until the request that needs it.
+//
+// Declaring the names first makes every one of them a known local before any
+// body is compiled, so closures capture the binding rather than a missing
+// global and definition order stops mattering. auth.uc alone had six of these.
+let boardLeds, boardValue, status, test;
+
 let run = _m_util.run;
 
 const LOGICAL = ['power', 'status', 'lora', 'lora2', 'cloud', 'cellular'];
 const LEDS = '/sys/class/leds';
 
-function boardLeds() {
+boardLeds = function() {
     // /etc/parkeze/board.conf is shell. Parsed rather than sourced: a parser
     // that cannot execute anything is the right default for a file the console
     // reads on every page load.
@@ -28,16 +41,16 @@ function boardLeds() {
         if (m) map[lc(m[1])] = m[2];
     }
     return map;
-}
+};
 
-function boardValue(key) {
+boardValue = function(key) {
     const raw = readfile('/etc/parkeze/board.conf');
     if (!raw) return null;
     const m = match(raw, sprintf("%s='?([^'\n]*)'?", key));
     return m ? m[1] : null;
-}
+};
 
-function status() {
+status = function() {
     const map = boardLeds();
     const present = lsdir(LEDS) || [];
 
@@ -68,15 +81,15 @@ function status() {
             holdSeconds: int(boardValue('PARKEZE_BUTTON_RESET_HOLD') || '10'),
         },
     };
-}
+};
 
-function test() {
+test = function() {
     // Detached: the lamp test walks every LED with a pause between them and
     // takes several seconds. Holding the HTTP response open for it would time
     // out the request and tell the operator it failed while it was working.
     run('/usr/sbin/parkeze-led --test >/dev/null 2>&1 &');
     return { ok: true, message: 'Walking every mapped LED.' };
-}
+};
 
 // ── module exports ──────────────────────────────────────────────────────────
 //

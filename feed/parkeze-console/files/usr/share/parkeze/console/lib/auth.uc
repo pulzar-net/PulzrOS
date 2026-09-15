@@ -61,10 +61,23 @@
 // skeleton key, and it is the same trade a car's key fob makes.
 
 let _m_fs = require('fs');
-let open = _m_fs.open;; let readfile = _m_fs.readfile;; let writefile = _m_fs.writefile;; let unlink = _m_fs.unlink;; let popen = _m_fs.popen;
+let open = _m_fs.open;; let readfile = _m_fs.readfile;; let writefile = _m_fs.writefile;; let unlink = _m_fs.unlink;; let popen = _m_fs.popen; let stat = _m_fs.stat;
 let _m_uci = require('uci');
 let cursor = _m_uci.cursor;
 let digest = require('digest');
+
+// ── forward declarations ────────────────────────────────────────────────────
+//
+// ucode does not hoist function declarations. A `function f()` defined below
+// a function that calls it is simply not in scope there, and the call fails at
+// RUNTIME with "left-hand side is not a function" — never at compile time, so
+// nothing catches it until the request that needs it.
+//
+// Declaring the names first makes every one of them a known local before any
+// body is compiled, so closures capture the binding rather than a missing
+// global and definition order stops mattering. auth.uc alone had six of these.
+let now, randomHex, constantTimeEqual, readJson, writeJson, crypt, hashPassword, verifyPassword, shellQuote, lockoutState, isLockedOut, recordFailure, clearFailures, sessionPath, createSession, readSession, destroySession, config, backhaulUp, loginMethods, loginLocal, setPassword, recoveryChallenge, recoveryVerify, verifySignature, loginSso, audit;
+
 
 const STATE_DIR      = '/etc/parkeze/console';
 const SESSION_DIR    = '/var/run/parkeze/sessions';
@@ -82,13 +95,13 @@ const LOCKOUT_SECONDS    = 900;
 
 // ── primitives ──────────────────────────────────────────────────────────────
 
-function now() {
+now = function() {
     return time();
-}
+};
 
 // Random bytes as lowercase hex. /dev/urandom directly rather than ucode's
 // math.rand(), which is a seeded PRNG and not suitable for anything here.
-function randomHex(bytes) {
+randomHex = function(bytes) {
     const fd = open('/dev/urandom', 'r');
     if (!fd) die('no entropy source');
     const buf = fd.read(bytes);
@@ -97,12 +110,12 @@ function randomHex(bytes) {
     for (let i = 0; i < length(buf); i++)
         out += sprintf('%02x', ord(buf, i));
     return out;
-}
+};
 
 // Constant-time string comparison. A plain `==` on a session token or a
 // password hash leaks its prefix through timing, and a gateway that answers
 // unauthenticated requests is exactly where someone would measure it.
-function constantTimeEqual(a, b) {
+constantTimeEqual = function(a, b) {
     if (type(a) != 'string' || type(b) != 'string') return false;
     // Compare hashes of both rather than bailing on a length mismatch, so that
     // the length itself does not leak either.
@@ -111,21 +124,21 @@ function constantTimeEqual(a, b) {
     for (let i = 0; i < length(ha); i++)
         diff |= ord(ha, i) ^ ord(hb, i);
     return diff == 0;
-}
+};
 
-function readJson(path) {
+readJson = function(path) {
     const raw = readfile(path);
     if (!raw) return null;
     try { return json(raw); } catch (e) { return null; }
-}
+};
 
-function writeJson(path, value) {
+writeJson = function(path, value) {
     // Written via a temporary file and renamed, so a reader never sees a
     // half-written session index. These files are read on every request.
     const tmp = path + '.tmp';
     writefile(tmp, sprintf('%J', value));
     return system(['/bin/mv', tmp, path]) == 0;
-}
+};
 
 // ── password hashing ────────────────────────────────────────────────────────
 //
@@ -145,7 +158,7 @@ const CRYPT_ROUNDS = 100000;
 // comes *out* via a file on tmpfs, which we read and immediately unlink. The
 // hash is not secret in the way the password is, and /tmp is RAM on OpenWrt,
 // so nothing here survives a power cut or reaches flash.
-function crypt(password, spec) {
+crypt = function(password, spec) {
     // openssl passwd, NOT busybox mkpasswd.
     //
     // The busybox shipped in OpenWrt 24.10 has neither the `mkpasswd` nor the
@@ -182,17 +195,17 @@ function crypt(password, spec) {
     const hash = trim(readfile(out) ?? '');
     unlink(out);
     return length(hash) ? hash : null;
-}
+};
 
-function hashPassword(password, salt) {
+hashPassword = function(password, salt) {
     if (!salt) salt = randomHex(8);
     // The full spec, so the round count is recorded in the stored hash and a
     // future increase does not silently invalidate existing passwords —
     // verifyPassword re-reads whatever rounds the stored hash was made with.
     return crypt(password, sprintf('$6$rounds=%d$%s', CRYPT_ROUNDS, salt));
-}
+};
 
-function verifyPassword(password, stored) {
+verifyPassword = function(password, stored) {
     if (!stored || !length(stored)) return false;
     // Re-derive with the stored parameters and compare. A sha512crypt string
     // is '$6$rounds=N$salt$hash', so splitting on '$' gives
@@ -210,11 +223,11 @@ function verifyPassword(password, stored) {
     const derived = crypt(password, spec);
     if (!derived) return false;
     return constantTimeEqual(derived, stored);
-}
+};
 
-function shellQuote(s) {
+shellQuote = function(s) {
     return "'" + replace(s, "'", "'\\''") + "'";
-}
+};
 
 // ── lockout ─────────────────────────────────────────────────────────────────
 //
@@ -222,19 +235,19 @@ function shellQuote(s) {
 // per-account counter is a denial of service anybody on the LAN can trigger
 // against the legitimate operator.
 
-function lockoutState() {
+lockoutState = function() {
     return readJson(LOCKOUT_FILE) ?? {};
-}
+};
 
-function isLockedOut(addr) {
+isLockedOut = function(addr) {
     const state = lockoutState();
     const entry = state[addr];
     if (!entry) return false;
     if (entry.until <= now()) return false;
     return entry.until - now();
-}
+};
 
-function recordFailure(addr) {
+recordFailure = function(addr) {
     const state = lockoutState();
     const entry = state[addr] ?? { failures: 0, until: 0 };
     entry.failures++;
@@ -244,13 +257,13 @@ function recordFailure(addr) {
     }
     state[addr] = entry;
     writeJson(LOCKOUT_FILE, state);
-}
+};
 
-function clearFailures(addr) {
+clearFailures = function(addr) {
     const state = lockoutState();
     delete state[addr];
     writeJson(LOCKOUT_FILE, state);
-}
+};
 
 // ── sessions ────────────────────────────────────────────────────────────────
 //
@@ -258,13 +271,13 @@ function clearFailures(addr) {
 // for a device whose reboot is a deliberate operator action, and it means a
 // stolen gateway that gets power-cycled carries no live session.
 
-function sessionPath(token) {
+sessionPath = function(token) {
     // The token is never used as a filename directly — a token containing a
     // slash or '..' would otherwise be a path traversal into the filesystem.
     return SESSION_DIR + '/' + digest.sha256(token);
-}
+};
 
-function createSession(subject, kind, ttl) {
+createSession = function(subject, kind, ttl) {
     system(['/bin/mkdir', '-p', SESSION_DIR]);
     const token = randomHex(32);
     const session = {
@@ -286,9 +299,9 @@ function createSession(subject, kind, ttl) {
     return { token: token, subject: session.subject, kind: session.kind,
              created: session.created, expires: session.expires,
              csrf: session.csrf };
-}
+};
 
-function readSession(token) {
+readSession = function(token) {
     if (!token || !match(token, /^[0-9a-f]{64}$/)) return null;
     const session = readJson(sessionPath(token));
     if (!session) return null;
@@ -297,16 +310,16 @@ function readSession(token) {
         return null;
     }
     return session;
-}
+};
 
-function destroySession(token) {
+destroySession = function(token) {
     if (token && match(token, /^[0-9a-f]{64}$/))
         unlink(sessionPath(token));
-}
+};
 
 // ── adoption state ──────────────────────────────────────────────────────────
 
-function config() {
+config = function() {
     const uci = cursor();
     return {
         adopted:      uci.get('parkeze', 'adoption', 'state') == 'adopted',
@@ -315,19 +328,19 @@ function config() {
         deviceId:     uci.get('parkeze', 'identity', 'gateway_eui') ?? 'unknown',
         hostname:     uci.get('parkeze', 'identity', 'hostname') ?? 'parkeze',
     };
-}
+};
 
 // Whether parkeze.net is reachable right now. Used only to explain *why* the
 // login page is offering what it is offering — never to decide whether local
 // login is permitted. An attacker who can cut the uplink must not be able to
 // unlock local login by doing so, so the decision below keys on adoption
 // state, which they cannot change, rather than on reachability, which they can.
-function backhaulUp() {
+backhaulUp = function() {
     return system('/usr/sbin/parkeze-backhaul-check >/dev/null 2>&1') == 0;
-}
+};
 
 // What the login page should offer.
-function loginMethods() {
+loginMethods = function() {
     const cfg = config();
 
     if (!cfg.adopted) {
@@ -356,11 +369,11 @@ function loginMethods() {
             : 'This gateway is managed by parkeze.net. If it is offline, use '
             + 'recovery access.',
     };
-}
+};
 
 // ── local login ─────────────────────────────────────────────────────────────
 
-function loginLocal(username, password, addr) {
+loginLocal = function(username, password, addr) {
     const remaining = isLockedOut(addr);
     if (remaining)
         return { error: sprintf('Too many attempts. Try again in %d minutes.',
@@ -393,11 +406,14 @@ function loginLocal(username, password, addr) {
 
     // A gateway still on its factory password is a gateway anybody with the
     // label can open. The console makes changing it the first thing you see.
-    session.mustChangePassword = !!readfile(STATE_DIR + '/password-is-initial');
+    // Existence, not contents. The marker is a zero-byte touch file, so
+    // readfile() returns '' — falsy — and the console never insisted on
+    // replacing the factory credential, which is the one thing it is for.
+    session.mustChangePassword = !!stat(STATE_DIR + '/password-is-initial');
     return { session };
-}
+};
 
-function setPassword(username, password) {
+setPassword = function(username, password) {
     if (length(password ?? '') < 12)
         return { error: 'Use at least 12 characters.', status: 400 };
 
@@ -419,12 +435,12 @@ function setPassword(username, password) {
 
     audit('password.changed', { username });
     return { ok: true };
-}
+};
 
 // ── offline recovery ────────────────────────────────────────────────────────
 
 // Start a recovery: mint a challenge for the operator to carry to parkeze.net.
-function recoveryChallenge() {
+recoveryChallenge = function() {
     const cfg = config();
     if (!cfg.adopted)
         return { error: 'Recovery access is only for adopted gateways. This '
@@ -462,10 +478,10 @@ function recoveryChallenge() {
         },
         hostname: cfg.hostname,
     };
-}
+};
 
 // Complete a recovery: verify parkeze.net's signature over our challenge.
-function recoveryVerify(signature, addr) {
+recoveryVerify = function(signature, addr) {
     const remaining = isLockedOut(addr);
     if (remaining)
         return { error: sprintf('Too many attempts. Try again in %d minutes.',
@@ -500,7 +516,7 @@ function recoveryVerify(signature, addr) {
     audit('recovery.ok', { addr, device: challenge.device,
                            nonce: challenge.nonce });
     return { session };
-}
+};
 
 // Ed25519 verification, shelled out to openssl.
 //
@@ -508,7 +524,7 @@ function recoveryVerify(signature, addr) {
 // gateway holds only the public key, so the worst an attacker who tampers with
 // this path can do is make recovery fail — they cannot forge a signature
 // without the private half, which never leaves parkeze.net.
-function verifySignature(message, signatureB64) {
+verifySignature = function(message, signatureB64) {
     if (!match(signatureB64 ?? '', /^[A-Za-z0-9+\/=]{80,120}$/)) return false;
 
     const msgFile = '/tmp/.recovery-msg';
@@ -530,7 +546,7 @@ function verifySignature(message, signatureB64) {
     unlink(msgFile);
     unlink(sigFile);
     return rc == 0;
-}
+};
 
 // ── SSO handoff ─────────────────────────────────────────────────────────────
 //
@@ -539,7 +555,7 @@ function verifySignature(message, signatureB64) {
 // it is signed with the same fleet key as recovery, so a gateway needs no
 // additional trust anchor.
 
-function loginSso(token, addr) {
+loginSso = function(token, addr) {
     if (!readfile(RECOVERY_PUBKEY))
         return { error: 'This gateway has no parkeze.net trust anchor.',
                  status: 501 };
@@ -581,7 +597,7 @@ function loginSso(token, addr) {
                                   SESSION_TTL);
     audit('login.ok', { username: payload.sub, addr, method: 'sso' });
     return { session };
-}
+};
 
 // ── audit ───────────────────────────────────────────────────────────────────
 //
@@ -589,7 +605,7 @@ function loginSso(token, addr) {
 // happened while the gateway was offline is precisely the event that must
 // still reach parkeze.net eventually.
 
-function audit(action, detail) {
+audit = function(action, detail) {
     const entry = { at: now(), action: action };
     for (let k in (detail ? detail : {})) entry[k] = detail[k];
     const line = sprintf('%J\n', entry);
@@ -598,7 +614,7 @@ function audit(action, detail) {
     // Also to syslog, so it is visible in the console's log view immediately.
     system(['/usr/bin/logger', '-t', 'parkeze-console', '-p', 'authpriv.notice',
             sprintf('%s %J', action, detail)]);
-}
+};
 
 // ── module exports ──────────────────────────────────────────────────────────
 //

@@ -136,9 +136,38 @@ function sessionCookie(token, maxAge) {
                    SESSION_COOKIE, token, maxAge);
 }
 
+// The request body.
+//
+// env.content_length / env.content do not exist — that was written against an
+// API uhttpd's ucode plugin does not have, so every POST arrived as an empty
+// object and every login failed with "Incorrect username or password" no
+// matter what was typed. The real interface is CGI-shaped: the length is in
+// CONTENT_LENGTH, and the bytes are pulled with uhttpd.recv().
+//
+// recv() returns what is available, not necessarily everything, so this loops
+// until it has the declared length or the client stops sending.
+const MAX_BODY = 64 * 1024;
+
 function body(env) {
-    if (!env.content_length) return {};
-    try { return json(env.content) ? json(env.content) : {}; }
+    const len = int(env.CONTENT_LENGTH ?? 0);
+    if (len <= 0) return {};
+
+    // Nothing this API accepts is anywhere near this large. A cap matters
+    // because the alternative is letting an unauthenticated caller decide how
+    // much memory a 64MB gateway allocates.
+    if (len > MAX_BODY) return {};
+
+    let raw = '';
+    while (length(raw) < len) {
+        const chunk = uhttpd.recv(len - length(raw));
+        if (chunk == null || !length(chunk)) break;
+        raw += chunk;
+    }
+
+    try {
+        const parsed = json(raw);
+        return type(parsed) == 'object' ? parsed : {};
+    }
     catch (e) { return {}; }
 }
 

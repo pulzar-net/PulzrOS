@@ -20,9 +20,22 @@ let readfile = _m_fs.readfile;
 let _m_uci = require('uci');
 let cursor = _m_uci.cursor;
 let _m_util = loadfile('/usr/share/parkeze/console/lib/util.uc', { raw_mode: true })();
+
+// ── forward declarations ────────────────────────────────────────────────────
+//
+// ucode does not hoist function declarations. A `function f()` defined below
+// a function that calls it is simply not in scope there, and the call fails at
+// RUNTIME with "left-hand side is not a function" — never at compile time, so
+// nothing catches it until the request that needs it.
+//
+// Declaring the names first makes every one of them a known local before any
+// body is compiled, so closures capture the binding rather than a missing
+// global and definition order stops mattering. auth.uc alone had six of these.
+let status, key, setAp, raiseAp, lowerAp, scan, joinWifi;
+
 let run = _m_util.run;; let runJson = _m_util.runJson;
 
-function status() {
+status = function() {
     const uci = cursor();
     const ap = runJson('/usr/sbin/parkeze-ap status') || { capable: false };
     const portal = runJson('/usr/sbin/parkeze-portal status') || { up: false };
@@ -58,7 +71,7 @@ function status() {
         },
         adopted: uci.get('parkeze', 'adoption', 'state') == 'adopted',
     };
-}
+};
 
 // The AP passphrase.
 //
@@ -66,7 +79,7 @@ function status() {
 // open and there is no passphrase to show. Returning it to an authenticated
 // session is the point — an operator on the console needs to be able to read it
 // out to somebody standing at the device.
-function key() {
+key = function() {
     const uci = cursor();
     if (uci.get('parkeze', 'adoption', 'state') != 'adopted')
         return { open: true, key: null,
@@ -76,9 +89,9 @@ function key() {
     const value = run('/usr/sbin/parkeze-ap key');
     if (!value) return { error: 'No AP key has been generated yet.' };
     return { open: false, key: value };
-}
+};
 
-function setAp(req) {
+setAp = function(req) {
     const uci = cursor();
 
     if (req.enabled != null) {
@@ -112,25 +125,25 @@ function setAp(req) {
 
     uci.commit('parkeze');
     return { ok: true, status: status() };
-}
+};
 
 // Raise the AP now, from an authenticated session.
 //
 // Marked manual, so the watchdog does not helpfully take it down again the
 // moment it notices the backhaul is fine — somebody asked for this.
-function raiseAp(req) {
+raiseAp = function(req) {
     const window = req.window != null ? int(req.window) : 1800;
     run(sprintf('mkdir -p /var/run/parkeze/ap; echo 1 > /var/run/parkeze/ap/manual'));
     const output = run(sprintf('/usr/sbin/parkeze-ap up %d 2>&1', window));
     if (output == null) return { error: 'Could not raise the access point.' };
     return { ok: true, status: status() };
-}
+};
 
-function lowerAp() {
+lowerAp = function() {
     run('rm -f /var/run/parkeze/ap/manual');
     run('/usr/sbin/parkeze-ap down >/dev/null 2>&1');
     return { ok: true, status: status() };
-}
+};
 
 // ── joining a WiFi network ──────────────────────────────────────────────────
 
@@ -140,7 +153,7 @@ function lowerAp() {
 // reads, and it reads the *air*, not the gateway. Still gated, because a survey
 // of every SSID at a customer site is site intelligence we should not hand to
 // somebody who has merely associated to an open AP.
-function scan() {
+scan = function() {
     const radio = run("uci -q show wireless | sed -n 's/^wireless\\.\\([^.]*\\)=wifi-device$/\\1/p' | head -n1");
     if (!radio) return { capable: false, networks: [] };
 
@@ -163,9 +176,9 @@ function scan() {
         };
     }
     return { capable: true, networks: networks };
-}
+};
 
-function joinWifi(req) {
+joinWifi = function(req) {
     const ssid = req.ssid;
     if (!ssid || !length(ssid) || length(ssid) > 32)
         return { error: 'Give the network a name.' };
@@ -211,7 +224,7 @@ function joinWifi(req) {
     return { ok: true,
              message: 'Joining ' + ssid + '. If you are connected to the setup '
                     + 'network, it will drop while the radio switches over.' };
-}
+};
 
 // ── module exports ──────────────────────────────────────────────────────────
 //

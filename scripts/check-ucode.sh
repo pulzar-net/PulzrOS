@@ -93,6 +93,19 @@ done < <(
   } | sort -u
 )
 
+# ── SCOPE ───────────────────────────────────────────────────────────────────
+#
+# ucode does not hoist function declarations, and a forward reference throws at
+# runtime rather than failing to compile. Separate script because it needs real
+# parsing; see its docstring.
+if command -v python3 >/dev/null 2>&1; then
+  if ! python3 "$(dirname "$0")/check-ucode-scope.py"; then
+    fail=$((fail + 1))
+  fi
+else
+  echo "WARN python3 not found — skipping the ucode scope check"
+fi
+
 # ── THE SHAPE uhttpd REQUIRES ───────────────────────────────────────────────
 #
 # Compiling is not enough. Every shape that fails on the device also compiles

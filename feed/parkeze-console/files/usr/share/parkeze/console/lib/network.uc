@@ -17,9 +17,22 @@ let readfile = _m_fs.readfile;
 let _m_uci = require('uci');
 let cursor = _m_uci.cursor;
 let _m_util = loadfile('/usr/share/parkeze/console/lib/util.uc', { raw_mode: true })();
+
+// ── forward declarations ────────────────────────────────────────────────────
+//
+// ucode does not hoist function declarations. A `function f()` defined below
+// a function that calls it is simply not in scope there, and the call fails at
+// RUNTIME with "left-hand side is not a function" — never at compile time, so
+// nothing catches it until the request that needs it.
+//
+// Declaring the names first makes every one of them a known local before any
+// body is compiled, so closures capture the binding rather than a missing
+// global and definition order stops mattering. auth.uc alone had six of these.
+let ifaceStatus, status, modem, backhaul, setCellular;
+
 let run = _m_util.run;; let runJson = _m_util.runJson;; let ubus = _m_util.ubus;
 
-function ifaceStatus(name) {
+ifaceStatus = function(name) {
     const status = ubus(sprintf('network.interface.%s', name), 'status');
     if (!status) return { configured: false };
 
@@ -39,9 +52,9 @@ function ifaceStatus(name) {
         gateway: gateway,
         uptime: status.uptime,
     };
-}
+};
 
-function status() {
+status = function() {
     const uci = cursor();
     return {
         // The console addresses on the shared ethernet port. Reported so the
@@ -73,9 +86,9 @@ function status() {
             modem: modem(),
         },
     };
-}
+};
 
-function modem() {
+modem = function() {
     // mmcli, not uqmi: OpenWrt 24.10 ships no uqmi and cellular now goes
     // through ModemManager. An absent modem is a normal state — a wired-only
     // board has none — so this returns null rather than erroring.
@@ -113,7 +126,7 @@ function modem() {
         snr: field['modem.signal.lte.snr']
              ? int(field['modem.signal.lte.snr']) : null,
     };
-}
+};
 
 // Which management paths are actually working right now.
 //
@@ -122,7 +135,7 @@ function modem() {
 // which path". The two paths fail independently and for different reasons, and
 // conflating them into a single "online" light is how a gateway ends up
 // looking healthy while being unmanageable.
-function backhaul() {
+backhaul = function() {
     const tailscale = runJson('/usr/sbin/parkeze-tailscale-route status');
     const ts = runJson('tailscale --socket=/var/run/tailscale/tailscaled.sock status --json 2>/dev/null');
 
@@ -152,9 +165,9 @@ function backhaul() {
             modem: modem(),
         },
     };
-}
+};
 
-function setCellular(req, session) {
+setCellular = function(req, session) {
     const uci = cursor();
 
     // An APN is the only thing worth exposing. Everything else about a 1NCE
@@ -173,7 +186,7 @@ function setCellular(req, session) {
     run('/sbin/ifup wwan >/dev/null 2>&1 &');
 
     return { ok: true, applied: { apn: req.apn, enabled: req.enabled } };
-}
+};
 
 // ── module exports ──────────────────────────────────────────────────────────
 //

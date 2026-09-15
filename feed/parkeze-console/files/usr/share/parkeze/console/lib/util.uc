@@ -1,43 +1,56 @@
 // Small shared helpers. Nothing here knows what a gateway is.
 
 let _m_fs = require('fs');
+
+// ── forward declarations ────────────────────────────────────────────────────
+//
+// ucode does not hoist function declarations. A `function f()` defined below
+// a function that calls it is simply not in scope there, and the call fails at
+// RUNTIME with "left-hand side is not a function" — never at compile time, so
+// nothing catches it until the request that needs it.
+//
+// Declaring the names first makes every one of them a known local before any
+// body is compiled, so closures capture the binding rather than a missing
+// global and definition order stops mattering. auth.uc alone had six of these.
+let run, runJson, grepFile, ubus;
+
 let popen = _m_fs.popen;; let readfile = _m_fs.readfile;
 
 // Run a command and return its stdout, trimmed. Returns null on failure, so a
 // caller can tell "the command said nothing" from "the command is not there".
-function run(cmd) {
+run = function(cmd) {
     const proc = popen(cmd, 'r');
     if (!proc) return null;
     const out = proc.read('all');
     const rc = proc.close();
     if (rc != 0) return null;
     return trim(out ? out : '');
-}
+};
 
 // Run a command and parse its stdout as JSON.
-function runJson(cmd) {
+runJson = function(cmd) {
     const out = run(cmd);
     if (!out) return null;
     try { return json(out); } catch (e) { return null; }
-}
+};
 
 // First capture group of a regex against a file's contents, or null.
-function grepFile(path, pattern) {
+grepFile = function(path, pattern) {
     const content = readfile(path);
     if (!content) return null;
     const m = match(content, pattern);
     return m ? m[1] : null;
-}
+};
 
 // ubus call, via the CLI rather than the ucode ubus binding.
 //
 // The binding would be faster, but the console is not on a hot path and this
 // keeps the module importable in the syntax checker and in a shell on the
 // device. If a view ever needs ubus in a loop, that view should switch.
-function ubus(object, method, args) {
+ubus = function(object, method, args) {
     const payload = args ? sprintf(" '%J'", args) : '';
     return runJson(sprintf('ubus call %s %s%s', object, method, payload));
-}
+};
 
 // ── module exports ──────────────────────────────────────────────────────────
 //

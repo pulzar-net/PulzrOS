@@ -10,9 +10,22 @@ let open = _m_fs.open;
 let _m_uci = require('uci');
 let cursor = _m_uci.cursor;
 let _m_util = loadfile('/usr/share/parkeze/console/lib/util.uc', { raw_mode: true })();
+
+// ── forward declarations ────────────────────────────────────────────────────
+//
+// ucode does not hoist function declarations. A `function f()` defined below
+// a function that calls it is simply not in scope there, and the call fails at
+// RUNTIME with "left-hand side is not a function" — never at compile time, so
+// nothing catches it until the request that needs it.
+//
+// Declaring the names first makes every one of them a known local before any
+// body is compiled, so closures capture the binding rather than a missing
+// global and definition order stops mattering. auth.uc alone had six of these.
+let status, qr, poll, applyBundle, writeBundle, isAdopted;
+
 let run = _m_util.run;; let runJson = _m_util.runJson;
 
-function status() {
+status = function() {
     const state = runJson('/usr/sbin/parkeze-claim status');
     if (!state) return { error: 'Claim subsystem is not responding.' };
 
@@ -32,7 +45,7 @@ function status() {
         gatewayEui: uci.get('parkeze', 'identity', 'gateway_eui'),
         board: uci.get('parkeze', 'identity', 'board_name'),
     };
-}
+};
 
 // The QR as an SVG string.
 //
@@ -40,25 +53,25 @@ function status() {
 // library: qrencode is already in the image for the SSH banner, and this saves
 // shipping a second QR implementation to a flash-constrained board purely so
 // the same bytes can be drawn twice.
-function qr() {
+qr = function() {
     const svg = run('/usr/sbin/parkeze-claim qr --svg');
     if (!svg) return { error: 'Could not render the claim code.' };
     return { svg: svg, url: run('/usr/sbin/parkeze-claim qr') };
-}
+};
 
 // Ask parkeze.net whether somebody has claimed us yet.
 //
 // The device polls on its own schedule anyway; this is what the console calls
 // while an installer is watching, so the page updates the moment they finish
 // on their phone rather than up to a backoff interval later.
-function poll() {
+poll = function() {
     run('/usr/sbin/parkeze-claim poll >/dev/null 2>&1');
     return status();
-}
+};
 
 // Complete an adoption for a gateway that has never had internet, from a
 // signed bundle the operator carried back from parkeze.net.
-function applyBundle(req) {
+applyBundle = function(req) {
     const bundle = req.bundle;
     if (!bundle || !length(bundle))
         return { error: 'Paste the adoption bundle from parkeze.net.' };
@@ -84,22 +97,22 @@ function applyBundle(req) {
                       + 'this gateway and has not already been used.' };
 
     return { ok: true, status: status() };
-}
+};
 
-function writeBundle(path, contents) {
+writeBundle = function(path, contents) {
     const fd = open(path, 'w', 0o600);
     if (!fd) return false;
     fd.write(contents);
     fd.close();
     return true;
-}
+};
 
 // Whether this gateway belongs to an organisation yet. Used by the router to
 // close the provisioning endpoints once it does.
-function isAdopted() {
+isAdopted = function() {
     const uci = cursor();
     return uci.get('parkeze', 'adoption', 'state') == 'adopted';
-}
+};
 
 // ── module exports ──────────────────────────────────────────────────────────
 //
