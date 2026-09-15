@@ -12,9 +12,12 @@
 //              site-by-site fact and waiting on parkeze.net to push one to a
 //              gateway that has no working backhaul is circular.
 
-import { readfile } from 'fs';
-import { cursor } from 'uci';
-import { run, runJson, ubus } from './util.uc';
+let _m_fs = require('fs');
+let readfile = _m_fs.readfile;
+let _m_uci = require('uci');
+let cursor = _m_uci.cursor;
+let _m_util = loadfile('/usr/share/parkeze/console/lib/util.uc', { raw_mode: true })();
+let run = _m_util.run;; let runJson = _m_util.runJson;; let ubus = _m_util.ubus;
 
 function ifaceStatus(name) {
     const status = ubus(sprintf('network.interface.%s', name), 'status');
@@ -38,7 +41,7 @@ function ifaceStatus(name) {
     };
 }
 
-export function status() {
+function status() {
     const uci = cursor();
     return {
         // The console addresses on the shared ethernet port. Reported so the
@@ -119,7 +122,7 @@ function modem() {
 // which path". The two paths fail independently and for different reasons, and
 // conflating them into a single "online" light is how a gateway ends up
 // looking healthy while being unmanageable.
-export function backhaul() {
+function backhaul() {
     const tailscale = runJson('/usr/sbin/parkeze-tailscale-route status');
     const ts = runJson('tailscale --socket=/var/run/tailscale/tailscaled.sock status --json 2>/dev/null');
 
@@ -151,7 +154,7 @@ export function backhaul() {
     };
 }
 
-export function setCellular(req, session) {
+function setCellular(req, session) {
     const uci = cursor();
 
     // An APN is the only thing worth exposing. Everything else about a 1NCE
@@ -171,3 +174,11 @@ export function setCellular(req, session) {
 
     return { ok: true, applied: { apn: req.apn, enabled: req.enabled } };
 }
+
+// ── module exports ──────────────────────────────────────────────────────────
+//
+// A returned object, not `export` statements. uhttpd's ucode plugin compiles
+// its handler in TEMPLATE mode and loads anything else through loadfile(),
+// neither of which is module mode — `export` is a syntax error there. See the
+// header of api/index.uc for the full contract.
+return { backhaul, setCellular, status };

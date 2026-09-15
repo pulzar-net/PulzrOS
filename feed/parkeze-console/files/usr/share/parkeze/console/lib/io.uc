@@ -8,8 +8,10 @@
 // comparing the map against what the kernel actually exposes is how you find
 // it.
 
-import { readfile, lsdir } from 'fs';
-import { run } from './util.uc';
+let _m_fs = require('fs');
+let readfile = _m_fs.readfile;; let lsdir = _m_fs.lsdir;
+let _m_util = loadfile('/usr/share/parkeze/console/lib/util.uc', { raw_mode: true })();
+let run = _m_util.run;
 
 const LOGICAL = ['power', 'status', 'lora', 'lora2', 'cloud', 'cellular'];
 const LEDS = '/sys/class/leds';
@@ -35,7 +37,7 @@ function boardValue(key) {
     return m ? m[1] : null;
 }
 
-export function status() {
+function status() {
     const map = boardLeds();
     const present = lsdir(LEDS) || [];
 
@@ -68,10 +70,18 @@ export function status() {
     };
 }
 
-export function test() {
+function test() {
     // Detached: the lamp test walks every LED with a pause between them and
     // takes several seconds. Holding the HTTP response open for it would time
     // out the request and tell the operator it failed while it was working.
     run('/usr/sbin/parkeze-led --test >/dev/null 2>&1 &');
     return { ok: true, message: 'Walking every mapped LED.' };
 }
+
+// ── module exports ──────────────────────────────────────────────────────────
+//
+// A returned object, not `export` statements. uhttpd's ucode plugin compiles
+// its handler in TEMPLATE mode and loads anything else through loadfile(),
+// neither of which is module mode — `export` is a syntax error there. See the
+// header of api/index.uc for the full contract.
+return { status, test };

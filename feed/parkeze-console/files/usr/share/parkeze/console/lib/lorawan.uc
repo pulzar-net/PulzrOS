@@ -1,8 +1,11 @@
 // The LoRaWAN side: what is fitted, and whether it is working.
 
-import { readfile, lsdir } from 'fs';
-import { cursor } from 'uci';
-import { run, runJson } from './util.uc';
+let _m_fs = require('fs');
+let readfile = _m_fs.readfile;; let lsdir = _m_fs.lsdir;
+let _m_uci = require('uci');
+let cursor = _m_uci.cursor;
+let _m_util = loadfile('/usr/share/parkeze/console/lib/util.uc', { raw_mode: true })();
+let run = _m_util.run;; let runJson = _m_util.runJson;
 
 const PROFILE_DIR = '/usr/share/parkeze/concentrator';
 
@@ -18,7 +21,7 @@ function profile(id) {
 // Read from the filesystem rather than hardcoded, so adding a profile JSON to
 // the package is the whole of adding support for a part — no console change,
 // no rebuild of the SPA.
-export function supported() {
+function supported() {
     const out = [];
     for (let name in (lsdir(PROFILE_DIR) || [])) {
         if (!match(name, /\.json$/)) continue;
@@ -68,7 +71,7 @@ function slotView(uci, index) {
     };
 }
 
-export function concentrator() {
+function concentrator() {
     const uci = cursor();
     const count = int(uci.get('parkeze', 'concentrator', 'slots') || '1');
 
@@ -94,7 +97,7 @@ export function concentrator() {
 
 const REGIONS = /^(US915|EU868|AU915|AS923|IN865|KR920|RU864)$/;
 
-export function setConcentrator(req, session) {
+function setConcentrator(req, session) {
     const uci = cursor();
 
     if (req.region != null) {
@@ -108,7 +111,7 @@ export function setConcentrator(req, session) {
     return { ok: true, concentrator: concentrator() };
 }
 
-export function setSlot(index, req, session) {
+function setSlot(index, req, session) {
     const uci = cursor();
 
     if (uci.get('parkeze', 'concentrator', 'configurable') == '0')
@@ -158,7 +161,7 @@ export function setSlot(index, req, session) {
     return { ok: true, concentrator: concentrator() };
 }
 
-export function detect() {
+function detect() {
     run('/usr/sbin/parkeze-concentrator-detect >/dev/null 2>&1');
     return { ok: true, concentrator: concentrator() };
 }
@@ -169,7 +172,7 @@ export function detect() {
 // whether the packet forwarder is holding the serial port — parkeze-gps
 // handles that, and the `source` field in the reply says which happened, so
 // the console can be honest about how fresh the coordinate is.
-export function gps() {
+function gps() {
     const state = runJson('/usr/sbin/parkeze-gps status');
     if (!state) return { present: false, fix: false,
                          reason: 'GNSS subsystem is not responding.' };
@@ -193,7 +196,7 @@ export function gps() {
 // The install-time action: a gateway on a roof gets a fix once, and from then
 // on reports that position whether or not the receiver has sky view on any
 // given boot.
-export function syncGps() {
+function syncGps() {
     const output = run('/usr/sbin/parkeze-gps sync 2>&1');
     if (output == null)
         return { error: 'No fix yet, so there is nothing to record. Check the '
@@ -201,12 +204,12 @@ export function syncGps() {
     return { ok: true, message: output, gps: gps() };
 }
 
-export function detectGps() {
+function detectGps() {
     run('/usr/sbin/parkeze-gps-detect >/dev/null 2>&1');
     return { ok: true, gps: gps() };
 }
 
-export function status() {
+function status() {
     const uci = cursor();
     const stats = runJson('/usr/sbin/parkeze-forwarder-stats 2>/dev/null');
     const running = run('/etc/init.d/parkeze-packet-forwarder running >/dev/null 2>&1 && echo yes');
@@ -237,7 +240,15 @@ export function status() {
     };
 }
 
-export function restart() {
+function restart() {
     run('/etc/init.d/parkeze-packet-forwarder restart >/dev/null 2>&1 &');
     return { ok: true, message: 'Packet forwarder restarting.' };
 }
+
+// ── module exports ──────────────────────────────────────────────────────────
+//
+// A returned object, not `export` statements. uhttpd's ucode plugin compiles
+// its handler in TEMPLATE mode and loads anything else through loadfile(),
+// neither of which is module mode — `export` is a syntax error there. See the
+// header of api/index.uc for the full contract.
+return { concentrator, detect, detectGps, gps, restart, setConcentrator, setSlot, status, supported, syncGps };

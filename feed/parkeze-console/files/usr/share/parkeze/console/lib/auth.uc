@@ -60,9 +60,11 @@
 // an acceptable trade for a fleet where the alternative is a extractable
 // skeleton key, and it is the same trade a car's key fob makes.
 
-import { open, readfile, writefile, unlink, popen } from 'fs';
-import { cursor } from 'uci';
-import * as digest from 'digest';
+let _m_fs = require('fs');
+let open = _m_fs.open;; let readfile = _m_fs.readfile;; let writefile = _m_fs.writefile;; let unlink = _m_fs.unlink;; let popen = _m_fs.popen;
+let _m_uci = require('uci');
+let cursor = _m_uci.cursor;
+let digest = require('digest');
 
 const STATE_DIR      = '/etc/parkeze/console';
 const SESSION_DIR    = '/var/run/parkeze/sessions';
@@ -325,7 +327,7 @@ function backhaulUp() {
 }
 
 // What the login page should offer.
-export function loginMethods() {
+function loginMethods() {
     const cfg = config();
 
     if (!cfg.adopted) {
@@ -358,7 +360,7 @@ export function loginMethods() {
 
 // ── local login ─────────────────────────────────────────────────────────────
 
-export function loginLocal(username, password, addr) {
+function loginLocal(username, password, addr) {
     const remaining = isLockedOut(addr);
     if (remaining)
         return { error: sprintf('Too many attempts. Try again in %d minutes.',
@@ -395,7 +397,7 @@ export function loginLocal(username, password, addr) {
     return { session };
 }
 
-export function setPassword(username, password) {
+function setPassword(username, password) {
     if (length(password ?? '') < 12)
         return { error: 'Use at least 12 characters.', status: 400 };
 
@@ -422,7 +424,7 @@ export function setPassword(username, password) {
 // ── offline recovery ────────────────────────────────────────────────────────
 
 // Start a recovery: mint a challenge for the operator to carry to parkeze.net.
-export function recoveryChallenge() {
+function recoveryChallenge() {
     const cfg = config();
     if (!cfg.adopted)
         return { error: 'Recovery access is only for adopted gateways. This '
@@ -463,7 +465,7 @@ export function recoveryChallenge() {
 }
 
 // Complete a recovery: verify parkeze.net's signature over our challenge.
-export function recoveryVerify(signature, addr) {
+function recoveryVerify(signature, addr) {
     const remaining = isLockedOut(addr);
     if (remaining)
         return { error: sprintf('Too many attempts. Try again in %d minutes.',
@@ -537,7 +539,7 @@ function verifySignature(message, signatureB64) {
 // it is signed with the same fleet key as recovery, so a gateway needs no
 // additional trust anchor.
 
-export function loginSso(token, addr) {
+function loginSso(token, addr) {
     if (!readfile(RECOVERY_PUBKEY))
         return { error: 'This gateway has no parkeze.net trust anchor.',
                  status: 501 };
@@ -598,5 +600,10 @@ function audit(action, detail) {
             sprintf('%s %J', action, detail)]);
 }
 
-export { createSession, readSession, destroySession, constantTimeEqual, audit,
-         hashPassword, verifyPassword };
+// ── module exports ──────────────────────────────────────────────────────────
+//
+// A returned object, not `export` statements. uhttpd's ucode plugin compiles
+// its handler in TEMPLATE mode and loads anything else through loadfile(),
+// neither of which is module mode — `export` is a syntax error there. See the
+// header of api/index.uc for the full contract.
+return { audit, constantTimeEqual, createSession, destroySession, hashPassword, loginLocal, loginMethods, loginSso, readSession, recoveryChallenge, recoveryVerify, setPassword, verifyPassword };

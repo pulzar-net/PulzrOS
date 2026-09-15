@@ -40,11 +40,34 @@ if ! "${UCODE}" -e 'print("")' >/dev/null 2>&1; then
   exit 2
 fi
 
+# ── COMPILE EACH FILE THE WAY ITS LOADER WILL ───────────────────────────────
+#
+# This used to pass -cmodule to everything, which is how a console that could
+# never start shipped in every image we built. uhttpd does not load its handler
+# as a module: it compiles it as a TEMPLATE, and the lib files it pulls in with
+# loadfile() are plain raw-mode scripts. Validating them as ES modules accepted
+# `export` and `import` that the device rejects outright, so CI was green while
+# uhttpd refused to start with "declares no handle_request() callback".
+#
+# So the mode is chosen per file, matching the loader:
+#
+#   api/index.uc     template mode. Compiled without -R, like uhttpd does.
+#   lib/*.uc         raw mode, no module flag. `export` here is a syntax error,
+#                    which is the point — it is one on the device too.
+#   everything else  raw mode. Standalone ucode programs with a shebang.
 fail=0
 count=0
 while IFS= read -r file; do
   count=$((count + 1))
-  if ! out="$("${UCODE}" -R -cmodule -L "${STUBS}/*.uc" -o /dev/null "${file}" 2>&1)"; then
+  case "${file}" in
+    */console/api/index.uc)
+      # No -R: uhttpd compiles the handler as a template, so the {% %} wrapper
+      # is required and anything outside it is text.
+      set -- -L "${STUBS}/*.uc" -o /dev/null "${file}" ;;
+    *)
+      set -- -R -L "${STUBS}/*.uc" -o /dev/null "${file}" ;;
+  esac
+  if ! out="$("${UCODE}" "$@" 2>&1)"; then
     echo "FAIL ${file}"
     echo "${out}" | sed 's/^/     /'
     fail=$((fail + 1))
@@ -63,6 +86,43 @@ done < <(
         done
   } | sort -u
 )
+
+# ── THE SHAPE uhttpd REQUIRES ───────────────────────────────────────────────
+#
+# Compiling is not enough. Every shape that fails on the device also compiles
+# cleanly — that is exactly why this went unnoticed — so the one thing uhttpd
+# actually looks for is asserted directly: a bare assignment to an undeclared
+# `handle_request`, which is what lands in the VM global scope it reads.
+HANDLER="feed/parkeze-console/files/usr/share/parkeze/console/api/index.uc"
+if [ -f "${HANDLER}" ]; then
+  if ! head -c 4 "${HANDLER}" | grep -q '{%'; then
+    echo "FAIL ${HANDLER}"
+    echo "     must open with '{%' — uhttpd compiles it as a template, and an"
+    echo "     unwrapped file defines nothing at all."
+    fail=$((fail + 1))
+  fi
+  if ! grep -qE '^handle_request[[:space:]]*=' "${HANDLER}"; then
+    echo "FAIL ${HANDLER}"
+    echo "     must assign handle_request as a bare global:"
+    echo "         handle_request = function(env) { ... };"
+    echo "     'export function', 'function' and 'return { handle_request }'"
+    echo "     all compile and all leave uhttpd reporting that the handler"
+    echo "     declares no handle_request() callback."
+    fail=$((fail + 1))
+  fi
+fi
+
+# lib/*.uc are loaded with loadfile(), so they must end in a returned object
+# rather than exports.
+for lib in feed/parkeze-console/files/usr/share/parkeze/console/lib/*.uc; do
+  [ -f "${lib}" ] || continue
+  if grep -q '^export ' "${lib}"; then
+    echo "FAIL ${lib}"
+    echo "     'export' is a syntax error where loadfile() compiles this."
+    echo "     End the file with: return { name, other };"
+    fail=$((fail + 1))
+  fi
+done
 
 echo
 if [ "${fail}" -gt 0 ]; then

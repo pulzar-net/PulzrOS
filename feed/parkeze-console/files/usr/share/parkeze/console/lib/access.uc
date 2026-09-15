@@ -15,11 +15,14 @@
 // something. The read/write split still holds, because defence that depends on
 // one control holding is not defence.
 
-import { readfile } from 'fs';
-import { cursor } from 'uci';
-import { run, runJson } from './util.uc';
+let _m_fs = require('fs');
+let readfile = _m_fs.readfile;
+let _m_uci = require('uci');
+let cursor = _m_uci.cursor;
+let _m_util = loadfile('/usr/share/parkeze/console/lib/util.uc', { raw_mode: true })();
+let run = _m_util.run;; let runJson = _m_util.runJson;
 
-export function status() {
+function status() {
     const uci = cursor();
     const ap = runJson('/usr/sbin/parkeze-ap status') || { capable: false };
     const portal = runJson('/usr/sbin/parkeze-portal status') || { up: false };
@@ -63,7 +66,7 @@ export function status() {
 // open and there is no passphrase to show. Returning it to an authenticated
 // session is the point — an operator on the console needs to be able to read it
 // out to somebody standing at the device.
-export function key() {
+function key() {
     const uci = cursor();
     if (uci.get('parkeze', 'adoption', 'state') != 'adopted')
         return { open: true, key: null,
@@ -75,7 +78,7 @@ export function key() {
     return { open: false, key: value };
 }
 
-export function setAp(req) {
+function setAp(req) {
     const uci = cursor();
 
     if (req.enabled != null) {
@@ -115,7 +118,7 @@ export function setAp(req) {
 //
 // Marked manual, so the watchdog does not helpfully take it down again the
 // moment it notices the backhaul is fine — somebody asked for this.
-export function raiseAp(req) {
+function raiseAp(req) {
     const window = req.window != null ? int(req.window) : 1800;
     run(sprintf('mkdir -p /var/run/parkeze/ap; echo 1 > /var/run/parkeze/ap/manual'));
     const output = run(sprintf('/usr/sbin/parkeze-ap up %d 2>&1', window));
@@ -123,7 +126,7 @@ export function raiseAp(req) {
     return { ok: true, status: status() };
 }
 
-export function lowerAp() {
+function lowerAp() {
     run('rm -f /var/run/parkeze/ap/manual');
     run('/usr/sbin/parkeze-ap down >/dev/null 2>&1');
     return { ok: true, status: status() };
@@ -137,7 +140,7 @@ export function lowerAp() {
 // reads, and it reads the *air*, not the gateway. Still gated, because a survey
 // of every SSID at a customer site is site intelligence we should not hand to
 // somebody who has merely associated to an open AP.
-export function scan() {
+function scan() {
     const radio = run("uci -q show wireless | sed -n 's/^wireless\\.\\([^.]*\\)=wifi-device$/\\1/p' | head -n1");
     if (!radio) return { capable: false, networks: [] };
 
@@ -162,7 +165,7 @@ export function scan() {
     return { capable: true, networks: networks };
 }
 
-export function joinWifi(req) {
+function joinWifi(req) {
     const ssid = req.ssid;
     if (!ssid || !length(ssid) || length(ssid) > 32)
         return { error: 'Give the network a name.' };
@@ -209,3 +212,11 @@ export function joinWifi(req) {
              message: 'Joining ' + ssid + '. If you are connected to the setup '
                     + 'network, it will drop while the radio switches over.' };
 }
+
+// ── module exports ──────────────────────────────────────────────────────────
+//
+// A returned object, not `export` statements. uhttpd's ucode plugin compiles
+// its handler in TEMPLATE mode and loads anything else through loadfile(),
+// neither of which is module mode — `export` is a syntax error there. See the
+// header of api/index.uc for the full contract.
+return { joinWifi, key, lowerAp, raiseAp, scan, setAp, status };

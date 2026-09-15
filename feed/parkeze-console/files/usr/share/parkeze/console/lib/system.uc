@@ -1,8 +1,11 @@
 // System overview: what this gateway is, and how it is doing.
 
-import { readfile } from 'fs';
-import { cursor } from 'uci';
-import { run, runJson, ubus } from './util.uc';
+let _m_fs = require('fs');
+let readfile = _m_fs.readfile;
+let _m_uci = require('uci');
+let cursor = _m_uci.cursor;
+let _m_util = loadfile('/usr/share/parkeze/console/lib/util.uc', { raw_mode: true })();
+let run = _m_util.run;; let runJson = _m_util.runJson;; let ubus = _m_util.ubus;
 
 function boardConf() {
     // /etc/parkeze/board.conf is shell, not JSON. Parsed here rather than
@@ -20,7 +23,7 @@ function boardConf() {
     return out;
 }
 
-export function summary() {
+function summary() {
     const uci = cursor();
     const board = boardConf();
     const info = ubus('system', 'info');
@@ -69,7 +72,7 @@ function thermal() {
     return milli > 1000 ? milli / 1000 : milli;
 }
 
-export function logs(queryString) {
+function logs(queryString) {
     // logread, most recent first. The console paginates; this caps the read so
     // a gateway with a chatty packet forwarder cannot return a 40MB response
     // to a browser over a metered link.
@@ -81,10 +84,18 @@ export function logs(queryString) {
     return { lines: out ? split(out, '\n') : [] };
 }
 
-export function reboot() {
+function reboot() {
     // Detached, so the HTTP response is actually delivered before the box goes
     // down. A synchronous reboot leaves the browser showing a network error
     // and the operator unsure whether the command landed.
     run('(sleep 2; /sbin/reboot) >/dev/null 2>&1 &');
     return { ok: true, message: 'Rebooting.' };
 }
+
+// ── module exports ──────────────────────────────────────────────────────────
+//
+// A returned object, not `export` statements. uhttpd's ucode plugin compiles
+// its handler in TEMPLATE mode and loads anything else through loadfile(),
+// neither of which is module mode — `export` is a syntax error there. See the
+// header of api/index.uc for the full contract.
+return { logs, reboot, summary };

@@ -5,11 +5,14 @@
 // has to work over SSH on a gateway whose console is not reachable, and a
 // second implementation in ucode would be a second thing to keep correct.
 
-import { open } from 'fs';
-import { cursor } from 'uci';
-import { run, runJson } from './util.uc';
+let _m_fs = require('fs');
+let open = _m_fs.open;
+let _m_uci = require('uci');
+let cursor = _m_uci.cursor;
+let _m_util = loadfile('/usr/share/parkeze/console/lib/util.uc', { raw_mode: true })();
+let run = _m_util.run;; let runJson = _m_util.runJson;
 
-export function status() {
+function status() {
     const state = runJson('/usr/sbin/parkeze-claim status');
     if (!state) return { error: 'Claim subsystem is not responding.' };
 
@@ -37,7 +40,7 @@ export function status() {
 // library: qrencode is already in the image for the SSH banner, and this saves
 // shipping a second QR implementation to a flash-constrained board purely so
 // the same bytes can be drawn twice.
-export function qr() {
+function qr() {
     const svg = run('/usr/sbin/parkeze-claim qr --svg');
     if (!svg) return { error: 'Could not render the claim code.' };
     return { svg: svg, url: run('/usr/sbin/parkeze-claim qr') };
@@ -48,14 +51,14 @@ export function qr() {
 // The device polls on its own schedule anyway; this is what the console calls
 // while an installer is watching, so the page updates the moment they finish
 // on their phone rather than up to a backoff interval later.
-export function poll() {
+function poll() {
     run('/usr/sbin/parkeze-claim poll >/dev/null 2>&1');
     return status();
 }
 
 // Complete an adoption for a gateway that has never had internet, from a
 // signed bundle the operator carried back from parkeze.net.
-export function applyBundle(req) {
+function applyBundle(req) {
     const bundle = req.bundle;
     if (!bundle || !length(bundle))
         return { error: 'Paste the adoption bundle from parkeze.net.' };
@@ -93,7 +96,15 @@ function writeBundle(path, contents) {
 
 // Whether this gateway belongs to an organisation yet. Used by the router to
 // close the provisioning endpoints once it does.
-export function isAdopted() {
+function isAdopted() {
     const uci = cursor();
     return uci.get('parkeze', 'adoption', 'state') == 'adopted';
 }
+
+// ── module exports ──────────────────────────────────────────────────────────
+//
+// A returned object, not `export` statements. uhttpd's ucode plugin compiles
+// its handler in TEMPLATE mode and loads anything else through loadfile(),
+// neither of which is module mode — `export` is a syntax error there. See the
+// header of api/index.uc for the full contract.
+return { applyBundle, isAdopted, poll, qr, status };
