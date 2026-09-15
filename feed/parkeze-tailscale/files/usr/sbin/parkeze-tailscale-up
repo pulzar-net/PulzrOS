@@ -31,6 +31,13 @@ HOSTNAME="$(uci -q get parkeze.identity.hostname || cat /proc/sys/kernel/hostnam
 # user-owned ones do. A gateway on a pole that logs itself out after 180 days
 # is an unnecessary truck roll.
 #
+# --netfilter-mode=off because tailscaled otherwise shells out to iptables and
+# ip6tables, which do not exist on this image — OpenWrt 24.10 is fw4 and
+# nftables, and the legacy binaries are not installed. Correct rather than
+# merely quiet: the rules it wants are for subnet routing and exit-node
+# forwarding, and this node does neither. The tailnet interface's firewall is
+# ours, in parkeze-base's 20-parkeze-network.
+#
 # --accept-routes=false so that a subnet route advertised by anything else on
 # the tailnet cannot start pulling this gateway's traffic.
 #
@@ -54,6 +61,7 @@ output="$(${TS} up \
     --advertise-tags="tag:gateway" \
     --accept-routes=false \
     --accept-dns=false \
+    --netfilter-mode=off \
     --timeout=60s 2>&1)"
 status=$?
 [ -n "${output}" ] && echo "${output}" | logger -t tailscale

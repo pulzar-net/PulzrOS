@@ -28,7 +28,8 @@
 # own, and that table contains a default route via the wired WAN and nothing
 # else. No wired route, no table entry, no egress.
 #
-# Marking on uid rather than on the tailscale0 interface is deliberate: the
+# Marking on the originating socket's cgroup rather than on the tailscale0
+# interface is deliberate: the
 # traffic we are trying to confine is the *encrypted outer* traffic tailscaled
 # sends to peers and DERP, which does not traverse tailscale0 at all. A rule
 # written against tailscale0 confines the wrong direction and looks correct
@@ -61,23 +62,23 @@ wired_gateway() {
 
 stop_if_unmarked() {
   # The empty-table-plus-unreachable-rule trick above only confines packets
-  # that carry the mark, and the mark is only applied when tailscaled runs as a
-  # dedicated user — /etc/init.d/parkeze-tailscale writes the nftables snippet
-  # by uid, and writes nothing when that user does not exist.
+  # that carry the mark, and the mark exists only while the nftables snippet is
+  # installed. /etc/init.d/parkeze-tailscale removes it if the kernel will not
+  # accept the cgroup match — kmod-nft-socket missing from a board's package
+  # list, say.
   #
-  # tailscaled currently runs as root on these images, so there is no mark and
-  # nothing is confined. With the wired uplink gone, its traffic would take the
-  # main table straight out over the SIM, which is the one outcome this whole
-  # mechanism exists to prevent and the one the customer pays for by the
-  # megabyte.
+  # Without the mark, nothing is confined: with the wired uplink gone,
+  # tailscaled's traffic would take the main table straight out over the SIM.
+  # That is the one outcome this whole mechanism exists to prevent and the one
+  # the customer pays for by the megabyte.
   #
   # So when there is no mark to rely on, fall back to the blunt guarantee: stop
-  # the daemon. Losing tailnet management while the cable is out is exactly the
-  # trade we already make by refusing to start without it.
+  # the daemon. Losing tailnet management while the cable is out is the trade
+  # we already make by refusing to start without it.
   [ -f /etc/nftables.d/20-parkeze-tailscale.nft ] && return 0
 
   if pidof tailscaled >/dev/null 2>&1; then
-    log "no uid mark in force and no wired uplink — stopping tailscaled rather than letting it reach for cellular"
+    log "no mark in force and no wired uplink — stopping tailscaled rather than letting it reach for cellular"
     /etc/init.d/parkeze-tailscale stop >/dev/null 2>&1 || true
   fi
 }
