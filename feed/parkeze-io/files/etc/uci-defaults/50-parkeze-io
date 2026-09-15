@@ -1,6 +1,10 @@
 #!/bin/sh
 # Register the board's buttons with OpenWrt's button handler.
 #
+# `handler` points at our own script rather than us shipping
+# /etc/rc.button/reset, which belongs to base-files — two packages claiming one
+# path is a file clash that fails the image build outright.
+#
 # The LEDs need no UCI: parkeze-io-daemon drives them directly through sysfs,
 # because their states are derived from things (concentrator status, which
 # backhaul is up) that no kernel trigger knows about.
@@ -16,7 +20,7 @@
 set system.reset_button=button
 set system.reset_button.button='${PARKEZE_BUTTON_RESET}'
 set system.reset_button.action='released'
-set system.reset_button.handler='/etc/rc.button/reset'
+set system.reset_button.handler='/usr/libexec/parkeze-reset-button'
 set system.reset_button.min='0'
 set system.reset_button.max='60'
 EOF

@@ -2,6 +2,16 @@
 #
 # The reset button.
 #
+# Lives here rather than at /etc/rc.button/reset, which is base-files' file.
+# Shipping our own copy of that path is a package file clash: opkg refuses it
+# with "wants to install file ... already provided by", and the image build
+# fails. Instead the UCI button config points its `handler` at this script —
+# see /etc/uci-defaults/50-parkeze-io — which is what that option is for.
+#
+# OpenWrt's button hotplug evals the handler with ACTION and SEEN already in
+# the environment, so both are available exactly as they would be in
+# /etc/rc.button.
+#
 #   short press (< 3s)    report status on the LEDs, and nothing else
 #   3s to hold-threshold   nothing — the release window, so a slip is harmless
 #   held past threshold    factory reset
