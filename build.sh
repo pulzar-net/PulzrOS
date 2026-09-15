@@ -467,9 +467,32 @@ EOF
 
     # Package list: shared, then board, then the removals as `-name` entries,
     # all flattened onto one line because ImageBuilder wants it that way.
+    #
+    # COMMENTS ARE STRIPPED FIRST, AND THAT IS NOT COSMETIC.
+    #
+    # The lists in board.conf are multi-line quoted strings with `#` comments
+    # inside them. Flattening one without stripping those puts a `#` into the
+    # PACKAGES variable, make passes it to a shell, and the shell treats the
+    # rest of the line as a comment — silently discarding everything after it,
+    # OpenWrt's own DEFAULT_PACKAGES included.
+    #
+    # The image then builds and boots with no base-files, no busybox and no
+    # procd, and dies with:
+    #
+    #   Kernel panic - not syncing: No working init found
+    #
+    # Nothing in the build reports a problem; the only trace is ImageBuilder
+    # echoing a "Packages:" line that stops mid-sentence.
     local packages
-    packages="$(echo "${PACKAGES_COMMON} ${PACKAGES_BOARD:-}" | tr -s '[:space:]' ' ')"
+    packages="$(printf '%s\n%s\n' "${PACKAGES_COMMON}" "${PACKAGES_BOARD:-}" \
+                | sed 's/#.*//' \
+                | tr -s '[:space:]' ' ')"
     for pkg in ${PACKAGES_REMOVE}; do packages="${packages} -${pkg}"; done
+
+    # Belt and braces: a stray `#` from anywhere must never reach make.
+    case "${packages}" in
+      *"#"*) die "the package list contains '#', which would truncate it" ;;
+    esac
 
     mkdir -p "${OUT_DIR}/${BOARD_ID}"
 
@@ -509,8 +532,31 @@ verify_rootfs() {
     return 0
   fi
 
-  # One file from a package with no dependencies of its own, so a failure here
-  # means the packaging is broken rather than a dependency being unavailable.
+  # First: can this image boot at all? The kernel execs /sbin/init, and an
+  # image without one panics with "No working init found" — which is what a
+  # truncated package list produces, and which is invisible until a board is
+  # on the bench refusing to start.
+  local essential="/sbin/init /bin/busybox /sbin/procd /etc/preinit"
+  local path missing=""
+  for path in ${essential}; do
+    [ -e "${root}${path}" ] || missing="${missing} ${path}"
+  done
+  if [ -n "${missing}" ]; then
+    cat >&2 <<EOF
+error: the image is missing part of the base system:${missing}
+
+       It would build, flash, and then panic on boot with
+       "Kernel panic - not syncing: No working init found".
+
+       The usual cause is a truncated package list — check ImageBuilder's
+       "Packages:" line for a '#', which comments out everything after it.
+EOF
+    exit 1
+  fi
+
+  # Then: did our own packages actually put files down? One file from a package
+  # with no dependencies of its own, so a failure here means the packaging is
+  # broken rather than a dependency being unavailable.
   local witness="${root}/usr/sbin/parkeze-motd"
   if [ ! -f "${witness}" ]; then
     cat >&2 <<EOF
