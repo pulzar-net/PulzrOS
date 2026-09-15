@@ -91,12 +91,17 @@ anybody wants, renamed. For the record, the four are:
 ## First boot
 
 A minute or two while the gateway generates its identity, its console
-certificate and its one-time password. Then it is reachable three ways:
+certificate and its one-time password.
+
+Most of the time nobody connects to it at all: plugged into anything with a
+route out, it registers itself with parkeze.net and appears in the pending list
+there, where the installer adopts it by matching the EUI on the label. The ways
+below are for when that has not happened.
 
 | | |
 |---|---|
-| **Ethernet** | `https://192.168.61.1/`. The port hands out an address — but only if it is not plugged into a network that already has a DHCP server; see [`access.md`](access.md). |
-| **WiFi** | join `parkeze_<mac>`. Open while the gateway is unadopted, because it holds nothing worth protecting yet. |
+| **Ethernet** | `https://parkeze-<serial>.local/`, or `https://192.168.61.1/` if mDNS is blocked. The gateway never hands out an address — your laptop will self-assign `169.254.x.x` and say it has no internet, which is expected. See [`access.md`](access.md). |
+| **WiFi** | off by default. `parkeze_<mac>`, open while the gateway is unadopted, once somebody enables it from the console or parkeze.net. |
 | **Serial** | 115200 8N1 on the GPIO header. The banner prints the console address and the initial password. |
 
 All three show the same claim code. Scan it or enter it at

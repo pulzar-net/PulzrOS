@@ -117,7 +117,13 @@ say "  ${DIM}%s${OFF}\n\n" \
 
 say "  ${DIM}Host${OFF}         %s\n" "$(uci -q get parkeze.identity.hostname || cat /proc/sys/kernel/hostname)"
 say "  ${DIM}Gateway EUI${OFF}  %s\n" "$(uci -q get parkeze.identity.gateway_eui || echo unknown)"
-say "  ${DIM}Console${OFF}      https://%s/\n" "$(uci -q get network.lan.ipaddr || echo 192.168.61.1)"
+# Both console addresses, because which one is useful depends on how you got
+# here. The .local name is the one that works with a laptop and a cable and
+# nothing configured; the fixed address is the fallback when mDNS is blocked.
+say "  ${DIM}Console${OFF}      https://%s.local/\n" \
+    "$(uci -q get parkeze.identity.hostname || cat /proc/sys/kernel/hostname)"
+say "  ${DIM}%s${OFF}             https://%s/\n" "" \
+    "$(uci -q get network.console.ipaddr || echo 192.168.61.1)"
 adoption_line
 concentrator_line
 backhaul_line

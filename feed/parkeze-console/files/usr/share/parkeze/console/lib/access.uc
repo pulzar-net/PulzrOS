@@ -1,4 +1,4 @@
-// The setup AP, the captive portal, and LAN DHCP policy.
+// The setup AP, the captive portal, and how to reach this gateway locally.
 //
 // ── THE AUTHORISATION RULE FOR THIS WHOLE MODULE ───────────────────────────
 //
@@ -24,23 +24,34 @@ export function status() {
     const ap = runJson('/usr/sbin/parkeze-ap status') || { capable: false };
     const portal = runJson('/usr/sbin/parkeze-portal status') || { up: false };
 
-    // Read the cached verdict rather than re-probing: deciding takes the best
-    // part of twenty seconds — a DHCP probe plus a window measuring the link —
-    // and doing that on every page load would make the console feel broken.
-    const port = runJson('/usr/sbin/parkeze-port-role --status')
-                 || { role: 'unknown', reason: 'Not probed yet.' };
+    // The ethernet port does not have a role to report. It holds every
+    // address at once — a DHCP lease for the backhaul, the fixed console
+    // address, and a link-local address for a directly-connected laptop — so
+    // what the console shows is simply which of those are currently up.
+    const lease = runJson('ubus call network.interface.wan status') || {};
+    const wired = lease['ipv4-address'] && length(lease['ipv4-address'])
+                  ? lease['ipv4-address'][0].address : null;
 
     return {
         ap: ap,
         portal: portal,
-        // What the single ethernet port currently is, why, and whether that
-        // was decided or configured. `role` is what it settled on; `configured`
-        // is what an operator asked for, which is 'auto' unless overridden.
         port: {
-            role: port.role,
-            reason: port.reason,
-            configured: uci.get('parkeze', 'port', 'role') || 'auto',
-            serving: port.role == 'lan',
+            iface: uci.get('network', 'wan', 'device') || 'eth0',
+            // Where to point a browser. Both always work; the link-local name
+            // is the one to read out to somebody with a laptop and a cable,
+            // because it needs nothing configured at either end.
+            hostname: trim(readfile('/proc/sys/kernel/hostname') || 'parkeze'),
+            console: uci.get('network', 'console', 'ipaddr'),
+            linkLocal: uci.get('network', 'linklocal', 'ipaddr'),
+            // The lease, if the cable reached a network with a DHCP server.
+            // Absent is not an error: on a bench there is nothing to lease from
+            // and the two static addresses carry the console regardless.
+            uplink: wired,
+            // Stated rather than implied. The gateway never serves DHCP on this
+            // port — see 20-parkeze-network — and an installer who expects an
+            // address from it should be told so plainly rather than left to
+            // wonder why their laptop did not get one.
+            servesDhcp: false,
         },
         adopted: uci.get('parkeze', 'adoption', 'state') == 'adopted',
     };
@@ -115,26 +126,6 @@ export function raiseAp(req) {
 export function lowerAp() {
     run('rm -f /var/run/parkeze/ap/manual');
     run('/usr/sbin/parkeze-ap down >/dev/null 2>&1');
-    return { ok: true, status: status() };
-}
-
-export function setLan(req) {
-    const uci = cursor();
-    if (req.mode != null) {
-        // 'auto' decides from what is on the cable; 'lan' and 'wan' pin it.
-        if (!match(req.mode, /^(auto|lan|wan)$/))
-            return { error: 'Role must be auto, lan or wan.' };
-        uci.set('parkeze', 'port', 'role', req.mode);
-        uci.commit('parkeze');
-        // Re-decide immediately so the answer on screen matches the setting
-        // the operator just chose.
-        run('/usr/sbin/parkeze-port-role >/dev/null 2>&1');
-    }
-    return { ok: true, status: status() };
-}
-
-export function probeLan() {
-    run('/usr/sbin/parkeze-port-role >/dev/null 2>&1');
     return { ok: true, status: status() };
 }
 

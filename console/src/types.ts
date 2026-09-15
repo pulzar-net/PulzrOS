@@ -100,7 +100,11 @@ export interface Modem {
 }
 
 export interface NetworkStatus {
-  lan: InterfaceStatus;
+  /** The fixed console address on the shared ethernet port. */
+  console: InterfaceStatus;
+  /** The link-local address on the same port, for a laptop plugged straight
+      in. Up independently of whether the uplink has a lease. */
+  linkLocal: InterfaceStatus;
   wan: InterfaceStatus & {
     /** Always false. Ethernet WAN is parkeze.net's to manage — see
         docs/backhaul.md. The reason travels with the payload so the UI cannot
@@ -288,22 +292,28 @@ export interface ApStatus {
   fallbackAfter?: number;
 }
 
-/** What the single ethernet port settled on, and why. */
-export interface PortRole {
-  /** What it currently is. 'wan' takes a DHCP lease and accepts nothing
-      inbound; 'lan' serves DHCP so a directly-connected laptop can reach the
+/** The single ethernet port. It has no role — it holds every address at once. */
+export interface EthernetPort {
+  iface: string;
+  /** mDNS name, so `https://<hostname>.local` reaches the console. */
+  hostname: string;
+  /** The fixed address, the one printed on the label. */
+  console: string;
+  /** Link-local, for a laptop plugged straight in with nothing configured. */
+  linkLocal: string;
+  /** The DHCP lease, when the cable reached a network that offers one. Null on
+      a bench, which is not a fault — the two static addresses still carry the
       console. */
-  role: 'lan' | 'wan' | 'unknown';
-  reason: string;
-  /** What an operator asked for — 'auto' unless pinned. */
-  configured: 'auto' | 'lan' | 'wan';
-  serving: boolean;
+  uplink: string | null;
+  /** Always false. Present so the UI can state it rather than leave an
+      installer wondering why their laptop got no address. */
+  servesDhcp: boolean;
 }
 
 export interface AccessStatus {
   ap: ApStatus;
   portal: { up: boolean; address?: string };
-  port: PortRole;
+  port: EthernetPort;
   adopted: boolean;
 }
 

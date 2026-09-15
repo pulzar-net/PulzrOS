@@ -229,11 +229,6 @@ const ROUTES = {
     },
     'POST /api/access/ap/up':     (env, req, s) => { auth.audit('ap.raise', { by: s.subject }); return respond(200, access.raiseAp(req)); },
     'POST /api/access/ap/down':   (env, req, s) => { auth.audit('ap.lower', { by: s.subject }); return respond(200, access.lowerAp()); },
-    'POST /api/access/lan':       (env, req, s) => {
-        const result = access.setLan(req);
-        return result.error ? error(400, result.error) : respond(200, result);
-    },
-    'POST /api/access/lan/probe': (env, req, s) => respond(200, access.probeLan()),
     'POST /api/access/wifi':      (env, req, s) => {
         const result = access.joinWifi(req);
         if (result.error) return error(400, result.error);

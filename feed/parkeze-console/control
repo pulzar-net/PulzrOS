@@ -1,6 +1,6 @@
 Package: parkeze-console
 Version: @VERSION@-@BUILD@
-Depends: uhttpd, uhttpd-mod-ucode, ucode, ucode-mod-fs, ucode-mod-uci, ucode-mod-ubus, ucode-mod-digest, openssl-util, px5g-mbedtls
+Depends: uhttpd, uhttpd-mod-ucode, ucode, ucode-mod-fs, ucode-mod-uci, ucode-mod-ubus, ucode-mod-digest, openssl-util, px5g-mbedtls, umdns
 Source: parkeze
 Section: net
 Priority: optional

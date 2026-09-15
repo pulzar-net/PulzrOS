@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Cable, Eye, EyeOff, Radio, ShieldAlert, Wifi } from 'lucide-react';
+import { Cable, Eye, EyeOff, Radio, ShieldAlert } from 'lucide-react';
 import { api } from '@/services/api';
 import type { AccessStatus } from '@/types';
 import Card from '@/components/ui/Card';
@@ -8,7 +8,7 @@ import Badge from '@/components/ui/Badge';
 import Fact, { FactList } from '@/components/Fact';
 import Notice from '@/components/ui/Notice';
 import Button from '@/components/ui/Button';
-import { CheckboxField, SelectField } from '@/components/ui/Field';
+import { CheckboxField } from '@/components/ui/Field';
 import PageHeader from '@/components/PageHeader';
 import Spinner from '@/components/ui/Spinner';
 import ErrorState from '@/components/ErrorState';
@@ -22,10 +22,10 @@ import styles from './Pages.module.css';
  * Two mechanisms, and they have opposite risk profiles, so the page keeps them
  * visually separate rather than merging them into "connectivity settings":
  *
- *   the setup AP    a radio anyone in range can see. Powerful, and the thing
- *                   most worth being careful with.
- *   LAN DHCP        harmless to us, potentially an outage for whoever owns the
- *                   network the port is patched into.
+ *   the ethernet port   always there, always the same, nothing to configure.
+ *                       Read-only here: there is no decision left to make.
+ *   the setup AP        a radio anyone in range can see, off by default.
+ *                       Powerful, and the thing most worth being careful with.
  *
  * See docs/access.md for the reasoning behind both.
  */
@@ -54,7 +54,7 @@ export default function Access() {
 
       <ApCard state={state} onChange={refresh} />
       <WifiJoin />
-      <LanCard state={state} onChange={refresh} />
+      <PortCard state={state} />
     </div>
   );
 }
@@ -205,98 +205,65 @@ function ApCard({ state, onChange }: { state: AccessStatus; onChange: () => void
   );
 }
 
-function LanCard({ state, onChange }: { state: AccessStatus; onChange: () => void }) {
+function PortCard({ state }: { state: AccessStatus }) {
   const port = state.port;
-
-  const configure = useMutation({
-    mutationFn: (mode: string) => api.post('/access/lan', { mode }),
-    onSuccess: onChange,
-  });
-  const probe = useMutation({
-    mutationFn: () => api.post('/access/lan/probe'),
-    onSuccess: onChange,
-  });
 
   return (
     <Card
       title="Ethernet port"
       icon={Cable}
       note={
-        port.role === 'wan' ? (
-          <Badge tone="info">Backhaul</Badge>
-        ) : port.role === 'lan' ? (
-          <Badge tone="success">Console port</Badge>
+        port.uplink ? (
+          <Badge tone="success">Uplink up</Badge>
         ) : (
-          <Badge tone="neutral">Deciding…</Badge>
+          <Badge tone="neutral">No uplink</Badge>
         )
       }
     >
       <p className={styles.note}>
-        There is one ethernet socket, so it is either the uplink or the console
-        port. Plugged into a network it takes an address and carries the
-        backhaul; plugged into a laptop it hands one out.
+        There is one socket and it does not have a role. It is the backhaul and
+        the console port at the same time, so there is nothing to choose and
+        nothing that can be set wrong.
       </p>
 
       <FactList>
         <Fact
-          label="Right now"
-          value={
-            port.role === 'wan'
-              ? 'Backhaul — taking an address, accepting nothing inbound'
-              : port.role === 'lan'
-                ? 'Console port — handing out addresses'
-                : 'Not decided yet'
-          }
+          label="Plug a laptop in"
+          value={<span className="mono">https://{port.hostname}.local</span>}
         />
-        <Fact label="Because" value={port.reason} />
         <Fact
-          label="Always reachable at"
-          value={<span className="mono">https://{state.ap.ssid?.replace('parkeze_', 'parkeze-') ?? 'parkeze'}.local</span>}
+          label="Or, by address"
+          value={<span className="mono">https://{port.console}</span>}
+        />
+        <Fact
+          label="Uplink"
+          value={
+            port.uplink ? (
+              <span className="mono">{port.uplink}</span>
+            ) : (
+              'No lease — nothing on this cable is offering one'
+            )
+          }
         />
       </FactList>
 
-      {/* The failure this design is built around: serving DHCP onto a network
-          we do not own. Worth saying out loud wherever somebody can turn the
-          safety off. */}
-      {port.configured === 'lan' && (
-        <Notice tone="warning">
-          <ShieldAlert size={13} strokeWidth={2} style={{ verticalAlign: '-2px' }} />{' '}
-          Pinned to console port. This gateway will hand out addresses even when
-          plugged into a network that already has a DHCP server — which is an
-          outage for whoever owns that network. Only leave this set if you know
-          what is on the other end of the cable.
-        </Notice>
-      )}
+      {/* The one thing about this design that surprises people, so it is
+          stated rather than left to be discovered with a laptop in hand. */}
+      <Notice tone="info">
+        This gateway never hands out addresses. A laptop plugged straight in
+        will say it has no internet connection and give itself a
+        <code> 169.254.x.x </code> address — that is expected, and the console
+        is reachable at the <code>.local</code> name above as soon as it does.
+      </Notice>
 
-      {port.configured === 'auto' && port.role === 'wan' &&
-        port.reason.includes('busy') && (
+      {port.uplink && (
         <Notice tone="info">
-          Nothing is handing out addresses here, but the segment is busy — most
-          likely a statically addressed network. The port stays a backhaul
-          rather than risk answering DHCP on it. Reach the console at the
-          <code> .local</code> name above, or pin the role below.
+          <ShieldAlert size={13} strokeWidth={2} style={{ verticalAlign: '-2px' }} />{' '}
+          Nothing on this network can reach the gateway. Only a directly
+          connected laptop gets to the console; management from parkeze.net
+          arrives over the tunnel this gateway opens outwards.
         </Notice>
       )}
-
-      <div className={styles.divider} />
-
-      <SelectField
-        label="Role"
-        value={port.configured}
-        onChange={(event) => configure.mutate(event.target.value)}
-        hint="Automatic decides from what is on the cable, every time it is plugged in, and resolves anything ambiguous to backhaul."
-      >
-        <option value="auto">Automatic — decide from what is connected</option>
-        <option value="wan">Always the backhaul</option>
-        <option value="lan">Always the console port</option>
-      </SelectField>
-
-      <div className={styles.actions}>
-        <Button loading={probe.isPending} onClick={() => probe.mutate()}>
-          <Wifi size={14} strokeWidth={2} />
-          Check the cable again
-        </Button>
-      </div>
     </Card>
   );
 }

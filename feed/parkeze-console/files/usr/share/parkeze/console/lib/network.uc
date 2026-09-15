@@ -41,7 +41,12 @@ function ifaceStatus(name) {
 export function status() {
     const uci = cursor();
     return {
-        lan: ifaceStatus('lan'),
+        // The console addresses on the shared ethernet port. Reported so the
+        // Backhaul page can show that local access is up even when the uplink
+        // is not — those are independent on this hardware, and conflating them
+        // is what makes a gateway look dead when it is merely unplugged.
+        console: ifaceStatus('console'),
+        linkLocal: ifaceStatus('linklocal'),
         wan: {
             // `manageable: false` is the contract with the console: render it,
             // grey it out, offer no controls. The UI does not decide this — if
@@ -49,9 +54,12 @@ export function status() {
             // here and in board.conf, in one place, not in a React component.
             manageable: false,
             reason: 'Ethernet is the wired backhaul and is managed by '
-                  + 'parkeze.net. Nothing is accepted from it — the console '
-                  + 'and SSH are not reachable over the uplink.',
-            enabled: uci.get('network', 'wan', 'disabled') != '1',
+                  + 'parkeze.net. Nothing routed is accepted from it — the '
+                  + 'console and SSH answer only a directly connected machine.',
+            // Always on. The port has no off switch because switching it off
+            // would also take away local access, which is the one thing that
+            // has to keep working.
+            enabled: true,
             ...ifaceStatus('wan'),
         },
         cellular: {

@@ -13,7 +13,7 @@ command -v qrencode >/dev/null 2>&1 || return
 
 printf '\n\033[1m  This gateway is not adopted yet.\033[0m\n'
 printf '  Scan to claim it, or open the console at https://%s/\n\n' \
-    "$(uci -q get network.lan.ipaddr 2>/dev/null || echo 192.168.61.1)"
+    "$(uci -q get network.console.ipaddr 2>/dev/null || echo 192.168.61.1)"
 
 parkeze-claim qr --ascii 2>/dev/null | sed 's/^/  /'
 

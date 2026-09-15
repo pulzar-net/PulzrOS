@@ -14,6 +14,12 @@ The two failure modes are not symmetric:
 - Too locked down → a truck roll for every SIM outage. Expensive, annoying.
 - Too open → someone in a car park takes a gateway, or the credentials on it.
 
+The local way in is **the ethernet port**, not WiFi. It costs nothing to leave
+available — a cable is physical access, which is a boundary we were never
+defending anyway — and it works in a car park basement where a radio does not.
+The setup AP still exists for the case the port cannot be reached, and it is
+off until somebody turns it on.
+
 So the design does not pick a point between them. It makes the recovery path
 useless to anyone who is not already authorised.
 
@@ -92,76 +98,113 @@ The console then decides what to show based on adoption state. The portal is
 not a separate application — it is the same React console, which is why there
 is no second UI to keep in step.
 
-## The ethernet port decides what it is
+## The ethernet port
 
-A Pi has one ethernet socket, so it is either the uplink or the console port —
-it cannot be both. `parkeze-port-role` decides which, on every link-up.
+A Pi has one ethernet socket. It is the uplink **and** the console port, at the
+same time, permanently. It holds three addresses:
 
-| What is on the cable | Role | Behaviour |
+| | Address | What it is for |
 |---|---|---|
-| a site network | **wan** | takes a DHCP lease, carries the backhaul, accepts nothing inbound |
-| a laptop | **lan** | hands out an address so the console is reachable with no setup |
+| `wan` | DHCP lease | the backhaul, up the moment the cable reaches a network |
+| `console` | `192.168.61.1` | fixed, printed on the label, never moves |
+| `linklocal` | `169.254.61.1/16` | a laptop plugged straight in, with nothing configured |
 
-### Why "no DHCP server" is not enough to conclude "laptop"
+Nothing is detected and nothing is chosen.
 
-It is the obvious test, and it is wrong in a way that costs somebody else an
-outage. A site network that uses static addressing — industrial kit, a controls
-VLAN — has no DHCP server either. Concluding "laptop" there means answering
-DHCP on a network we do not own, handing out addresses on the wrong subnet, and
-publishing this gateway's console to it.
+### The version that did choose, and why it is gone
 
-The two mistakes do not cost the same:
+The first design had the port pick a role on every link-up: a site network made
+it a WAN, a bare laptop made it a LAN that served DHCP. The detection was
+careful — it treated "no DHCP server" as insufficient evidence of a laptop,
+because a statically addressed controls network looks identical, and resolved
+anything ambiguous to WAN.
 
-| Wrong guess | Cost |
+It was still the wrong shape. Two reasons:
+
+**The detection cannot be made right.** Not "was not yet"; cannot. The
+distinguishing evidence does not exist on the wire. Every version of that code
+is a heuristic with a failure mode that costs somebody else an outage, and the
+careful version mostly bought safety by refusing to serve DHCP — which is to
+say, by doing what we now do unconditionally.
+
+**Serving DHCP was never worth the risk it carried.** The only thing the LAN
+role added over holding a static address was handing an address to a directly
+connected laptop. Every laptop already self-assigns a link-local address when
+nothing answers DHCP, which reaches the gateway anyway. We were taking on the
+risk of rogue DHCP on a customer network to save a step that happens by itself.
+
+Remove the role and both problems go at once. Nothing to detect, nothing to
+configure, nothing to get wrong, and one less service listening.
+
+### So this gateway never serves DHCP
+
+Not in any mode, not with a config flag, not on a bench. A second DHCP server
+on a network we do not own hands out addresses on the wrong subnet, breaks
+whatever was working, and is very hard for the site to trace back to a LoRaWAN
+gateway on a pole.
+
+The installer-facing consequence — a laptop that says "no internet" and
+self-assigns `169.254.x.x` — is stated on the Access page rather than left to
+be discovered.
+
+### Reaching it
+
+Plug a laptop into the port and open:
+
+```
+https://parkeze-<serial>.local
+```
+
+That works with no configuration on either end: the laptop self-assigns a
+link-local address, and `umdns` answers the name on the link-local interface.
+`https://192.168.61.1` is the fallback for when mDNS is blocked.
+
+mDNS is deliberately *not* answered on the uplink side. The same socket faces
+whatever site network the gateway is patched into, and advertising there would
+put our hardware in the service browser of every machine on it.
+
+### What the site network can reach
+
+Nothing. The port sits in the `wan` zone at `input DROP`, with two carve-outs
+matched on **source address**, not interface:
+
+| Source | Ports |
 |---|---|
-| said **wan**, was a laptop | the laptop gets no address. Annoying — and the `.local` name below still works |
-| said **lan**, was a network | rogue DHCP on a customer's LAN, plus our console exposed on it |
+| `169.254.0.0/16` | tcp 22, 80, 443 + udp 5353 |
+| `192.168.61.0/24` | tcp 22, 80, 443 |
 
-So **lan requires positive evidence** that the segment is unpopulated, and
-anything ambiguous resolves to **wan**. Concretely:
+A host only holds a `169.254` address when it is on a segment with no DHCP
+server — on this port, that means it is plugged into the gateway and nothing
+else. `192.168.61.0/24` is our own subnet, which a laptop only reaches us from
+deliberately.
 
-1. No carrier → **lan**. Nothing to collide with, and the first laptop plugged
-   in gets an address without waiting out a probe.
-2. A DHCP server answers → **wan**. The one unambiguous signal.
-3. No server, but the link is busy → **wan**, without serving anything. Most
-   likely a statically addressed network.
-4. No server and the link is quiet → **lan**.
+Two zones over one device would have been the obvious way to express this, and
+it does not work: fw4 would match both on `iifname eth0` and the result would
+depend on rule order. Source addresses are unambiguous.
 
-Step 3 is the one that matters. It is deliberately only ever used to *refuse*
-the lan role, never to grant it.
+This is not the security boundary — authentication is, and anyone holding the
+cable is inside any perimeter we could draw. The carve-out only stops a routed
+network from reaching the login page at all.
 
-### Why a wrong guess is survivable
+## Most installs never touch any of this
 
-Both roles keep an IPv4 link-local address and answer mDNS, so the console is
-reachable at
+The normal path involves no local connection to the gateway. Plugged into
+anything with a route out, it takes DHCP, registers its claim with parkeze.net
+and appears in the pending list. The installer matches the EUI on the label and
+adopts it from the parkeze.net console, on their phone, without opening a
+laptop.
 
-```
-https://<hostname>.local
-```
-
-from a directly-connected laptop **whichever role was chosen**. A laptop with
-no DHCP self-assigns `169.254.x.x` and can talk to us there.
-
-That is what makes it safe to be conservative about serving DHCP: being wrong
-costs a convenience, not access to the gateway. Without it, every conservative
-choice would risk locking somebody out of a device in a car park, and the
-pressure would be to guess "lan" — which is the expensive direction.
-
-### Overriding it
-
-`parkeze.port.role` is `auto`, `lan` or `wan`, settable from the console's
-Access page and from parkeze.net. Pinning to `lan` is possible and the console
-says plainly what it risks.
-
-Multi-port boards do not use any of this: they have separate sockets and fixed
-roles.
+Everything above is the fallback for when that does not happen — which is
+exactly why it has to work with zero configuration rather than merely work.
 
 ## Turning it all off
 
 Both mechanisms are switchable from the console and from parkeze.net:
 
-- `parkeze.ap.enabled=0` — never raise a radio, including on fallback.
-- `parkeze.lan.dhcp_mode=never` — never serve DHCP.
+- `parkeze.ap.enabled=0` — never raise a radio, including on fallback. **This
+  is the default.** The AP is opt-in: field setup does not use WiFi, and a
+  radio standing on a customer site is something we are responsible for.
 
-A deployment that would rather send a van than have either is a legitimate
-choice, and the console says plainly what turning them off costs.
+There is no switch for DHCP, because it is never served, and none for the
+ethernet port's console addresses, because switching them off would remove the
+last way to reach a gateway that has lost its backhaul.

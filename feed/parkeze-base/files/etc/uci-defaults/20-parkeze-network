@@ -4,26 +4,36 @@
 #
 # THE SHAPE OF A PARKEZE GATEWAY'S NETWORKING
 #
-#   lan       the port you plug a laptop into to reach the console. Static,
-#             on an unusual /24 so it does not collide with the site.
-#   wan       ethernet uplink. CONFIGURED BUT DISABLED, and hidden in the
-#             console — see below.
-#   wwan      cellular. The default backhaul, enabled out of the box.
+# There is one ethernet port and it does not have a role. It carries three
+# addresses simultaneously and permanently:
 #
-# WHY ETHERNET WAN EXISTS BUT IS OFF AND HIDDEN
+#   wan        dhcp — the backhaul, up the moment the cable reaches a network
+#   console    192.168.61.1, fixed, printed on the label
+#   linklocal  169.254.61.1, so a laptop plugged straight in reaches the
+#              console over mDNS with nothing configured on either end
 #
-# Every gateway we deploy is either cellular-backhauled or is a wired unit that
-# parkeze.net configures during adoption. Neither case wants a site technician
-# enabling a DHCP client on the WAN port and putting the gateway on a network
-# nobody has assessed. So the interface is fully defined — the config is here
-# and correct — and simply not brought up, with the console offering no control
-# for it. `PARKEZE_WAN_ETH_ENABLED=1` in a board's config is how a wired board
-# turns it on at build time, and adoption can turn it on remotely.
+#   wwan       cellular. The fallback backhaul, enabled out of the box.
 #
-# It is defined rather than absent because a *disabled* interface can be
-# enabled by one UCI set from the management plane, while a missing one needs
-# a whole interface definition pushed to a device we may only reach over a
-# metered SIM.
+# WHY NO ROLE
+#
+# Field setup must not depend on WiFi, which leaves this port as the only way
+# to reach a gateway locally. It therefore has to work both as an uplink and as
+# a console port, and it cannot be asked which one it is: a site network with
+# static addressing and a bare laptop segment are indistinguishable from the
+# gateway's side. Guessing wrong in one direction serves DHCP onto a customer's
+# network; guessing wrong in the other strands the installer.
+#
+# Holding every address at once makes the question moot. The cost is that we
+# never hand an address to a directly-connected laptop — and link-local already
+# covers that.
+#
+# HOW A GATEWAY IS ACTUALLY SET UP
+#
+# Usually nobody connects to it at all. Plugged into anything with a route out,
+# it takes DHCP, registers its claim with parkeze.net and appears in the
+# pending list. The installer matches the EUI on the label and adopts it from
+# the parkeze.net console. Local access is the fallback for when that does not
+# happen, which is why it must work with zero configuration rather than well.
 
 # OpenWrt's prepare_rootfs runs every uci-defaults script during image
 # assembly, with IPKG_INSTROOT set and absolute paths resolving to the build
@@ -34,62 +44,45 @@
 
 # ── The single ethernet port ────────────────────────────────────────────────
 #
-# Defined as BOTH lan and wan, with exactly one enabled at a time.
-# parkeze-port-role decides which when the cable is plugged in, and flips the
-# `disabled` flags.
-#
-# Deliberately NOT a bridge. The stock config puts eth0 in br-lan, and leaving
+# Deliberately NOT a bridge: the stock config puts eth0 in br-lan, and leaving
 # it there while also naming eth0 as the wan device means the bridge wins and
-# the wan interface never comes up — which is exactly what happened: the
-# gateway sat on its static console address and never took a DHCP lease.
+# wan never comes up. A single-port gateway has nothing to bridge.
 #
-# A single-port gateway has nothing to bridge anyway.
+# netifd is happy to carry several logical interfaces on one device, so the
+# three below coexist: the dhcp client negotiates its lease while the two
+# static addresses stay up regardless of whether it ever gets one.
 uci -q batch <<EOF
-delete network.device_lan_bridge
 delete network.lan
-set network.lan=interface
-set network.lan.device='${PARKEZE_PORT_IFACE:-eth0}'
-set network.lan.proto='static'
-set network.lan.ipaddr='${PARKEZE_LAN_IPADDR}'
-set network.lan.netmask='${PARKEZE_LAN_NETMASK}'
-
 delete network.wan
+delete network.wan6
+
 set network.wan=interface
 set network.wan.device='${PARKEZE_PORT_IFACE:-eth0}'
 set network.wan.proto='dhcp'
 set network.wan.metric='10'
 
-delete network.wan6
-EOF
+set network.console=interface
+set network.console.device='${PARKEZE_PORT_IFACE:-eth0}'
+set network.console.proto='static'
+set network.console.ipaddr='${PARKEZE_LAN_IPADDR}'
+set network.console.netmask='${PARKEZE_LAN_NETMASK}'
 
-# Start as wan and disabled-lan. Failing closed matters here: until the probe
-# has run we do not know whose network this is, and the expensive mistake is
-# answering DHCP on somebody else's.
-uci -q batch <<EOF
-set network.lan.disabled='1'
-set network.wan.disabled='0'
-EOF
-
-# ── Always reachable, whichever role it takes ───────────────────────────────
-#
-# An IPv4 link-local alias plus mDNS, on both roles. A laptop plugged straight
-# in self-assigns 169.254.x.x whether or not anything hands out addresses, so
-# the console answers at
-#
-#     https://<hostname>.local
-#
-# even when the port has decided it is a WAN and is not serving DHCP.
-#
-# This is what makes it safe for the role probe to be conservative: guessing
-# wrong costs a convenience rather than access to the gateway.
-uci -q batch <<EOF
-delete network.linklocal
 set network.linklocal=interface
-set network.linklocal.proto='static'
 set network.linklocal.device='${PARKEZE_PORT_IFACE:-eth0}'
+set network.linklocal.proto='static'
 set network.linklocal.ipaddr='169.254.61.1'
 set network.linklocal.netmask='255.255.0.0'
 EOF
+
+# Never serve DHCP. A gateway that answers DHCP on a network it does not own
+# hands out addresses on the wrong subnet and takes down whatever listens —
+# an outage we caused, on equipment that is not ours, and hard for the site to
+# trace back to a LoRaWAN gateway.
+#
+# There is no case where we need to: a laptop plugged straight in self-assigns
+# a link-local address on its own. Turning this on is a bench convenience and
+# is off by default.
+uci -q set dhcp.lan.ignore='1'
 
 # ── Cellular ────────────────────────────────────────────────────────────────
 # Defined here rather than in parkeze-cellular so that the whole network shape
@@ -119,39 +112,87 @@ fi
 
 # ── Firewall ────────────────────────────────────────────────────────────────
 #
-# Both uplinks share one wan zone, and NOTHING is accepted from it.
+# The ethernet port is in the wan zone and the wan zone accepts nothing.
 #
 # This is the rule that makes a wired backhaul safe. The gateway sits on a
-# customer network that we do not control and cannot assess, often with a
-# public address behind it. Its console, its SSH and its API must not be
-# reachable from there — not on a non-standard port, not "just on the LAN
-# side of their router".
+# customer network we do not control and cannot assess, often with a public
+# address behind it. Its console, its SSH and its API must not be reachable
+# from there — not on a non-standard port, not "just on the LAN side of their
+# router".
 #
 # Management arrives the other way round: the gateway *originates* a Tailscale
 # connection outbound, and gateway-link reaches it back down that tunnel. An
 # inbound port on the uplink is never needed and is never opened.
 #
 # DROP rather than REJECT. REJECT answers with an ICMP error, which confirms
-# something is listening; DROP says nothing. On a device whose whole security
-# posture is "you cannot reach the management plane from the internet", not
-# advertising its presence to a scan is worth the slightly worse debuggability.
+# something is listening; DROP says nothing.
+#
+# There is one zone, not two, even though the port carries console addresses as
+# well. Two zones over one device would have fw4 matching both on `iifname
+# eth0` and the outcome would depend on rule order — exactly the kind of
+# ambiguity this config exists to avoid. Local access is carved out by source
+# address instead, below, which is unambiguous.
 uci -q batch <<EOF
-set firewall.@zone[0].name='lan'
-set firewall.@zone[0].input='ACCEPT'
-set firewall.@zone[0].output='ACCEPT'
-set firewall.@zone[0].forward='ACCEPT'
-set firewall.@zone[0].network='lan'
+delete firewall.@forwarding[0]
+delete firewall.@zone[1]
+delete firewall.@zone[0]
 
-set firewall.@zone[1].name='wan'
-set firewall.@zone[1].input='DROP'
-set firewall.@zone[1].output='ACCEPT'
-set firewall.@zone[1].forward='DROP'
-set firewall.@zone[1].masq='1'
-set firewall.@zone[1].mtu_fix='1'
-set firewall.@zone[1].network='wan wwan'
+add firewall zone
+set firewall.@zone[-1].name='wan'
+set firewall.@zone[-1].input='DROP'
+set firewall.@zone[-1].output='ACCEPT'
+set firewall.@zone[-1].forward='DROP'
+set firewall.@zone[-1].masq='1'
+set firewall.@zone[-1].mtu_fix='1'
+set firewall.@zone[-1].network='wan wwan console linklocal'
+EOF
+
+# ── Local console access ────────────────────────────────────────────────────
+#
+# The two carve-outs that let a directly-connected laptop in, matched on source
+# address rather than on interface.
+#
+#   169.254.0.0/16   a host only holds one of these when it is on a segment
+#                    with no DHCP server — which, on this port, means it is
+#                    plugged into the gateway and nothing else.
+#   192.168.61.0/24  our own fixed subnet. A laptop only reaches the gateway
+#                    from here if someone configured it deliberately.
+#
+# Neither range shows up on a working site network, so this opens nothing on a
+# customer LAN in practice. It is not the security boundary regardless —
+# authentication is, and a laptop cabled to the port is inside any perimeter we
+# could draw anyway. The carve-out only keeps a routed network from reaching
+# the login page at all.
+#
+# SSH is included: the QR-code claim flow is shown over SSH, and on a gateway
+# with no display it is the one path that works when the web console will not.
+for src in '169.254.0.0/16' "${PARKEZE_LAN_IPADDR%.*}.0/24"; do
+	uci -q batch <<EOF
+add firewall rule
+set firewall.@rule[-1].name='Allow-console-${src%%/*}'
+set firewall.@rule[-1].src='wan'
+set firewall.@rule[-1].src_ip='${src}'
+set firewall.@rule[-1].proto='tcp'
+set firewall.@rule[-1].dest_port='22 80 443'
+set firewall.@rule[-1].target='ACCEPT'
+EOF
+done
+
+# mDNS, so the console answers to parkeze-<serial>.local. Restricted to the
+# link-local range: responding to multicast discovery on a customer network
+# would advertise the gateway to everything on it.
+uci -q batch <<EOF
+add firewall rule
+set firewall.@rule[-1].name='Allow-mDNS-local'
+set firewall.@rule[-1].src='wan'
+set firewall.@rule[-1].src_ip='169.254.0.0/16'
+set firewall.@rule[-1].proto='udp'
+set firewall.@rule[-1].dest_port='5353'
+set firewall.@rule[-1].target='ACCEPT'
 EOF
 
 uci commit network
 uci commit firewall
+uci commit dhcp
 
 exit 0

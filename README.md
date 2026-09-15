@@ -28,9 +28,9 @@ carried over.
   time, not pasted into a file, and the facts under it are read live.
 - **Two management paths** — Tailscale over wired, 1NCE over cellular — with
   Tailscale structurally prevented from ever touching the metered link.
-- **A way back in** — a setup AP and captive portal for a gateway that has
-  dropped off the network, open only while it has no credentials to lose, and
-  a LAN DHCP server that refuses to run on somebody else's network.
+- **A way back in** — one ethernet port that is the uplink and the console port
+  at the same time, reachable at `parkeze-<serial>.local` from a laptop and a
+  cable with nothing configured, and reachable from a site network not at all.
 
 ## Quick start
 
@@ -95,7 +95,7 @@ feed/             the Parkeze OpenWrt package feed
   parkeze-tailscale     tailnet node, pinned to the wired uplink
   parkeze-adopt         one-touch provisioning and adoption
   parkeze-io            front-panel LEDs and buttons
-  parkeze-ap            setup AP, captive portal, LAN DHCP guard
+  parkeze-ap            setup AP and captive portal (opt-in, off by default)
 scripts/          build-feed.sh, check-ucode.sh, ucode stubs
 docs/             the design decisions worth writing down
 ```
@@ -107,7 +107,7 @@ docs/             the design decisions worth writing down
 - [`docs/auth.md`](docs/auth.md) — how you get into a gateway, including the
   offline Ed25519 recovery flow and why a stored break-glass password would be
   the wrong answer.
-- [`docs/access.md`](docs/access.md) — the setup AP, the captive portal, and
+- [`docs/access.md`](docs/access.md) — the ethernet port, the setup AP, and
   why forcing a gateway offline to raise its radio gains an attacker nothing.
 - [`docs/flashing.md`](docs/flashing.md) — getting an image onto a board, and
   the first-boot experience.

@@ -101,10 +101,18 @@ export default function Backhaul() {
         </FactList>
       </Card>
 
-      <Card title="LAN" icon={Cable}>
+      {/* Local access, kept separate from the uplink above even though both
+          live on one socket. They fail independently — an unplugged gateway
+          still answers a laptop — and showing them as one thing is what makes
+          a working gateway look dead. */}
+      <Card title="Local access" icon={Cable}>
         <FactList>
-          <Fact label="Address" value={state.lan.address} mono />
-          <Fact label="State" value={<StatusBadge ok={state.lan.up === true} />} />
+          <Fact label="Console address" value={state.console.address} mono />
+          <Fact label="Link-local" value={state.linkLocal.address} mono />
+          <Fact
+            label="State"
+            value={<StatusBadge ok={state.console.up === true} />}
+          />
         </FactList>
       </Card>
     </div>
