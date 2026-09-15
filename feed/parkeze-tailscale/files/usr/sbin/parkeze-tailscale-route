@@ -59,12 +59,36 @@ wired_gateway() {
   echo "${gw} ${dev}"
 }
 
+stop_if_unmarked() {
+  # The empty-table-plus-unreachable-rule trick above only confines packets
+  # that carry the mark, and the mark is only applied when tailscaled runs as a
+  # dedicated user — /etc/init.d/parkeze-tailscale writes the nftables snippet
+  # by uid, and writes nothing when that user does not exist.
+  #
+  # tailscaled currently runs as root on these images, so there is no mark and
+  # nothing is confined. With the wired uplink gone, its traffic would take the
+  # main table straight out over the SIM, which is the one outcome this whole
+  # mechanism exists to prevent and the one the customer pays for by the
+  # megabyte.
+  #
+  # So when there is no mark to rely on, fall back to the blunt guarantee: stop
+  # the daemon. Losing tailnet management while the cable is out is exactly the
+  # trade we already make by refusing to start without it.
+  [ -f /etc/nftables.d/20-parkeze-tailscale.nft ] && return 0
+
+  if pidof tailscaled >/dev/null 2>&1; then
+    log "no uid mark in force and no wired uplink — stopping tailscaled rather than letting it reach for cellular"
+    /etc/init.d/parkeze-tailscale stop >/dev/null 2>&1 || true
+  fi
+}
+
 apply() {
   local spec gw dev
   if ! spec="$(wired_gateway)"; then
     log "wired WAN has no gateway — leaving the table empty so tailnet traffic is dropped rather than escaping to cellular"
     ip route flush table "${TABLE_ID}" 2>/dev/null || true
     install_rule
+    stop_if_unmarked
     return 0
   fi
   gw="${spec% *}"; dev="${spec#* }"
