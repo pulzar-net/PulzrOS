@@ -92,37 +92,69 @@ The console then decides what to show based on adoption state. The portal is
 not a separate application — it is the same React console, which is why there
 is no second UI to keep in step.
 
-## LAN DHCP
+## The ethernet port decides what it is
 
-Separate mechanism, different risk, same page in the console.
+A Pi has one ethernet socket, so it is either the uplink or the console port —
+it cannot be both. `parkeze-port-role` decides which, on every link-up.
 
-The LAN port serves two situations that want opposite behaviour:
+| What is on the cable | Role | Behaviour |
+|---|---|---|
+| a site network | **wan** | takes a DHCP lease, carries the backhaul, accepts nothing inbound |
+| a laptop | **lan** | hands out an address so the console is reachable with no setup |
 
-- **a laptop plugged straight in** needs an address, or the installer is
-  configuring a static one by hand in a car park;
-- **the port patched into a site network** must not get one. A second DHCP
-  server on somebody's LAN hands out addresses on the wrong subnet and points
-  clients at a gateway that routes nowhere. It is an outage, on equipment that
-  is not ours, and genuinely hard for the site to trace back to a LoRaWAN
-  gateway nobody was thinking about.
+### Why "no DHCP server" is not enough to conclude "laptop"
 
-`parkeze-lan-guard` decides by asking: it acts as a DHCP client for a moment
-(`udhcpc -n -q -s /bin/true`, so no lease is ever applied) and sees whether
-anything answers. Three tries over about nine seconds, because a single
-discover gets dropped often enough on a live corporate LAN that one-shot
-probing would decide "empty segment" on a busy network.
+It is the obvious test, and it is wrong in a way that costs somebody else an
+outage. A site network that uses static addressing — industrial kit, a controls
+VLAN — has no DHCP server either. Concluding "laptop" there means answering
+DHCP on a network we do not own, handing out addresses on the wrong subnet, and
+publishing this gateway's console to it.
 
-It **fails closed**: no carrier is treated as "safe to serve", anything
-ambiguous as "do not". `dhcp.lan.ignore` starts at `1` at first boot so a
-gateway does not serve DHCP for the nine seconds before the first probe
-finishes — which it would do onto whatever it is plugged into.
+The two mistakes do not cost the same:
 
-Re-probed on every `ifup`, so a gateway configured on a bench and then patched
-into the site stops serving before anyone notices it started.
+| Wrong guess | Cost |
+|---|---|
+| said **wan**, was a laptop | the laptop gets no address. Annoying — and the `.local` name below still works |
+| said **lan**, was a network | rogue DHCP on a customer's LAN, plus our console exposed on it |
 
-The static console address stays either way. `192.168.61.1` is on the label,
-the MOTD and the docs, so it answers whether or not the port is also on
-somebody's network.
+So **lan requires positive evidence** that the segment is unpopulated, and
+anything ambiguous resolves to **wan**. Concretely:
+
+1. No carrier → **lan**. Nothing to collide with, and the first laptop plugged
+   in gets an address without waiting out a probe.
+2. A DHCP server answers → **wan**. The one unambiguous signal.
+3. No server, but the link is busy → **wan**, without serving anything. Most
+   likely a statically addressed network.
+4. No server and the link is quiet → **lan**.
+
+Step 3 is the one that matters. It is deliberately only ever used to *refuse*
+the lan role, never to grant it.
+
+### Why a wrong guess is survivable
+
+Both roles keep an IPv4 link-local address and answer mDNS, so the console is
+reachable at
+
+```
+https://<hostname>.local
+```
+
+from a directly-connected laptop **whichever role was chosen**. A laptop with
+no DHCP self-assigns `169.254.x.x` and can talk to us there.
+
+That is what makes it safe to be conservative about serving DHCP: being wrong
+costs a convenience, not access to the gateway. Without it, every conservative
+choice would risk locking somebody out of a device in a car park, and the
+pressure would be to guess "lan" — which is the expensive direction.
+
+### Overriding it
+
+`parkeze.port.role` is `auto`, `lan` or `wan`, settable from the console's
+Access page and from parkeze.net. Pinning to `lan` is possible and the console
+says plainly what it risks.
+
+Multi-port boards do not use any of this: they have separate sockets and fixed
+roles.
 
 ## Turning it all off
 

@@ -24,18 +24,24 @@ export function status() {
     const ap = runJson('/usr/sbin/parkeze-ap status') || { capable: false };
     const portal = runJson('/usr/sbin/parkeze-portal status') || { up: false };
 
-    // Read the cached verdict rather than re-probing: the probe waits up to
-    // nine seconds for a DHCP offer, and doing that on every page load would
-    // make the console feel broken.
-    let lan = null;
-    const cached = readfile('/var/run/parkeze/lan-guard.json');
-    if (cached) { try { lan = json(cached); } catch (e) { lan = null; } }
+    // Read the cached verdict rather than re-probing: deciding takes the best
+    // part of twenty seconds — a DHCP probe plus a window measuring the link —
+    // and doing that on every page load would make the console feel broken.
+    const port = runJson('/usr/sbin/parkeze-port-role --status')
+                 || { role: 'unknown', reason: 'Not probed yet.' };
 
     return {
         ap: ap,
         portal: portal,
-        lan: lan || { serving: false, reason: 'Not probed yet.',
-                      mode: uci.get('parkeze', 'lan', 'dhcp_mode') || 'auto' },
+        // What the single ethernet port currently is, why, and whether that
+        // was decided or configured. `role` is what it settled on; `configured`
+        // is what an operator asked for, which is 'auto' unless overridden.
+        port: {
+            role: port.role,
+            reason: port.reason,
+            configured: uci.get('parkeze', 'port', 'role') || 'auto',
+            serving: port.role == 'lan',
+        },
         adopted: uci.get('parkeze', 'adoption', 'state') == 'adopted',
     };
 }
@@ -115,19 +121,20 @@ export function lowerAp() {
 export function setLan(req) {
     const uci = cursor();
     if (req.mode != null) {
-        if (!match(req.mode, /^(auto|always|never)$/))
-            return { error: 'Mode must be auto, always or never.' };
-        uci.set('parkeze', 'lan', 'dhcp_mode', req.mode);
+        // 'auto' decides from what is on the cable; 'lan' and 'wan' pin it.
+        if (!match(req.mode, /^(auto|lan|wan)$/))
+            return { error: 'Role must be auto, lan or wan.' };
+        uci.set('parkeze', 'port', 'role', req.mode);
         uci.commit('parkeze');
-        // Re-probe immediately so the answer on screen matches the setting the
-        // operator just chose.
-        run('/usr/sbin/parkeze-lan-guard >/dev/null 2>&1');
+        // Re-decide immediately so the answer on screen matches the setting
+        // the operator just chose.
+        run('/usr/sbin/parkeze-port-role >/dev/null 2>&1');
     }
     return { ok: true, status: status() };
 }
 
 export function probeLan() {
-    run('/usr/sbin/parkeze-lan-guard >/dev/null 2>&1');
+    run('/usr/sbin/parkeze-port-role >/dev/null 2>&1');
     return { ok: true, status: status() };
 }
 

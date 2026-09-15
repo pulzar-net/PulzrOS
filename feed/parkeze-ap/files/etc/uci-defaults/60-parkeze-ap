@@ -81,9 +81,15 @@ set parkeze.ap.fallback='${PARKEZE_AP_FALLBACK:-1}'
 set parkeze.ap.fallback_after='${PARKEZE_AP_FALLBACK_AFTER:-900}'
 set parkeze.ap.window='${PARKEZE_AP_WINDOW:-1800}'
 
-set parkeze.lan=lan
-set parkeze.lan.dhcp_mode='${PARKEZE_LAN_DHCP_MODE:-auto}'
+set parkeze.port=port
+set parkeze.port.role='${PARKEZE_PORT_ROLE:-auto}'
+set parkeze.port.actual=''
 EOF
+
+# Decide the port's role now, in the background: the probe takes up to twenty
+# seconds and first boot should not stall on it. Until it finishes the port
+# stays a WAN, which is the safe half of the guess.
+( /usr/sbin/parkeze-port-role >/dev/null 2>&1 ) &
 
 # Fails closed until the guard has actually probed. A gateway that serves DHCP
 # for the first nine seconds after every boot would do so onto whatever it is

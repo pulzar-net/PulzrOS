@@ -1,0 +1,18 @@
+#!/bin/sh
+#
+# Re-decide what the ethernet port is whenever it changes state.
+#
+# The event that matters is a cable being moved: a gateway configured on a
+# bench with a laptop, then patched into the site network, must stop serving
+# DHCP before anybody notices it started — and must pick up a lease so the
+# backhaul works.
+
+[ "${ACTION}" = "ifup" ] || exit 0
+case "${INTERFACE}" in
+    lan|wan|linklocal) ;;
+    *) exit 0 ;;
+esac
+
+# Backgrounded: the probe waits up to nine seconds for a DHCP offer and another
+# eight measuring the link, and hotplug handlers block the interface coming up.
+( /usr/sbin/parkeze-port-role >/dev/null 2>&1 ) &

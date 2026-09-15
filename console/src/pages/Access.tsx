@@ -4,7 +4,7 @@ import { Cable, Eye, EyeOff, Radio, ShieldAlert, Wifi } from 'lucide-react';
 import { api } from '@/services/api';
 import type { AccessStatus } from '@/types';
 import Card from '@/components/ui/Card';
-import Badge, { StatusBadge } from '@/components/ui/Badge';
+import Badge from '@/components/ui/Badge';
 import Fact, { FactList } from '@/components/Fact';
 import Notice from '@/components/ui/Notice';
 import Button from '@/components/ui/Button';
@@ -206,7 +206,7 @@ function ApCard({ state, onChange }: { state: AccessStatus; onChange: () => void
 }
 
 function LanCard({ state, onChange }: { state: AccessStatus; onChange: () => void }) {
-  const lan = state.lan;
+  const port = state.port;
 
   const configure = useMutation({
     mutationFn: (mode: string) => api.post('/access/lan', { mode }),
@@ -219,59 +219,82 @@ function LanCard({ state, onChange }: { state: AccessStatus; onChange: () => voi
 
   return (
     <Card
-      title="LAN port"
+      title="Ethernet port"
       icon={Cable}
       note={
-        <StatusBadge
-          ok={lan.serving}
-          okLabel="Serving DHCP"
-          badLabel="Not serving DHCP"
-        />
+        port.role === 'wan' ? (
+          <Badge tone="info">Backhaul</Badge>
+        ) : port.role === 'lan' ? (
+          <Badge tone="success">Console port</Badge>
+        ) : (
+          <Badge tone="neutral">Deciding…</Badge>
+        )
       }
     >
       <p className={styles.note}>
-        Plugged straight into a laptop, this port hands out an address so the
-        console is reachable without configuring anything. Patched into a site
-        network, it must not — a second DHCP server on somebody else&rsquo;s
-        LAN is an outage, and a hard one for them to trace back to a LoRaWAN
-        gateway.
+        There is one ethernet socket, so it is either the uplink or the console
+        port. Plugged into a network it takes an address and carries the
+        backhaul; plugged into a laptop it hands one out.
       </p>
 
       <FactList>
-        <Fact label="Right now" value={lan.serving ? 'Handing out addresses' : 'Silent'} />
-        <Fact label="Because" value={lan.reason} />
         <Fact
-          label="Console is always at"
-          value={<span className="mono">192.168.61.1</span>}
+          label="Right now"
+          value={
+            port.role === 'wan'
+              ? 'Backhaul — taking an address, accepting nothing inbound'
+              : port.role === 'lan'
+                ? 'Console port — handing out addresses'
+                : 'Not decided yet'
+          }
+        />
+        <Fact label="Because" value={port.reason} />
+        <Fact
+          label="Always reachable at"
+          value={<span className="mono">https://{state.ap.ssid?.replace('parkeze_', 'parkeze-') ?? 'parkeze'}.local</span>}
         />
       </FactList>
 
-      {lan.mode === 'always' && (
+      {/* The failure this design is built around: serving DHCP onto a network
+          we do not own. Worth saying out loud wherever somebody can turn the
+          safety off. */}
+      {port.configured === 'lan' && (
         <Notice tone="warning">
           <ShieldAlert size={13} strokeWidth={2} style={{ verticalAlign: '-2px' }} />{' '}
-          Forced on. This gateway will serve DHCP even when patched into a
-          network that already has a server. Only leave this set if you know
+          Pinned to console port. This gateway will hand out addresses even when
+          plugged into a network that already has a DHCP server — which is an
+          outage for whoever owns that network. Only leave this set if you know
           what is on the other end of the cable.
+        </Notice>
+      )}
+
+      {port.configured === 'auto' && port.role === 'wan' &&
+        port.reason.includes('busy') && (
+        <Notice tone="info">
+          Nothing is handing out addresses here, but the segment is busy — most
+          likely a statically addressed network. The port stays a backhaul
+          rather than risk answering DHCP on it. Reach the console at the
+          <code> .local</code> name above, or pin the role below.
         </Notice>
       )}
 
       <div className={styles.divider} />
 
       <SelectField
-        label="Policy"
-        value={lan.mode}
+        label="Role"
+        value={port.configured}
         onChange={(event) => configure.mutate(event.target.value)}
-        hint="Automatic probes for an existing DHCP server whenever the cable is plugged in, and stays quiet if it finds one."
+        hint="Automatic decides from what is on the cable, every time it is plugged in, and resolves anything ambiguous to backhaul."
       >
-        <option value="auto">Automatic — serve only on an isolated segment</option>
-        <option value="always">Always serve</option>
-        <option value="never">Never serve</option>
+        <option value="auto">Automatic — decide from what is connected</option>
+        <option value="wan">Always the backhaul</option>
+        <option value="lan">Always the console port</option>
       </SelectField>
 
       <div className={styles.actions}>
         <Button loading={probe.isPending} onClick={() => probe.mutate()}>
           <Wifi size={14} strokeWidth={2} />
-          Probe the segment again
+          Check the cable again
         </Button>
       </div>
     </Card>

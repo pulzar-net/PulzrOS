@@ -288,20 +288,22 @@ export interface ApStatus {
   fallbackAfter?: number;
 }
 
-export interface LanGuard {
-  serving: boolean;
-  /** Why, in words. "another DHCP server answered" is the one that matters —
-      it means the port is patched into a live network. */
+/** What the single ethernet port settled on, and why. */
+export interface PortRole {
+  /** What it currently is. 'wan' takes a DHCP lease and accepts nothing
+      inbound; 'lan' serves DHCP so a directly-connected laptop can reach the
+      console. */
+  role: 'lan' | 'wan' | 'unknown';
   reason: string;
-  mode: 'auto' | 'always' | 'never';
-  carrier?: boolean;
-  checkedAt?: number;
+  /** What an operator asked for — 'auto' unless pinned. */
+  configured: 'auto' | 'lan' | 'wan';
+  serving: boolean;
 }
 
 export interface AccessStatus {
   ap: ApStatus;
   portal: { up: boolean; address?: string };
-  lan: LanGuard;
+  port: PortRole;
   adopted: boolean;
 }
 
