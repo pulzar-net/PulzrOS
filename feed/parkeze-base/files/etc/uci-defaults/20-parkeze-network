@@ -132,19 +132,41 @@ fi
 # eth0` and the outcome would depend on rule order — exactly the kind of
 # ambiguity this config exists to avoid. Local access is carved out by source
 # address instead, below, which is unambiguous.
-uci -q batch <<EOF
-delete firewall.@forwarding[0]
-delete firewall.@zone[1]
-delete firewall.@zone[0]
+# Every stock zone and forwarding goes, by iteration rather than by index.
+#
+# The previous version deleted firewall.@zone[1] then @zone[0] and added one
+# back. On a Pi 3 that produced a gateway with NO effective zone for eth0: SSH
+# and dnsmasq's resolver answered from the site network, and a port with
+# nothing behind it replied RST instead of staying silent — which is the
+# signature of packets never reaching a zone at all. Anonymous-section indices
+# depend on what the stock config happens to contain and shift underneath each
+# delete; naming the section removes the guesswork and makes this idempotent.
+while uci -q delete firewall.@forwarding[0]; do :; done
+while uci -q delete firewall.@zone[0]; do :; done
 
-add firewall zone
-set firewall.@zone[-1].name='wan'
-set firewall.@zone[-1].input='DROP'
-set firewall.@zone[-1].output='ACCEPT'
-set firewall.@zone[-1].forward='DROP'
-set firewall.@zone[-1].masq='1'
-set firewall.@zone[-1].mtu_fix='1'
-set firewall.@zone[-1].network='wan wwan console linklocal'
+# The backstop, and the reason the failure above was as bad as it was.
+#
+# fw4 sends traffic on an interface belonging to no zone to the chain default,
+# which stock sets to ACCEPT. So a firewall that fails to build its zone does
+# not fail closed — it fails wide open, silently, on a network we do not own.
+#
+# DROP here means the worst case of any future mistake is an unreachable
+# gateway rather than an exposed one. Every address we intend to answer on is
+# granted explicitly below.
+uci -q batch <<EOF
+set firewall.@defaults[0].input='DROP'
+set firewall.@defaults[0].forward='DROP'
+set firewall.@defaults[0].output='ACCEPT'
+set firewall.@defaults[0].syn_flood='1'
+
+set firewall.wan=zone
+set firewall.wan.name='wan'
+set firewall.wan.input='DROP'
+set firewall.wan.output='ACCEPT'
+set firewall.wan.forward='DROP'
+set firewall.wan.masq='1'
+set firewall.wan.mtu_fix='1'
+set firewall.wan.network='wan wwan console linklocal'
 EOF
 
 # ── Local console access ────────────────────────────────────────────────────
@@ -166,15 +188,17 @@ EOF
 #
 # SSH is included: the QR-code claim flow is shown over SSH, and on a gateway
 # with no display it is the one path that works when the web console will not.
+n=0
 for src in '169.254.0.0/16' "${PARKEZE_LAN_IPADDR%.*}.0/24"; do
+	n=$((n + 1))
 	uci -q batch <<EOF
-add firewall rule
-set firewall.@rule[-1].name='Allow-console-${src%%/*}'
-set firewall.@rule[-1].src='wan'
-set firewall.@rule[-1].src_ip='${src}'
-set firewall.@rule[-1].proto='tcp'
-set firewall.@rule[-1].dest_port='22 80 443'
-set firewall.@rule[-1].target='ACCEPT'
+set firewall.console_${n}=rule
+set firewall.console_${n}.name='Allow-console-${n}'
+set firewall.console_${n}.src='wan'
+set firewall.console_${n}.src_ip='${src}'
+set firewall.console_${n}.proto='tcp'
+set firewall.console_${n}.dest_port='22 80 443'
+set firewall.console_${n}.target='ACCEPT'
 EOF
 done
 
@@ -182,13 +206,41 @@ done
 # link-local range: responding to multicast discovery on a customer network
 # would advertise the gateway to everything on it.
 uci -q batch <<EOF
-add firewall rule
-set firewall.@rule[-1].name='Allow-mDNS-local'
-set firewall.@rule[-1].src='wan'
-set firewall.@rule[-1].src_ip='169.254.0.0/16'
-set firewall.@rule[-1].proto='udp'
-set firewall.@rule[-1].dest_port='5353'
-set firewall.@rule[-1].target='ACCEPT'
+set firewall.console_mdns=rule
+set firewall.console_mdns.name='Allow-mDNS-local'
+set firewall.console_mdns.src='wan'
+set firewall.console_mdns.src_ip='169.254.0.0/16'
+set firewall.console_mdns.proto='udp'
+set firewall.console_mdns.dest_port='5353'
+set firewall.console_mdns.target='ACCEPT'
+EOF
+
+# DHCP client replies, which the wan DROP would otherwise eat along with
+# everything else. Without this the lease never completes and the backhaul
+# never comes up.
+uci -q batch <<EOF
+set firewall.wan_dhcp=rule
+set firewall.wan_dhcp.name='Allow-DHCP-client'
+set firewall.wan_dhcp.src='wan'
+set firewall.wan_dhcp.proto='udp'
+set firewall.wan_dhcp.src_port='67'
+set firewall.wan_dhcp.dest_port='68'
+set firewall.wan_dhcp.target='ACCEPT'
+EOF
+
+# ── dnsmasq ─────────────────────────────────────────────────────────────────
+#
+# Bound to loopback. It was answering DNS queries from the site network — an
+# open resolver sitting on somebody else's LAN, which is both an amplification
+# reflector and a thing their security team will eventually come asking about.
+#
+# Nothing needs it to listen anywhere else: this gateway serves no DHCP and has
+# no DNS clients. It resolves for itself, over 127.0.0.1. parkeze-ap adds
+# br-setup to this list when the captive portal is switched on, and only then.
+uci -q batch <<EOF
+set dhcp.@dnsmasq[0].localservice='1'
+set dhcp.@dnsmasq[0].interface='lo'
+set dhcp.@dnsmasq[0].notinterface='${PARKEZE_PORT_IFACE:-eth0}'
 EOF
 
 uci commit network

@@ -47,6 +47,12 @@ set dhcp.setup.limit='50'
 set dhcp.setup.leasetime='1h'
 EOF
 
+# dnsmasq is bound to loopback by parkeze-base, because an open resolver on a
+# customer's LAN is not ours to run. The captive portal needs it to answer on
+# the setup bridge, so that one interface is added back here — and only here,
+# in the package that owns the AP. br-setup exists only while the radio is up.
+uci -q add_list dhcp.@dnsmasq[0].interface='br-setup'
+
 # The setup zone: input to the router only, no forwarding anywhere.
 #
 # `forward REJECT` and no zone-to-zone rule is what stops the open AP on an
