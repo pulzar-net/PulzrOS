@@ -65,16 +65,71 @@ sha() {
 log "Packaging ${BOARD}"
 
 # ── the flashable image ─────────────────────────────────────────────────────
+#
+# Padded out to the end of the last partition before it is compressed.
+#
+# ImageBuilder truncates the .img the moment the squashfs ends, so the file is
+# ~90MB while its own partition table declares a 176MB layout. Everything past
+# that point — which is exactly where OpenWrt puts rootfs_data, the overlay
+# holding all device config — is simply absent from the file, and writing the
+# image leaves whatever was there before untouched.
+#
+# On a card that has run ParkezeOS before, that means a re-flash silently keeps
+# the old overlay: old passwords, old identity, old /etc/config, and
+# /etc/uci-defaults still marked as already-run, so the new image's first-boot
+# scripts never execute. The device boots the new squashfs wearing the old
+# config and looks like the build did not take. Observed on a Pi 3.
+#
+# Padding with zeros fixes it for *every* writer — Pi Imager, Etcher, Rufus,
+# dd — rather than only for our own flash.sh, and costs nothing in download
+# size because a run of zeros is what compression is best at.
+image_extent() {
+  # The largest (first_lba + sector_count) across the four MBR primary entries,
+  # in bytes. Entries live at offset 446, 16 bytes each, with the LBA at +8 and
+  # the count at +12, both 32-bit little-endian.
+  local img="$1" e off start count end max=0
+  for e in 0 1 2 3; do
+    off=$(( 446 + e * 16 ))
+    start="$(od -An -tu4 -j "$(( off + 8 ))"  -N 4 "${img}" | tr -d ' ')"
+    count="$(od -An -tu4 -j "$(( off + 12 ))" -N 4 "${img}" | tr -d ' ')"
+    [ -n "${start}" ] && [ -n "${count}" ] && [ "${count}" -gt 0 ] || continue
+    end=$(( start + count ))
+    [ "${end}" -gt "${max}" ] && max="${end}"
+  done
+  echo $(( max * 512 ))
+}
 
-cp "${factory}" "${DEST}/${base}.img.gz"
-
-# Recompressed rather than shipped as-is: xz is about 40% smaller than the gz
-# ImageBuilder produced, which matters when the download is ~90MB and somebody
-# is fetching it over a hotel connection. Every SD writer takes either.
-log "  compressing xz (this is the slow part)"
 tmp="$(mktemp -d)"
-gunzip -c "${factory}" | xz -T0 -6 -c > "${DEST}/${base}.img.xz"
-rm -rf "${tmp}"
+trap 'rm -rf "${tmp}"' EXIT
+raw="${tmp}/${base}.img"
+
+log "  padding to the full partition extent"
+gunzip -c "${factory}" > "${raw}"
+extent="$(image_extent "${raw}")"
+actual="$(wc -c < "${raw}" | tr -d ' ')"
+
+[ "${extent}" -gt 0 ] || die "could not read a partition table from ${factory}"
+
+if [ "${extent}" -gt "${actual}" ]; then
+  # A sparse extend: seek past the end and write nothing. The file reads back
+  # as zeros without ever allocating the blocks, so this is instant.
+  dd if=/dev/zero of="${raw}" bs=1 count=0 seek="${extent}" 2>/dev/null
+  log "    ${actual} -> ${extent} bytes ($(( (extent - actual) / 1024 / 1024 ))MB of zeros)"
+else
+  log "    already full-length"
+fi
+
+# Re-assert it, because silently shipping a short image is the whole bug.
+padded="$(wc -c < "${raw}" | tr -d ' ')"
+[ "${padded}" -ge "${extent}" ] \
+  || die "padding failed: ${padded} < ${extent}. A re-flash would keep the old overlay."
+
+gzip -c -9 "${raw}" > "${DEST}/${base}.img.gz"
+
+# xz as well: about 40% smaller than gz, which matters when somebody is
+# fetching this over a hotel connection. Every SD writer takes either.
+log "  compressing xz (this is the slow part)"
+xz -T0 -6 -c "${raw}" > "${DEST}/${base}.img.xz"
 
 [ -n "${sysupgrade}" ] && cp "${sysupgrade}" "${DEST}/${base}-sysupgrade.img.gz"
 

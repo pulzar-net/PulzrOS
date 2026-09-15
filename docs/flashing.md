@@ -125,3 +125,36 @@ device profile for them, so there is no image to write in the first place. See
 When there is one, it will be installed through the vendor's upgrade path or
 from U-Boot over TFTP — not by writing a whole-disk image, which is why
 `BOARD_INSTALL` exists rather than `flash.sh` guessing from the file extension.
+
+
+## Re-flashing a card that has run ParkezeOS before
+
+It works, and it gives you a genuinely clean device. That was not always true.
+
+ImageBuilder truncates its `.img` the moment the squashfs ends — the file was
+~90MB while its own partition table declared a 176MB layout. Everything past
+that point is where OpenWrt keeps `rootfs_data`, the overlay that holds all
+device configuration, so writing the image left the previous overlay completely
+untouched.
+
+The symptom was a flash that appeared to do nothing. The device booted the new
+squashfs — new packages, new scripts, new everything in `/rom` — while wearing
+the old `/etc/config`, the old identity and the old credentials. Worse,
+`/etc/uci-defaults` was still marked as already-run from the previous boot, so
+none of the new image's first-boot scripts executed. Diagnosing it meant
+noticing a UCI key on the device that no current source file writes.
+
+`scripts/package-images.sh` now pads the image out to the end of the last
+partition before compressing, so the write covers the overlay and OpenWrt
+reformats it on boot. It works for every writer — Pi Imager, Etcher, Rufus,
+`dd`, `flash.sh` — rather than only for ours, and costs about 100KB of download
+because a long run of zeros is what compression handles best.
+
+If you have a device already in this state, you do not need to re-flash it:
+
+```
+firstboot -y && reboot
+```
+
+That wipes the overlay and lets the installed image's uci-defaults run as they
+would have on a first boot.
