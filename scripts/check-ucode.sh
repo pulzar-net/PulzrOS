@@ -59,14 +59,19 @@ fail=0
 count=0
 while IFS= read -r file; do
   count=$((count + 1))
+  # index.uc is a ucode TEMPLATE, because that is how uhttpd compiles it: the
+  # code lives inside {% %} and anything outside is text. Rather than depend on
+  # which way a given ucode build defaults (the CLI has flipped between raw and
+  # template as the default, so -R/-T is not portable across versions), the
+  # wrapper is stripped and the code inside is compiled in raw mode. That tests
+  # the thing that matters and behaves the same on every ucode.
+  target="${file}"
   case "${file}" in
     */console/api/index.uc)
-      # No -R: uhttpd compiles the handler as a template, so the {% %} wrapper
-      # is required and anything outside it is text.
-      set -- -L "${STUBS}/*.uc" -o /dev/null "${file}" ;;
-    *)
-      set -- -R -L "${STUBS}/*.uc" -o /dev/null "${file}" ;;
+      target="$(mktemp)"
+      sed -e '1{/^{%$/d;}' -e '${/^%}$/d;}' "${file}" > "${target}" ;;
   esac
+  set -- -R -L "${STUBS}/*.uc" -o /dev/null "${target}"
   if ! out="$("${UCODE}" "$@" 2>&1)"; then
     echo "FAIL ${file}"
     echo "${out}" | sed 's/^/     /'
@@ -75,6 +80,7 @@ while IFS= read -r file; do
     echo "WARN ${file}"
     echo "${out}" | sed 's/^/     /'
   fi
+  [ "${target}" = "${file}" ] || rm -f "${target}"
 done < <(
   {
     find feed -name '*.uc'
