@@ -39,7 +39,7 @@ export default function Logs() {
 
   return (
     <div className="fade-in">
-      <PageHeader title="Logs" subtitle="System log, oldest first." />
+      <PageHeader title="Logs" />
 
       <Card
         title="System log"

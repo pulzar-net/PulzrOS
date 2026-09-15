@@ -6,6 +6,7 @@ import { useSession } from '@/contexts/SessionContext';
 import Button from './ui/Button';
 import Notice from './ui/Notice';
 import { TextField } from './ui/Field';
+import Brand from './Brand';
 import styles from '@/pages/Login.module.css';
 
 /**
@@ -39,18 +40,15 @@ export default function PasswordPrompt() {
     <div className={styles.wrap}>
       <div className={`${styles.card} fade-in`}>
         <div className={styles.brand}>
-          <div className={styles.mark}>P</div>
-          <div>
-            <div className={styles.brandName}>Parkeze</div>
-            <div className={styles.brandSub}>Gateway console</div>
-          </div>
+          <Brand size="md" sub="Gateway console" />
         </div>
 
         <h1 className={styles.title}>Choose a password</h1>
         <p className={styles.sub}>
           This gateway is still using the password it generated at first boot.
-          That password is printed on its serial console, so anybody who has
-          been near the device may have it. Replace it before going further.
+          That password is written to the boot partition of its card and shown
+          on the serial console, so anyone who has handled the hardware may
+          have it. Replace it before going further.
         </p>
 
         <TextField

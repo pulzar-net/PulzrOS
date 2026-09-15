@@ -52,7 +52,7 @@ set -e
 . /etc/parkeze/board.conf
 
 STATE=/etc/parkeze/claim
-NET_URL="${PARKEZE_NET_URL:-https://parkeze.net}"
+NET_URL="${PARKEZE_NET_URL:-https://net.parkeze.com}"
 
 log() { logger -t claim -p daemon.info "$*"; }
 die() { echo "$*" >&2; exit 1; }

@@ -47,10 +47,7 @@ export default function Access() {
 
   return (
     <div className="fade-in">
-      <PageHeader
-        title="Access"
-        subtitle="How to reach this gateway when the network is gone."
-      />
+      <PageHeader title="Access" />
 
       <ApCard state={state} onChange={refresh} />
       <WifiJoin />
@@ -118,7 +115,7 @@ function ApCard({ state, onChange }: { state: AccessStatus; onChange: () => void
       {ap.up && ap.secured && (
         <Notice tone="info">
           Broadcasting with WPA2. Anyone joining also needs a signature from
-          parkeze.net before they can change anything — see Console access.
+          Parkeze before they can change anything — see Console access.
         </Notice>
       )}
 
@@ -182,7 +179,7 @@ function ApCard({ state, onChange }: { state: AccessStatus; onChange: () => void
         checked={ap.fallback ?? false}
         disabled={!ap.enabled}
         onChange={(event) => configure.mutate({ fallback: event.target.checked })}
-        hint={`After ${duration(ap.fallbackAfter)} unreachable, for 30 minutes at a time. Somebody who cuts this gateway's uplink can force the radio up — and gains nothing by it, because they still need the passphrase and a signature from parkeze.net.`}
+        hint={`After ${duration(ap.fallbackAfter)} unreachable, for 30 minutes at a time. Somebody who cuts this gateway's uplink can force the radio up — and gains nothing by it, because they still need the passphrase and a signature from Parkeze.`}
       />
 
       <div className={styles.actions}>
@@ -260,7 +257,7 @@ function PortCard({ state }: { state: AccessStatus }) {
         <Notice tone="info">
           <ShieldAlert size={13} strokeWidth={2} style={{ verticalAlign: '-2px' }} />{' '}
           Nothing on this network can reach the gateway. Only a directly
-          connected laptop gets to the console; management from parkeze.net
+          connected laptop gets to the console; management from Parkeze
           arrives over the tunnel this gateway opens outwards.
         </Notice>
       )}

@@ -1,0 +1,32 @@
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.mark {
+  flex: 0 0 auto;
+  display: block;
+  /* The logo is a transparent PNG with its own colour. No plate behind it and
+     no tint over it: it is the only piece of Parkeze identity on the device,
+     and a brand mark that changes shade per surface stops reading as one. */
+  object-fit: contain;
+}
+
+.text {
+  min-width: 0;
+}
+
+.name {
+  font-family: Outfit, system-ui, sans-serif;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  line-height: 1.15;
+}
+
+.sub {
+  color: var(--text-dim);
+  line-height: 1.2;
+}

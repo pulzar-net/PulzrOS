@@ -254,6 +254,10 @@ export interface IoStatus {
 // ── provisioning ────────────────────────────────────────────────────────────
 
 export interface ClaimStatus {
+  /** Where the management platform lives, read from the gateway's board.conf.
+      The UI never spells out a hostname of its own — the deployment has moved
+      once already and will again. */
+  platform?: { url: string; host: string };
   /** The human-readable code in the QR, e.g. "K7M2-QP4X-9RTB". */
   claimId: string;
   adoption: 'unadopted' | 'adopting' | 'adopted';

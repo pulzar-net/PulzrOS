@@ -70,7 +70,7 @@ status = function() {
             // here and in board.conf, in one place, not in a React component.
             manageable: false,
             reason: 'Ethernet is the wired backhaul and is managed by '
-                  + 'parkeze.net. Nothing routed is accepted from it — the '
+                  + 'Parkeze. Nothing routed is accepted from it — the '
                   + 'console and SSH answer only a directly connected machine.',
             // Always on. The port has no off switch because switching it off
             // would also take away local access, which is the one thing that

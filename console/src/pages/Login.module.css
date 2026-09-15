@@ -18,21 +18,7 @@
 
 .brand { display: flex; align-items: center; gap: 10px; }
 
-.mark {
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
-  background: var(--accent);
-  color: #fff;
-  display: grid;
-  place-items: center;
-  font-family: Outfit, sans-serif;
-  font-weight: 700;
-  font-size: 16px;
-}
 
-.brandName { font-family: Outfit, sans-serif; font-size: 15px; font-weight: 600; }
-.brandSub  { font-size: 11px; color: var(--text-tertiary); }
 
 .title { font-size: 19px; font-weight: 600; margin: 16px 0 3px; }
 .sub   { margin: 0 0 16px; font-size: 12.5px; line-height: 1.55; color: var(--text-secondary); }

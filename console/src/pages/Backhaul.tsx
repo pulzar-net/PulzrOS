@@ -42,10 +42,7 @@ export default function Backhaul() {
 
   return (
     <div className="fade-in">
-      <PageHeader
-        title="Backhaul"
-        subtitle="How this gateway reaches the network, and how we reach it."
-      />
+      <PageHeader title="Backhaul" />
 
       {paths.data && <Notice tone="info">{paths.data.tailscale.note}</Notice>}
 

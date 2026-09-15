@@ -56,7 +56,6 @@ export default function Panel() {
     <div className="fade-in">
       <PageHeader
         title="LEDs and buttons"
-        subtitle="What the front panel is telling you, and what the button does."
         actions={
           <Button loading={test.isPending} onClick={() => test.mutate()}>
             <Lightbulb size={14} strokeWidth={2} />

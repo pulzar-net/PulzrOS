@@ -40,7 +40,7 @@ export default function RecoveryBanner() {
         <ShieldAlert size={15} strokeWidth={1.9} />
         <strong>Recovery session</strong>
         <span className={styles.detail}>
-          — granted by parkeze.net for offline access. Normal sign-in resumes
+          — granted by Parkeze for offline access. Normal sign-in resumes
           once this gateway is back online.
         </span>
       </span>

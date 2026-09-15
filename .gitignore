@@ -25,6 +25,9 @@ recovery_ed25519.pub
 
 console/node_modules/
 console/dist/
+# TypeScript's incremental build cache: machine-local and regenerated on
+# every typecheck.
+console/tsconfig.tsbuildinfo
 
 # A local ucode build for scripts/check-ucode.sh — see the README.
 ucode/

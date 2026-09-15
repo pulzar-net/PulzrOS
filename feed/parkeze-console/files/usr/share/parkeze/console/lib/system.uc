@@ -58,7 +58,19 @@ summary = function() {
             version:  board.PARKEZE_VERSION,
             build:    board.PARKEZE_BUILD,
             commit:   board.PARKEZE_COMMIT,
-            openwrt:  boardInfo ? boardInfo.release : null,
+            // A STRING, not the object ubus hands back.
+            //
+            // `boardInfo.release` is {distribution, version, revision, target,
+            // description}. This returned it whole while types.ts declared it
+            // `string | null`, so TypeScript trusted the declaration and the
+            // console crashed with "Objects are not valid as a React child"
+            // the moment anyone reached the Overview page — which, on a
+            // gateway that had never been adopted, nobody ever had.
+            openwrt:  boardInfo && boardInfo.release
+                      ? (boardInfo.release.description
+                         ?? (boardInfo.release.distribution ?? '') + ' '
+                            + (boardInfo.release.version ?? ''))
+                      : null,
             kernel:   boardInfo ? boardInfo.kernel : null,
         },
         adoption: {

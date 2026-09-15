@@ -1,4 +1,4 @@
-import { lazy } from 'react';
+import { lazy, useState } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useSession } from '@/contexts/SessionContext';
@@ -31,6 +31,12 @@ import Onboarding from '@/pages/Onboarding';
 export default function App() {
   const { session, loading } = useSession();
 
+  // Set when somebody chooses to look around before claiming. Deliberately
+  // not persisted: it is a decision about this visit, and a gateway that
+  // quietly stops offering to be adopted because of a click last week is
+  // worse than one that asks again.
+  const [browsing, setBrowsing] = useState(false);
+
   // Adoption state decides the whole shape of the app, so it is asked for
   // before anything else. Unauthenticated on purpose: a gateway out of the box
   // has a password nobody has read off the serial console yet, and requiring a
@@ -49,10 +55,24 @@ export default function App() {
     return <Spinner label="Connecting to the gateway" />;
   }
 
-  // A gateway nobody owns has exactly one thing to offer: being claimed.
-  // Everything else — the login form included — is noise until then.
-  if (claim.data && claim.data.adoption !== 'adopted') return <Onboarding />;
+  const unadopted = !!claim.data && claim.data.adoption !== 'adopted';
 
+  // Claiming is what an unadopted gateway is usually here to do, so it is what
+  // opens — but it is no longer a wall. The console is reachable before
+  // adoption, because "look at it before committing it to an organisation" is
+  // a reasonable thing to want and there was no way to do it: the claim screen
+  // was the only thing an unadopted gateway would render.
+  //
+  // Signing in is still required to get past it. The claim screen itself is
+  // unauthenticated by necessity — a gateway out of the box has a password
+  // nobody has read off the card yet — but nothing behind it is.
+  if (unadopted && !session && !browsing) {
+    return <Onboarding onBrowse={() => setBrowsing(true)} />;
+  }
+
+  // No extra banner here: the sign-in screen already carries the gateway's own
+  // note about being unadopted, straight from the API. Two sentences saying the
+  // same thing is the sort of thing this console had too much of.
   if (!session) return <Login />;
 
   // A gateway still on the password it generated at first boot is a gateway
@@ -62,7 +82,8 @@ export default function App() {
 
   return (
     <Routes>
-      <Route element={<Layout />}>
+      <Route element={<Layout unadopted={unadopted} />}>
+        <Route path="adopt" element={<Onboarding />} />
         <Route index element={<Overview />} />
         <Route path="backhaul" element={<Backhaul />} />
         <Route path="lorawan" element={<Lorawan />} />

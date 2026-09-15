@@ -56,7 +56,7 @@ export default function Recovery({
     <>
       <h1 className={styles.title}>Recovery access</h1>
       <p className={styles.sub}>
-        For an adopted gateway that cannot reach parkeze.net. You will need a
+        For an adopted gateway that cannot reach Parkeze. You will need a
         second device with internet and a Parkeze network-admin account.
       </p>
 
@@ -69,17 +69,17 @@ export default function Recovery({
       {challenge.data && (
         <>
           <div className={styles.step}>
-            <span className={styles.stepLabel}>1. Give this code to parkeze.net</span>
+            <span className={styles.stepLabel}>1. Give this code to Parkeze</span>
             <code className={styles.code}>{challenge.data.challenge.code}</code>
             <p className={styles.hint}>
               Expires in {Math.max(0, Math.round(challenge.data.challenge.expiresIn / 60))}{' '}
-              minutes. On parkeze.net: Fleet → this gateway → Console access.
+              minutes. In Parkeze: Fleet, this gateway, Console access.
             </p>
           </div>
 
           <TextAreaField
             label="2. Paste the signature it gives you back"
-            placeholder="Base64 signature from parkeze.net"
+            placeholder="Base64 signature from Parkeze"
             spellCheck={false}
             autoCapitalize="off"
             autoCorrect="off"

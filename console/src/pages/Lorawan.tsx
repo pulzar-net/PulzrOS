@@ -57,7 +57,6 @@ export default function Lorawan() {
     <div className="fade-in">
       <PageHeader
         title="LoRaWAN"
-        subtitle={`${concentrator.channels} channels · ${lora.region ?? '—'}`}
         actions={
           <Button loading={restart.isPending} onClick={() => restart.mutate()}>
             <RotateCw size={14} strokeWidth={2} />
@@ -120,6 +119,7 @@ export default function Lorawan() {
           <Fact label="State" value={<StatusBadge ok={forwarder.running} okLabel="Running" badLabel="Stopped" />} />
           <Fact label="Gateway EUI" value={lora.gatewayEui} mono />
           <Fact label="Region" value={lora.region} />
+          <Fact label="Channels" value={concentrator.channels} />
           <Fact
             label="Concentrators"
             value={`${concentrator.present} of ${concentrator.slots}`}

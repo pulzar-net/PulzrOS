@@ -350,7 +350,7 @@ loginMethods = function() {
             recovery: false,
             state: 'unadopted',
             note: 'This gateway has not been adopted. Sign in locally to '
-                + 'configure it, or adopt it from parkeze.net.',
+                + 'configure it, or adopt it from Parkeze.',
         };
     }
 
@@ -364,9 +364,9 @@ loginMethods = function() {
         online: backhaulUp(),
         note: cfg.localEnabled
             ? 'Local sign-in is enabled on this adopted gateway. That is not '
-            + 'the default — disable it from parkeze.net unless it is '
+            + 'the default — disable it from Parkeze unless it is '
             + 'deliberate.'
-            : 'This gateway is managed by parkeze.net. If it is offline, use '
+            : 'This gateway is managed by Parkeze. If it is offline, use '
             + 'recovery access.',
     };
 };
@@ -382,7 +382,7 @@ loginLocal = function(username, password, addr) {
     const cfg = config();
     if (cfg.adopted && !cfg.localEnabled)
         return { error: 'Local sign-in is disabled on this gateway. Sign in '
-                      + 'through parkeze.net, or use recovery access if it is '
+                      + 'through Parkeze, or use recovery access if it is '
                       + 'unreachable.', status: 403 };
 
     const stored = trim(readfile(STATE_DIR + '/password') ?? '');
@@ -557,7 +557,7 @@ verifySignature = function(message, signatureB64) {
 
 loginSso = function(token, addr) {
     if (!readfile(RECOVERY_PUBKEY))
-        return { error: 'This gateway has no parkeze.net trust anchor.',
+        return { error: 'This gateway has no Parkeze trust anchor.',
                  status: 501 };
 
     // token is "<payload-b64>.<signature-b64>", payload being JSON with the
@@ -593,7 +593,7 @@ loginSso = function(token, addr) {
         return { error: 'That handoff token has expired.', status: 410 };
 
     clearFailures(addr);
-    const session = createSession(payload.sub ?? 'parkeze.net', 'sso',
+    const session = createSession(payload.sub ?? 'Parkeze', 'sso',
                                   SESSION_TTL);
     audit('login.ok', { username: payload.sub, addr, method: 'sso' });
     return { session };

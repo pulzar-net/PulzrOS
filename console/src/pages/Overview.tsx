@@ -52,12 +52,7 @@ export default function Overview() {
 
   return (
     <div className="fade-in">
-      <PageHeader
-        title={system.identity.hostname ?? 'Gateway'}
-        subtitle={`${system.identity.boardName ?? 'Unknown board'} · ParkezeOS ${
-          system.firmware.version ?? '—'
-        }`}
-      />
+      <PageHeader title={system.identity.hostname ?? 'Gateway'} />
 
       {system.identity.serialSource === 'random' && (
         <Notice tone="warning">

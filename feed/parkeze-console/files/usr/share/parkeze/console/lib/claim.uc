@@ -21,7 +21,7 @@ let _m_util = loadfile('/usr/share/parkeze/console/lib/util.uc', { raw_mode: tru
 // Declaring the names first makes every one of them a known local before any
 // body is compiled, so closures capture the binding rather than a missing
 // global and definition order stops mattering. auth.uc alone had six of these.
-let status, qr, poll, applyBundle, writeBundle, isAdopted;
+let status, qr, poll, applyBundle, writeBundle, isAdopted, platformUrl;
 
 let run = _m_util.run;; let runJson = _m_util.runJson;
 
@@ -44,7 +44,24 @@ status = function() {
         hostname: uci.get('parkeze', 'identity', 'hostname'),
         gatewayEui: uci.get('parkeze', 'identity', 'gateway_eui'),
         board: uci.get('parkeze', 'identity', 'board_name'),
+
+        // Where the management platform actually lives, read from board.conf
+        // rather than spelled out in the UI. The deployment has moved once
+        // already; the console shows whatever this says, so the next move is
+        // one line in board.conf and not a hunt through React strings.
+        platform: platformUrl(),
     };
+};
+
+// The platform's base URL, and the bare host for places that want to show
+// something typeable rather than a link.
+platformUrl = function() {
+    const url = trim(run("sed -n \"s/^PARKEZE_NET_URL='\\(.*\\)'$/\\1/p\" /etc/parkeze/board.conf") ?? '');
+    const base = length(url) ? url : 'https://net.parkeze.com';
+    let host = base;
+    host = replace(host, /^https?:\/\//, '');
+    host = replace(host, /\/.*$/, '');
+    return { url: base, host: host };
 };
 
 // The QR as an SVG string.
@@ -74,7 +91,7 @@ poll = function() {
 applyBundle = function(req) {
     const bundle = req.bundle;
     if (!bundle || !length(bundle))
-        return { error: 'Paste the adoption bundle from parkeze.net.' };
+        return { error: 'Paste the adoption bundle from Parkeze.' };
 
     // Length-bounded before it goes anywhere near the filesystem: this is
     // unauthenticated-adjacent input on an un-adopted gateway, and a bundle is

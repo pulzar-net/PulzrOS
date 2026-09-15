@@ -27,7 +27,7 @@ export default function System() {
 
   return (
     <div className="fade-in">
-      <PageHeader title="System" subtitle="Credentials, firmware and power." />
+      <PageHeader title="System" />
 
       <PasswordCard adopted={adopted} />
 

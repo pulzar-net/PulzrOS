@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, Link2, QrCode, WifiOff } from 'lucide-react';
+import { CheckCircle2, Link2, QrCode, Settings, WifiOff } from 'lucide-react';
 import { api } from '@/services/api';
 import type { ClaimQr, ClaimStatus } from '@/types';
 import Button from '@/components/ui/Button';
@@ -8,6 +8,7 @@ import Notice from '@/components/ui/Notice';
 import Spinner from '@/components/ui/Spinner';
 import { TextAreaField } from '@/components/ui/Field';
 import ErrorState from '@/components/ErrorState';
+import Brand from '@/components/Brand';
 import styles from './Onboarding.module.css';
 
 /**
@@ -31,7 +32,7 @@ import styles from './Onboarding.module.css';
  * The gateway polls parkeze.net on its own backoff regardless — this page just
  * polls faster, because somebody is standing there watching it.
  */
-export default function Onboarding() {
+export default function Onboarding({ onBrowse }: { onBrowse?: () => void } = {}) {
   const queryClient = useQueryClient();
   const [showOffline, setShowOffline] = useState(false);
 
@@ -66,7 +67,7 @@ export default function Onboarding() {
     <div className={styles.wrap}>
       <div className={`${styles.card} fade-in`}>
         <header className={styles.head}>
-          <div className={styles.mark}>P</div>
+          <Brand size="lg" />
           <div>
             <h1 className={styles.title}>Claim this gateway</h1>
             <p className={styles.sub}>
@@ -80,7 +81,7 @@ export default function Onboarding() {
           {qr.isError && (
             <Notice tone="error">
               Could not render the claim code. The code below still works —
-              type it into parkeze.net.
+              type it into Parkeze.
             </Notice>
           )}
           {qr.data && (
@@ -96,7 +97,9 @@ export default function Onboarding() {
         </div>
 
         <div className={styles.codeRow}>
-          <span className={styles.codeLabel}>Or enter this code at parkeze.net/adopt</span>
+          <span className={styles.codeLabel}>
+            Or enter this code at {claim.platform?.host ?? 'net.parkeze.com'}/adopt
+          </span>
           <code className={styles.code}>{claim.claimId}</code>
         </div>
 
@@ -119,7 +122,7 @@ export default function Onboarding() {
         {!claim.online && (
           <Notice tone="warning">
             <strong>This gateway has no internet yet.</strong> The code above
-            still works — it carries everything parkeze.net needs, so you can
+            still works — it carries everything Parkeze needs, so you can
             scan it from a phone with signal. The gateway will finish adopting
             itself as soon as it gets an uplink.
           </Notice>
@@ -127,8 +130,22 @@ export default function Onboarding() {
 
         {!claim.registered && claim.online && (
           <Notice tone="info">
-            Registering with parkeze.net. The code works either way.
+            Registering with Parkeze. The code works either way.
           </Notice>
+        )}
+
+        {onBrowse && (
+          <div className={styles.browse}>
+            <button className={styles.link} onClick={onBrowse}>
+              <Settings size={13} strokeWidth={2} />
+              Look at the console without adopting
+            </button>
+            <p className={styles.browseNote}>
+              You will need this gateway's password — it is on the boot
+              partition of its card. Nothing you change now survives adoption:
+              the organisation's settings are applied on top.
+            </p>
+          </div>
         )}
 
         <div className={styles.escape}>
@@ -154,7 +171,7 @@ function Adopted({ claim }: { claim: ClaimStatus }) {
         <h1 className={styles.title}>Adopted</h1>
         <p className={styles.sub}>
           This gateway now belongs to <strong>{claim.org}</strong> and is managed
-          from parkeze.net. Local sign-in has been turned off.
+          from Parkeze. Local sign-in has been turned off.
         </p>
         <Button variant="primary" onClick={() => window.location.reload()}>
           <Link2 size={14} strokeWidth={2} />
@@ -185,13 +202,13 @@ function OfflineBundle({ onDone }: { onDone: () => void }) {
   return (
     <>
       <p className={styles.escapeNote}>
-        Claim the gateway on parkeze.net using the code above, then choose{' '}
+        Claim the gateway in Parkeze using the code above, then choose{' '}
         <strong>Offline adoption</strong> there. It will give you a bundle to
         paste here.
       </p>
       <TextAreaField
         label="Adoption bundle"
-        placeholder="Paste the signed bundle from parkeze.net"
+        placeholder="Paste the signed bundle from Parkeze"
         spellCheck={false}
         autoCapitalize="off"
         autoCorrect="off"

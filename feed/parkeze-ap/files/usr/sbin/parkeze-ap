@@ -197,8 +197,19 @@ status() {
 
     # Associated stations, so somebody watching the console can tell whether
     # the person they are talking to on the phone has actually connected.
+    # `grep -c` prints its count AND exits non-zero when the count is zero, so
+    # the obvious `|| echo 0` appends a SECOND zero: clients became "0\n0",
+    # which made this whole object malformed JSON. The console's parse then
+    # failed, fell back to {capable:false}, and told the operator the board had
+    # no WiFi radio while the scan below it was listing networks.
+    #
+    # So: `|| true` to satisfy `set -e` without adding output, then validate
+    # that what came back is actually a number.
     clients="$(iw dev "$(uci -q get wireless.parkeze_ap.ifname || echo wlan0)" \
-               station dump 2>/dev/null | grep -c '^Station' || echo 0)"
+               station dump 2>/dev/null | grep -c '^Station' || true)"
+    case "${clients}" in
+        ''|*[!0-9]*) clients=0 ;;
+    esac
 
     printf '{"capable":true,"enabled":%s,"up":%s,"ssid":"%s","secured":%s,"clients":%s,"remainingSeconds":%s,"fallback":%s,"fallbackAfter":%s}\n' \
         "$(enabled && echo true || echo false)" \

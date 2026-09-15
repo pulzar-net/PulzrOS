@@ -9,6 +9,7 @@ import Notice from '@/components/ui/Notice';
 import Spinner from '@/components/ui/Spinner';
 import { TextField } from '@/components/ui/Field';
 import Recovery from './Recovery';
+import Brand from '@/components/Brand';
 import styles from './Login.module.css';
 
 /**
@@ -63,11 +64,7 @@ export default function Login() {
     <div className={styles.wrap}>
       <div className={`${styles.card} fade-in`}>
         <div className={styles.brand}>
-          <div className={styles.mark}>P</div>
-          <div>
-            <div className={styles.brandName}>Parkeze</div>
-            <div className={styles.brandSub}>Gateway console</div>
-          </div>
+          <Brand size="md" sub="Gateway console" />
         </div>
 
         {effective === 'recovery' ? (
@@ -112,7 +109,7 @@ function PasswordForm({
       {methods.state === 'adopted' && methods.local && (
         <Notice tone="warning">
           Local sign-in is enabled on an adopted gateway. That is not the
-          default — turn it off from parkeze.net unless it is deliberate.
+          default — turn it off from Parkeze unless it is deliberate.
         </Notice>
       )}
 

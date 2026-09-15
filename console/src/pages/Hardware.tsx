@@ -55,11 +55,6 @@ export default function Hardware() {
     <div className="fade-in">
       <PageHeader
         title="Concentrator hardware"
-        subtitle={
-          view.slotCount > 1
-            ? `${view.slotCount} concentrator slots · ${view.channels} channels`
-            : `${view.channels || 8} channels`
-        }
         actions={
           <Button loading={redetect.isPending} onClick={() => redetect.mutate()}>
             <RotateCw size={14} strokeWidth={2} />
