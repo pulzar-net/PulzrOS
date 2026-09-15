@@ -100,6 +100,7 @@ below are for when that has not happened.
 
 | | |
 |---|---|
+| **Password** | On the boot partition as `parkeze-initial-password.txt` — the card mounts on any laptop. Or set your own before first boot by writing `parkeze-password.txt` there; it is applied and then deleted. |
 | **Ethernet** | `https://parkeze-<serial>.local/`, or `https://192.168.61.1/` if mDNS is blocked. The gateway never hands out an address — your laptop will self-assign `169.254.x.x` and say it has no internet, which is expected. See [`access.md`](access.md). |
 | **WiFi** | off by default. `parkeze_<mac>`, open while the gateway is unadopted, once somebody enables it from the console or parkeze.net. |
 | **Serial** | 115200 8N1 on the GPIO header. The banner prints the console address and the initial password. |

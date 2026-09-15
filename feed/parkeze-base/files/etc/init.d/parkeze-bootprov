@@ -1,0 +1,182 @@
+#!/bin/sh /etc/rc.common
+#
+# Provisioning through the FAT boot partition.
+#
+# WHY
+#
+# A gateway needs a credential the installer can actually obtain. The console
+# shows it, the label carries it, and the serial MOTD prints it — but if the
+# console is the broken thing, there is no label yet, and the unit has no
+# serial header, there is no way in at all.
+#
+# The FAT boot partition closes that. Every laptop can read and write it with
+# nothing but a card reader: no ext4 driver, no serial adapter, no Linux box.
+# And the card is in your hand at the moment you flash it.
+#
+# Three things, all optional, all refused once the gateway is adopted:
+#
+#   parkeze-password.txt         you write it. Becomes the initial password,
+#                                then is deleted from the card.
+#   parkeze-initial-password.txt we write it. The randomly generated password,
+#                                so it can be read by putting the card back.
+#                                Removed once the password has been changed.
+#   parkeze-authorized-keys      you write it. Installed as root's SSH key.
+#
+# WHY NOT A DEFAULT PASSWORD
+#
+# Because one published README would then be root on the entire fleet. That is
+# not hypothetical — the previous ParkezeOS shipped parkeze/parkeze on every
+# image. A per-unit secret written to the card costs the installer exactly the
+# same effort and has none of that blast radius: learning one gateway's
+# password tells you nothing about any other.
+#
+# WHY WRITING IT TO THE CARD IS NOT THE SAME MISTAKE
+#
+# Whoever holds the card already holds the device — the rootfs is on it, and
+# anything that can mount ext4 can edit /etc/shadow directly. This grants no
+# access that physical possession did not. The one case where it lowers the bar
+# is somebody who can read FAT but not ext4, which is why none of it happens on
+# an adopted gateway: that is the same rule the setup AP follows in
+# docs/access.md — as open as the unit has something to lose.
+
+START=14
+
+STATE=/etc/parkeze/console
+MNT=/tmp/.bootpart
+
+PW_IN="parkeze-password.txt"
+PW_OUT="parkeze-initial-password.txt"
+KEYS="parkeze-authorized-keys"
+
+# Mounting IS the filesystem test — no blkid or block-mount dependency, and a
+# partition that is not FAT simply fails and we move on.
+mount_boot() {
+	local dev mode="${1:-ro}"
+	mkdir -p "${MNT}"
+	for dev in /dev/mmcblk0p1 /dev/mmcblk1p1 /dev/sda1 /dev/sdb1; do
+		[ -b "${dev}" ] || continue
+		mount -t vfat -o "${mode}",noatime "${dev}" "${MNT}" 2>/dev/null && {
+			BOOT_DEV="${dev}"
+			return 0
+		}
+	done
+	rmdir "${MNT}" 2>/dev/null
+	return 1
+}
+
+umount_boot() {
+	sync
+	umount "${MNT}" 2>/dev/null
+	rmdir "${MNT}" 2>/dev/null
+}
+
+apply_password() {
+	local plain="$1" salt hash
+
+	salt="$(tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 16)"
+	hash="$(printf '%s\n' "${plain}" \
+	        | openssl passwd -6 -salt "rounds=100000\$${salt}" -stdin 2>/dev/null)"
+
+	case "${hash}" in
+		'$6$'*'$'*) : ;;
+		*) logger -t parkeze -p daemon.err \
+		     "could not hash the password from ${PW_IN}; leaving the generated one in place"
+		   return 1 ;;
+	esac
+
+	mkdir -p "${STATE}"
+	printf '%s' "${hash}" > "${STATE}/password"
+	chmod 0600 "${STATE}/password"
+	printf '%s\n' "${plain}" > "${STATE}/initial-password"
+	chmod 0600 "${STATE}/initial-password"
+	# Still "initial": a password chosen on a card and carried to the device is
+	# exactly the kind the console should insist on replacing.
+	touch "${STATE}/password-is-initial"
+
+	/usr/libexec/parkeze-set-root-password "${hash}" \
+		|| logger -t parkeze -p daemon.err "could not set root's password"
+	return 0
+}
+
+start() {
+	. /etc/parkeze/board.conf 2>/dev/null
+	[ "${PARKEZE_BOOTPART_KEYS:-1}" = "1" ] || return 0
+
+	# Nothing below happens once the gateway has something to lose.
+	[ "$(uci -q get parkeze.adoption.state)" = "adopted" ] && return 0
+
+	mount_boot ro || return 0
+
+	# Spelled out rather than chained with || &&, whose precedence in sh is a
+	# trap and whose meaning here would not be obvious to the next reader.
+	local want_write=""
+	if [ -s "${MNT}/${PW_IN}" ]; then
+		want_write=1                      # a password to consume
+	elif [ -f "${STATE}/password-is-initial" ]; then
+		want_write=1                      # a generated password to publish
+	elif [ -f "${MNT}/${PW_OUT}" ]; then
+		want_write=1                      # a stale published password to remove
+	fi
+
+	if [ -s "${MNT}/${KEYS}" ]; then
+		# Validated first: a truncated file written into authorized_keys would
+		# not fail, it would silently leave no working key and look like the
+		# feature is broken.
+		if grep -qE '^(ssh-(rsa|ed25519)|ecdsa-sha2-)' "${MNT}/${KEYS}"; then
+			mkdir -p /etc/dropbear
+			cat "${MNT}/${KEYS}" > /etc/dropbear/authorized_keys
+			chmod 0600 /etc/dropbear/authorized_keys
+			logger -t parkeze -p daemon.warn \
+				"installed SSH key(s) from ${BOOT_DEV}:/${KEYS}"
+		else
+			logger -t parkeze -p daemon.err \
+				"${KEYS} holds no recognisable public key; ignored"
+		fi
+	fi
+
+	[ -n "${want_write}" ] || { umount_boot; return 0; }
+
+	# Remount read-write only for the part that needs it, so a card that is
+	# merely being read is never opened for writing at all.
+	local chosen=""
+	[ -s "${MNT}/${PW_IN}" ] && chosen="$(head -n1 "${MNT}/${PW_IN}" | tr -d '\r\n')"
+	umount_boot
+	mount_boot rw || return 0
+
+	local operator_chose=""
+	if [ -n "${chosen}" ]; then
+		if [ "${#chosen}" -lt 8 ]; then
+			logger -t parkeze -p daemon.err \
+				"${PW_IN} is shorter than 8 characters; ignored"
+		elif apply_password "${chosen}"; then
+			operator_chose=1
+			logger -t parkeze -p daemon.warn \
+				"initial password set from ${BOOT_DEV}:/${PW_IN}"
+		fi
+		# Consumed either way. Leaving a chosen password sitting on the card
+		# forever is the one part of this that would be a real mistake.
+		rm -f "${MNT}/${PW_IN}"
+	fi
+
+	# Publish only a password the operator does not already know. Writing their
+	# own choice back out would undo the deletion above for no benefit.
+	if [ -n "${operator_chose}" ]; then
+		rm -f "${MNT}/${PW_OUT}"
+	elif [ -f "${STATE}/password-is-initial" ] && [ -s "${STATE}/initial-password" ]; then
+		{
+			echo "ParkezeOS initial credentials"
+			echo
+			echo "  user      parkeze   (console)  /  root  (ssh)"
+			echo "  password  $(cat "${STATE}/initial-password")"
+			echo
+			echo "This file disappears once the password is changed."
+			echo "Anyone holding this card already has full access to this"
+			echo "gateway, so this discloses nothing they could not already"
+			echo "obtain - but it is specific to THIS unit and no other."
+		} > "${MNT}/${PW_OUT}"
+	else
+		rm -f "${MNT}/${PW_OUT}"
+	fi
+
+	umount_boot
+}
