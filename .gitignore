@@ -11,6 +11,12 @@ out/
 # or a stale copy ships instead of the source in console/.
 feed/parkeze-console/files/www/
 
+# Operator authorized_keys, assembled by build.sh from keys/*.pub. Generated
+# on every build from the sources in keys/ — committing it would let a stale
+# copy ship after somebody's key is removed.
+boards/common/files/etc/dropbear/authorized_keys
+boards/common/files/root/.ssh/authorized_keys
+
 # The fleet recovery PUBLIC key, copied in by build.sh. Public, but it belongs
 # to a deployment rather than to this repo — an image built from a checkout
 # should use whichever key that deployment uses, not one frozen in git.

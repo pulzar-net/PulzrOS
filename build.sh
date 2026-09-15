@@ -350,6 +350,80 @@ install_fleet_key() {
   log "Fleet recovery anchor installed"
 }
 
+install_ops_keys() {
+  # Operator SSH public keys, baked into the image.
+  #
+  # So that a freshly flashed gateway is reachable immediately, with no step at
+  # the bench: no password to read off the card, no key to copy, nothing to
+  # type. Flash it, power it, ssh in.
+  #
+  # These are PUBLIC keys. There is nothing sensitive in the image, and the
+  # private halves never leave the machines that own them.
+  #
+  # ── THE TRADE, STATED PLAINLY ──────────────────────────────────────────────
+  #
+  # This is a fleet-wide credential, which is the same shape of risk as the
+  # parkeze/parkeze default the previous ParkezeOS shipped: whoever holds a
+  # private half is root on every gateway built with its public half.
+  #
+  # It is a much better version of that trade, not an escape from it. A private
+  # key does not leak the way a password in a README leaks — it is never typed,
+  # never pasted into a ticket, never read aloud over a phone — and rotating it
+  # is a rebuild rather than a fleet-wide password change. But it is still one
+  # secret standing in front of every unit, so:
+  #
+  #   - keep keys/ to the people who genuinely need bench access
+  #   - a production build should use an ops key held by whoever operates the
+  #     fleet, or none at all: PARKEZE_OPS_KEYS=0 omits the file entirely
+  #   - it is not a substitute for the per-unit password, which is what an
+  #     installer in the field uses; both exist because they answer to
+  #     different people
+  local keydir="${PARKEZE_OPS_KEYS_DIR:-${ROOT_DIR}/keys}"
+  local dropbear="${ROOT_DIR}/boards/common/files/etc/dropbear"
+  local roothome="${ROOT_DIR}/boards/common/files/root/.ssh"
+
+  rm -f "${dropbear}/authorized_keys" "${roothome}/authorized_keys"
+
+  if [ "${PARKEZE_OPS_KEYS:-1}" != "1" ]; then
+    log "Operator SSH keys omitted (PARKEZE_OPS_KEYS=0)"
+    return 0
+  fi
+
+  local found=0
+  mkdir -p "${dropbear}" "${roothome}"
+  for pub in "${keydir}"/*.pub; do
+    [ -f "${pub}" ] || continue
+    # Checked before it goes in an image. A truncated key here does not fail,
+    # it silently produces gateways nobody can log into — found out at the
+    # bench, or worse, in the field.
+    if ! grep -qE '^(ssh-(rsa|ed25519)|ecdsa-sha2-)' "${pub}"; then
+      warn "${pub} holds no recognisable public key; skipped"
+      continue
+    fi
+    cat "${pub}" >> "${dropbear}/authorized_keys"
+    found=$((found + 1))
+  done
+
+  if [ "${found}" -eq 0 ]; then
+    rm -f "${dropbear}/authorized_keys"
+    rmdir "${dropbear}" "${roothome}" 2>/dev/null
+    warn "No operator SSH keys in ${keydir}."
+    warn "  Gateways from this build are reachable only with the per-unit"
+    warn "  password from the boot partition. Drop a .pub in ${keydir} to"
+    warn "  have them accept your key straight from a flash."
+    return 0
+  fi
+
+  # Both paths. OpenWrt patches dropbear to read /etc/dropbear/authorized_keys,
+  # which is the convention LuCI writes to, but root's home is /root and the
+  # stock dropbear behaviour is $HOME/.ssh. Writing both costs one file and
+  # removes the possibility of this silently not working.
+  cp "${dropbear}/authorized_keys" "${roothome}/authorized_keys"
+  chmod 0700 "${dropbear}" "${roothome}"
+  chmod 0600 "${dropbear}/authorized_keys" "${roothome}/authorized_keys"
+  log "Operator SSH keys installed (${found})"
+}
+
 # ── Our own packages ────────────────────────────────────────────────────────
 
 wire_local_feed() {
@@ -636,16 +710,19 @@ main() {
       # costs nothing and keeps `--stage feed` a complete "everything that is
       # not assembly" step for a CI job that has the secret.
       install_fleet_key
+      install_ops_keys
       build_feed
       log "Done. Feed only."
       return 0 ;;
     image)
       # Re-run in a fresh CI job, so the overlay has to be reconstructed even
       # though the console and packages arrived as artifacts.
-      install_fleet_key ;;
+      install_fleet_key
+      install_ops_keys ;;
     all)
       build_console
       install_fleet_key
+      install_ops_keys
       build_feed ;;
   esac
 
