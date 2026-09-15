@@ -8,29 +8,45 @@ between them is money.
 | | Ethernet | Cellular |
 |---|---|---|
 | Cost | free | billed per megabyte |
-| Configured | yes | yes |
-| Enabled by default | **no** | **yes** |
+| Enabled by default | **yes** | **yes** |
 | Operator-configurable in the console | **no** | yes (APN, on/off) |
 | Route metric | 10 | 20 |
 
 Both are defined in `feed/parkeze-base/files/etc/uci-defaults/20-parkeze-network`.
 
-### Why ethernet is present but disabled and hidden
+### Ethernet works, but is not yours to configure
 
-Every gateway we deploy is either cellular-backhauled or is a wired unit that
-parkeze.net configures during adoption. Neither wants a site technician
-enabling a DHCP client on the WAN port and putting the gateway on a network
-nobody has assessed.
+Ethernet is the wired backhaul. It comes up on DHCP, it is the path Tailscale
+rides, and it is how a wired site is managed. It is on by default.
 
-So the interface is fully defined and simply not brought up, and the console
-renders it read-only with the reason attached. Two ways to turn it on:
+It is still **not editable from the console**. Repointing a gateway's uplink is
+parkeze.net's decision, not something to do from a car park — working and
+editable are different things, and the console renders it read-only with the
+reason supplied by the device rather than hardcoded in the UI.
 
-- `PARKEZE_WAN_ETH_ENABLED=1` in a board's `board.conf`, at build time.
-- One UCI set from the management plane, at any time.
+> An earlier version of this shipped ethernet *disabled* by default, on the
+> reasoning that a gateway should not put itself on an unassessed network. That
+> was the wrong trade. It made the first thing anyone does with a new gateway —
+> plug it into a network — leave it silent and looking dead, and it broke
+> provisioning, because a gateway with no uplink cannot register its claim.
 
-It is *defined* rather than absent because a disabled interface can be enabled
-with one `uci set`, while a missing one needs a whole interface definition
-pushed to a device we may only reach over a metered SIM.
+### Nothing is accepted from the wan zone
+
+This is the rule that makes a wired backhaul safe, and it is worth stating
+plainly because it is the whole of the argument:
+
+**The gateway's console, SSH and API are not reachable from the uplink.** The
+wan zone's input policy is `DROP` — not on a high port, not "only from the LAN
+side of their router", not at all.
+
+`DROP` rather than `REJECT`: a rejection answers with an ICMP error and so
+confirms something is listening. On a device whose security posture is "you
+cannot reach the management plane from the internet", staying silent under a
+scan is worth the slightly worse debuggability.
+
+Management works the other way round. The gateway *originates* an outbound
+Tailscale connection, and gateway-link reaches it back down that tunnel. No
+inbound port on the uplink is ever needed or opened.
 
 ## The management paths
 
@@ -92,6 +108,42 @@ wrong direction and looks correct right up until the bill arrives.
 **What it means operationally.** When ethernet drops, the tailnet node goes
 offline. That is the designed behaviour, not a fault. parkeze.net sees the node
 go offline and manages the gateway over the SIM instead.
+
+## Who may reach a gateway on the tailnet
+
+The gateway runs a real kernel TUN and does **not** set `--shields-up`, because
+it has to accept the one inbound connection the whole design rests on:
+gateway-link reaching it back down the tunnel.
+
+> Both of those were set the other way at first — `--tun=userspace-networking`
+> and `--shields-up`. Each blocks inbound on its own. The gateway joined the
+> tailnet, appeared online, and was unreachable on it, which looks exactly like
+> the tunnel being down.
+
+So access is restricted **server-side, by the tailnet ACL**, keyed on the tag
+every gateway advertises. Enforced by the coordination server rather than by a
+flag on a device we may not be able to reach, and changeable without touching
+the fleet:
+
+```jsonc
+{
+  "tagOwners": { "tag:gateway": ["autogroup:admin"] },
+  "acls": [
+    // gateway-link is the only thing that may open a connection to a gateway.
+    { "action": "accept", "src": ["tag:gateway-link"], "dst": ["tag:gateway:22,80,443"] },
+
+    // Gateways originate nothing on the tailnet. They are endpoints: they
+    // accept management and talk to nobody, so a compromised one is not a way
+    // to reach anything else.
+    { "action": "accept", "src": ["tag:gateway"], "dst": [] }
+  ]
+}
+```
+
+The gateway also never passes `--advertise-routes` or `--advertise-exit-node`,
+so it offers no path to the site network behind it. A customer's parking
+hardware is not ours to expose, and that property comes from not advertising it
+rather than from a mode that also breaks management.
 
 ## Seeing which path works, for free
 

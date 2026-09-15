@@ -48,7 +48,9 @@ export function status() {
             // a wired board ever should be operator-configurable, it changes
             // here and in board.conf, in one place, not in a React component.
             manageable: false,
-            reason: 'Ethernet WAN is managed by parkeze.net on this gateway.',
+            reason: 'Ethernet is the wired backhaul and is managed by '
+                  + 'parkeze.net. Nothing is accepted from it — the console '
+                  + 'and SSH are not reachable over the uplink.',
             enabled: uci.get('network', 'wan', 'disabled') != '1',
             ...ifaceStatus('wan'),
         },

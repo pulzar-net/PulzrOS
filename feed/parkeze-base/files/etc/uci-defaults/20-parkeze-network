@@ -78,9 +78,23 @@ EOF
 fi
 
 # ── Firewall ────────────────────────────────────────────────────────────────
-# Both uplinks share one wan zone. The console is reachable from lan only;
-# reaching it from the internet side happens through the parkeze.net proxy or
-# over the tailnet, never by exposing a port to the world.
+#
+# Both uplinks share one wan zone, and NOTHING is accepted from it.
+#
+# This is the rule that makes a wired backhaul safe. The gateway sits on a
+# customer network that we do not control and cannot assess, often with a
+# public address behind it. Its console, its SSH and its API must not be
+# reachable from there — not on a non-standard port, not "just on the LAN
+# side of their router".
+#
+# Management arrives the other way round: the gateway *originates* a Tailscale
+# connection outbound, and gateway-link reaches it back down that tunnel. An
+# inbound port on the uplink is never needed and is never opened.
+#
+# DROP rather than REJECT. REJECT answers with an ICMP error, which confirms
+# something is listening; DROP says nothing. On a device whose whole security
+# posture is "you cannot reach the management plane from the internet", not
+# advertising its presence to a scan is worth the slightly worse debuggability.
 uci -q batch <<EOF
 set firewall.@zone[0].name='lan'
 set firewall.@zone[0].input='ACCEPT'
@@ -89,9 +103,9 @@ set firewall.@zone[0].forward='ACCEPT'
 set firewall.@zone[0].network='lan'
 
 set firewall.@zone[1].name='wan'
-set firewall.@zone[1].input='REJECT'
+set firewall.@zone[1].input='DROP'
 set firewall.@zone[1].output='ACCEPT'
-set firewall.@zone[1].forward='REJECT'
+set firewall.@zone[1].forward='DROP'
 set firewall.@zone[1].masq='1'
 set firewall.@zone[1].mtu_fix='1'
 set firewall.@zone[1].network='wan wwan'

@@ -33,8 +33,17 @@ HOSTNAME="$(uci -q get parkeze.identity.hostname || cat /proc/sys/kernel/hostnam
 #
 # --accept-routes=false so that a subnet route advertised by anything else on
 # the tailnet cannot start pulling this gateway's traffic.
-# --shields-up so nothing on the tailnet can open a connection *to* the
-# gateway except the nodes our ACL explicitly allows.
+#
+# NOT --shields-up. It reads like exactly what we want — "nothing may open a
+# connection to this gateway" — but it is absolute: it blocks gateway-link too,
+# which is the one thing that must be able to connect. With it set the gateway
+# joined the tailnet and was unreachable on it, which looks identical to the
+# tunnel being down.
+#
+# Who may connect is decided by the tailnet ACL instead, server-side, keyed on
+# the tag this node advertises. That is enforced by the coordination server
+# rather than by a flag on a device we may not be able to reach, and it can be
+# changed without touching the fleet. See docs/backhaul.md.
 # Output is captured rather than piped to logger, because a pipeline's exit
 # status is the *last* command's — piping into logger would make this always
 # look like it succeeded, and a gateway that failed to join would report that
@@ -45,7 +54,6 @@ output="$(${TS} up \
     --advertise-tags="tag:gateway" \
     --accept-routes=false \
     --accept-dns=false \
-    --shields-up \
     --timeout=60s 2>&1)"
 status=$?
 [ -n "${output}" ] && echo "${output}" | logger -t tailscale

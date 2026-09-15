@@ -50,13 +50,21 @@ start_service() {
     procd_set_param command "${PROG}" \
         --state="${STATE_FILE}" \
         --socket="${SOCKET}" \
-        --tun=userspace-networking \
         --no-logs-no-support
-    # userspace-networking rather than a kernel TUN: the gateway is a tailnet
-    # *endpoint*, never a subnet router or exit node. Nothing behind it should
-    # be reachable through it — a site's parking hardware is not ours to
-    # expose — and userspace mode makes that structural instead of an ACL we
-    # have to remember to get right.
+
+    # A real kernel TUN, NOT --tun=userspace-networking.
+    #
+    # Userspace mode was chosen to stop the gateway ever acting as a subnet
+    # router or exit node, which is a real concern — a site's parking hardware
+    # is not ours to expose. But userspace mode cannot accept *inbound*
+    # connections either, and inbound is the entire point: gateway-link reaches
+    # the gateway back down the tunnel it opened. With it set, the wired
+    # management path did not work at all.
+    #
+    # The routing concern is handled where it belongs: we never pass
+    # --advertise-routes or --advertise-exit-node, so the node offers no route
+    # to anything behind it, and the tailnet ACL grants tag:gateway nothing
+    # outbound. kmod-tun is already a dependency of the tailscale package.
 
     procd_set_param user "${PARKEZE_TAILSCALE_USER:-tailscale}"
     procd_set_param stdout 1
