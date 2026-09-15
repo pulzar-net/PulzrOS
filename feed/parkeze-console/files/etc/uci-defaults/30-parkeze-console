@@ -148,11 +148,49 @@ if [ ! -f "${STATE}/password" ]; then
     echo "${initial}" > "${STATE}/initial-password"
     chmod 0600 "${STATE}/initial-password"
 
+    # openssl passwd, NOT busybox mkpasswd.
+    #
+    # The busybox in OpenWrt 24.10 has neither the mkpasswd nor the cryptpw
+    # applet compiled in. The previous call here produced nothing at all, on
+    # every gateway ever built: ${STATE}/password was written zero bytes, the
+    # console refused every sign-in because the stored hash was empty, and
+    # root's /etc/shadow entry was never populated either — which left
+    # passwordless root over SSH, because dropbear ships with
+    # RootPasswordAuth on and an empty hash is not "no login", it is "login
+    # with no password".
+    #
+    # -stdin keeps the password out of the process table. The 'rounds=' prefix
+    # inside the salt is honoured by openssl and travels in the output string,
+    # so the hash records the cost it was made with.
     salt="$(tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 16)"
-    busybox mkpasswd -m sha512crypt -S "\$6\$rounds=100000\$${salt}" "${initial}" \
-        > "${STATE}/password"
-    chmod 0600 "${STATE}/password"
-    touch "${STATE}/password-is-initial"
+    hash="$(printf '%s\n' "${initial}" \
+            | openssl passwd -6 -salt "rounds=100000\$${salt}" -stdin 2>/dev/null)"
+
+    # Checked, loudly. The previous version wrote the empty result out and
+    # carried on as though it had worked, which is why this went unnoticed
+    # through every build so far.
+    case "${hash}" in
+        '$6$'*'$'*)
+            printf '%s' "${hash}" > "${STATE}/password"
+            chmod 0600 "${STATE}/password"
+            touch "${STATE}/password-is-initial"
+
+            # Root's shell login gets the same credential — SSH is a real door
+            # into this gateway, it is where the claim code is shown, and the
+            # password for it is the one on the label.
+            /usr/libexec/parkeze-set-root-password "${hash}" \
+                || logger -t parkeze -p daemon.err \
+                   "could not set root's password; root login may be open"
+            ;;
+        *)
+            logger -t parkeze -p daemon.err \
+                "FAILED to hash the initial console password: openssl passwd -6 returned nothing. Local sign-in will not work."
+            # Lock root outright rather than leave it open. A gateway nobody
+            # can log into is recoverable with a card reader; a gateway anybody
+            # can log into is not recoverable at all.
+            sed -i 's|^root:[^:]*:|root:!:|' /etc/shadow 2>/dev/null
+            ;;
+    esac
 
     # Not written into a banner file here: parkeze-motd reads
     # initial-password directly and prints it on every login until it is

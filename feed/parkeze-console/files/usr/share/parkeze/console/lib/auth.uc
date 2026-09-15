@@ -144,10 +144,36 @@ const CRYPT_ROUNDS = 100000;
 // hash is not secret in the way the password is, and /tmp is RAM on OpenWrt,
 // so nothing here survives a power cut or reaches flash.
 function crypt(password, spec) {
+    // openssl passwd, NOT busybox mkpasswd.
+    //
+    // The busybox shipped in OpenWrt 24.10 has neither the `mkpasswd` nor the
+    // `cryptpw` applet compiled in. The old call therefore produced nothing at
+    // all, on every gateway: /etc/parkeze/console/password was written zero
+    // bytes at provisioning, verifyPassword refused every attempt because the
+    // stored hash was empty, and setPassword could not replace it because
+    // hashing failed there too. Local sign-in has never worked.
+    //
+    // It failed closed rather than open, which is the one piece of luck in it,
+    // and it was invisible because nothing checked that the hash was non-empty.
+    // The uci-defaults script now does.
+    //
+    // `openssl passwd -6` is an exact substitute, not an approximation: given a
+    // salt of 'rounds=N$salt' it emits '$6$rounds=N$salt$hash', the same string
+    // sha512crypt produces, so the round count still travels inside the hash
+    // and existing stored hashes stay verifiable. openssl-util is already a
+    // dependency of this package for the TLS certificate.
+    const parts = split(spec, '$');       // '$6$rounds=N$salt' -> ['','6',...]
+    if (length(parts) < 3 || parts[1] != '6') return null;
+    const salt = join('$', slice(parts, 2));
+
+    // -stdin so the password arrives over the pipe and never appears in the
+    // process table. The hash comes back via a file on /tmp, which is RAM on
+    // OpenWrt, and is unlinked immediately — it is not secret the way the
+    // password is, but there is no reason to leave it lying around.
     const out = '/tmp/.pwhash';
     unlink(out);
-    const proc = popen(sprintf('busybox mkpasswd -m sha512crypt -S %s > %s 2>/dev/null',
-                               shellQuote(spec), out), 'w');
+    const proc = popen(sprintf('openssl passwd -6 -salt %s -stdin > %s 2>/dev/null',
+                               shellQuote(salt), out), 'w');
     if (!proc) return null;
     proc.write(password + '\n');
     proc.close();
@@ -381,6 +407,14 @@ export function setPassword(username, password) {
     system(['/bin/chmod', '0600', STATE_DIR + '/password']);
     if (username) writefile(STATE_DIR + '/username', username);
     unlink(STATE_DIR + '/password-is-initial');
+
+    // Keep root's shell login on the same credential. SSH is a real way into
+    // this gateway — it is where the claim code is shown — so leaving root on
+    // the factory password after the console password has been changed would
+    // mean the credential on the label still works long after the operator
+    // believes they have rotated it.
+    system(['/usr/libexec/parkeze-set-root-password', hash]);
+
     audit('password.changed', { username });
     return { ok: true };
 }
