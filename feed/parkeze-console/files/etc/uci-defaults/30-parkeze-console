@@ -46,8 +46,19 @@ add_list uhttpd.main.listen_https='0.0.0.0:443'
 
 set uhttpd.main.home='/www/parkeze'
 set uhttpd.main.cgi_prefix=''
-set uhttpd.main.ucode_prefix='/api'
-set uhttpd.main.ucode_handler='/usr/share/parkeze/console/api/index.uc'
+
+# One list entry of the form <url-prefix>=<handler>, which is how uhttpd's
+# ucode plugin is configured — the same shape LuCI uses for its own handler:
+#
+#   list ucode_prefix "/cgi-bin/luci=/usr/lib/ucode/luci/uhttpd.uc"
+#
+# Not two options. `ucode_handler` is not an option at all, and a bare
+# `ucode_prefix` with no `=handler` is not a mapping — uhttpd's own comment
+# says "Ucode support is disabled when no handler mappings are specified", so
+# the API silently never existed. Every /api request fell through to
+# error_page and was answered with the SPA's index.html, which looks like the
+# console working right up until you read the body.
+add_list uhttpd.main.ucode_prefix='/api=/usr/share/parkeze/console/api/index.uc'
 
 set uhttpd.main.cert='${STATE}/cert.pem'
 set uhttpd.main.key='${STATE}/key.pem'
