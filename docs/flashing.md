@@ -159,3 +159,35 @@ firstboot -y && reboot
 
 That wipes the overlay and lets the installed image's uci-defaults run as they
 would have on a first boot.
+
+
+## Upgrading a running gateway
+
+```
+scp ParkezeOS-<ver>-<board>-sysupgrade.img.gz root@<gateway>:/tmp/fw.img.gz
+ssh root@<gateway> 'sha256sum /tmp/fw.img.gz'      # check it against the .sha256
+ssh root@<gateway> 'sysupgrade -n /tmp/fw.img.gz'
+```
+
+**`sysupgrade -n` does not reset the overlay on bcm27xx.** Observed three
+times on a Pi 3: the new squashfs lands correctly in `/rom`, but
+`/overlay/upper` survives the upgrade, so any file the previous boot had
+written keeps masking the new one underneath it. The gateway then runs new
+code with old configuration, which mostly works — and is exactly the kind of
+mostly that hides a problem. In one case `/etc/parkeze/board.conf` reported
+the previous build's commit while `/rom` held the new one.
+
+So follow an upgrade with:
+
+```
+ssh root@<gateway> 'firstboot -y && reboot'
+```
+
+That is what makes the new image's uci-defaults run. Confirm it took by
+checking that the initial password changed: it is regenerated on a genuine
+first boot, so an unchanged one means the overlay is still there.
+
+The root cause has not been chased down. bcm27xx's sysupgrade writes the boot
+and root partitions and leaves the `rootfs_data` area alone, and `-n` does not
+appear to reach it on this target — but that is inference, not something that
+has been read in the platform code.
