@@ -68,6 +68,14 @@ chain parkeze_ts_mark {
 }
 EOF
 
+	# Load the module first. nftables pulls nft_socket in when a rule using it
+	# is actually inserted, but `nft -c` only parses — so at boot the check
+	# failed against a kernel that simply had not loaded the expression yet,
+	# the snippet was discarded as unsupported, and the gateway came up with no
+	# mark at all. It then worked on any later restart, which is the most
+	# annoying shape a bug can have.
+	modprobe nft_socket 2>/dev/null || true
+
 	# fw4 loads every snippet atomically, so a rule it cannot parse takes the
 	# whole ruleset with it. Check before installing rather than finding out by
 	# losing the firewall, which is exactly how this went wrong last time.
@@ -129,7 +137,9 @@ start_service() {
     fi
 
     mkdir -p "${STATE_DIR}" /var/run/tailscale
-    chown "${PARKEZE_TAILSCALE_USER:-tailscale}" "${STATE_DIR}" /var/run/tailscale
+    # No chown: tailscaled runs as root (it needs the TUN device), and the
+    # previous `chown tailscale` named a user nothing creates, so every boot
+    # logged "chown: unknown user tailscale" and changed nothing.
     chmod 0700 "${STATE_DIR}"
 
     # Remove a stale control socket before starting.
