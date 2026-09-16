@@ -1,6 +1,13 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, Link2, QrCode, Settings, WifiOff } from 'lucide-react';
+import {
+  CheckCircle2,
+  ExternalLink,
+  Link2,
+  QrCode,
+  Settings,
+  WifiOff,
+} from 'lucide-react';
 import { api } from '@/services/api';
 import type { ClaimQr, ClaimStatus } from '@/types';
 import Button from '@/components/ui/Button';
@@ -68,21 +75,13 @@ export default function Onboarding({ onBrowse }: { onBrowse?: () => void } = {})
       <div className={`${styles.card} fade-in`}>
         <header className={styles.head}>
           <Brand size="lg" />
-          <div>
-            <h1 className={styles.title}>Claim this gateway</h1>
-            <p className={styles.sub}>
-              {claim.board ?? 'Parkeze gateway'} · {claim.hostname}
-            </p>
-          </div>
+          <h1 className={styles.title}>Claim this gateway</h1>
         </header>
 
         <div className={styles.qrPane}>
           {qr.isLoading && <Spinner label="Rendering code" />}
           {qr.isError && (
-            <Notice tone="error">
-              Could not render the claim code. The code below still works —
-              type it into Parkeze.
-            </Notice>
+            <Notice tone="error">Could not render the QR. Use the code below.</Notice>
           )}
           {qr.data && (
             <div
@@ -97,20 +96,23 @@ export default function Onboarding({ onBrowse }: { onBrowse?: () => void } = {})
         </div>
 
         <div className={styles.codeRow}>
-          <span className={styles.codeLabel}>
-            Or enter this code at {claim.platform?.host ?? 'net.parkeze.com'}/adopt
-          </span>
           <code className={styles.code}>{claim.claimId}</code>
+          {/* The same URL the QR encodes, as something clickable. Anyone
+              already at a browser on this console should not have to point a
+              phone at their own screen, and typing twelve characters that are
+              already on the page is busywork. */}
+          {claim.url && (
+            <a
+              className={styles.openLink}
+              href={claim.url}
+              target="_blank"
+              rel="noreferrer noopener"
+            >
+              Open in Parkeze
+              <ExternalLink size={13} strokeWidth={2} />
+            </a>
+          )}
         </div>
-
-        <ol className={styles.steps}>
-          <li>Scan the code with your phone.</li>
-          <li>Sign in to Parkeze and choose the organisation.</li>
-          <li>
-            This page finishes on its own — you do not need to come back to the
-            gateway.
-          </li>
-        </ol>
 
         <div className={styles.statusRow}>
           <Spinner label="Waiting to be claimed" />
@@ -121,17 +123,12 @@ export default function Onboarding({ onBrowse }: { onBrowse?: () => void } = {})
 
         {!claim.online && (
           <Notice tone="warning">
-            <strong>This gateway has no internet yet.</strong> The code above
-            still works — it carries everything Parkeze needs, so you can
-            scan it from a phone with signal. The gateway will finish adopting
-            itself as soon as it gets an uplink.
+            No internet. The code still works from a phone with signal.
           </Notice>
         )}
 
         {!claim.registered && claim.online && (
-          <Notice tone="info">
-            Registering with Parkeze. The code works either way.
-          </Notice>
+          <Notice tone="info">Registering with Parkeze.</Notice>
         )}
 
         {onBrowse && (
@@ -141,9 +138,8 @@ export default function Onboarding({ onBrowse }: { onBrowse?: () => void } = {})
               Look at the console without adopting
             </button>
             <p className={styles.browseNote}>
-              You will need this gateway's password — it is on the boot
-              partition of its card. Nothing you change now survives adoption:
-              the organisation's settings are applied on top.
+              Password is on the card&rsquo;s boot partition. Adoption
+              overwrites anything changed here.
             </p>
           </div>
         )}
@@ -170,8 +166,7 @@ function Adopted({ claim }: { claim: ClaimStatus }) {
         <CheckCircle2 size={40} strokeWidth={1.6} className={styles.tick} />
         <h1 className={styles.title}>Adopted</h1>
         <p className={styles.sub}>
-          This gateway now belongs to <strong>{claim.org}</strong> and is managed
-          from Parkeze. Local sign-in has been turned off.
+          Belongs to <strong>{claim.org}</strong>. Local sign-in is off.
         </p>
         <Button variant="primary" onClick={() => window.location.reload()}>
           <Link2 size={14} strokeWidth={2} />

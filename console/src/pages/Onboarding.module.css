@@ -119,3 +119,21 @@
   line-height: 1.5;
   color: var(--text-dim);
 }
+
+/* The claim URL as something clickable, for whoever is already at a browser
+   on this console rather than holding a phone. */
+.openLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 10px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.openLink:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}

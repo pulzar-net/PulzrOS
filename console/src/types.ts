@@ -23,7 +23,8 @@ export interface LoginMethods {
   recovery: boolean;
   state: 'unadopted' | 'adopted';
   online?: boolean;
-  note: string;
+  /** Null when there is nothing worth saying. */
+  note: string | null;
 }
 
 export interface RecoveryChallenge {

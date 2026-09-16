@@ -104,12 +104,13 @@ function PasswordForm({
       }}
     >
       <h1 className={styles.title}>Sign in</h1>
-      <p className={styles.sub}>{methods.note}</p>
 
-      {methods.state === 'adopted' && methods.local && (
-        <Notice tone="warning">
-          Local sign-in is enabled on an adopted gateway. That is not the
-          default — turn it off from Parkeze unless it is deliberate.
+      {/* Only when the gateway has something non-obvious to say. An unadopted
+          gateway says nothing here: the form is in front of you and the adopt
+          route is one click away. */}
+      {methods.note && (
+        <Notice tone={methods.state === 'adopted' && methods.local ? 'warning' : 'info'}>
+          {methods.note}
         </Notice>
       )}
 

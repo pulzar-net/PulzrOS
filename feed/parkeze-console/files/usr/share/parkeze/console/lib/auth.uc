@@ -349,8 +349,13 @@ loginMethods = function() {
             sso: false,
             recovery: false,
             state: 'unadopted',
-            note: 'This gateway has not been adopted. Sign in locally to '
-                + 'configure it, or adopt it from Parkeze.',
+            // No note. The screen is a sign-in form with an adopt link beside
+            // it; a sentence restating that is the sort of thing a technician
+            // reads once, learns to skip, and then misses something that
+            // mattered. Notes are for states that are NOT obvious — see the
+            // adopted branch, where local sign-in being on is genuinely
+            // surprising and worth a line.
+            note: null,
         };
     }
 
@@ -363,11 +368,8 @@ loginMethods = function() {
         state: 'adopted',
         online: backhaulUp(),
         note: cfg.localEnabled
-            ? 'Local sign-in is enabled on this adopted gateway. That is not '
-            + 'the default — disable it from Parkeze unless it is '
-            + 'deliberate.'
-            : 'This gateway is managed by Parkeze. If it is offline, use '
-            + 'recovery access.',
+            ? 'Local sign-in is on. That is not the default.'
+            : null,
     };
 };
 
