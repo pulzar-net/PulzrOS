@@ -83,17 +83,19 @@ why detection disagrees.
 | `rpi4` | bcm27xx/bcm2711 | 1 slot, `auto` | Kit. Any bus. |
 | `rpi5` | bcm27xx/bcm2712 | 1 slot, `auto` | Kit. GPIO is behind the RP1 — see `PARKEZE_GPIOCHIP`. |
 | `rak7268c` | ramips/mt76x8 | 1 slot, fixed SPI | **Unverified.** 8 channels. |
+| `rak7268cv2` | ramips/mt76x8 | 1 slot, fixed SPI | Harvested. Device support built from source. 8 channels. |
 | `rak7289cv2` | ramips/mt76x8 | 2 slots, fixed SPI | **Unverified.** 16 channels. |
 
 The Pi boards share `boards/common/raspberrypi.conf` and the RAK boards share
 `boards/common/rakwireless.conf`, so each individual board file is a dozen
 lines of genuine difference.
 
-Neither RAK board has been checked against hardware — every value in them is
-written from published specifications. The header of
-`boards/common/rakwireless.conf` lists the four commands that settle all of it
-on a stock unit, since RAK's own firmware is OpenWrt-based and will tell you
-directly.
+`rak7268cv2` was harvested from a stock unit and has its own OpenWrt device
+support in `devices/rak7268cv2/openwrt/`, which `build.sh` builds into an
+ImageBuilder from source (`OPENWRT_IMAGEBUILDER="source"`). The other two RAK
+boards are still written from published specifications; see
+[`../devices/README.md`](../devices/README.md) for taking one through the same
+process.
 
 ## A Compute Module carrier
 
