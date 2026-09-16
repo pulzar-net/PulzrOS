@@ -68,13 +68,27 @@ chain parkeze_ts_mark {
 }
 EOF
 
-	# Load the module first. nftables pulls nft_socket in when a rule using it
-	# is actually inserted, but `nft -c` only parses — so at boot the check
-	# failed against a kernel that simply had not loaded the expression yet,
-	# the snippet was discarded as unsupported, and the gateway came up with no
-	# mark at all. It then worked on any later restart, which is the most
-	# annoying shape a bug can have.
+	# Two things have to be true before nft will even parse the rule, and
+	# neither is true on a first boot.
+	#
+	# The module: nftables pulls nft_socket in when a rule using it is
+	# inserted, but `nft -c` only parses, so nothing triggers the autoload.
 	modprobe nft_socket 2>/dev/null || true
+
+	# The cgroup: nft resolves the path at PARSE time and fails with
+	# "cgroupv2 path fails: No such file or directory" if the directory is not
+	# there. This function runs before procd_open_instance, so on a cold boot
+	# the service's own cgroup does not exist yet — the check failed, the
+	# snippet was discarded, and the gateway came up unconfined. Every manual
+	# restart then worked, because the cgroup survived from the previous run.
+	#
+	# That is the real cause of the boot-only failure adde830 blamed on the
+	# module. The modprobe above is still needed; it was just not the reason.
+	#
+	# Creating it is safe: cgroup2 directories are made with mkdir, and procd
+	# puts its instance underneath one that already exists just as happily as
+	# one it made itself.
+	mkdir -p /sys/fs/cgroup/services/parkeze-tailscale 2>/dev/null || true
 
 	# fw4 loads every snippet atomically, so a rule it cannot parse takes the
 	# whole ruleset with it. Check before installing rather than finding out by
