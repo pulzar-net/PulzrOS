@@ -45,10 +45,8 @@ export default function PasswordPrompt() {
 
         <h1 className={styles.title}>Choose a password</h1>
         <p className={styles.sub}>
-          This gateway is still using the password it generated at first boot.
-          That password is written to the boot partition of its card and shown
-          on the serial console, so anyone who has handled the hardware may
-          have it. Replace it before going further.
+          Still on the password from first boot. It is written to the card&rsquo;s
+          boot partition, so anyone who has handled the hardware has it.
         </p>
 
         <TextField
