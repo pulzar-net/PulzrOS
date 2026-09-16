@@ -34,20 +34,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         binutils \
         openssl \
         perl \
-        # The rest is OpenWrt's buildroot, for boards whose ImageBuilder is
-        # built from source (OPENWRT_IMAGEBUILDER=source).
-        bison \
-        bzip2 \
-        flex \
-        gawk \
-        gettext \
-        libssl-dev \
-        patch \
-        python3-dev \
-        python3-setuptools \
-        swig \
-        time \
-        zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # ImageBuilder resolves a handful of tools by unqualified name and expects a

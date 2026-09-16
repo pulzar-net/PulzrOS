@@ -79,11 +79,10 @@ list_boards_json() {
     (
       # shellcheck disable=SC1090
       . "${BOARDS_DIR}/${board}/board.conf"
-      printf '{"board":"%s","name":"%s","status":"%s","target":"%s","subtarget":"%s","arch":"%s","imagebuilder":"%s","source":%s}' \
+      printf '{"board":"%s","name":"%s","status":"%s","target":"%s","subtarget":"%s","arch":"%s","imagebuilder":"%s"}' \
         "${BOARD_ID}" "${BOARD_NAME}" "${BOARD_STATUS:-supported}" \
         "${OPENWRT_TARGET}" "${OPENWRT_SUBTARGET}" \
-        "${OPENWRT_ARCH}" "$(imagebuilder_id)" \
-        "$([ "${OPENWRT_IMAGEBUILDER:-}" = source ] && echo true || echo false)"
+        "${OPENWRT_ARCH}" "$(imagebuilder_id)"
     )
     [ "${first}" = 1 ] && first=0 || true
     [ "${board}" = "$(all_boards | tail -n1)" ] || printf ','
@@ -93,12 +92,17 @@ list_boards_json() {
 
 # ── ImageBuilder ────────────────────────────────────────────────────────────
 
-# A board OpenWrt does not support yet sets OPENWRT_IMAGEBUILDER="source" and
-# gets an ImageBuilder built from the pinned release with devices/*/openwrt/
-# applied — see scripts/build-imagebuilder.sh. It lives beside the downloaded
-# one for the same target rather than replacing it.
+# Where the ImageBuilder and its sha256sums come from. downloads.openwrt.org
+# unless the board names a release of parkeze/openwrt-devices, which publishes
+# the same files for devices upstream does not support yet.
+imagebuilder_base() {
+  echo "${OPENWRT_IMAGEBUILDER_URL:-https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/targets/${OPENWRT_TARGET}/${OPENWRT_SUBTARGET}}"
+}
+
+# Distinct per source, so the stock and a device-support ImageBuilder for the
+# same target sit side by side rather than one shadowing the other.
 imagebuilder_id() {
-  echo "${OPENWRT_VERSION}-${OPENWRT_TARGET}-${OPENWRT_SUBTARGET}${OPENWRT_IMAGEBUILDER:+-${OPENWRT_IMAGEBUILDER}}"
+  echo "${OPENWRT_VERSION}-${OPENWRT_TARGET}-${OPENWRT_SUBTARGET}${OPENWRT_IMAGEBUILDER_URL:+-$(basename "${OPENWRT_IMAGEBUILDER_URL}")}"
 }
 
 imagebuilder_dir() {
@@ -107,26 +111,10 @@ imagebuilder_dir() {
 
 fetch_imagebuilder() {
   local dir; dir="$(imagebuilder_dir)"
-
-  if [ "${OPENWRT_IMAGEBUILDER:-}" = source ]; then
-    # Rebuilt when the device support changes, or when the cached one was built
-    # for another host architecture (a Mac's arm64 container versus CI).
-    local stamp
-    stamp="$(uname -m) $(cat "${ROOT_DIR}"/devices/*/openwrt/* | sha256sum | cut -d' ' -f1)"
-    if [ "$(cat "${dir}/.parkeze-devices" 2>/dev/null)" = "${stamp}" ]; then
-      log "ImageBuilder cached: ${OPENWRT_TARGET}/${OPENWRT_SUBTARGET}, from source"
-      return
-    fi
-    log "Building ImageBuilder ${OPENWRT_VERSION} ${OPENWRT_TARGET}/${OPENWRT_SUBTARGET} from source"
-    "${ROOT_DIR}/scripts/build-imagebuilder.sh" \
-      "${OPENWRT_VERSION}" "${OPENWRT_TARGET}" "${OPENWRT_SUBTARGET}" "${dir}"
-    echo "${stamp}" > "${dir}/.parkeze-devices"
-    return
-  fi
   [ -d "${dir}" ] && { log "ImageBuilder cached: ${OPENWRT_TARGET}/${OPENWRT_SUBTARGET}"; return; }
 
   local name="openwrt-imagebuilder-${OPENWRT_VERSION}-${OPENWRT_TARGET}-${OPENWRT_SUBTARGET}.Linux-x86_64"
-  local url="https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/targets/${OPENWRT_TARGET}/${OPENWRT_SUBTARGET}/${name}.tar.zst"
+  local url="$(imagebuilder_base)/${name}.tar.zst"
   local tarball="${BUILD_DIR}/${name}.tar.zst"
 
   log "Fetching ImageBuilder ${OPENWRT_VERSION} ${OPENWRT_TARGET}/${OPENWRT_SUBTARGET}"
@@ -146,9 +134,8 @@ fetch_imagebuilder() {
 
 verify_download() {
   local file="$1" name="$2"
-  local sums="${BUILD_DIR}/sha256sums-${OPENWRT_TARGET}-${OPENWRT_SUBTARGET}"
-  curl -fsL -o "${sums}" \
-    "https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/targets/${OPENWRT_TARGET}/${OPENWRT_SUBTARGET}/sha256sums" \
+  local sums="${BUILD_DIR}/sha256sums-$(imagebuilder_id)"
+  curl -fsL -o "${sums}" "$(imagebuilder_base)/sha256sums" \
     || die "could not fetch checksum list"
 
   local want got
@@ -161,15 +148,9 @@ verify_download() {
 
 # ── Running the assembly step on a Mac ──────────────────────────────────────
 
-# The tag for the assembly container, suffixed with its platform. Bumped only
-# when docker/Dockerfile changes; docker's own layer cache handles everything
-# finer-grained.
-DOCKER_IMAGE="parkeze-os-build:2"
-
-# Where a from-source OpenWrt tree lives on a Mac. A Docker volume, because
-# OpenWrt refuses to build on a case-insensitive filesystem and a bind mount of
-# the repo is one.
-DOCKER_OPENWRT_VOLUME="parkeze-openwrt-src"
+# The tag for the assembly container. Bumped only when docker/Dockerfile
+# changes; docker's own layer cache handles everything finer-grained.
+DOCKER_IMAGE="parkeze-os-build:1"
 
 can_assemble_here() {
   [ "$(uname -s)" = "Linux" ]
@@ -228,24 +209,6 @@ reexec_for_assembly() {
   # ImageBuilder in .build/. One bind mount covers all of it.
   local boards=("$@")
 
-  # Downloaded ImageBuilders are x86_64 only, so those boards run under
-  # linux/amd64. One built from source is built by, and for, the container
-  # building it — and a full OpenWrt compile under x86 emulation takes the best
-  # part of a day — so those boards run on the native platform instead.
-  local native amd64=() from_source=()
-  case "$(uname -m)" in
-    arm64|aarch64) native="linux/arm64" ;;
-    *)             native="linux/amd64" ;;
-  esac
-  for board in "${boards[@]}"; do
-    if ( . "${BOARDS_DIR}/${board}/board.conf" 2>/dev/null
-         [ "${OPENWRT_IMAGEBUILDER:-}" = source ] ); then
-      from_source+=("${board}")
-    else
-      amd64+=("${board}")
-    fi
-  done
-
   command -v docker >/dev/null 2>&1 || {
     cat >&2 <<'EOF'
 error: image assembly needs Linux, and Docker is not installed.
@@ -272,37 +235,23 @@ EOF
     exit 1
   fi
 
-  [ "${#amd64[@]}" -gt 0 ] && assemble_in_docker linux/amd64 "${amd64[@]}"
-  [ "${#from_source[@]}" -gt 0 ] && assemble_in_docker "${native}" "${from_source[@]}"
-
-  log "Images: out/"
-  exit 0
-}
-
-assemble_in_docker() {
-  local platform="$1"; shift
-  local boards=("$@")
-  local image="${DOCKER_IMAGE}-${platform#linux/}"
-
   # Built, not pulled. Cached after the first run, so this is a no-op
   # afterwards and there is no registry to depend on.
-  if ! docker image inspect "${image}" >/dev/null 2>&1; then
+  if ! docker image inspect "${DOCKER_IMAGE}" >/dev/null 2>&1; then
     log "Building the assembly container (one time, ~1 min)"
     # No timeout on this one: it genuinely takes a minute or two on a slow
     # connection, and a deadline long enough to be safe is not a useful
     # deadline. It fails loudly on its own if it cannot proceed.
-    docker build --platform "${platform}" \
-      -t "${image}" -f "${ROOT_DIR}/docker/Dockerfile" "${ROOT_DIR}/docker" \
+    docker build --platform linux/amd64 \
+      -t "${DOCKER_IMAGE}" -f "${ROOT_DIR}/docker/Dockerfile" "${ROOT_DIR}/docker" \
       || die "could not build the assembly container"
   fi
 
-  log "Assembling in Docker (${platform}): ${boards[*]}"
+  log "Assembling in Docker (linux/amd64)"
   case "$(uname -m)" in
     arm64|aarch64)
-      [ "${platform}" = linux/amd64 ] && {
-        warn "Apple silicon: this runs x86_64 under emulation and is slow."
-        warn "  Expect several minutes per board on the first run."
-      } ;;
+      warn "Apple silicon: this runs x86_64 under emulation and is slow."
+      warn "  Expect several minutes per board on the first run." ;;
   esac
 
   # PARKEZE_IN_CONTAINER stops the container re-entering this branch, and
@@ -313,16 +262,17 @@ assemble_in_docker() {
   # land where a native build would put them. On Docker Desktop for Mac the
   # files come back owned by the host user, so nothing needs chowning after.
   docker run --rm \
-    --platform "${platform}" \
+    --platform linux/amd64 \
     -v "${ROOT_DIR}:/src" \
-    -v "${DOCKER_OPENWRT_VOLUME}:/openwrt" \
     -w /src \
     -e PARKEZE_IN_CONTAINER=1 \
-    -e PARKEZE_OPENWRT_SRC=/openwrt/openwrt \
     -e PARKEZE_RECOVERY_PUBKEY \
-    "${image}" \
+    "${DOCKER_IMAGE}" \
     ./build.sh --stage image "${boards[@]}" \
     || die "assembly failed inside the container"
+
+  log "Images: out/"
+  exit 0
 }
 
 # ── The console ─────────────────────────────────────────────────────────────

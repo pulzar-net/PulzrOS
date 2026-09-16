@@ -4,6 +4,10 @@ Read off a stock unit over the serial console (57600 8N1, root/root) on
 2026-09-16. Every other file in this directory is raw command output;
 `devicetree.dts` is decompiled from the running kernel's `/sys/firmware/fdt`.
 
+OpenWrt device support (DTS, image recipe, network/LED/env defaults) lives in
+the public [parkeze/openwrt-devices](https://github.com/parkeze/openwrt-devices)
+repo, written from this harvest.
+
 ## Hardware
 
 | | |
@@ -44,8 +48,10 @@ Agrees between `/proc/mtd` and the DTS.
 | 0x04e000 | 0x2000 | pst-data | vendor persistent data (unit identity). **Keep.** |
 | 0x050000 | 0x1fb0000 | firmware | `denx,uimage`: kernel then squashfs, standard OpenWrt split |
 
-`backup/` holds md5-verified dumps of the first four, taken before anything
-was flashed. It is gitignored: these are per-unit, and a copy only helps the
+`backup/` holds md5-verified dumps of all five, taken before anything was
+flashed, and `full-flash-w25q256.bin`, the whole 32MB chip in order. The
+firmware dump is this unit's exact stock state: TFTP it with menu option 2 to
+go back. It is gitignored: these are per-unit, and a copy only helps the
 unit it came from. **Keep it somewhere safe.** To put one back from a running
 OpenWrt: `mtd -r write mtd2-factory.bin factory` (the partition must not be
 read-only in that image's DTS).
