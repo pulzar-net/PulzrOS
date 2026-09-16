@@ -55,7 +55,20 @@ HOSTNAME="$(uci -q get parkeze.identity.hostname || cat /proc/sys/kernel/hostnam
 # status is the *last* command's — piping into logger would make this always
 # look like it succeeded, and a gateway that failed to join would report that
 # it had.
+# The coordination server, when adoption named one.
+#
+# `tailscale up` with no --login-server talks to Tailscale's SaaS, so a fleet
+# on a self-hosted control server silently takes a perfectly good key to the
+# wrong place and reports it as an invalid key. Empty when the platform runs
+# against Tailscale proper, in which case the default is right.
+LOGIN_SERVER_FILE="$(dirname "${KEY_FILE}")/login-server"
+login_arg=""
+if [ -s "${LOGIN_SERVER_FILE}" ]; then
+    login_arg="--login-server=$(cat "${LOGIN_SERVER_FILE}")"
+fi
+
 output="$(${TS} up \
+    ${login_arg} \
     --authkey="$(cat "${KEY_FILE}")" \
     --hostname="${HOSTNAME}" \
     --advertise-tags="tag:gateway" \
