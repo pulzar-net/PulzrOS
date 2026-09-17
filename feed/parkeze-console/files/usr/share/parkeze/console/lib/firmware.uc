@@ -119,7 +119,7 @@ upload = function(env) {
     // Belt and braces after the metadata check. Its exit status cannot be
     // trusted to reject a bad image (see the header), but when it does say no
     // it means it.
-    const proc = popen(sprintf('sysupgrade -T %s 2>&1', IMAGE), 'r');
+    const proc = _m_fs.popen(sprintf('sysupgrade -T %s 2>&1', IMAGE), 'r');
     const verdict = proc ? trim(proc.read('all') ?? '') : '';
     const rc = proc ? proc.close() : 1;
     if (rc != 0) {
