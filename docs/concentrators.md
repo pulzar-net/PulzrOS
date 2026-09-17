@@ -8,8 +8,8 @@ A **slot** is one SX130x and the eight channels it carries.
 - A 16-channel gateway (RAK7289CV2) has two.
 
 Sixteen channels is not one concentrator with twice the channels — it is two
-eight-channel parts on separate SPI buses. Semtech's HAL drives one part per
-process, so a two-slot board runs two packet forwarders.
+eight-channel parts on separate SPI buses. Concentratord drives one part per
+process, so a two-slot board runs two of it.
 
 Modelling every board as a list of slots, rather than treating one concentrator
 as the general case and 16-channel as a special case, is what keeps the
@@ -38,7 +38,7 @@ Syntax is `<bus>:<device>:<reset-gpio>[:<power-gpio>]`, or `auto`.
 | | Kit (a Pi) | Product (a RAK unit) |
 |---|---|---|
 | Slots | `auto` | declared explicitly |
-| Probed at boot | yes, every bus | the chip is read, but the bus is not guessed |
+| Probed at boot | yes, every bus | no: the board declares the part, and a dead one shows as concentratord not running |
 | Operator-editable in the console | yes — bus, device node, reset GPIO, part | no |
 
 `PARKEZE_CONCENTRATOR_CONFIGURABLE` controls the last row, and the console
@@ -61,27 +61,34 @@ and it is loud on purpose: the gateway works, at half its channel count, and
 the LED blinks the attention code, and the forwarder logs an error and starts
 anyway — half a gateway beats none.
 
-## Two forwarders, one gateway
+## What runs on the gateway
 
-With one slot, the forwarder talks straight to the ChirpStack bridge on
-UDP/1700.
+The gateway half of ChirpStack, and nothing server-side. Per slot:
 
-With more than one, both would otherwise announce themselves to the bridge with
-the same EUI and whichever statistics arrived last would win. So each forwarder
-gets a local port (1680 + slot index) and `gwmp-mux` fans them into one
-upstream. The network server sees a single sixteen-channel gateway.
+| Process | Does |
+|---|---|
+| `chirpstack-concentratord-<chip>` | drives the SX130x, resets it on start, publishes frames on a local socket |
+| `chirpstack-mqtt-forwarder` | carries those frames to the cloud network server over MQTT/TLS |
 
-**`gwmp-mux` is not in OpenWrt's feeds and is not yet packaged here.** Until it
-is, a two-slot board logs an error and only slot 0 reaches the network server —
-deliberately loud, because two forwarders silently overwriting each other's
-statistics gets diagnosed as "flaky coverage" for a month. Packaging it is the
-next thing to do before the RAK7289CV2 ships.
+`parkeze-lora-config` renders both configs from the profile, the region
+directory and UCI. The forwarder authenticates with the credentials adoption
+issued (`parkeze.mqtt.*`) and publishes under the region's `TOPIC_PREFIX`,
+which has to match the `topic_prefix` of the region enabled in ChirpStack.
+Until a gateway is adopted it has no credentials: the radio still runs, and
+the uplinks go nowhere.
 
-The fallback, if multiplexing turns out to be the wrong call, is one EUI per
-slot — two gateway records in ChirpStack for one physical unit. That works
-today with no code change beyond `parkeze-lora-config`, but it makes a
-16-channel gateway look like two 8-channel ones everywhere in the fleet UI,
-which is why it is not the default.
+The binaries are ChirpStack's own builds, pinned by checksum in
+`feed/chirpstack-gateway/fetch`. The MIPS ones come from ChirpStack Gateway OS,
+because they carry the half-duplex SPI patch the MT7628 needs and ChirpStack
+publishes no standalone MIPS build.
+
+## Two concentrators
+
+Slot 0 uses the gateway's EUI. A second slot runs its own concentratord and
+forwarder under its chip's own EUI, so ChirpStack sees a 16-channel unit as two
+8-channel gateways. That is honest about what it is; presenting it as one
+16-channel gateway needs aggregation that does not exist yet, and is the next
+thing to do before the RAK7289CV2 ships.
 
 ## Adding a part
 
@@ -91,14 +98,14 @@ whole of it — the console's hardware menu reads that directory, so a new part
 appears as a selectable option with no UI change and no SPA rebuild.
 
 A profile describes **the part**, not the board and not the region. Board facts
-live in `board.conf`, regional facts in `region/<REGION>.json`. Keeping the
+live in `board.conf`, regional facts in `region/<REGION>/`. Keeping the
 three apart is what lets a Pi 3 + WM1302 in the US and a RAK7289CV2 in the EU
 share every line of code.
 
 ## GNSS
 
 A gateway reports its position to the network server, and one with a real
-receiver also gives the packet forwarder GPS time and PPS — which is what fine
+receiver also gives concentratord GPS time and PPS — which is what fine
 timestamping needs.
 
 ### Where the receiver is
@@ -122,21 +129,15 @@ until the other starts. In that build the GPS goes on USB.
 
 ### Who owns the serial port
 
-The packet forwarder opens the GNSS tty itself when configured with
-`gps_tty_path`, and does not share it. That is correct — only the process
-holding the port can have PPS — but it means nothing else can read the receiver
-while the forwarder runs. So position comes from two places:
-
-- **forwarder running** — the cached position, scraped by
-  `parkeze-forwarder-stats` from the forwarder's own periodic log line.
-- **forwarder stopped** — a direct read.
-
-The `source` field in `parkeze-gps status` says which happened, and the console
-shows it, so nobody has to guess how fresh a coordinate is.
+Concentratord opens the GNSS tty itself when given `gnss_dev_path`, and does
+not share it — only the process holding the port has GPS time and PPS. It sends
+its position to the network server rather than logging it, so while it runs the
+gateway cannot read the receiver locally, and `parkeze-gps status` says so
+rather than reporting a stale fix. Stopping the LoRa service frees the port for
+a direct read.
 
 On a two-slot gateway only slot 0 is given the receiver: one physical gateway
-has one position, and two forwarders opening the same tty means the second one
-loses in a way that looks like intermittently missing GPS.
+has one position.
 
 ### Live fix versus reported position
 
@@ -152,5 +153,5 @@ whose antenna was knocked loose keeps reporting the old coordinates quite
 happily, and the only way to notice is to see the live fix missing beside them
 — which is exactly what the GNSS card puts side by side.
 
-With no receiver at all, the forwarder gets `fake_gps: true` and the reference
-coordinates. With one, it gets `gps_tty_path` and real time.
+With no receiver at all, concentratord gets the reference coordinates as its
+static `[gateway.location]`. With one, it gets `gnss_dev_path` and real time.

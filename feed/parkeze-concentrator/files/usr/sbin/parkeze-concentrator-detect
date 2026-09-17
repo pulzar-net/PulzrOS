@@ -139,12 +139,17 @@ detect_slot() {
         case "${rest}" in *:*) power="${rest#*:}" ;; *) power="" ;; esac
         [ "${reset}" = "-" ] && reset=""
 
-        # Still read the chip version where we can, so a dead concentrator on a
-        # product board reports as broken rather than as present-and-silent.
-        # Trusting the board about *what is fitted* is not the same as assuming
-        # it is working.
+        # A product declares what is fitted, and that is what gets recorded.
+        #
+        # It used to read the chip version here as well, so a dead part would
+        # show as broken rather than present-and-silent. That read is
+        # sx130x_probe's full-duplex spi-pipe transfer, which the MT7628's
+        # half-duplex SPI controller rejects outright, so on a RAK every
+        # working concentrator was recorded as absent and nothing started. A
+        # dead part now shows up where it actually fails: concentratord does
+        # not start, and the console shows the forwarder not running.
         case "${bus}" in
-            spi)  detected="$(probe_spi "${device}" "${reset}" "${power}")" ;;
+            spi)  detected="${PARKEZE_CONCENTRATOR_PART:-sx1302_spi}" ;;
             usb)  detected="$(probe_usb)" ;;
             uart) detected="sx1302_uart" ;;   # cannot be probed; the board says so
         esac

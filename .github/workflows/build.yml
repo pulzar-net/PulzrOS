@@ -246,8 +246,12 @@ jobs:
             echo "::warning::No PARKEZE_RECOVERY_PUBKEY secret — images cannot be adopted offline."
           fi
 
+      # unsquashfs: the MIPS ChirpStack binaries are extracted from
+      # ChirpStack Gateway OS; see feed/chirpstack-gateway/fetch.
       - name: Build the package feed
-        run: ./build.sh --stage feed
+        run: |
+          sudo apt-get install -y squashfs-tools
+          ./build.sh --stage feed
 
       # Both halves of the overlay travel together: the .ipk repository, and
       # the recovery key that install_fleet_key dropped into the board files.

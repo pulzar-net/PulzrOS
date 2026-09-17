@@ -1,27 +1,28 @@
 #!/bin/sh
 #
-# Packet forwarder counters, as JSON.
+# LoRa counters, as JSON.
 #
 #   parkeze-forwarder-stats            print JSON
-#   parkeze-forwarder-stats --record   also update the uplink counter the LED
-#                                      daemon watches
+#   parkeze-forwarder-stats --record   also update the uplink total the LED
+#                                      daemon differences
 #
-# Scraped from the log rather than read from an API, because the Semtech
-# forwarder has no API — it prints a statistics block to stdout every 30
-# seconds and that is the whole of its telemetry:
+# Read from the log, where both ChirpStack processes report:
 #
-#   ### [UPSTREAM] ###
-#   # RF packets received by concentrator: 12
-#   # CRC_OK: 91.67%, CRC_FAIL: 8.33%, NO_CRC: 0.00%
-#   # RF packets forwarded: 11 (330 bytes)
+#   concentratord, every 30s:
+#     Publishing stats event, rx_received: 12, rx_received_ok: 11, tx_received: 0, tx_emitted: 0
+#   concentratord, per frame:
+#     Frame received, uplink_id: ..., freq: ...
+#   mqtt-forwarder, per uplink it publishes:
+#     Sending uplink event, uplink_id: ..., topic: us915_0/gateway/.../event/up
 #
-# Received and forwarded are reported separately on purpose. They answer
-# different questions and have entirely different fixes:
+# The concentratord counts cover the last stats interval. Received and
+# forwarded are reported separately on purpose. They answer different questions
+# and have entirely different fixes:
 #
-#   received 0                the radio is hearing nothing — antenna, region
+#   received 0                the radio is hearing nothing — antenna, channel
 #                             plan, or a concentrator that never initialised.
-#   received > 0, forwarded 0 it hears fine and cannot deliver — backhaul,
-#                             bridge credentials, or the multiplexer.
+#   received > 0, forwarded 0 it hears fine and cannot deliver — backhaul, or
+#                             MQTT credentials.
 #
 # A single "packets" counter conflates those, and they get diagnosed as each
 # other.
@@ -29,67 +30,42 @@
 STATE_DIR=/var/run/parkeze/lora
 COUNTER="${STATE_DIR}/uplinks"
 
-# Last statistics block only. `logread -l` bounds the read: on a gateway that
-# has been up for a month the log is large, and the console calls this on every
-# page load.
-block="$(logread -l 400 2>/dev/null | grep -a 'RF packets\|CRC_OK' | tail -n 6)"
+# `logread -l` bounds the read: on a gateway that has been up for a month the
+# log is large, and the console calls this on every page load.
+log="$(logread -l 400 2>/dev/null)"
 
-received="$(echo "${block}"  | sed -n 's/.*RF packets received by concentrator: *\([0-9]*\).*/\1/p' | tail -n1)"
-forwarded="$(echo "${block}" | sed -n 's/.*RF packets forwarded: *\([0-9]*\).*/\1/p' | tail -n1)"
-crc_ok="$(echo "${block}"    | sed -n 's/.*CRC_OK: *\([0-9.]*\)%.*/\1/p' | tail -n1)"
+stats="$(echo "${log}" | grep -a 'Publishing stats event' | tail -n1)"
+field() { echo "${stats}" | sed -n "s/.* $1: *\([0-9]*\).*/\1/p"; }
+received="$(field rx_received)"
+received_ok="$(field rx_received_ok)"
+emitted="$(field tx_emitted)"
 
-emitted="$(logread -l 400 2>/dev/null \
-           | sed -n 's/.*RF packets sent to concentrator: *\([0-9]*\).*/\1/p' | tail -n1)"
+crc_ok=0
+[ "${received:-0}" -gt 0 ] && crc_ok=$(( ${received_ok:-0} * 100 / received ))
 
-# These counters reset when the forwarder restarts, so a total is accumulated
-# alongside them. A number that silently goes backwards on every restart is
-# worse than no number: it reads as packet loss.
+# Forwarded over the same window: uplinks the forwarder published after the
+# stats line before this one.
+forwarded="$(echo "${log}" | awk '
+    /Publishing stats event/ { prev = count; count = 0; next }
+    /Sending uplink event/   { count++ }
+    END { print prev + 0 }')"
+
+# A running total, for the LED daemon. The interval counts reset every 30s, so
+# each stats line is added once, keyed on its log timestamp.
 mkdir -p "${STATE_DIR}"
-[ -f "${STATE_DIR}/totals" ] || echo "0 0 0" > "${STATE_DIR}/totals"
-read -r last_rx total_rx total_fwd < "${STATE_DIR}/totals"
-
-now_rx="${received:-0}"
-if [ "${now_rx}" -lt "${last_rx}" ] 2>/dev/null; then
-    delta="${now_rx}"          # forwarder restarted; credit the whole reading
-else
-    delta=$((now_rx - last_rx))
-fi
-total_rx=$((total_rx + delta))
-total_fwd=$((total_fwd + delta))
-
-if [ "$1" = "--record" ]; then
-    echo "${now_rx} ${total_rx} ${total_fwd}" > "${STATE_DIR}/totals"
-    # The LED daemon differences this file; it only ever needs to go up.
-    echo "${total_rx}" > "${COUNTER}"
-fi
-
-# `last_uplink` is the log timestamp of the most recent received block, which
-# is a far more useful thing to show an installer than a count: "nothing for
-# two hours" is actionable, "1183" is not.
-last_seen="$(logread -l 400 2>/dev/null | grep -a 'RF packets received' | tail -n1 \
-             | awk '{print $1, $2, $3, $4}')"
-
-# ── GNSS position ───────────────────────────────────────────────────────────
-#
-# The forwarder holds the GNSS tty, so nothing else can read the receiver while
-# it runs. It does print its coordinates in the same periodic block as the
-# packet counters, though, so they are scraped here and cached for
-# `parkeze-gps status` and the console.
-#
-#   # GPS coordinates: latitude 48.11730, longitude 11.51667, altitude 545 m
-gps_line="$(logread -l 400 2>/dev/null | grep -a 'GPS coordinates' | tail -n1)"
-if [ -n "${gps_line}" ]; then
-    lat="$(echo "${gps_line}" | sed -n 's/.*latitude \(-\?[0-9.]*\).*/\1/p')"
-    lon="$(echo "${gps_line}" | sed -n 's/.*longitude \(-\?[0-9.]*\).*/\1/p')"
-    alt="$(echo "${gps_line}" | sed -n 's/.*altitude \(-\?[0-9]*\).*/\1/p')"
-    if [ -n "${lat}" ] && [ -n "${lon}" ]; then
-        printf '{"present":true,"fix":true,"latitude":%s,"longitude":%s,"altitude":%s,"device":"%s","source":"forwarder"}\n' \
-            "${lat}" "${lon}" "${alt:-0}" "$(uci -q get parkeze.gps.device)" \
-            > "${STATE_DIR}/gps.json.tmp"
-        mv "${STATE_DIR}/gps.json.tmp" /var/run/parkeze/gps.json
+if [ "$1" = "--record" ] && [ -n "${stats}" ]; then
+    stamp="$(echo "${stats}" | awk '{print $1, $2, $3, $4, $5}')"
+    last="$(cat "${STATE_DIR}/stats-stamp" 2>/dev/null)"
+    if [ "${stamp}" != "${last}" ]; then
+        total=$(( $(cat "${COUNTER}" 2>/dev/null || echo 0) + ${received:-0} ))
+        echo "${total}" > "${COUNTER}"
+        echo "${stamp}" > "${STATE_DIR}/stats-stamp"
     fi
 fi
 
+# "Nothing for two hours" is actionable, "1183" is not.
+last_seen="$(echo "${log}" | grep -a 'Frame received' | tail -n1 | awk '{print $1, $2, $3, $4, $5}')"
+
 printf '{"rx_received":%s,"rx_forwarded":%s,"tx_emitted":%s,"crc_ok_percent":%s,"total_received":%s,"last_uplink":"%s"}\n' \
-    "${received:-0}" "${forwarded:-0}" "${emitted:-0}" "${crc_ok:-0}" \
-    "${total_rx}" "${last_seen}"
+    "${received:-0}" "${forwarded:-0}" "${emitted:-0}" "${crc_ok}" \
+    "$(cat "${COUNTER}" 2>/dev/null || echo 0)" "${last_seen}"

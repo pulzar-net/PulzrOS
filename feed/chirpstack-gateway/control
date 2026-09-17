@@ -1,0 +1,12 @@
+Package: chirpstack-gateway
+Version: @VERSION@-@BUILD@
+Source: parkeze
+Section: net
+Priority: optional
+Maintainer: Joseph Telaak <joseph@parkeze.com>
+Architecture: @ARCH@
+Description: ChirpStack Concentratord and MQTT Forwarder.
+ The gateway half of ChirpStack: concentratord drives the SX130x, and
+ mqtt-forwarder carries its frames to the cloud network server over MQTT.
+ Upstream binaries, fetched and checksum-verified at build time; see
+ feed/chirpstack-gateway/fetch.
