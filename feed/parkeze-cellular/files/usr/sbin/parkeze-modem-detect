@@ -58,9 +58,17 @@ manufacturer="$(echo "${detail}" | sed -n 's/.*manufacturer: *//p' | head -n1)"
 model="$(echo "${detail}" | sed -n 's/.*model: *//p' | head -n1)"
 imei="$(echo "${detail}" | sed -n 's/.*equipment id: *//p' | head -n1 | tr -d ' ')"
 
+# The SIM the modem is actually holding. Parkeze links a gateway to its 1NCE
+# SIM by ICCID, and until now somebody read it off the card and typed it into
+# the fleet page — next to a device that could simply be asked.
+sim_index="$(echo "${detail}" | sed -n 's|.*primary sim path: */org/freedesktop/ModemManager1/SIM/\([0-9]*\).*|\1|p' | head -n1)"
+iccid=""
+[ -n "${sim_index}" ] && iccid="$(mmcli -i "${sim_index}" --output-keyvalue 2>/dev/null |
+    sed -n 's/^sim.properties.iccid *: *//p' | head -n1 | tr -cd '0-9')"
+
 if [ "$1" = "--status" ]; then
-    printf '{"present":true,"index":%s,"device":"%s","manufacturer":"%s","model":"%s","imei":"%s"}\n' \
-        "${modem_index}" "${device_path}" "${manufacturer}" "${model}" "${imei}"
+    printf '{"present":true,"index":%s,"device":"%s","manufacturer":"%s","model":"%s","imei":"%s","iccid":"%s"}\n' \
+        "${modem_index}" "${device_path}" "${manufacturer}" "${model}" "${imei}" "${iccid}"
     exit 0
 fi
 
@@ -79,6 +87,7 @@ set parkeze.cellular=cellular
 set parkeze.cellular.modem_present='1'
 set parkeze.cellular.model='${manufacturer} ${model}'
 set parkeze.cellular.imei='${imei}'
+set parkeze.cellular.iccid='${iccid}'
 EOF
 uci commit parkeze
 exit 0

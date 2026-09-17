@@ -327,13 +327,14 @@ apply_offline() {
 # checked against a hash parkeze.net stored at registration.
 
 facts() {
-    local modem wired board_id version modem_present modem_model wired_usable tunnel
+    local modem wired board_id version modem_present modem_model wired_usable tunnel iccid
 
     modem="$(parkeze-modem-detect --status 2>/dev/null || echo '{"present":false}')"
     wired="$(parkeze-wireguard-route status 2>/dev/null || echo '{"wiredUsable":false}')"
 
     modem_present="$(echo "${modem}" | jsonfilter -e '@.present' 2>/dev/null)" || true
     modem_model="$(echo "${modem}" | jsonfilter -e '@.model' 2>/dev/null)" || true
+    iccid="$(echo "${modem}" | jsonfilter -e '@.iccid' 2>/dev/null)" || true
     wired_usable="$(echo "${wired}" | jsonfilter -e '@.wiredUsable' 2>/dev/null)" || true
     tunnel="$(parkeze-backhaul-check --tunnel 2>/dev/null)" || true
 
@@ -346,8 +347,8 @@ facts() {
     board_id="${BOARD_ID:-unknown}"
     version="${PARKEZE_VERSION:-0.0.0}"
 
-    printf '{"board":"%s","osVersion":"%s","modemPresent":%s,"modemModel":"%s","wiredUsable":%s,"tunnelState":"%s","consolePort":443,"consoleScheme":"https","sshPort":22,"system":%s}' \
-        "${board_id}" "${version}" "${modem_present}" "${modem_model:-}" \
+    printf '{"board":"%s","osVersion":"%s","modemPresent":%s,"modemModel":"%s","simIccid":"%s","wiredUsable":%s,"tunnelState":"%s","consolePort":443,"consoleScheme":"https","sshPort":22,"system":%s}' \
+        "${board_id}" "${version}" "${modem_present}" "${modem_model:-}" "${iccid:-}" \
         "${wired_usable}" "${tunnel:-none}" "$(system_facts)"
 }
 
