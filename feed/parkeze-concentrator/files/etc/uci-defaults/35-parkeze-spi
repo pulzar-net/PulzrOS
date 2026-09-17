@@ -14,6 +14,12 @@
 # cannot loop: on the next boot the line is already there and nothing is
 # scheduled.
 
+# OpenWrt's prepare_rootfs runs every uci-defaults script during image
+# assembly, on the build host. Guarded before anything else: unguarded, this
+# would source the host's board.conf and could edit the host's own
+# /boot/config.txt.
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+
 . /etc/parkeze/board.conf
 
 # Only boards that expect an SPI concentrator, and only a Pi boot partition.
