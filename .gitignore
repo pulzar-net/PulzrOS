@@ -40,7 +40,13 @@ ucode/
 .env.local
 *.pem
 *_ed25519
+# Public halves are not secret, and keys/*.pub is meant to be committed.
 !*_ed25519.pub
+# Except this one. It belongs to a deployment rather than to this repo — an
+# image built from a checkout should use whichever key that deployment uses,
+# not one frozen in git. The rule above would otherwise re-include it and
+# undo the explicit ignore further up, which is exactly what it was doing.
+recovery_ed25519.pub
 
 # ── editors and OS ────────────────────────────────────────────────────────
 .vscode/
