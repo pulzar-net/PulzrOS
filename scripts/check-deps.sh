@@ -46,7 +46,10 @@ fetch() {
 # Every package name available to a given board, one per line.
 index_for() {
   local version="$1" arch="$2" target="$3" subtarget="$4"
-  local combined="${CACHE}/${version}-${arch}-${target}-${subtarget}.names"
+  # The suffix versions what goes into the combined list. CI restores this
+  # directory from cache, and a list built before the target index was added
+  # would otherwise be trusted forever.
+  local combined="${CACHE}/${version}-${arch}-${target}-${subtarget}.v2.names"
   [ -s "${combined}" ] && { cat "${combined}"; return 0; }
 
   local tmp="${combined}.partial"
