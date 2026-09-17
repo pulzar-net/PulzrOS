@@ -325,6 +325,16 @@ install_fleet_key() {
   local dest="${ROOT_DIR}/boards/common/files/etc/parkeze"
   local key="${PARKEZE_RECOVERY_PUBKEY:-${ROOT_DIR}/recovery_ed25519.pub}"
 
+  # `--stage image` runs in a fresh CI job: the overlay arrived as an artifact
+  # from the feed stage, which already put the anchor in it, and the secret is
+  # deliberately not in that job's environment. Deleting it there and then
+  # warning is how a build that HAS the anchor still ships images without one
+  # — which is what every rpi3/rpi4 job did until this check existed.
+  if [ ! -f "${key}" ] && [ -f "${dest}/recovery.pub" ]; then
+    log "Fleet recovery anchor already in the overlay"
+    return 0
+  fi
+
   rm -f "${dest}/recovery.pub"
 
   if [ ! -f "${key}" ]; then
