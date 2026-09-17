@@ -32,7 +32,9 @@ drive() {
     # the chip moved behind -c, and without `-t 0` gpioset holds the line and
     # never exits. The v1 form below is rejected outright by v2 ("invalid line
     # value: 'gpiochip0'"), so while this was the only form the reset pulse
-    # never fired, and every SPI concentrator probed as absent.
+    # never fired, and every SPI concentrator probed as absent. After `-t 0`
+    # exits the line keeps its value: checked on a RAK7268CV2, where the SX1302
+    # reads back its version after `-t 0 11=0` and zeros after `-t 0 11=1`.
     gpioset -c "${chip}" -t 0 "${line}=${value}" 2>/dev/null && return 0
 
     # libgpiod v1, for an image that still carries it.

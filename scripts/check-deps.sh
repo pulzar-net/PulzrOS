@@ -46,7 +46,10 @@ fetch() {
 # Every package name available to a given board, one per line.
 index_for() {
   local version="$1" arch="$2" target="$3" subtarget="$4"
-  local combined="${CACHE}/${version}-${arch}-${target}-${subtarget}.names"
+  # The suffix versions what goes into the combined list. CI restores this
+  # directory from cache, and a list built before the target index was added
+  # would otherwise be trusted forever.
+  local combined="${CACHE}/${version}-${arch}-${target}-${subtarget}.v2.names"
   [ -s "${combined}" ] && { cat "${combined}"; return 0; }
 
   local tmp="${combined}.partial"
@@ -64,6 +67,13 @@ index_for() {
   # Kernel modules live under the target, keyed by the exact kernel build. The
   # directory name is discovered rather than pinned, because it changes with
   # every kernel bump inside a release.
+  # The target's own packages: libc, libgcc, libstdc++ and the rest of the
+  # toolchain runtime live here, not in any feed.
+  local tf="${CACHE}/${version}-${target}-${subtarget}-target.idx"
+  if fetch "${BASE_URL}/${version}/targets/${target}/${subtarget}/packages/Packages.gz" "${tf}"; then
+    sed -n 's/^Package: //p' "${tf}" >> "${tmp}"
+  fi
+
   local kdir
   kdir="$(curl -fsL --max-time 30 "${BASE_URL}/${version}/targets/${target}/${subtarget}/kmods/" 2>/dev/null \
           | grep -oE '[0-9]+\.[0-9]+\.[0-9]+-[0-9]+-[0-9a-f]+' | head -n1)"
@@ -130,6 +140,10 @@ for board in "${boards[@]}"; do
               | grep -v '^$' | grep -v '^-')"
     deps="$(grep -h '^Depends:' "${ROOT_DIR}"/feed/*/control \
             | sed 's/^Depends: *//' | tr ',' '\n' | tr -d ' ' | grep -v '^$')"
+    # Per-architecture packages keep their Depends in `arches`, by arch.
+    deps="${deps}
+$(cat "${ROOT_DIR}"/feed/*/arches 2>/dev/null \
+  | awk -v a="${OPENWRT_ARCH}" '$1 == a && $2 != "-" { print $2 }' | tr ',' '\n')"
 
     missing=0
     while IFS= read -r pkg; do
@@ -137,7 +151,7 @@ for board in "${boards[@]}"; do
       case "${pkg}" in \#*) continue ;; esac
       grep -qxF "${pkg}" <<<"${available}" && continue
       # Our own feed satisfies these.
-      printf '%s\n' "${pkg}" | grep -q '^parkeze-' && continue
+      is_ours "${pkg}" && continue
       echo "  MISSING  ${pkg}"
       missing=$((missing + 1))
     done < <(printf '%s\n%s\n' "${wanted}" "${deps}" | sort -u)

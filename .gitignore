@@ -64,3 +64,7 @@ Thumbs.db
 *.log
 logs/
 *.tmp
+
+# Per-unit flash dumps (factory calibration, MACs) taken by a harvest.
+# Only useful to the unit they came from.
+devices/*/backup/

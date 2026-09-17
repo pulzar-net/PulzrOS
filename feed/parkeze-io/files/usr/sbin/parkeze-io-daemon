@@ -88,13 +88,15 @@ modem_state() {
 }
 
 # ── uplink flashes ──────────────────────────────────────────────────────────
-# The forwarder does not offer a hook, so the count is read and differenced.
+# The forwarder does not offer a hook, so parkeze-forwarder-stats keeps a
+# running total from the log and it is differenced here.
 # One flash per poll when anything arrived, rather than one per packet: a
 # gateway hearing forty uplinks in five seconds should look busy, not seizure-
 # inducing, and flashing forty times would take longer than the poll anyway.
 last_uplinks=0
 
 uplink_count() {
+    /usr/sbin/parkeze-forwarder-stats --record >/dev/null 2>&1
     [ -f "${STATS}" ] && cat "${STATS}" 2>/dev/null || echo 0
 }
 

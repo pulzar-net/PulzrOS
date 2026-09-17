@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+#
+# Put ChirpStack's gateway binaries for one architecture into a package root.
+#
+#   fetch <opkg-arch> <dest-root> <cache-dir>
+#
+# ── WHERE THEY COME FROM ───────────────────────────────────────────────────
+#
+# aarch64: ChirpStack's own release tarballs, static binaries.
+#
+# mipsel_24kc: ChirpStack publishes no standalone MIPS build. The one it does
+# ship, and runs on this exact hardware, is inside ChirpStack Gateway OS for the
+# RAK7268v2 (OpenWrt 24.10, musl 1.2.5 — the same libc as ours). The binaries
+# are taken from that image. They carry ChirpStack's half-duplex SPI patch for
+# the MT7628, which Semtech's HAL needs on that SoC and is the reason not to
+# build our own without it.
+#
+# Every download is pinned by sha256. Bump versions here and nowhere else.
+
+set -euo pipefail
+
+ARCH="${1:?arch}" DEST="${2:?dest}" CACHE="${3:?cache}"
+ARTIFACTS=https://artifacts.chirpstack.io/downloads
+mkdir -p "${CACHE}" "${DEST}/usr/bin"
+
+sha256() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1
+  else shasum -a 256 "$1" | cut -d' ' -f1; fi
+}
+
+get() {
+  local url="$1" want="$2" out="${CACHE}/$(basename "$1")"
+  [ -f "${out}" ] && [ "$(sha256 "${out}")" = "${want}" ] && { echo "${out}"; return; }
+  curl -fsSL --retry 3 -o "${out}.part" "${url}" >&2
+  [ "$(sha256 "${out}.part")" = "${want}" ] || { echo "checksum mismatch: ${url}" >&2; exit 1; }
+  mv "${out}.part" "${out}"
+  echo "${out}"
+}
+
+case "${ARCH}" in
+  aarch64_*)
+    for spec in \
+      "chirpstack-concentratord/chirpstack-concentratord-sx1302_4.7.1_linux_arm64.tar.gz 328faf7e6fe6fcc9f5a50f8368fd520807ac2939214c607593318e017e857345" \
+      "chirpstack-concentratord/chirpstack-concentratord-sx1301_4.7.1_linux_arm64.tar.gz f0fd5be4ab9aea2bfcf4adca3bf83958dcbc4dec1d3898edfb81b61540644a5f" \
+      "chirpstack-mqtt-forwarder/chirpstack-mqtt-forwarder_4.6.0_linux_arm64.tar.gz 8be1c4fd70a4fdd921d87a01daf1c4ac5d4b8fef8dc7db37334d922b6d9675cd"
+    do
+      set -- ${spec}
+      tar -xzf "$(get "${ARTIFACTS}/$1" "$2")" -C "${DEST}/usr/bin"
+    done
+    ;;
+  mipsel_24kc)
+    command -v unsquashfs >/dev/null 2>&1 \
+      || { echo "unsquashfs is required (apt install squashfs-tools / brew install squashfs)" >&2; exit 1; }
+    img="$(get "${ARTIFACTS}/chirpstack-gateway-os/4.12.0/rak/ramips/mt76x8/chirpstack-gateway-os-4.12.0-rak7268v2-ramips-mt76x8-rakwireless_rak636-squashfs-sysupgrade.bin" \
+               a7ff5b6858f63a6cf2084fa7ac6c9fc43fa09130e696c373c218232e43831ebd)"
+    work="$(mktemp -d)"; trap 'rm -rf "${work}"' EXIT
+    # A sysupgrade image is a uImage kernel followed by the squashfs root.
+    offset="$(grep -abo hsqs "${img}" | head -n1 | cut -d: -f1)"
+    tail -c +"$((offset + 1))" "${img}" > "${work}/root.sqfs"
+    unsquashfs -q -n -d "${work}/root" "${work}/root.sqfs" \
+      usr/bin/chirpstack-concentratord-sx1302 usr/bin/chirpstack-mqtt-forwarder >/dev/null
+    cp "${work}/root/usr/bin/chirpstack-concentratord-sx1302" \
+       "${work}/root/usr/bin/chirpstack-mqtt-forwarder" "${DEST}/usr/bin/"
+    ;;
+  *) echo "no ChirpStack binaries for ${ARCH}" >&2; exit 1 ;;
+esac
+
+chmod 0755 "${DEST}"/usr/bin/chirpstack-*

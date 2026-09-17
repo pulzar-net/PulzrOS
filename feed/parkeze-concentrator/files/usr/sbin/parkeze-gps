@@ -9,16 +9,18 @@
 #
 # ── WHO OWNS THE SERIAL PORT ───────────────────────────────────────────────
 #
-# The packet forwarder opens the GNSS tty itself when it is configured with
-# `gps_tty_path`, and it does not share. That is the right arrangement — the
+# Concentratord opens the GNSS tty itself when it is configured with
+# `gnss_dev_path`, and it does not share. That is the right arrangement — the
 # forwarder needs GPS *time* and PPS for fine timestamping, not just a
 # position, and only the process holding the port can have those.
 #
 # It does mean this cannot read the receiver while the forwarder is running.
 # So position comes from two places depending on who has the port:
 #
-#   forwarder running   the cached position, which parkeze-forwarder-stats
-#                       scrapes from the forwarder's own periodic log line.
+#   forwarder running   a cached position, if something has written one.
+#                       Concentratord sends its position to the network
+#                       server rather than logging it, so today nothing does,
+#                       and status says so rather than inventing one.
 #   forwarder stopped   a direct read.
 #
 # A cached position going stale is not a problem worth solving: gateways do not
@@ -93,7 +95,7 @@ status)
         if [ -s "${CACHE}" ]; then
             cat "${CACHE}"
         else
-            printf '{"present":true,"fix":false,"device":"%s","source":"forwarder","reason":"The packet forwarder holds the receiver and has not reported a position yet."}\n' \
+            printf '{"present":true,"fix":false,"device":"%s","source":"forwarder","reason":"Concentratord holds the receiver and reports its position to the network server. Stop the LoRa service to read it here."}\n' \
                 "$(device)"
         fi
     else

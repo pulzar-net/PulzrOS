@@ -233,10 +233,9 @@ EOF
     rm -f "${STATE}/console/initial-password" "${STATE}/console/password-is-initial"
 
     /etc/init.d/parkeze-tailscale restart >/dev/null 2>&1
+    # Starts the MQTT forwarder alongside concentratord: it only runs once
+    # adopted and holding broker credentials, which is this moment.
     /etc/init.d/parkeze-packet-forwarder restart >/dev/null 2>&1
-    # The bridge from that forwarder to the LNS. It only starts once adopted
-    # and holding broker credentials, which is this moment.
-    /etc/init.d/parkeze-mqtt-forwarder restart >/dev/null 2>&1
     /etc/init.d/parkeze-claim stop >/dev/null 2>&1
 
     # The other half of the pair: claiming stops, reporting starts. Enabled as

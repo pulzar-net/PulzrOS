@@ -1,0 +1,542 @@
+#
+# Copyright (C) 2010 OpenWrt.org
+#
+
+PART_NAME=firmware
+REQUIRE_IMAGE_METADATA=1
+
+RAMFS_COPY_BIN='fw_printenv fw_setenv'
+RAMFS_COPY_DATA='/etc/fw_env.config /var/lock/fw_printenv.lock'
+
+[ -f /lib/upgrade/rak_img_check.sh ] && . /lib/upgrade/rak_img_check.sh
+
+platform_check_image() {
+	local board=$(board_name)
+	local magic="$(get_magic_long "$1")"
+	# Checking fixed magic value for bin file
+	if [ "$magic" == "27051956" ]; then
+		return 0
+	elif [ "$magic" == "$RAKIMG_MGWORD" ]; then
+		check_rak_image $1
+		rtn_code=$?
+		if [ $rtn_code = 0 ] ; then
+			return 0
+		else
+			v "Invalid image"
+			echo $rtn_code > /tmp/upgrade_failure
+			return 1
+		fi
+	else
+		v "Invalid image magic number $magic"
+		echo $RAKIMGCHK_MGFAIL > /tmp/upgrade_failure
+		return 1
+	fi
+	return 0
+}
+
+platform_do_upgrade() {
+	local board=$(board_name)
+	local magic="$(get_magic_long "$1")"
+	case "$board" in
+	alfa-network,awusfree1)
+		[ "$(fw_printenv -n dual_image 2>/dev/null)" = "1" ] &&\
+		[ -n "$(find_mtd_part backup)" ] && {
+			PART_NAME=backup
+			if [ "$(fw_printenv -n bootactive 2>/dev/null)" = "1" ]; then
+				fw_setenv bootactive 2 || exit 1
+			else
+				fw_setenv bootactive 1 || exit 1
+			fi
+		}
+		default_do_upgrade "$1"
+		;;
+	tplink,archer-c20-v5|\
+	tplink,archer-c50-v4)
+		MTD_ARGS="-t romfile"
+		default_do_upgrade "$1"
+		;;
+	rakwireless,rak634|\
+	rakwireless,rak636)
+		if [ "$magic" == "$RAKIMG_MGWORD" ]; then
+		    v "Start upgrading RAK image"
+			do_rak_upgrade "$1"
+		else
+		    v "Start upgrading standard image "
+			default_do_upgrade "$1"
+		fi
+		;;
+	*)
+		default_do_upgrade "$1"
+		;;
+	esac
+}
+/etc/board.d:
+[1;32m01_leds[m             [1;32m02_network[m          [1;32m99-default_network[m
+
+/lib/preinit:
+[0;0m00_preinit.conf[m              [0;0m50_indicate_regular_preinit[m
+[1;32m01_load_edev[m                 [0;0m70_initramfs_test[m
+[0;0m02_default_set_state[m         [0;0m80_mount_root[m
+[0;0m02_sysinfo[m                   [0;0m81_urandom_seed[m
+[0;0m10_indicate_failsafe[m         [0;0m99_10_failsafe_dropbear[m
+[0;0m10_indicate_preinit[m          [0;0m99_10_failsafe_login[m
+[0;0m30_failsafe_wait[m             [0;0m99_10_run_init[m
+[0;0m40_run_failsafe_hook[m
+#!/bin/sh
+
+. /lib/functions/leds.sh
+. /lib/functions/uci-defaults.sh
+
+board=$(board_name)
+
+board_config_update
+
+case $board in
+alfa-network,awusfree1)
+	ucidef_set_led_netdev "wifi_led" "wifi" "blue:wlan" "wlan0"
+	;;
+asus,rt-n10p-v3|\
+asus,rt-n11p-b1|\
+asus,rt-n12-vp-b1|\
+netgear,r6020|\
+netgear,r6080|\
+netgear,r6120)
+	ucidef_set_led_switch "lan" "lan" "green:lan" "switch0" "0xf"
+	ucidef_set_led_switch "wan" "wan" "green:wan" "switch0" "0x10"
+	;;
+cudy,wr1000)
+	ucidef_set_led_switch "wan" "wan" "blue:wan" "switch0" "0x10"
+	ucidef_set_led_switch "lan1" "lan1" "blue:lan1" "switch0" "0x08"
+	ucidef_set_led_switch "lan2" "lan2" "blue:lan2" "switch0" "0x04"
+	;;
+elecom,wrc-1167fs)
+	ucidef_set_led_switch "lan" "lan" "green:lan" "switch0" "0x8"
+	ucidef_set_led_switch "internet" "internet" "green:internet" "switch0" "0x10"
+	;;
+glinet,gl-mt300n-v2)
+	ucidef_set_led_netdev "wifi_led" "wifi" "red:wlan" "wlan0"
+	ucidef_set_led_switch "wan" "wan" "green:wan" "switch0" "0x1"
+	;;
+hilink,hlk-7628n|\
+skylab,skw92a)
+	ucidef_set_led_netdev "wifi_led" "wifi" "green:wlan" "wlan0"
+	;;
+hilink,hlk-7688a)
+	ucidef_set_led_wlan "wlan" "WLAN" "green:wlan" "phy0tpt"
+	;;
+hiwifi,hc5661a|\
+hiwifi,hc5761a)
+	ucidef_set_led_switch "internet" "internet" "blue:internet" "switch0" "0x10"
+	;;
+mediatek,linkit-smart-7688)
+	ucidef_set_led_wlan "wifi" "wifi" "orange:wifi" "phy0tpt"
+	;;
+rakwireless,rak633)
+	ucidef_set_led_netdev "wifi_led" "wifi" "blue:wifi" "wlan0"
+	;;
+rakwireless,rak634|\
+rakwireless,rak636|\
+rakwireless,rakg368)
+	ucidef_set_led_netdev "wifi_led" "wifi" "mediatek:orange:wifi" "ra0" "link tx rx"
+	ucidef_set_led_switch "eth_led" "eth" "rak:green:eth" "switch0" "0x1"
+	;;
+tama,w06)
+	ucidef_set_led_netdev "wan" "WAN" "green:wan" "eth0"
+	ucidef_set_led_wlan "wlan" "WLAN" "green:wlan" "phy0tpt"
+	;;
+tplink,archer-c20-v4|\
+tplink,archer-c20-v5|\
+tplink,tl-wr850n-v2)
+	ucidef_set_led_switch "lan" "lan" "green:lan" "switch0" "0x1e"
+	ucidef_set_led_switch "wan" "wan" "green:wan" "switch0" "0x01"
+	;;
+tplink,archer-c50-v3|\
+tplink,archer-c50-v4)
+	ucidef_set_led_switch "lan" "lan" "green:lan" "switch0" "0x1e"
+	ucidef_set_led_switch "wan" "wan" "green:wan" "switch0" "0x01"
+	ucidef_set_led_wlan "wlan2g" "wlan2g" "green:wlan2g" "phy0tpt"
+	ucidef_set_led_wlan "wlan5g" "wlan5g" "green:wlan5g" "phy1tpt"
+	;;
+tplink,re200-v2|\
+tplink,re200-v3|\
+tplink,re200-v4|\
+tplink,re220-v2|\
+tplink,tl-mr3020-v3|\
+tplink,tl-wa801nd-v5)
+	ucidef_set_led_netdev "lan" "lan" "green:lan" "eth0"
+	;;
+tplink,tl-mr3420-v5|\
+tplink,tl-wr840n-v4|\
+tplink,tl-wr842n-v5)
+	ucidef_set_led_wlan "wlan2g" "wlan2g" "green:wlan" "phy0tpt"
+	ucidef_set_led_switch "lan" "lan" "green:lan" "switch0" "0x1e"
+	ucidef_set_led_switch "wan" "wan" "green:wan" "switch0" "0x01"
+	;;
+tplink,tl-mr6400-v4)
+	ucidef_set_led_switch "lan" "lan" "white:lan" "switch0" "0x0e"
+	ucidef_set_led_switch "wan" "wan" "white:wan" "switch0" "0x10"
+	;;
+tplink,tl-mr6400-v5)
+	ucidef_set_led_switch "lan" "lan" "white:lan" "switch0" "0x07"
+	ucidef_set_led_switch "wan" "wan" "white:wan" "switch0" "0x08"
+	;;
+tplink,tl-wr841n-v13)
+	ucidef_set_led_wlan "wlan2g" "wlan2g" "green:wlan" "phy0tpt"
+	ucidef_set_led_switch "lan1" "lan1" "green:lan1" "switch0" "0x2"
+	ucidef_set_led_switch "lan2" "lan2" "green:lan2" "switch0" "0x4"
+	ucidef_set_led_switch "lan3" "lan3" "green:lan3" "switch0" "0x8"
+	ucidef_set_led_switch "lan4" "lan4" "green:lan4" "switch0" "0x10"
+	ucidef_set_led_switch "wan" "wan" "green:wan" "switch0" "0x01"
+	;;
+tplink,tl-wr841n-v14)
+	ucidef_set_led_switch "lan" "lan" "green:lan" "switch0" "0x1e"
+	ucidef_set_led_switch "wan" "wan" "green:wan" "switch0" "0x01"
+	ucidef_set_led_wlan "wifi_led" "wifi" "green:wlan" "phy0tpt"
+	;;
+tplink,tl-wr902ac-v3)
+	ucidef_set_led_wlan "wlan2g" "wlan2g" "green:wlan" "phy0tpt"
+	ucidef_set_led_switch "lan" "lan" "green:lan" "switch0" "0x10"
+	ucidef_set_led_switch "wan" "wan" "green:wan" "switch0" "0x10"
+	;;
+unielec,u7628-01-16m)
+	ucidef_set_led_switch "lan1" "lan1" "green:lan1" "switch0" "0x2"
+	ucidef_set_led_switch "lan2" "lan2" "green:lan2" "switch0" "0x4"
+	ucidef_set_led_switch "lan3" "lan3" "green:lan3" "switch0" "0x8"
+	ucidef_set_led_switch "lan4" "lan4" "green:lan4" "switch0" "0x10"
+	ucidef_set_led_switch "wan" "wan" "green:wan" "switch0" "0x01"
+	ucidef_set_led_netdev "wifi_led" "wifi" "green:wlan" "wlan0"
+	;;
+wavlink,wl-wn570ha1)
+	ucidef_set_led_switch "wan" "wan" "green:wan" "switch0" "0x01"
+	ucidef_set_rssimon "wlan0" "200000" "1"
+	ucidef_set_led_rssi "wifi-low" "wifi-low" "green:wifi-low" "wlan0" "1" "49"
+	ucidef_set_led_rssi "wifi-med" "wifi-med" "green:wifi-med" "wlan0" "50" "84"
+	ucidef_set_led_rssi "wifi-high" "wifi-high" "green:wifi-high" "wlan0" "85" "100"
+	ucidef_set_led_netdev "wifi_led" "wifi" "green:wifi" "wlan0"
+	;;
+wavlink,wl-wn575a3)
+	ucidef_set_rssimon "wlan1" "200000" "1"
+	ucidef_set_led_rssi "wifi-low" "wifi-low" "green:wifi-low" "wlan1" "1" "49"
+	ucidef_set_led_rssi "wifi-med" "wifi-med" "green:wifi-med" "wlan1" "50" "84"
+	ucidef_set_led_rssi "wifi-high" "wifi-high" "green:wifi-high" "wlan1" "85" "100"
+	;;
+wavlink,wl-wn577a2)
+	ucidef_set_led_switch "lan" "lan" "green:lan" "switch0" "0x8"
+	ucidef_set_led_switch "wan" "wan" "green:wan" "switch0" "0x10"
+	;;
+zbtlink,zbt-we1226)
+	ucidef_set_led_netdev "wifi_led" "wifi" "green:wlan" "wlan0"
+	ucidef_set_led_switch "lan1" "LAN1" "green:lan1" "switch0" "0x01"
+	ucidef_set_led_switch "lan2" "LAN2" "green:lan2" "switch0" "0x02"
+	ucidef_set_led_switch "wan" "WAN" "green:wan" "switch0" "0x10"
+	;;
+zyxel,keenetic-extra-ii)
+	ucidef_set_led_netdev "wifi_led" "wifi" "green:wifi" "wlan0"
+	ucidef_set_led_switch "internet" "internet" "green:internet" "switch0" "0x01"
+	;;
+esac
+
+board_config_flush
+
+exit 0
+#!/bin/sh
+
+. /lib/functions.sh
+. /lib/functions/uci-defaults.sh
+. /lib/functions/system.sh
+
+ramips_setup_interfaces()
+{
+	local board="$1"
+
+	case $board in
+	alfa-network,awusfree1|\
+	d-team,pbr-d1|\
+	glinet,microuter-n300|\
+	glinet,vixmini|\
+	hak5,wifi-pineapple-mk7|\
+	mediatek,linkit-smart-7688|\
+	minew,g1-c|\
+	onion,omega2p|\
+	onion,omega2|\
+	ravpower,rp-wd009|\
+	tama,w06|\
+	tplink,re200-v2|\
+	tplink,re200-v3|\
+	tplink,re200-v4|\
+	tplink,re220-v2|\
+	tplink,re305-v1|\
+	tplink,tl-mr3020-v3|\
+	tplink,tl-wr802n-v4|\
+	tplink,tl-wa801nd-v5|\
+	widora,neo-16m|\
+	widora,neo-32m)
+		ucidef_add_switch "switch0"
+		ucidef_add_switch_attr "switch0" "enable" "false"
+		ucidef_set_interface_lan "eth0"
+		;;
+	asus,rt-n10p-v3|\
+	asus,rt-n11p-b1|\
+	asus,rt-n12-vp-b1|\
+	hiwifi,hc5661a|\
+	mediatek,mt7628an-eval-board|\
+	mercury,mac1200r-v2|\
+	totolink,lr1200|\
+	wavlink,wl-wn570ha1|\
+	wavlink,wl-wn575a3)
+		ucidef_add_switch "switch0" \
+			"0:lan" "1:lan" "2:lan" "3:lan" "4:wan" "6@eth0"
+		;;
+	buffalo,wcr-1166ds|\
+	elecom,wrc-1167fs|\
+	wavlink,wl-wn577a2)
+		ucidef_add_switch "switch0" \
+			"3:lan" "4:wan" "6@eth0"
+		;;
+	cudy,wr1000)
+		ucidef_add_switch "switch0" \
+			"2:lan:2" "3:lan:1" "4:wan" "6@eth0"
+		;;
+	duzun,dm06)
+		ucidef_add_switch "switch0" \
+			"1:lan" "0:wan" "6@eth0"
+		;;
+	glinet,gl-mt300n-v2)
+		ucidef_add_switch "switch0" \
+			"1:lan" "0:wan" "6@eth0"
+		;;
+	hilink,hlk-7628n|\
+	hilink,hlk-7688a|\
+	hiwifi,hc5861b|\
+	skylab,skw92a|\
+	tplink,archer-c20-v4|\
+	tplink,archer-c20-v5|\
+	tplink,archer-c50-v3|\
+	tplink,archer-c50-v4|\
+	tplink,tl-mr3420-v5|\
+	tplink,tl-wr840n-v4|\
+	tplink,tl-wr840n-v5|\
+	tplink,tl-wr841n-v13|\
+	tplink,tl-wr841n-v14|\
+	tplink,tl-wr842n-v5|\
+	tplink,tl-wr850n-v2|\
+	unielec,u7628-01-16m|\
+	wrtnode,wrtnode2p|\
+	wrtnode,wrtnode2r|\
+	zyxel,keenetic-extra-ii)
+		ucidef_add_switch "switch0" \
+			"1:lan" "2:lan" "3:lan" "4:lan" "0:wan" "6@eth0"
+		;;
+	hiwifi,hc5761a)
+		ucidef_add_switch "switch0" \
+			"0:lan" "1:lan" "4:wan" "6@eth0"
+		;;
+	iptime,a3|\
+	totolink,a3)
+		ucidef_add_switch "switch0" \
+			"2:lan:2" "3:lan:1" "0:wan" "6@eth0"
+		;;
+	iptime,a604m)
+		ucidef_add_switch "switch0" \
+			"1:lan:4" "2:lan:3" "3:lan:2" "4:lan:1" "0:wan" "6@eth0"
+		;;
+	jotale,js76x8-8m|\
+	jotale,js76x8-16m|\
+	jotale,js76x8-32m)
+		ucidef_add_switch "switch0" \
+			"0:lan" "1:lan" "2:lan" "6@eth0"
+		;;
+	netgear,r6020|\
+	netgear,r6080|\
+	netgear,r6120)
+		ucidef_add_switch "switch0" \
+			"0:lan:4" "1:lan:3" "2:lan:2" "3:lan:1" "4:wan" "6@eth0"
+		;;
+	rakwireless,rak633)
+        ucidef_add_switch "switch0" \
+            "0:wan" "1:lan" "2:lan" "3:lan" "4:lan" "6t@eth0"
+        ;;
+
+	rakwireless,rak634|\
+	rakwireless,rak636|\
+	rakwireless,rakg368)
+		ucidef_add_switch "switch0" \
+			"1:lan" "0:wan" "6t@eth0"
+		ucidef_set_interface "wan" device "eth0.2" protocol "dhcp" metric "30"
+		ucidef_set_interface "lan" device "eth0.1" protocol "static" ipaddr "192.168.230.1" netmask "255.255.255.0"
+		ucidef_set_interface "wan0" protocol "dhcp" metric "20"
+		wwan_intf=$(uci -q get einfo.wwan.iface)
+		[ -z "${wwan_intf}" ] && wwan_intf="wwan0"
+		ucidef_set_interface "wwan" device "${wwan_intf}" protocol "dhcp" metric "10"
+		local ip_a=$(dd bs=1 skip=8 count=1 if=/dev/mtd2 2>/dev/null | hexdump -v -n 1 -e '"%d"')
+		local ip_b=$(dd bs=1 skip=9 count=1 if=/dev/mtd2 2>/dev/null | hexdump -v -n 1 -e '"%d"')
+		ucidef_set_interface "alias" device "eth0.2" protocol "static" ipaddr "169.254.${ip_a}.${ip_b}" netmask "255.255.0.0"
+		;;
+	tplink,tl-mr6400-v4)
+		ucidef_add_switch "switch0" \
+			"1:lan" "2:lan" "3:lan" "4:wan" "6@eth0"
+		;;
+	tplink,tl-mr6400-v5)
+		ucidef_add_switch "switch0" \
+			"0:lan" "1:lan" "2:lan" "3:wan" "6@eth0"
+		;;
+	tplink,tl-wr902ac-v3)
+		ucidef_add_switch "switch0" \
+			"4:lan" "6@eth0"
+		;;
+	vocore,vocore2|\
+	vocore,vocore2-lite)
+		ucidef_add_switch "switch0" \
+			"0:lan" "2:lan" "6t@eth0"
+		;;
+	wiznet,wizfi630s)
+		ucidef_add_switch "switch0" \
+			"0:wan" "3:lan" "4:lan" "6@eth0"
+		;;
+	xiaomi,mi-router-4a-100m)
+		ucidef_add_switch "switch0" \
+			"4:lan:1" "2:lan:2" "0:wan" "6@eth0"
+		;;
+	xiaomi,mi-router-4c)
+		ucidef_add_switch "switch0" \
+			"4:lan:1" "2:lan:2" "1:wan" "6@eth0"
+		;;
+	xiaomi,miwifi-nano)
+		ucidef_add_switch "switch0" \
+			"0:lan:2" "2:lan:1" "4:wan" "6@eth0"
+		;;
+	zbtlink,zbt-we1226)
+		ucidef_add_switch "switch0" \
+			"0:lan:2" "1:lan:1" "4:wan" "6@eth0"
+		;;
+	esac
+}
+
+ramips_setup_macs()
+{
+	local board="$1"
+	local lan_mac=""
+	local wan_mac=""
+	local label_mac=""
+
+	case $board in
+	buffalo,wcr-1166ds)
+		local index="$(find_mtd_index "board_data")"
+		wan_mac="$(grep -m1 mac= "/dev/mtd${index}" | cut -d= -f2)"
+		lan_mac=$wan_mac
+		;;
+	cudy,wr1000|\
+	hilink,hlk-7628n|\
+	hilink,hlk-7688a|\
+	wavlink,wl-wn577a2)
+		wan_mac=$(mtd_get_mac_binary factory 0x2e)
+		label_mac=$(mtd_get_mac_binary factory 0x4)
+		;;
+	duzun,dm06|\
+	netgear,r6020|\
+	netgear,r6080|\
+	netgear,r6120|\
+	wrtnode,wrtnode2p|\
+	wrtnode,wrtnode2r|\
+	zyxel,keenetic-extra-ii)
+		wan_mac=$(macaddr_add "$(mtd_get_mac_binary factory 0x4)" 1)
+		;;
+	rakwireless,rak634|\
+	rakwireless,rak636|\
+	rakwireless,rakg368)
+		wan_mac=$(mtd_get_mac_binary factory 0x4)
+		;;
+	elecom,wrc-1167fs)
+		wan_mac=$(mtd_get_mac_binary factory 0x22)
+		label_mac=$wan_mac
+		;;
+	hiwifi,hc5661a|\
+	hiwifi,hc5761a|\
+	hiwifi,hc5861b)
+		lan_mac=$(mtd_get_mac_ascii bdinfo "Vfac_mac ")
+		label_mac=$lan_mac
+		[ -n "$lan_mac" ] || lan_mac=$(cat /sys/class/net/eth0/address)
+		wan_mac=$(macaddr_add "$lan_mac" 1)
+		;;
+	iptime,a3|\
+	iptime,a604m|\
+	totolink,a3)
+		wan_mac=$(mtd_get_mac_binary u-boot 0x1fc40)
+		;;
+	jotale,js76x8-8m|\
+	jotale,js76x8-16m|\
+	jotale,js76x8-32m|\
+	skylab,skw92a|\
+	totolink,lr1200)
+		wan_mac=$(mtd_get_mac_binary factory 0x2e)
+		;;
+	mercury,mac1200r-v2)
+		wan_mac=$(macaddr_add "$(mtd_get_mac_binary factory_info 0xd)" 1)
+		;;
+	rakwireless,rak633|\
+	unielec,u7628-01-16m|\
+	wavlink,wl-wn575a3)
+		wan_mac=$(macaddr_add "$(mtd_get_mac_binary factory 0x28)" 1)
+		;;
+	tplink,archer-c20-v4|\
+	tplink,archer-c50-v3|\
+	tplink,tl-mr3420-v5|\
+	tplink,tl-wr840n-v4|\
+	tplink,tl-wr840n-v5|\
+	tplink,tl-wr841n-v13|\
+	tplink,tl-wr841n-v14|\
+	tplink,tl-wr842n-v5|\
+	tplink,tl-wr850n-v2)
+		wan_mac=$(macaddr_add "$(mtd_get_mac_binary factory 0xf100)" 1)
+		;;
+	tplink,archer-c20-v5|\
+	tplink,archer-c50-v4)
+		wan_mac=$(macaddr_add "$(mtd_get_mac_binary rom 0xf100)" 1)
+		;;
+	vocore,vocore2|\
+	vocore,vocore2-lite)
+		label_mac=$(mtd_get_mac_binary factory 0x4)
+		;;
+	wavlink,wl-wn570ha1|\
+	zbtlink,zbt-we1226)
+		wan_mac=$(macaddr_add "$(mtd_get_mac_binary factory 0x2e)" 1)
+		;;
+	wiznet,wizfi630s)
+		label_mac=$(mtd_get_mac_binary factory 0x4)
+		wan_mac=$(mtd_get_mac_binary factory 0x28)
+		;;
+	xiaomi,mi-router-4a-100m|\
+	xiaomi,mi-router-4c)
+		wan_mac=$(mtd_get_mac_binary factory 0x4)
+		;;
+	esac
+
+	[ -n "$lan_mac" ] && ucidef_set_interface_macaddr "lan" $lan_mac
+	[ -n "$wan_mac" ] && ucidef_set_interface_macaddr "wan" $wan_mac
+	[ -n "$label_mac" ] && ucidef_set_label_macaddr $label_mac
+}
+
+board_config_update
+board=$(board_name)
+ramips_setup_interfaces $board
+ramips_setup_macs $board
+board_config_flush
+
+exit 0
+#!/bin/sh
+#
+# Copyright (C) 2013-2015 OpenWrt.org
+#
+
+. /lib/functions/uci-defaults.sh
+
+board_config_update
+
+json_is_a network object && exit 0
+
+ucidef_set_interface_lan 'eth0'
+[ -d /sys/class/net/eth1 ] && ucidef_set_interface_wan 'eth1'
+
+board_config_flush
+
+exit 0

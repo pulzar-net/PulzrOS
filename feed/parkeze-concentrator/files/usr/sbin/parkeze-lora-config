@@ -1,166 +1,223 @@
 #!/bin/sh
 #
-# Render the packet forwarder configuration for one slot.
+# Render the LoRa configuration for one slot.
 #
-#   parkeze-lora-config <slot-index> <output-dir> <upstream-port>
+#   parkeze-lora-config <slot-index> <output-dir>
 #
-# Writes global_conf.json and local_conf.json into <output-dir>. Three inputs
-# are combined, and keeping them separate is the whole reason a Pi with a
-# WM1302 in the US and a RAK7289CV2 in the EU share this file:
+# Writes into <output-dir>:
 #
-#   the part      /usr/share/parkeze/concentrator/<model>.json — chip, radio
-#                 count, whether it does listen-before-talk.
-#   the region    /usr/share/parkeze/region/<REGION>.json — channel plan.
-#   the board     /etc/parkeze/board.conf and UCI — which SPI node, which
-#                 reset line, this gateway's EUI.
+#   concentratord.toml   ChirpStack Concentratord: which part, which bus, which
+#   region.toml          reset line, and the channel plan it listens on.
+#   channels.toml
+#   mqtt-forwarder.toml  ChirpStack MQTT Forwarder: where the frames go.
+#
+# The gateway runs only the gateway half of ChirpStack. Concentratord drives
+# the SX130x; the forwarder carries its frames to the cloud network server over
+# MQTT, authenticated with the credentials adoption issued. Nothing on the
+# gateway is a network server.
+#
+# Three inputs are combined, and keeping them separate is the whole reason a
+# Pi with a WM1302 and a RAK7289CV2 share this file:
+#
+#   the part      /usr/share/parkeze/concentrator/<model>.json — which
+#                 concentratord build, its default model, whether it does LBT.
+#   the region    /usr/share/parkeze/region/<REGION>/ — channel plan and the
+#                 topic prefix the server-side region listens on.
+#   the board     /etc/parkeze/board.conf and UCI — bus, device node, reset
+#                 line, this gateway's EUI and MQTT credentials.
 #
 # The output is written under /var/run, not /etc: it is derived, and a copy on
-# flash would be one more thing that can disagree with the configuration it was
-# derived from.
+# flash would be one more thing that can disagree with what it was derived from.
 
 set -e
 
 SLOT="${1:?slot index}"
 OUT="${2:?output dir}"
-PORT="${3:-1700}"
 
 . /etc/parkeze/board.conf
 
 PROFILE_DIR=/usr/share/parkeze/concentrator
 REGION_DIR=/usr/share/parkeze/region
+STATE_DIR=/var/run/parkeze/lora
 
-# Which tty a USB concentrator came up as. Not hardcoded to ttyUSB0: on a
-# gateway that also has a cellular modem, the modem frequently claims the lower
-# numbers, and a forwarder pointed at the modem fails in a way that reads like
-# a dead concentrator.
-usb_concentrator_path() {
-    for tty in /dev/ttyUSB* /dev/ttyACM*; do
-        [ -c "${tty}" ] || continue
-        # Walk to the USB device this tty belongs to and check the vendor.
-        local sys vid
-        sys="$(readlink -f "/sys/class/tty/$(basename "${tty}")/device" 2>/dev/null)"
-        while [ -n "${sys}" ] && [ "${sys}" != "/" ]; do
-            if [ -f "${sys}/idVendor" ]; then
-                vid="$(cat "${sys}/idVendor")"
-                case "${vid}" in
-                    10c4|0403) echo "${tty}"; return 0 ;;
-                esac
-                break
-            fi
-            sys="$(dirname "${sys}")"
-        done
-    done
-    # Nothing identifiable. Say so rather than guessing ttyUSB0.
-    echo ""
-    return 1
-}
+die() { echo "slot ${SLOT}: $*" >&2; exit 1; }
+
+# An unset option is normal here — no power-enable line, no GNSS, not adopted
+# yet — and `uci get` exits non-zero for one, which under `set -e` ends the
+# script silently in the middle of an assignment. Every read goes through this.
+get() { uci -q get "$1" || true; }
 
 section="slot${SLOT}"
-active="$(uci -q get "parkeze.${section}.active")"
-bus="$(uci -q get "parkeze.${section}.bus")"
-device="$(uci -q get "parkeze.${section}.device")"
-region="$(uci -q get parkeze.lorawan.region || echo US915)"
-eui="$(uci -q get parkeze.identity.gateway_eui)"
+active="$(get "parkeze.${section}.active")"
+bus="$(get "parkeze.${section}.bus")"
+device="$(get "parkeze.${section}.device")"
+reset="$(get "parkeze.${section}.reset_gpio")"
+power="$(get "parkeze.${section}.power_gpio")"
+region="$(get parkeze.lorawan.region)"; region="${region:-US915}"
+eui="$(get parkeze.identity.gateway_eui)"
 
-[ -n "${active}" ] || { echo "slot ${SLOT} has no active concentrator" >&2; exit 1; }
+[ -n "${active}" ] || die "no active concentrator"
 
 profile="${PROFILE_DIR}/${active}.json"
-plan="${REGION_DIR}/${region}.json"
+plan="${REGION_DIR}/${region}"
+[ -f "${profile}" ] || die "no profile ${profile}"
+[ -f "${plan}/region.conf" ] || die "no region plan ${plan}"
+. "${plan}/region.conf"
 
-[ -f "${profile}" ] || { echo "no profile ${profile}" >&2; exit 1; }
-[ -f "${plan}" ]    || { echo "no region plan ${plan}" >&2; exit 1; }
+chipset="$(jsonfilter -i "${profile}" -e '@.concentratord')"
+[ -n "${chipset}" ] || die "${active} cannot be driven by concentratord"
 
-mkdir -p "${OUT}"
-
-# ── global_conf.json ────────────────────────────────────────────────────────
-#
-# The region plan is the bulk of it and is copied through as-is. Only the
-# handful of fields that depend on *this* board get substituted, which keeps
-# the plans readable and diffable against Semtech's published ones.
-
-lbt_supported="$(jsonfilter -i "${profile}" -e '@.lbt')"
-lbt_required="$(jsonfilter -i "${plan}" -e '@.lbt_required')"
+# Model: the operator's choice, then the board's, then the part's default. It
+# selects the TX gain table, so a board that knows its module says so.
+model="$(get "parkeze.${section}.model")"
+[ -n "${model}" ] || model="${PARKEZE_CONCENTRATOR_MODEL}"
+[ -n "${model}" ] || model="$(jsonfilter -i "${profile}" -e '@.model')"
 
 # A region that mandates listen-before-talk on a part that cannot do it is a
 # configuration error, not something to paper over — transmitting without LBT
 # where it is required is a regulatory problem, not a performance one.
-if [ "${lbt_required}" = "true" ] && [ "${lbt_supported}" != "true" ]; then
-    echo "region ${region} requires listen-before-talk but ${active} does not support it" >&2
-    exit 1
+if [ "${LBT_REQUIRED}" = "1" ] && [ "$(jsonfilter -i "${profile}" -e '@.lbt')" != "true" ]; then
+    die "region ${region} requires listen-before-talk but ${active} does not support it"
 fi
 
+mkdir -p "${OUT}"
+cp "${plan}/region.toml" "${OUT}/region.toml"
+cp "${plan}/channels.toml" "${OUT}/channels.toml"
+
+# Concentratord and its forwarder find each other on these sockets, one pair
+# per slot.
+events="ipc:///tmp/parkeze_${section}_event"
+commands="ipc:///tmp/parkeze_${section}_command"
+
+# ── concentratord.toml ──────────────────────────────────────────────────────
+
+flags=""
 case "${bus}" in
-    spi)  com_type="SPI";  com_path="${device}" ;;
-    usb)  com_type="USB";  com_path="$(usb_concentrator_path)" ;;
-    uart) com_type="USB";  com_path="${device}" ;;   # the HAL calls UART "USB"
-    *)    echo "slot ${SLOT} has unknown bus '${bus}'" >&2; exit 1 ;;
+    spi) ;;
+    usb) flags="\"USB\","
+         device="$(ls /dev/ttyACM* 2>/dev/null | head -n1)" ;;
+    *)   die "bus '${bus}' is not supported by concentratord" ;;
 esac
 
-# jsonfilter reads; there is no jsonfilter equivalent for writing, and pulling
-# in a JSON library for five substitutions is not worth the flash. sed against
-# known keys is adequate because the input is our own file, not user data.
-sed -e "s|\"com_type\":[^,]*|\"com_type\": \"${com_type}\"|" \
-    -e "s|\"com_path\":[^,]*|\"com_path\": \"${com_path}\"|" \
-    -e "s|\"gateway_ID\":[^,]*|\"gateway_ID\": \"${eui}\"|" \
-    "${plan}" > "${OUT}/global_conf.json"
-
-# ── local_conf.json ─────────────────────────────────────────────────────────
-#
-# Where this forwarder sends. With one concentrator that is the bridge; with
-# several it is the multiplexer, which is why the port is an argument rather
-# than a constant.
-#
-# The EUI is the *gateway's*, identical across slots on a 16-channel unit. That
-# is deliberate: the two concentrators are one gateway, and it is the
-# multiplexer's job to make them look like one upstream. Giving each slot its
-# own EUI would produce two half-gateways in ChirpStack.
-
-# ── GNSS ────────────────────────────────────────────────────────────────────
-#
-# Only slot 0 is given the receiver. On a two-concentrator gateway both
-# forwarders would otherwise open the same tty, and the second one loses — with
-# the failure showing up as intermittently missing GPS rather than as an error.
-# One physical gateway has one position, so one forwarder holds the GNSS.
-#
-# `gps_tty_path` gives the forwarder real GPS time and PPS, which is what fine
-# timestamping needs. Without a receiver we fall back to `fake_gps` and the
-# reference coordinates recorded at install — a gateway still has to tell the
-# network server where it is.
-gps_device="$(uci -q get parkeze.gps.device)"
-gps_status="$(uci -q get parkeze.gps.status)"
-
-if [ "${SLOT}" = "0" ] && [ "${gps_status}" = "present" ] && [ -c "${gps_device}" ]; then
-    gps_block="\"gps_tty_path\": \"${gps_device}\","
-    fake_gps="false"
-else
-    gps_block=""
-    fake_gps="true"
+# Only slot 0 has the receiver: one gateway, one position, and two processes
+# opening the same tty is a fault that looks like intermittent GPS.
+gps_device="$(get parkeze.gps.device)"
+gps=""
+if [ "${SLOT}" = "0" ] && [ "$(get parkeze.gps.status)" = "present" ] && [ -c "${gps_device}" ]; then
+    flags="${flags}\"GNSS\","
+    gps="gnss_dev_path=\"${gps_device}\""
 fi
 
-ref_lat="$(uci -q get parkeze.location.latitude || echo 0)"
-ref_lon="$(uci -q get parkeze.location.longitude || echo 0)"
-ref_alt="$(uci -q get parkeze.location.altitude || echo 0)"
+# The EUI is the gateway's, from UCI, on slot 0. A second slot takes its
+# chip's own EUI: ChirpStack sees it as a second gateway, which is honest about
+# what it is until multi-slot aggregation exists.
+gateway_id=""
+[ "${SLOT}" = "0" ] && [ -n "${eui}" ] && gateway_id="gateway_id=\"${eui}\""
 
-cat > "${OUT}/local_conf.json" <<EOF
+chip="/dev/${PARKEZE_GPIOCHIP:-gpiochip0}"
+
 {
-  "gateway_conf": {
-    "gateway_ID": "${eui}",
-    "server_address": "127.0.0.1",
-    "serv_port_up": ${PORT},
-    "serv_port_down": ${PORT},
-    "keepalive_interval": 10,
-    "stat_interval": 30,
-    "push_timeout_ms": 100,
-    "forward_crc_valid": true,
-    "forward_crc_error": false,
-    "forward_crc_disabled": false,
-    ${gps_block}
-    "fake_gps": ${fake_gps},
-    "ref_latitude": ${ref_lat},
-    "ref_longitude": ${ref_lon},
-    "ref_altitude": ${ref_alt}
-  }
-}
+    cat <<EOF
+[concentratord]
+log_level="INFO"
+log_to_syslog=true
+stats_interval="30s"
+disable_crc_filter=false
+
+[concentratord.api]
+event_bind="${events}"
+command_bind="${commands}"
+
+[gateway]
+lorawan_public=true
+model="${model}"
+region="${CONCENTRATORD_REGION}"
+model_flags=[${flags}]
+antenna_gain=0
+${gateway_id}
+com_dev_path="${device}"
+${gps}
 EOF
+    [ -n "${reset}" ] && printf '%s_reset_chip="%s"\n%s_reset_pin=%s\n' "${chipset}" "${chip}" "${chipset}" "${reset}"
+    [ -n "${power}" ] && printf '%s_power_en_chip="%s"\n%s_power_en_pin=%s\n' "${chipset}" "${chip}" "${chipset}" "${power}"
+    [ -n "${PARKEZE_CONCENTRATOR_I2C}" ] && printf 'i2c_dev_path="%s"\n' "${PARKEZE_CONCENTRATOR_I2C}"
+
+    # With no receiver the network server still needs to know where the
+    # gateway is: the reference coordinates recorded at install.
+    if [ -z "${gps}" ]; then
+        latitude="$(get parkeze.location.latitude)"
+        longitude="$(get parkeze.location.longitude)"
+        altitude="$(get parkeze.location.altitude)"
+        cat <<EOF
+
+[gateway.location]
+latitude=${latitude:-0}
+longitude=${longitude:-0}
+altitude=${altitude:-0}
+EOF
+    fi
+} > "${OUT}/concentratord.toml"
+
+# ── mqtt-forwarder.toml ─────────────────────────────────────────────────────
+#
+# TLS with the system CA bundle. The forwarder only turns TLS on when a CA path
+# is set, so leaving ca_cert empty against an ssl:// server fails to connect
+# rather than falling back to anything.
+#
+# Connection state goes to a file through the forwarder's callbacks, so the
+# console can say "connected" without scraping the log for a message whose
+# wording belongs to somebody else.
+
+host="$(get parkeze.mqtt.host)"
+port="$(get parkeze.mqtt.port)"; port="${port:-${PARKEZE_MQTT_PORT:-8883}}"
+[ -n "${host}" ] || host="${PARKEZE_MQTT_HOST}"
+
+# Adoption may name the prefix; otherwise the region's.
+topic_prefix="$(get parkeze.mqtt.topic_prefix)"
+topic_prefix="${topic_prefix:-${TOPIC_PREFIX}}"
+
+mkdir -p "${STATE_DIR}"
+state="${STATE_DIR}/${section}.mqtt"
+
+cat > "${OUT}/mqtt-forwarder.toml" <<EOF
+[logging]
+level="info"
+log_to_syslog=true
+
+[mqtt]
+topic_prefix="${topic_prefix}"
+json=false
+server="ssl://${host}:${port}"
+username="$(get parkeze.mqtt.username)"
+password="$(get parkeze.mqtt.password)"
+qos=0
+clean_session=false
+keep_alive_interval="30s"
+client_id="${eui}-${section}"
+ca_cert="/etc/ssl/certs/ca-certificates.crt"
+# A broker that is down or refusing us should not be retried every second: it
+# fills the log, and on cellular it spends the data plan.
+reconnect_interval="30s"
+
+[backend]
+enabled="concentratord"
+
+[backend.concentratord]
+event_url="${events}"
+command_url="${commands}"
+
+# What this gateway is, attached to every stats message: firmware version and
+# addresses reach parkeze.net over the connection the gateway already has.
+[metadata]
+split_delimiter="="
+
+[metadata.commands]
+facts=["/usr/sbin/parkeze-gateway-facts"]
+
+[callbacks]
+on_mqtt_connected=["/bin/sh", "-c", "echo connected > ${state}"]
+on_mqtt_connection_error=["/bin/sh", "-c", "echo error > ${state}"]
+EOF
+chmod 0600 "${OUT}/mqtt-forwarder.toml"
 
 exit 0

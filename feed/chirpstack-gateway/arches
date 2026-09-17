@@ -1,0 +1,9 @@
+# <opkg arch> <Depends, comma-separated or ->
+#
+# The MIPS binaries are dynamically linked against musl, libgcc and libstdc++.
+# The aarch64 ones are static. The three Pi architectures are the same binary:
+# opkg matches the architecture name exactly, so each needs its own package.
+mipsel_24kc          libgcc1,libstdcpp6
+aarch64_cortex-a53   -
+aarch64_cortex-a72   -
+aarch64_cortex-a76   -

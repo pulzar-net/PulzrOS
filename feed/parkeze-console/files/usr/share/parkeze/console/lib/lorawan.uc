@@ -247,7 +247,9 @@ status = function() {
             lastUplink: stats ? stats.last_uplink : null,
         },
         bridge: {
-            connected: run("logread -l 50 | grep -c 'connected to mqtt broker'") != '0',
+            // Written by mqtt-forwarder's connect and connection-error
+            // callbacks; see parkeze-lora-config.
+            connected: run('cat /var/run/parkeze/lora/slot0.mqtt 2>/dev/null') == 'connected',
             broker: uci.get('parkeze', 'mqtt', 'host'),
         },
     };

@@ -6,10 +6,15 @@
 #   build-feed.sh <feed-dir> <repo-dir> <version> <build> <commit>
 #
 # We build the .ipk by hand rather than through the OpenWrt SDK. Every package
-# here is interpreted code and static files with no compile step, and the SDK
-# is a multi-gigabyte download whose only contribution would be to run `tar`
-# for us. If a package ever gains a C source file, it moves to the SDK and this
-# script stops being the right tool for it.
+# here is interpreted code, static files, or upstream binaries fetched by
+# checksum, with no compile step, and the SDK is a multi-gigabyte download whose
+# only contribution would be to run `tar` for us. If a package ever gains a C
+# source file, it moves to the SDK and this script stops being the right tool
+# for it.
+#
+# A package with an `arches` file is built once per line of it, for binaries:
+# its control file says `Architecture: @ARCH@`, the second column becomes its
+# Depends, and its executable `fetch <arch> <root> <cache>` adds the payload.
 
 set -euo pipefail
 
@@ -104,11 +109,11 @@ fi
 
 mkdir -p "${REPO_DIR}"
 
-for pkgdir in "${FEED_DIR}"/*/; do
-  name="$(basename "${pkgdir}")"
-  [ -f "${pkgdir}/control" ] || { echo "skip ${name}: no control file"; continue; }
+CACHE_DIR="${REPO_DIR}/../downloads"
 
-  stage="${WORK}/${name}"
+package_one() {
+  local pkgdir="$1" name="$2" want_arch="$3" depends="$4"
+  local stage="${WORK}/${name}-${want_arch}"
   rm -rf "${stage}"; mkdir -p "${stage}/CONTROL"
 
   # The package's rootfs is everything under files/.
@@ -117,6 +122,10 @@ for pkgdir in "${FEED_DIR}"/*/; do
     cp -a "${pkgdir}/files/." "${stage}/data/"
   else
     mkdir -p "${stage}/data"
+  fi
+
+  if [ -x "${pkgdir}/fetch" ]; then
+    "${pkgdir}/fetch" "${want_arch}" "${stage}/data" "${CACHE_DIR}"
   fi
 
   # Anything executable in the payload must stay executable through the tar.
@@ -139,7 +148,11 @@ for pkgdir in "${FEED_DIR}"/*/; do
   sed -e "s/@VERSION@/${VERSION}/g" \
       -e "s/@BUILD@/${BUILD}/g" \
       -e "s/@COMMIT@/${COMMIT}/g" \
+      -e "s/@ARCH@/${want_arch}/g" \
       "${pkgdir}/control" > "${stage}/CONTROL/control"
+  if [ -n "${depends}" ] && [ "${depends}" != "-" ]; then
+    echo "Depends: ${depends//,/, }" >> "${stage}/CONTROL/control"
+  fi
 
   for script in preinst postinst prerm postrm conffiles; do
     [ -f "${pkgdir}/${script}" ] || continue
@@ -180,6 +193,18 @@ for pkgdir in "${FEED_DIR}"/*/; do
   arch="$(awk -F': *' '/^Architecture:/{print $2}' "${stage}/CONTROL/control")"
   out="${REPO_DIR}/${name}_${VERSION}-${BUILD}_${arch}.ipk"
 
+  # Member order matches what OpenWrt itself produces.
+  ( cd "${stage}" && tar_create_files "${out}" debian-binary data.tar.gz control.tar.gz )
+
+  check_ipk_format "${out}"
+
+  echo "  packaged ${name} ${VERSION}-${BUILD} (${arch})"
+}
+
+for pkgdir in "${FEED_DIR}"/*/; do
+  name="$(basename "${pkgdir}")"
+  [ -f "${pkgdir}/control" ] || { echo "skip ${name}: no control file"; continue; }
+
   # Clear every other build of this package first. BUILD is a timestamp, so
   # without this the repo accumulates one .ipk per build forever, the Packages
   # index lists all of them, and a glob over the directory silently matches
@@ -187,12 +212,14 @@ for pkgdir in "${FEED_DIR}"/*/; do
   # sends you looking for a bug that was fixed two builds ago.
   rm -f "${REPO_DIR}/${name}"_*.ipk
 
-  # Member order matches what OpenWrt itself produces.
-  ( cd "${stage}" && tar_create_files "${out}" debian-binary data.tar.gz control.tar.gz )
-
-  check_ipk_format "${out}"
-
-  echo "  packaged ${name} ${VERSION}-${BUILD} (${arch})"
+  if [ -f "${pkgdir}/arches" ]; then
+    while read -r arch depends; do
+      case "${arch}" in ''|'#'*) continue ;; esac
+      package_one "${pkgdir}" "${name}" "${arch}" "${depends}"
+    done < "${pkgdir}/arches"
+  else
+    package_one "${pkgdir}" "${name}" "" ""
+  fi
 done
 
 # Index. ImageBuilder reads Packages.gz out of a `src` line in repositories.conf;

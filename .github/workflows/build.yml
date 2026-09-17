@@ -142,7 +142,9 @@ jobs:
       # where /bin/sh is busybox ash and bash is absent.
       - name: No bash in device scripts
         run: |
-          if grep -rln '#!/bin/bash\|#!/usr/bin/env bash' feed/; then
+          # Only what ships: a package's files/. Build-host helpers beside it
+          # (feed/*/fetch) run on the build machine and may be bash.
+          if grep -rln '#!/bin/bash\|#!/usr/bin/env bash' feed/*/files/; then
             echo "::error::device scripts must be POSIX sh — OpenWrt ships ash, not bash"
             exit 1
           fi
@@ -239,8 +241,12 @@ jobs:
             echo "::warning::No PARKEZE_RECOVERY_PUBKEY secret — images cannot be adopted offline."
           fi
 
+      # unsquashfs: the MIPS ChirpStack binaries are extracted from
+      # ChirpStack Gateway OS; see feed/chirpstack-gateway/fetch.
       - name: Build the package feed
-        run: ./build.sh --stage feed
+        run: |
+          sudo apt-get install -y squashfs-tools
+          ./build.sh --stage feed
 
       # Both halves of the overlay travel together: the .ipk repository, and
       # the recovery key that install_fleet_key dropped into the board files.
@@ -328,9 +334,9 @@ jobs:
           sudo apt-get install -y build-essential libncurses-dev zstd unzip \
                                   file wget python3 rsync
 
-      # Keyed on the ImageBuilder itself — version, target, subtarget — not on
-      # the board. rak7268c and rak7289cv2 are the same download, so the second
-      # of them is a cache hit.
+      # Keyed on the ImageBuilder itself — version, target, subtarget, and where
+      # it comes from — not on the board, so boards sharing a download share a
+      # cache entry.
       - name: Cache the ImageBuilder
         uses: actions/cache@v4
         with:
@@ -371,7 +377,8 @@ jobs:
             echo '| Image | Size |'
             echo '|---|---|'
             find out/release -maxdepth 1 -type f \
-                 \( -name "*${{ matrix.board }}*.img.gz" -o -name "*${{ matrix.board }}*.img.xz" \) \
+                 \( -name "*${{ matrix.board }}*.img.gz" -o -name "*${{ matrix.board }}*.img.xz" \
+                    -o -name "*${{ matrix.board }}*.bin" \) \
                  -printf '| `%f` | %s bytes |\n' | sort
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -404,7 +411,7 @@ jobs:
       - name: Collect
         run: |
           mkdir -p release
-          find artifacts -type f \( -name '*.img.gz' -o -name '*.img.xz' \) \
+          find artifacts -type f \( -name '*.img.gz' -o -name '*.img.xz' -o -name '*.bin' \) \
                -exec cp {} release/ \;
           ( cd release && sha256sum ./* > sha256sums.txt )
           ls -la release

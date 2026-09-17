@@ -47,6 +47,26 @@ mkdir -p "${DEST}"
 # shellcheck disable=SC1090
 . "${BOARDS_DIR}/${BOARD}/board.conf"
 
+sha() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1
+  else shasum -a 256 "$1" | cut -d' ' -f1; fi
+}
+
+base="ParkezeOS-${VERSION}-${BOARD}"
+
+# A board that boots from soldered flash has no card image, just the one
+# firmware file: U-Boot's TFTP menu writes it to a blank unit and sysupgrade
+# takes the same file on a running one.
+if [ "${BOARD_INSTALL}" = "sysupgrade" ]; then
+  log "Packaging ${BOARD}"
+  bin="$(find "${SRC}" -maxdepth 1 -name '*squashfs-sysupgrade.bin' | head -n1)"
+  [ -n "${bin}" ] || die "no squashfs-sysupgrade.bin for ${BOARD}"
+  cp "${bin}" "${DEST}/${base}.bin"
+  sha "${DEST}/${base}.bin" > "${DEST}/${base}.bin.sha256"
+  log "  ${base}.bin ($(wc -c < "${DEST}/${base}.bin" | tr -d ' ') bytes)"
+  exit 0
+fi
+
 # The image for a blank card. squashfs-factory, for the reasons in
 # boards/common/board.conf — the overlay is what factory reset needs.
 factory="$(find "${SRC}" -maxdepth 1 -name '*squashfs-factory.img.gz' | head -n1)"
@@ -54,13 +74,6 @@ factory="$(find "${SRC}" -maxdepth 1 -name '*squashfs-factory.img.gz' | head -n1
 
 # And the one for a gateway already running ParkezeOS.
 sysupgrade="$(find "${SRC}" -maxdepth 1 -name '*squashfs-sysupgrade.img.gz' | head -n1)"
-
-base="ParkezeOS-${VERSION}-${BOARD}"
-
-sha() {
-  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1
-  else shasum -a 256 "$1" | cut -d' ' -f1; fi
-}
 
 log "Packaging ${BOARD}"
 
