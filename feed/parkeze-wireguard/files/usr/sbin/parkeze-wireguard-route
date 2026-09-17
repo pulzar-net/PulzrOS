@@ -1,0 +1,110 @@
+#!/bin/sh
+#
+# Confine the WireGuard tunnel's traffic to the wired WAN.
+#
+#   parkeze-wireguard-route apply     install the rule and table
+#   parkeze-wireguard-route flush     remove them
+#   parkeze-wireguard-route status    report whether the wired path is usable
+#
+# WHY THIS EXISTS
+#
+# Cellular data is billed by the megabyte and the SIM is the *control* path of
+# last resort, with its own VPN. A management tunnel left alone would keep
+# itself alive over whatever route it can find — keepalives every 25 seconds,
+# forever. On a metered SIM that is a bill, not a backhaul.
+#
+# So the wired path is not merely *preferred* for the tunnel, it is the only
+# one permitted. When ethernet is down the tunnel's packets have nowhere to go
+# and the hub stops hearing from the gateway. That is the intended behaviour:
+# parkeze.net sees the handshake go stale and manages the gateway over the
+# cellular/1NCE path instead.
+#
+# HOW
+#
+# WireGuard marks the encrypted UDP it sends with the interface's fwmark. A
+# routing rule sends marked packets to a table of our own, and that table holds
+# a default route via the wired WAN and nothing else. Below it, an unreachable
+# rule for the same mark, so a marked packet never falls through to the main
+# table — and out over cellular — when our table is empty.
+#
+# The mark is on the *outer* packets, which is exactly the traffic that must be
+# confined: the encrypted datagrams to the hub, not what travels inside wg0.
+
+set -e
+
+. /lib/functions/network.sh
+. /etc/parkeze/board.conf
+
+TABLE_ID="${PARKEZE_WIREGUARD_TABLE:-97}"
+MARK="${PARKEZE_WIREGUARD_MARK:-0x9700}"
+MASK="0xff00"
+WIRED_IFACE="${PARKEZE_WAN_ETH_IFACE:-wan}"
+
+log() { logger -t wireguard-route -p daemon.info "$*"; }
+
+wired_gateway() {
+  # The L3 device and gateway of the wired WAN, as netifd currently sees them.
+  # Read live rather than from UCI: a DHCP lease that has not come up yet has a
+  # configured interface and no gateway, and installing a default route to a
+  # gateway that does not answer is worse than having no route.
+  local gw dev
+  network_get_gateway gw "${WIRED_IFACE}" || return 1
+  network_get_physdev dev "${WIRED_IFACE}" || return 1
+  [ -n "${gw}" ] && [ -n "${dev}" ] || return 1
+  echo "${gw} ${dev}"
+}
+
+apply() {
+  local spec gw dev
+  if ! spec="$(wired_gateway)"; then
+    log "wired WAN has no gateway — leaving the table empty so tunnel traffic is dropped rather than escaping to cellular"
+    ip route flush table "${TABLE_ID}" 2>/dev/null || true
+    install_rule
+    return 0
+  fi
+  gw="${spec% *}"; dev="${spec#* }"
+
+  ip route flush table "${TABLE_ID}" 2>/dev/null || true
+  ip route add default via "${gw}" dev "${dev}" table "${TABLE_ID}"
+  log "tunnel egress pinned to ${dev} via ${gw}"
+
+  install_rule
+}
+
+install_rule() {
+  # Idempotent: this runs on every ifup of the wired WAN.
+  ip rule del fwmark "${MARK}/${MASK}" table "${TABLE_ID}" 2>/dev/null || true
+  ip rule add fwmark "${MARK}/${MASK}" table "${TABLE_ID}" priority 30000
+
+  # An unreachable fallback *below* the main table, so that a marked packet
+  # never falls through to main and out over cellular when our table is empty.
+  # Without this the whole scheme leaks in exactly the situation it exists for.
+  ip rule del fwmark "${MARK}/${MASK}" unreachable 2>/dev/null || true
+  ip rule add fwmark "${MARK}/${MASK}" unreachable priority 30001
+}
+
+flush() {
+  ip rule del fwmark "${MARK}/${MASK}" table "${TABLE_ID}" 2>/dev/null || true
+  ip rule del fwmark "${MARK}/${MASK}" unreachable 2>/dev/null || true
+  ip route flush table "${TABLE_ID}" 2>/dev/null || true
+  log "tunnel routing confinement removed"
+}
+
+status() {
+  # Used by the console and by the status reporter. Prints JSON because both
+  # consumers parse it and neither wants to scrape prose.
+  local gw dev usable="false" reason="wired WAN is down"
+  if spec="$(wired_gateway)"; then
+    gw="${spec% *}"; dev="${spec#* }"
+    usable="true"; reason=""
+  fi
+  printf '{"wiredUsable":%s,"iface":"%s","gateway":"%s","device":"%s","reason":"%s"}\n' \
+    "${usable}" "${WIRED_IFACE}" "${gw:-}" "${dev:-}" "${reason}"
+}
+
+case "${1:-}" in
+  apply)  apply ;;
+  flush)  flush ;;
+  status) status ;;
+  *) echo "usage: $0 {apply|flush|status}" >&2; exit 2 ;;
+esac

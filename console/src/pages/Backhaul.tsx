@@ -43,7 +43,7 @@ export default function Backhaul() {
     <div className="fade-in">
       <PageHeader title="Backhaul" />
 
-      {paths.data && <Notice tone="info">{paths.data.tailscale.note}</Notice>}
+      {paths.data && <Notice tone="info">{paths.data.tunnel.note}</Notice>}
 
       <CellularCard
         state={state}
@@ -61,23 +61,33 @@ export default function Backhaul() {
         }}
       />
 
-      <Card title="Tailscale" icon={ShieldCheck}>
+      <Card title="Management tunnel" icon={ShieldCheck}>
         <FactList>
           <Fact
             label="State"
             value={
               <StatusBadge
-                ok={paths.data?.tailscale.state === 'Running'}
+                ok={paths.data?.tunnel.state === 'up'}
                 okLabel="Connected"
-                badLabel={paths.data?.tailscale.state ?? 'Unknown'}
+                badLabel={
+                  paths.data?.tunnel.state === 'none'
+                    ? 'Not enrolled'
+                    : paths.data?.tunnel.state === 'waiting'
+                      ? 'No recent handshake'
+                      : 'Unknown'
+                }
               />
             }
           />
-          <Fact label="Node" value={paths.data?.tailscale.self?.hostname} />
+          <Fact label="Address" value={paths.data?.tunnel.address} mono />
+          <Fact label="Hub" value={paths.data?.tunnel.endpoint} mono />
           <Fact
-            label="Addresses"
-            value={paths.data?.tailscale.self?.addresses?.join(', ')}
-            mono
+            label="Last handshake"
+            value={
+              paths.data?.tunnel.lastHandshake != null
+                ? `${paths.data.tunnel.lastHandshake}s ago`
+                : null
+            }
           />
           <Fact
             label="Egress"
@@ -185,7 +195,7 @@ function CellularCard({
  * Changing it never cuts off the person doing it. The console address lives on
  * the same port as a separate interface and is not touched, so a wrong static
  * address costs the uplink, not this page — which is also why there is no
- * timed rollback. Tailscale follows on its own once the uplink comes up.
+ * timed rollback. The management tunnel follows on its own once the uplink comes up.
  */
 function EthernetCard({ state, onApplied }: { state: NetworkStatus; onApplied: () => void }) {
   const wan = state.wan;

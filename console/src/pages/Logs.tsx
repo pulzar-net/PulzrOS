@@ -68,7 +68,7 @@ export default function Logs() {
       >
         <input
           className={styles.filter}
-          placeholder="Filter — try 'lora', 'tailscale', 'concentrator'"
+          placeholder="Filter — try 'lora', 'wireguard', 'concentrator'"
           value={filter}
           onChange={(event) => setFilter(event.target.value)}
         />

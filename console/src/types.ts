@@ -130,12 +130,16 @@ export interface NetworkStatus {
 
 export interface BackhaulStatus {
   wired: { up: boolean; device: string | null; gateway: string | null };
-  tailscale: {
+  tunnel: {
     wiredOnly: true;
     note: string;
-    running: boolean;
-    state: string;
-    self: { hostname: string; addresses: string[]; online: boolean } | null;
+    configured: boolean;
+    /** none: not enrolled yet. waiting: the hub has not answered recently. up: handshake in the last three minutes. */
+    state: 'none' | 'waiting' | 'up';
+    address: string | null;
+    endpoint: string | null;
+    /** Seconds since the last handshake, or null if there has never been one. */
+    lastHandshake: number | null;
   };
   cellular: { up: boolean; modem: Modem | null };
 }

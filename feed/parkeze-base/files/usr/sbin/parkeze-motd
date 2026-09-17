@@ -88,13 +88,12 @@ concentrator_line() {
 }
 
 backhaul_line() {
-    # Reads tailscaled's own view and the routing table. Nothing here goes near
-    # the network, so printing a banner never costs cellular data — see
-    # docs/backhaul.md for why that matters on this fleet.
+    # Reads the tunnel's last handshake from the kernel and the routing table.
+    # Nothing here goes near the network, so printing a banner never costs
+    # cellular data — see docs/backhaul.md for why that matters on this fleet.
     local colour text
-    if tailscale --socket=/var/run/tailscale/tailscaled.sock status --json 2>/dev/null \
-       | grep -q '"BackendState": *"Running"'; then
-        colour="${GREEN}"; text="wired (Tailscale)"
+    if [ "$(parkeze-backhaul-check --tunnel 2>/dev/null)" = "up" ]; then
+        colour="${GREEN}"; text="wired (management tunnel up)"
     elif ip route show 2>/dev/null | grep -qE '^default.*(wwan|rmnet|ppp)'; then
         colour="${YELLOW}"; text="cellular only — metered"
     else

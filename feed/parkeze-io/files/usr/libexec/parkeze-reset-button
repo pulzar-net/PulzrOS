@@ -61,8 +61,8 @@ released)
         done
         sleep 3
 
-        # Release the gateway locally first: this clears the tailnet key, the
-        # recovery anchor and the adoption state, and re-enables local
+        # Release the gateway locally first: this tears down the management
+        # tunnel, clears the recovery anchor and the adoption state, and re-enables local
         # sign-in. Doing it before the overlay wipe means a gateway whose
         # firstboot is interrupted still comes back locally reachable rather
         # than adopted-and-unreachable.

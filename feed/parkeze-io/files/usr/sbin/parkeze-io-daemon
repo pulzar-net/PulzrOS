@@ -17,7 +17,7 @@
 #                              at reduced channel count
 #             blink 5Hz        fault: no concentrator at all
 #
-#   cloud     solid            reachable over the wired path (Tailscale)
+#   cloud     solid            reachable over the wired path (management tunnel)
 #             blink 1s/1s      reachable over cellular only — working, but
 #                              every byte is billed
 #             off              no management path at all
@@ -38,7 +38,7 @@
 # COST
 #
 # The poll below is deliberately cheap and deliberately local. It reads UCI,
-# sysfs and tailscaled's own socket — nothing here touches the network, and in
+# sysfs and the kernel's WireGuard state — nothing here touches the network, and in
 # particular nothing here spends cellular data to decide what colour a light
 # should be.
 
@@ -56,10 +56,15 @@ has_led() {
 backhaul_state() {
     # wired | cellular | none. Same order of preference as net-api uses, so the
     # light and the console agree about which path is in play.
-    if tailscale --socket=/var/run/tailscale/tailscaled.sock status --json 2>/dev/null \
-       | grep -q '"BackendState": *"Running"'; then
-        echo wired; return
-    fi
+    # Wired means the management tunnel is up — or, before there is one, that
+    # the wired WAN has a gateway. Kernel and netifd state only: this runs
+    # every few seconds and must never probe anything.
+    case "$(/usr/sbin/parkeze-backhaul-check --tunnel 2>/dev/null)" in
+        up) echo wired; return ;;
+        none)
+            /usr/sbin/parkeze-wireguard-route status 2>/dev/null | grep -q '"wiredUsable":true' \
+                && { echo wired; return; } ;;
+    esac
     if ip route show 2>/dev/null | grep -qE '^default.*(wwan|rmnet|ppp)'; then
         echo cellular; return
     fi

@@ -4,12 +4,15 @@
 # else. Before this file existed that meant /etc/config/parkeze survived — the
 # UCI that says "adopted" — while everything that makes the adoption usable was
 # thrown away. An upgraded gateway believed it was adopted and could not prove
-# who it was: the claim secret was gone, so its reports were refused, and its
-# tailnet identity was gone with a single-use key that could not be replayed.
+# who it was: the claim secret was gone, so its reports were refused.
+#
+# The WireGuard keypair is kept for the same reason: the hub knows this
+# gateway by its public key, so a new key after every upgrade would mean
+# re-enrolling, and a tunnel that is down until it does.
 #
 # board.conf is deliberately NOT here. It describes the image, and has to come
 # from the new one or the gateway would report the old version forever.
 /etc/parkeze/claim/
 /etc/parkeze/console/
-/etc/parkeze/tailscale/
+/etc/parkeze/wireguard/
 /etc/parkeze/recovery.pub

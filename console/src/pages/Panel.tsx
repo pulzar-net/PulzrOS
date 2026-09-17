@@ -28,7 +28,7 @@ const BLINK_CODES: Array<{ led: string; state: string; means: string }> = [
   { led: 'Status', state: 'Heartbeat', means: 'Healthy and adopted.' },
   { led: 'Status', state: 'Blink, 1/second', means: 'Wants attention: not adopted, or running at reduced channel count.' },
   { led: 'Status', state: 'Blink, fast', means: 'Fault: no concentrator responded at all.' },
-  { led: 'Cloud', state: 'Solid', means: 'Reachable over the wired path (Tailscale).' },
+  { led: 'Cloud', state: 'Solid', means: 'Reachable over the wired path (management tunnel).' },
   { led: 'Cloud', state: 'Blink, slow', means: 'Reachable over cellular only — working, but every byte is billed.' },
   { led: 'Cloud', state: 'Off', means: 'No management path at all.' },
   { led: 'Cellular', state: 'Solid', means: 'Modem attached.' },

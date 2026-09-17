@@ -26,8 +26,9 @@ carried over.
   position the gateway is announcing.
 - **Generated login banner** — the wordmark is rendered by figlet at print
   time, not pasted into a file, and the facts under it are read live.
-- **Two management paths** — Tailscale over wired, 1NCE over cellular — with
-  Tailscale structurally prevented from ever touching the metered link.
+- **Two management paths** — a WireGuard tunnel over wired, 1NCE over
+  cellular — with the tunnel structurally prevented from ever touching the
+  metered link.
 - **A way back in** — one ethernet port that is the uplink and the console port
   at the same time, reachable at `parkeze-<serial>.local` from a laptop and a
   cable with nothing configured, and reachable from a site network not at all.
@@ -90,9 +91,10 @@ console/          the React console. Built to static files by build.sh and
 feed/             the Parkeze OpenWrt package feed
   parkeze-base          identity, network defaults, branding
   parkeze-console       the LuCI replacement: ucode API + the built SPA
-  parkeze-concentrator  slot detection, profiles, packet forwarders
+  parkeze-concentrator  slot detection, profiles, concentratord + MQTT forwarder
   parkeze-cellular      modem, data frugality, backhaul health
-  parkeze-tailscale     tailnet node, pinned to the wired uplink
+  parkeze-wireguard     management tunnel to the hub, pinned to the wired uplink
+  chirpstack-gateway    ChirpStack's gateway binaries, per architecture
   parkeze-adopt         one-touch provisioning and adoption
   parkeze-io            front-panel LEDs and buttons
   parkeze-ap            setup AP and captive portal (opt-in, off by default)
@@ -103,7 +105,7 @@ docs/             the design decisions worth writing down
 ## Documentation
 
 - [`docs/backhaul.md`](docs/backhaul.md) — the two uplinks, the two management
-  paths, and why Tailscale is structurally barred from cellular.
+  paths, and why the management tunnel is structurally barred from cellular.
 - [`docs/auth.md`](docs/auth.md) — how you get into a gateway, including the
   offline Ed25519 recovery flow and why a stored break-glass password would be
   the wrong answer.

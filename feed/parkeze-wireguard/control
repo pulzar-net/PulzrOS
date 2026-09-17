@@ -1,0 +1,13 @@
+Package: parkeze-wireguard
+Version: @VERSION@-@BUILD@
+Depends: kmod-wireguard, wireguard-tools, ip-full, curl, ca-bundle, jsonfilter
+Source: parkeze
+Section: net
+Priority: optional
+Maintainer: Joseph Telaak <joseph@parkeze.com>
+Architecture: all
+Description: WireGuard management tunnel, pinned to the wired path.
+ Dials out to the parkeze.net WireGuard hub so gateway-link can reach this
+ gateway's console and SSH directly. The keypair is generated on the gateway
+ and its private half never leaves; the tunnel is confined to the ethernet WAN
+ so that it can never run over metered cellular.

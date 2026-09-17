@@ -24,7 +24,7 @@
 # The rule here is: **the AP is only as open as the gateway has something to
 # lose.**
 #
-#   UNADOPTED   The device holds no credentials: no tailnet key, no MQTT
+#   UNADOPTED   The device holds no credentials: no tunnel, no MQTT
 #               password, no organisation. There is nothing to steal, and the
 #               only useful thing anybody can do is claim it — which needs a
 #               Parkeze login and is audited. So the AP is OPEN and the portal

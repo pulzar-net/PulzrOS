@@ -21,8 +21,8 @@ types a credential into the device and nobody goes back to it.
                                                             ▼
                                                             adopted
   poll (with secret) ────────────────────────────────────▶ verify commitment
-       ◀──────────────────────────────────── bundle: tailnet key, MQTT, anchor
-   └ adopt itself, disable local login, join the tailnet
+       ◀──────────────────────────────────── bundle: MQTT, anchor
+   └ adopt itself, disable local login, enrol its WireGuard key
 ```
 
 Steps 1–3 take about fifteen seconds. The gateway polls every 5s for the first
@@ -39,7 +39,8 @@ the phone.
 This split is the whole security argument. A QR on a screen in a rack is
 visible to anyone walking past. Seeing it lets them add the gateway to an
 organisation they can already administer — which is not an attack — but not
-fetch its tailnet key, because that needs the preimage of the commitment and
+fetch its broker credentials or enrol a tunnel key, because both need the
+preimage of the commitment and
 the commitment is all parkeze.net ever stores.
 
 ## When the gateway has no internet
@@ -66,7 +67,7 @@ parkeze.net builds the pending claim from the scan alone. From there:
 That baked-in key is what makes offline adoption safe rather than just
 possible. Without a trust anchor on an un-adopted gateway, any bundle a
 stranger pasted in would be as good as ours — meaning anyone on the gateway's
-LAN could adopt it onto their own tailnet. See `install_fleet_key` in
+LAN could adopt it into their own fleet. See `install_fleet_key` in
 `build.sh`; an image built without it warns loudly and can only be adopted
 online.
 

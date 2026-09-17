@@ -8,7 +8,7 @@
 # on the console's configuration page was typed by a person standing next to a
 # device that already knew the answer.
 #
-# It sends facts, never conclusions. Whether this gateway may run a tailnet is
+# It sends facts, never conclusions. Which backhaul this gateway has is
 # decided by parkeze.net from those facts and handed back; see parkeze-claim's
 # `report` for why that direction matters.
 
@@ -30,7 +30,7 @@ start_service() {
 service_triggers() {
     # An uplink appearing is the one event worth re-reporting for: it is how a
     # site that was cellular-only becomes wired, which is the change that
-    # decides whether this gateway gets a tailnet at all.
+    # decides which backhaul this gateway has.
     procd_add_reload_interface_trigger wan
     procd_add_config_trigger "config.change" "parkeze" /etc/init.d/parkeze-report restart
 }

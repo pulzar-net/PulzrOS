@@ -45,7 +45,7 @@ export default function Overview() {
   const lora = lorawan.data;
 
   const manageable = Boolean(
-    paths && (paths.tailscale.state === 'Running' || paths.cellular.up),
+    paths && (paths.tunnel.state === 'up' || paths.cellular.up),
   );
   const concentrator = lora?.concentrator;
   const partial = concentrator?.status === 'partial';
@@ -108,20 +108,20 @@ export default function Overview() {
       {/* The two control paths, side by side and never merged into one light.
           They fail independently, and one of them costs money. */}
       <div className={styles.grid2}>
-        <Card title="Wired · Tailscale" icon={Network}>
+        <Card title="Wired · Management tunnel" icon={Network}>
           <FactList>
             <Fact label="Ethernet" value={<StatusBadge ok={Boolean(paths?.wired.up)} />} />
             <Fact
-              label="Tailscale"
+              label="Tunnel"
               value={
                 <StatusBadge
-                  ok={paths?.tailscale.state === 'Running'}
+                  ok={paths?.tunnel.state === 'up'}
                   okLabel="Connected"
-                  badLabel={paths?.tailscale.state ?? 'Offline'}
+                  badLabel={paths?.tunnel.state === 'none' ? 'Not enrolled' : 'Offline'}
                 />
               }
             />
-            <Fact label="Address" value={paths?.tailscale.self?.addresses?.[0]} mono />
+            <Fact label="Address" value={paths?.tunnel.address} mono />
           </FactList>
         </Card>
 

@@ -120,9 +120,10 @@ fi
 # from there — not on a non-standard port, not "just on the LAN side of their
 # router".
 #
-# Management arrives the other way round: the gateway *originates* a Tailscale
-# connection outbound, and gateway-link reaches it back down that tunnel. An
-# inbound port on the uplink is never needed and is never opened.
+# Management arrives the other way round: the gateway *originates* a WireGuard
+# tunnel to the parkeze.net hub, and gateway-link reaches it back down that
+# tunnel. An inbound port on the uplink is never needed and is never opened —
+# the hub's replies are return traffic, and the keepalive holds the mapping.
 #
 # DROP rather than REJECT. REJECT answers with an ICMP error, which confirms
 # something is listening; DROP says nothing.
@@ -213,6 +214,35 @@ set firewall.console_mdns.src_ip='169.254.0.0/16'
 set firewall.console_mdns.proto='udp'
 set firewall.console_mdns.dest_port='5353'
 set firewall.console_mdns.target='ACCEPT'
+EOF
+
+# ── The management tunnel ───────────────────────────────────────────────────
+#
+# wg0 is its own zone, and it admits exactly what gateway-link needs: the
+# console and SSH. No forwarding and no masquerade — the tunnel reaches this
+# gateway and nothing behind it, so a compromised hub is not a route onto the
+# site.
+#
+# No source-address match is needed. WireGuard only accepts a packet whose
+# inner source is in the sending peer's allowed IPs, and the one peer is the
+# hub at a single /32 — so anything that arrives on wg0 came from the hub.
+#
+# `device` rather than `network`: wg0 is created by parkeze-wireguard, not by
+# netifd, and does not exist until the gateway has enrolled.
+uci -q batch <<EOF
+set firewall.mgmt=zone
+set firewall.mgmt.name='mgmt'
+set firewall.mgmt.input='DROP'
+set firewall.mgmt.output='ACCEPT'
+set firewall.mgmt.forward='DROP'
+set firewall.mgmt.device='wg0'
+
+set firewall.mgmt_console=rule
+set firewall.mgmt_console.name='Allow-management-tunnel'
+set firewall.mgmt_console.src='mgmt'
+set firewall.mgmt_console.proto='tcp'
+set firewall.mgmt_console.dest_port='22 80 443'
+set firewall.mgmt_console.target='ACCEPT'
 EOF
 
 # DHCP client replies, which the wan DROP would otherwise eat along with

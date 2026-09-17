@@ -32,8 +32,8 @@ echo "uptime=$(cut -d. -f1 /proc/uptime)"
 wan="$(addr wan)";   [ -n "${wan}" ]   && echo "wan_ip=${wan}"
 wwan="$(addr wwan)"; [ -n "${wwan}" ]  && echo "cellular_ip=${wwan}"
 
-ts="$(tailscale --socket=/var/run/tailscale/tailscaled.sock ip -4 2>/dev/null | head -n1)"
-[ -n "${ts}" ] && echo "tailnet_ip=${ts}"
+tunnel="$(jsonfilter -i /etc/parkeze/wireguard/tunnel.json -e '@.address' 2>/dev/null)"
+[ -n "${tunnel}" ] && echo "tunnel_ip=${tunnel%/*}"
 
 echo "concentrator=$(uci -q get parkeze.concentrator.status || echo unknown)"
 exit 0

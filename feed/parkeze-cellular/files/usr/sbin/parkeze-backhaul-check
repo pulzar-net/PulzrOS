@@ -4,6 +4,7 @@
 #
 #   parkeze-backhaul-check          exit 0 if manageable, 1 if not
 #   parkeze-backhaul-check --json   report both paths
+#   parkeze-backhaul-check --tunnel print the tunnel state: none|waiting|up
 #
 # BUDGET
 #
@@ -29,6 +30,23 @@
 JSON=0
 [ "$1" = "--json" ] && JSON=1
 
+# ── the management tunnel ───────────────────────────────────────────────────
+# A handshake inside the last three minutes means the hub is hearing us: the
+# keepalive is 25s, and WireGuard re-handshakes at least every two minutes
+# while traffic flows. Read from the kernel, so it costs nothing on the wire.
+tunnel_state() {
+    [ -s /etc/parkeze/wireguard/tunnel.json ] || { echo none; return; }
+    local last
+    last="$(wg show wg0 latest-handshakes 2>/dev/null | awk '{print $2}' | sort -n | tail -n1)"
+    if [ -n "${last}" ] && [ "${last}" -gt 0 ] && [ $(( $(date +%s) - last )) -lt 180 ]; then
+        echo up
+    else
+        echo waiting
+    fi
+}
+
+[ "$1" = "--tunnel" ] && { tunnel_state; exit 0; }
+
 # Derived from PARKEZE_NET_URL rather than spelled out again. The default here
 # used to be a literal `parkeze.net`, which stopped existing when the platform
 # moved to net.parkeze.com — it is NXDOMAIN now, so the handshake below could
@@ -44,16 +62,25 @@ CHECK_HOST="${CHECK_HOST:-net.parkeze.com}"
 CHECK_PORT="${PARKEZE_HEALTH_PORT:-443}"
 
 # ── wired ───────────────────────────────────────────────────────────────────
-# Tailscale's own view is the honest answer for this path: it is the thing we
-# actually manage over, so "can tailscaled reach its coordination server" is
-# the question, not "does the internet exist".
+# The tunnel's own view is the honest answer for this path: it is the thing we
+# actually manage over, so "is the hub hearing us" is the question, not "does
+# the internet exist".
+#
+# Until there is a tunnel — not adopted yet, or still enrolling — there is
+# nothing to ask, and reporting the wired path as down would mark every new
+# gateway offline. So then it is "does the wired WAN have a gateway".
 wired_up=false
-ts_state="$(tailscale --socket=/var/run/tailscale/tailscaled.sock status --json 2>/dev/null \
-            | jsonfilter -e '@.BackendState' 2>/dev/null)"
-[ "${ts_state}" = "Running" ] && wired_up=true
+tunnel="$(tunnel_state)"
+case "${tunnel}" in
+    up)      wired_up=true ;;
+    waiting) ;;
+    none)
+        parkeze-wireguard-route status 2>/dev/null \
+            | jsonfilter -e '@.wiredUsable' 2>/dev/null | grep -qx true && wired_up=true ;;
+esac
 
 # ── cellular ────────────────────────────────────────────────────────────────
-# Only tested if the wired path is down. When Tailscale is up we already know
+# Only tested if the wired path is down. When the tunnel is up we already know
 # we are manageable, and spending cellular bytes to confirm a second path we
 # are not using is precisely the waste this whole design avoids.
 cell_up=false
@@ -75,8 +102,8 @@ if [ "${wired_up}" != "true" ]; then
 fi
 
 if [ "${JSON}" = 1 ]; then
-    printf '{"wired":%s,"cellular":%s,"tailscaleState":"%s","manageable":%s}\n' \
-        "${wired_up}" "${cell_up}" "${ts_state:-Unknown}" \
+    printf '{"wired":%s,"cellular":%s,"tunnel":"%s","manageable":%s}\n' \
+        "${wired_up}" "${cell_up}" "${tunnel}" \
         "$([ "${wired_up}" = true ] || [ "${cell_up}" = true ] && echo true || echo false)"
 fi
 

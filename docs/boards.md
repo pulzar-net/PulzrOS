@@ -14,8 +14,8 @@ Only what is genuinely different about the hardware:
 - whether the concentrator is fixed or has to be probed, and in what order
 - any default that differs (LAN address, region, whether ethernet WAN is on)
 
-Everything else — the console, the auth model, the network shape, Tailscale
-confinement, the packet forwarder — is shared and must not be duplicated.
+Everything else — the console, the auth model, the network shape, tunnel
+confinement, the LoRa stack — is shared and must not be duplicated.
 
 ## Steps
 

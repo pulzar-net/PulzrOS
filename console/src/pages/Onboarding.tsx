@@ -187,7 +187,7 @@ function Adopted({ claim }: { claim: ClaimStatus }) {
  * parkeze.net produces a signed adoption bundle; the operator carries it back
  * and pastes it here. The gateway verifies it against the fleet public key
  * baked into the image, so this is not a way to adopt a gateway into a
- * tailnet you do not own.
+ * fleet you do not own.
  */
 function OfflineBundle({ onDone }: { onDone: () => void }) {
   const [bundle, setBundle] = useState('');

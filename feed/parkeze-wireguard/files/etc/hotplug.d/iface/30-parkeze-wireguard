@@ -1,0 +1,19 @@
+#!/bin/sh
+#
+# Follow the wired WAN.
+#
+# On ifdown the confinement table is emptied, which is what stops the tunnel's
+# packets finding their way onto cellular in the window before anything else
+# notices ethernet is gone. On ifup the tunnel is restarted: the table gets its
+# route back and the hub's name is resolved again.
+
+. /etc/parkeze/board.conf
+
+[ "${INTERFACE}" = "${PARKEZE_WAN_ETH_IFACE:-wan}" ] || exit 0
+[ "${PARKEZE_WIREGUARD_ENABLED:-1}" = "1" ] || exit 0
+
+case "${ACTION}" in
+    ifup)   /etc/init.d/parkeze-wireguard restart ;;
+    ifdown) [ "${PARKEZE_WIREGUARD_ALLOW_CELLULAR:-0}" = "1" ] \
+                || /usr/sbin/parkeze-wireguard-route apply ;;
+esac

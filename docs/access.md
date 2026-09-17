@@ -29,7 +29,7 @@ useless to anyone who is not already authorised.
 
 | | Unadopted | Adopted |
 |---|---|---|
-| Holds credentials | no | yes: tailnet key, MQTT password, org identity |
+| Holds credentials | no | yes: tunnel key, MQTT password, org identity |
 | Setup AP | **open** | **WPA2, per-device key** |
 | Portal can | claim the gateway | nothing, without a parkeze.net signature |
 | Raised at boot | yes | no — only on fallback, or on request |
@@ -79,7 +79,7 @@ Its own interface, its own firewall zone, and `forward REJECT` with no
 zone-to-zone rule. A client on the setup AP can reach exactly one thing: this
 gateway's console, on ports 80 and 443, plus DNS and DHCP.
 
-Not the LAN. Not the WAN. Not the tailnet.
+Not the LAN. Not the WAN. Not the management tunnel.
 
 That matters most in the unadopted case, where the AP is open: an open AP that
 also forwarded traffic would be a free, anonymous internet connection attached

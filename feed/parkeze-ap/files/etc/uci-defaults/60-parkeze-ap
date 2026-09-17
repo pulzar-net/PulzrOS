@@ -25,7 +25,7 @@
 # ── the setup network ───────────────────────────────────────────────────────
 # Its own interface and its own firewall zone, deliberately separate from the
 # LAN. A client on the setup AP can reach this gateway's console and nothing
-# else — not the LAN, not the WAN, not the tailnet. See parkeze-portal.
+# else — not the LAN, not the WAN, not the management tunnel. See parkeze-portal.
 uci -q batch <<EOF
 delete network.setup
 set network.setup=interface

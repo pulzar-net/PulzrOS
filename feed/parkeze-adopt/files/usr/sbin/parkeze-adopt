@@ -8,8 +8,8 @@
 #
 # WHAT ADOPTION CHANGES
 #
-#   * The gateway receives a Tailscale auth key, joins the tailnet, and becomes
-#     manageable over the wired path.
+#   * The gateway enrols its WireGuard key with parkeze.net and brings up the
+#     management tunnel to the hub, over the wired path.
 #   * It receives MQTT credentials for its own EUI.
 #   * It installs the fleet recovery public key, which is what makes offline
 #     recovery possible later. A gateway adopted without this can only be
@@ -39,7 +39,7 @@ status() {
 
 release() {
     # Local-side only. parkeze.net still holds the gateway record and the
-    # tailnet node; releasing here just returns this box to local management so
+    # tunnel peer; releasing here just returns this box to local management so
     # it can be re-adopted or repurposed. Deliberately does not call the API —
     # a gateway must not be able to remove itself from the fleet, or a
     # compromised one would.
@@ -50,8 +50,8 @@ set parkeze.adoption.since=''
 set parkeze.console.local_login='1'
 EOF
     uci commit parkeze
-    rm -f "${STATE}/tailscale/authkey" "${STATE}/recovery.pub"
-    tailscale --socket=/var/run/tailscale/tailscaled.sock logout 2>/dev/null
+    rm -f "${STATE}/recovery.pub" "${STATE}/wireguard/tunnel.json"
+    /etc/init.d/parkeze-wireguard stop >/dev/null 2>&1
     echo "Released. Local sign-in is enabled again."
 }
 
@@ -173,11 +173,9 @@ check() {
 
 install_bundle() {
     local response="$1"
-    local org authkey loginsrv recovery mqtt_user mqtt_pass mqtt_host mqtt_prefix
+    local org recovery mqtt_user mqtt_pass mqtt_host mqtt_prefix
 
     org="$(echo "${response}" | jsonfilter -e '@.org')"
-    authkey="$(echo "${response}" | jsonfilter -e '@.tailscaleAuthKey')"
-    loginsrv="$(echo "${response}" | jsonfilter -e '@.tailscaleLoginServer')"
     recovery="$(echo "${response}" | jsonfilter -e '@.recoveryPublicKey')"
     mqtt_user="$(echo "${response}" | jsonfilter -e '@.mqtt.username')"
     mqtt_pass="$(echo "${response}" | jsonfilter -e '@.mqtt.password')"
@@ -194,26 +192,9 @@ install_bundle() {
         die "No recovery anchor available; refusing to adopt. Local sign-in is left enabled."
     fi
 
-    mkdir -p "${STATE}/tailscale"
     if [ -n "${recovery}" ]; then
         echo "${recovery}" > "${STATE}/recovery.pub"
         chmod 0644 "${STATE}/recovery.pub"
-    fi
-
-    if [ -n "${authkey}" ]; then
-        echo "${authkey}" > "${STATE}/tailscale/authkey"
-        chmod 0600 "${STATE}/tailscale/authkey"
-    fi
-
-    # Which coordination server to log in to.
-    #
-    # The client defaults to Tailscale's SaaS, so a fleet on a self-hosted
-    # control server has to be told. Written beside the key rather than into
-    # the image: the same firmware is used against whichever tailnet the
-    # platform is pointing at, and that is a deployment fact, not a build one.
-    if [ -n "${loginsrv}" ]; then
-        echo "${loginsrv}" > "${STATE}/tailscale/login-server"
-        chmod 0644 "${STATE}/tailscale/login-server"
     fi
 
     uci -q batch <<EOF
@@ -232,7 +213,9 @@ EOF
     # is off, and leaving it on disk is a liability with no upside.
     rm -f "${STATE}/console/initial-password" "${STATE}/console/password-is-initial"
 
-    /etc/init.d/parkeze-tailscale restart >/dev/null 2>&1
+    # Enrols this gateway's WireGuard key and brings the management tunnel up.
+    # Backgrounded inside: parkeze.net may not answer straight away.
+    /etc/init.d/parkeze-wireguard restart >/dev/null 2>&1
     # Starts the MQTT forwarder alongside concentratord: it only runs once
     # adopted and holding broker credentials, which is this moment.
     /etc/init.d/parkeze-packet-forwarder restart >/dev/null 2>&1

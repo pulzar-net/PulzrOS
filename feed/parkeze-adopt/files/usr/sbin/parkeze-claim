@@ -37,8 +37,9 @@
 #      organisation. That marks the claim adopted.
 #
 #   4. The gateway polls and finds it has been claimed, pulls its bundle —
-#      tailnet auth key, MQTT credentials, the fleet recovery anchor — and
-#      finishes adoption on its own. Nobody goes back to the device.
+#      MQTT credentials and the fleet recovery anchor — finishes adoption on
+#      its own, and enrols its WireGuard key for the management tunnel.
+#      Nobody goes back to the device.
 #
 # ── WHY THE SECRET MATTERS ─────────────────────────────────────────────────
 #
@@ -51,9 +52,8 @@ set -e
 # set -e aborts on a failed command substitution in an assignment, and both
 # `uci -q get` and jsonfilter exit 1 for a key that simply is not there — the
 # normal case for an optional value. Every such read below ends in `|| true`.
-# Without it, `report` died on its first run at the unset
-# parkeze.backhaul.tailscale, before saving the tailnet decision or applying a
-# tailnet key, and still looked successful from parkeze.net's side.
+# Without it, `report` died on its first run at an unset optional value and
+# still looked successful from parkeze.net's side.
 
 . /etc/parkeze/board.conf
 
@@ -161,9 +161,9 @@ qr() {
 # WHY NOT parkeze-backhaul-check
 #
 # That script answers "can this gateway be MANAGED", and it answers it
-# correctly: it asks tailscaled whether its tunnel is up, because the tunnel is
-# what we manage over. Before adoption there is no tunnel — no auth key has
-# been issued yet — so the answer is false, and on a board with no modem the
+# correctly: it asks whether the WireGuard tunnel has a recent handshake,
+# because the tunnel is what we manage over. Before adoption there is no
+# tunnel — no key has been enrolled yet — so the answer is false, and on a board with no modem the
 # cellular fallback is false too. Every unadopted gateway therefore read as
 # offline, including one that had just registered its claim over the very link
 # being reported as down. The claim screen showed "No internet" to an installer
@@ -318,24 +318,24 @@ apply_offline() {
 # particular was a human guess sitting beside the only thing that could know.
 #
 # What is sent is facts, not conclusions. The gateway does not say "I am an
-# ethernet site" — it says what it can see, and parkeze.net decides. A device
-# that could name its own backhaul could name the one that gets it a tailnet
-# key, and the point of the rule is that a metered SIM never carries a tunnel.
+# ethernet site" — it says what it can see, and parkeze.net decides. (A metered
+# SIM never carries the management tunnel regardless: that is enforced by
+# routing on the gateway, not by anything reported here.)
 #
 # Authentication is the same commitment proof `poll` uses. No new credential:
 # the secret it already holds is what says this is that gateway, and it is
 # checked against a hash parkeze.net stored at registration.
 
 facts() {
-    local modem wired board_id version modem_present modem_model wired_usable ts
+    local modem wired board_id version modem_present modem_model wired_usable tunnel
 
     modem="$(parkeze-modem-detect --status 2>/dev/null || echo '{"present":false}')"
-    wired="$(parkeze-tailscale-route status 2>/dev/null || echo '{"wiredUsable":false}')"
+    wired="$(parkeze-wireguard-route status 2>/dev/null || echo '{"wiredUsable":false}')"
 
     modem_present="$(echo "${modem}" | jsonfilter -e '@.present' 2>/dev/null)" || true
     modem_model="$(echo "${modem}" | jsonfilter -e '@.model' 2>/dev/null)" || true
     wired_usable="$(echo "${wired}" | jsonfilter -e '@.wiredUsable' 2>/dev/null)" || true
-    ts="$(tailscale status --json 2>/dev/null | jsonfilter -e '@.BackendState' 2>/dev/null)" || true
+    tunnel="$(parkeze-backhaul-check --tunnel 2>/dev/null)" || true
 
     # jsonfilter prints nothing for a missing key, and an empty string is not
     # valid JSON in the value position. Default every field rather than emit a
@@ -346,9 +346,9 @@ facts() {
     board_id="${BOARD_ID:-unknown}"
     version="${PARKEZE_VERSION:-0.0.0}"
 
-    printf '{"board":"%s","osVersion":"%s","modemPresent":%s,"modemModel":"%s","wiredUsable":%s,"tailscaleState":"%s","consolePort":443,"consoleScheme":"https","sshPort":22,"system":%s}' \
+    printf '{"board":"%s","osVersion":"%s","modemPresent":%s,"modemModel":"%s","wiredUsable":%s,"tunnelState":"%s","consolePort":443,"consoleScheme":"https","sshPort":22,"system":%s}' \
         "${board_id}" "${version}" "${modem_present}" "${modem_model:-}" \
-        "${wired_usable}" "${ts:-Stopped}" "$(system_facts)"
+        "${wired_usable}" "${tunnel:-none}" "$(system_facts)"
 }
 
 # The same key=value facts the MQTT forwarder attaches to LoRaWAN stats, as a
@@ -378,7 +378,7 @@ report() {
         return 0
     }
 
-    local raw status response allowed
+    local raw status response
     raw="$(curl -sS --max-time 20 -w '\n%{http_code}' \
         -X POST "${NET_URL}/api/v1/gateway-ops/report" \
         -H 'Content-Type: application/json' \
@@ -400,37 +400,6 @@ report() {
         return 1
     }
 
-    # Whether this gateway may run a tailnet at all, decided by parkeze.net
-    # from the backhaul it derived. Stored in UCI rather than board.conf so
-    # the tailscale service's existing `parkeze` config trigger reloads it.
-    allowed="$(echo "${response}" | jsonfilter -e '@.tailscale' 2>/dev/null)" || true
-    if [ "${allowed}" = "true" ] || [ "${allowed}" = "false" ]; then
-        local want current
-        [ "${allowed}" = "true" ] && want=1 || want=0
-        current="$(uci -q get parkeze.backhaul.tailscale)" || true
-        if [ "${current}" != "${want}" ]; then
-            uci -q set parkeze.backhaul=backhaul
-            uci -q set parkeze.backhaul.tailscale="${want}"
-            uci commit parkeze
-            log "tailnet ${want} per parkeze.net"
-        fi
-    fi
-
-    # A key, when Parkeze has decided this gateway may now join a tailnet it
-    # has never joined — typically a cellular-only site that has just been
-    # given ethernet. Written where parkeze-tailscale-up reads it, then the
-    # service restarted so it logs in now rather than at the next boot.
-    local key server
-    key="$(echo "${response}" | jsonfilter -e '@.tailscaleAuthKey' 2>/dev/null)" || true
-    if [ -n "${key}" ]; then
-        server="$(echo "${response}" | jsonfilter -e '@.tailscaleLoginServer' 2>/dev/null)" || true
-        mkdir -p /etc/parkeze/tailscale
-        ( umask 077; printf '%s' "${key}" > /etc/parkeze/tailscale/authkey )
-        [ -n "${server}" ] && printf '%s' "${server}" > /etc/parkeze/tailscale/login-server
-        /etc/init.d/parkeze-tailscale restart >/dev/null 2>&1
-        log "tailnet key received; joining"
-    fi
-
     log "reported: backhaul=$(echo "${response}" | jsonfilter -e '@.backhaul' 2>/dev/null)"
 }
 
@@ -441,8 +410,8 @@ status() {
 
     # Two different questions, and they only look like one.
     #
-    # Adopted: "are we manageable" — tailscaled's own view, which is the path
-    # we would actually be managed over. parkeze-backhaul-check answers that.
+    # Adopted: "are we manageable" — whether the management tunnel has a
+    # recent handshake, which is the path we would actually be managed over. parkeze-backhaul-check answers that.
     #
     # Unadopted: there is no tunnel to ask about yet, so the question is "did
     # we reach parkeze.net", which this script already knows from its own

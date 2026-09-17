@@ -19,7 +19,7 @@
 # ── WHAT IT DELIBERATELY DOES NOT DO ───────────────────────────────────────
 #
 # It does not route. The setup network has no path to the WAN, the LAN, or the
-# tailnet, and the firewall zone below says so explicitly. Somebody associated
+# management tunnel, and the firewall zone below says so explicitly. Somebody associated
 # to the setup AP can reach exactly one thing: this gateway's console.
 #
 # That matters most in the unadopted case, where the AP is open. An open AP

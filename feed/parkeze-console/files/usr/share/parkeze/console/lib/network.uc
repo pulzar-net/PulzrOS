@@ -145,29 +145,38 @@ modem = function() {
 // conflating them into a single "online" light is how a gateway ends up
 // looking healthy while being unmanageable.
 backhaul = function() {
-    const tailscale = runJson('/usr/sbin/parkeze-tailscale-route status');
-    const ts = runJson('tailscale --socket=/var/run/tailscale/tailscaled.sock status --json 2>/dev/null');
+    const route = runJson('/usr/sbin/parkeze-wireguard-route status');
+    const config = runJson('cat /etc/parkeze/wireguard/tunnel.json 2>/dev/null');
+    const state = run('/usr/sbin/parkeze-backhaul-check --tunnel') || 'none';
+
+    // Seconds since the hub last completed a handshake, from the kernel.
+    let lastHandshake = null;
+    const handshakes = run('wg show wg0 latest-handshakes 2>/dev/null');
+    if (handshakes) {
+        const at = int(split(handshakes, /\s+/)[1]);
+        if (at > 0) lastHandshake = time() - at;
+    }
 
     return {
         wired: {
-            up: tailscale ? tailscale.wiredUsable : false,
-            device: tailscale ? tailscale.device : null,
-            gateway: tailscale ? tailscale.gateway : null,
+            up: route ? route.wiredUsable : false,
+            device: route ? route.device : null,
+            gateway: route ? route.gateway : null,
         },
-        tailscale: {
+        tunnel: {
             // Deliberately restated on every response rather than assumed by
             // the UI: somebody will eventually ask why the tunnel dies when
             // ethernet does, and the answer should be in the payload.
             wiredOnly: true,
-            note: 'Tailscale is pinned to the wired uplink so it can never '
-                + 'bill cellular data.',
-            running: !!ts,
-            state: ts ? ts.BackendState : 'Stopped',
-            self: ts && ts.Self ? {
-                hostname: ts.Self.HostName,
-                addresses: ts.Self.TailscaleIPs,
-                online: ts.Self.Online,
-            } : null,
+            note: 'The management tunnel is pinned to the wired uplink so it '
+                + 'can never bill cellular data.',
+            configured: !!config,
+            // none: not enrolled yet. waiting: configured, the hub has not
+            // answered recently. up: a handshake in the last three minutes.
+            state: state,
+            address: config ? config.address : null,
+            endpoint: config ? config.endpoint : null,
+            lastHandshake: lastHandshake,
         },
         cellular: {
             up: ifaceStatus('wwan').up == true,
@@ -228,9 +237,9 @@ maskToPrefix = function(text) {
 // they type. That is also why there is no timed rollback: the person who can
 // fix a wrong address is still connected.
 //
-// Tailscale follows on its own. Bringing wan up fires the tailscale service's
-// interface trigger and the report service's, and the report is what tells
-// Parkeze the gateway is now wired — which is what permits it a tailnet.
+// The management tunnel follows on its own. Bringing wan up fires its hotplug
+// handler, which restarts it over the new route, and the report service's,
+// which tells Parkeze the gateway is now wired.
 setEthernet = function(req, session) {
     const uci = cursor();
 

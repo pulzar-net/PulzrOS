@@ -46,7 +46,7 @@ until it is changed, and deletes the cleartext the moment it is.
 ### 2. Adopted and online
 
 parkeze.net is the identity provider. The console accepts a signed one-time
-handoff token minted by `tailscale-service`, so an operator already
+handoff token minted by `recovery-service`, so an operator already
 authenticated centrally lands signed in without a second password.
 
 **Local password login is disabled on adoption** — `parkeze.console.local_login`
@@ -72,7 +72,7 @@ against a key the gateway only ever holds the **public** half of.
 
 3. parkeze.net checks they are a net-admin, claims the nonce in
    `gateway_recovery_events` (a unique index, so a nonce can be signed exactly
-   once), writes an audit row, and has `tailscale-service` sign those exact
+   once), writes an audit row, and has `recovery-service` sign those exact
    bytes with the fleet Ed25519 key.
 
 4. The operator carries the base64 signature back and types or pastes it in.
@@ -114,7 +114,7 @@ One Ed25519 keypair for the whole fleet.
 
 - **Public half** — installed on every gateway at adoption, at
   `/etc/parkeze/recovery.pub`.
-- **Private half** — exists only in `tailscale-service`, mounted read-only from
+- **Private half** — exists only in `recovery-service`, mounted read-only from
   the secret store. Never in an environment variable in production: those show
   up in `docker inspect` and in whatever shipped your logs.
 
