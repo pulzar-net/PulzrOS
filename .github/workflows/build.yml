@@ -142,7 +142,9 @@ jobs:
       # where /bin/sh is busybox ash and bash is absent.
       - name: No bash in device scripts
         run: |
-          if grep -rln '#!/bin/bash\|#!/usr/bin/env bash' feed/; then
+          # Only what ships: a package's files/. Build-host helpers beside it
+          # (feed/*/fetch) run on the build machine and may be bash.
+          if grep -rln '#!/bin/bash\|#!/usr/bin/env bash' feed/*/files/; then
             echo "::error::device scripts must be POSIX sh — OpenWrt ships ash, not bash"
             exit 1
           fi
