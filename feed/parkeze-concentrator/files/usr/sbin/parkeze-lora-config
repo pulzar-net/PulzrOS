@@ -42,14 +42,19 @@ STATE_DIR=/var/run/parkeze/lora
 
 die() { echo "slot ${SLOT}: $*" >&2; exit 1; }
 
+# An unset option is normal here — no power-enable line, no GNSS, not adopted
+# yet — and `uci get` exits non-zero for one, which under `set -e` ends the
+# script silently in the middle of an assignment. Every read goes through this.
+get() { uci -q get "$1" || true; }
+
 section="slot${SLOT}"
-active="$(uci -q get "parkeze.${section}.active")"
-bus="$(uci -q get "parkeze.${section}.bus")"
-device="$(uci -q get "parkeze.${section}.device")"
-reset="$(uci -q get "parkeze.${section}.reset_gpio")"
-power="$(uci -q get "parkeze.${section}.power_gpio")"
-region="$(uci -q get parkeze.lorawan.region || echo US915)"
-eui="$(uci -q get parkeze.identity.gateway_eui)"
+active="$(get "parkeze.${section}.active")"
+bus="$(get "parkeze.${section}.bus")"
+device="$(get "parkeze.${section}.device")"
+reset="$(get "parkeze.${section}.reset_gpio")"
+power="$(get "parkeze.${section}.power_gpio")"
+region="$(get parkeze.lorawan.region)"; region="${region:-US915}"
+eui="$(get parkeze.identity.gateway_eui)"
 
 [ -n "${active}" ] || die "no active concentrator"
 
@@ -64,7 +69,7 @@ chipset="$(jsonfilter -i "${profile}" -e '@.concentratord')"
 
 # Model: the operator's choice, then the board's, then the part's default. It
 # selects the TX gain table, so a board that knows its module says so.
-model="$(uci -q get "parkeze.${section}.model")"
+model="$(get "parkeze.${section}.model")"
 [ -n "${model}" ] || model="${PARKEZE_CONCENTRATOR_MODEL}"
 [ -n "${model}" ] || model="$(jsonfilter -i "${profile}" -e '@.model')"
 
@@ -96,9 +101,9 @@ esac
 
 # Only slot 0 has the receiver: one gateway, one position, and two processes
 # opening the same tty is a fault that looks like intermittent GPS.
-gps_device="$(uci -q get parkeze.gps.device)"
+gps_device="$(get parkeze.gps.device)"
 gps=""
-if [ "${SLOT}" = "0" ] && [ "$(uci -q get parkeze.gps.status)" = "present" ] && [ -c "${gps_device}" ]; then
+if [ "${SLOT}" = "0" ] && [ "$(get parkeze.gps.status)" = "present" ] && [ -c "${gps_device}" ]; then
     flags="${flags}\"GNSS\","
     gps="gnss_dev_path=\"${gps_device}\""
 fi
@@ -140,12 +145,15 @@ EOF
     # With no receiver the network server still needs to know where the
     # gateway is: the reference coordinates recorded at install.
     if [ -z "${gps}" ]; then
+        latitude="$(get parkeze.location.latitude)"
+        longitude="$(get parkeze.location.longitude)"
+        altitude="$(get parkeze.location.altitude)"
         cat <<EOF
 
 [gateway.location]
-latitude=$(uci -q get parkeze.location.latitude || echo 0)
-longitude=$(uci -q get parkeze.location.longitude || echo 0)
-altitude=$(uci -q get parkeze.location.altitude || echo 0)
+latitude=${latitude:-0}
+longitude=${longitude:-0}
+altitude=${altitude:-0}
 EOF
     fi
 } > "${OUT}/concentratord.toml"
@@ -160,8 +168,8 @@ EOF
 # console can say "connected" without scraping the log for a message whose
 # wording belongs to somebody else.
 
-host="$(uci -q get parkeze.mqtt.host)"
-port="$(uci -q get parkeze.mqtt.port || echo "${PARKEZE_MQTT_PORT:-8883}")"
+host="$(get parkeze.mqtt.host)"
+port="$(get parkeze.mqtt.port)"; port="${port:-${PARKEZE_MQTT_PORT:-8883}}"
 [ -n "${host}" ] || host="${PARKEZE_MQTT_HOST}"
 
 mkdir -p "${STATE_DIR}"
@@ -176,12 +184,15 @@ log_to_syslog=true
 topic_prefix="${TOPIC_PREFIX}"
 json=false
 server="ssl://${host}:${port}"
-username="$(uci -q get parkeze.mqtt.username)"
-password="$(uci -q get parkeze.mqtt.password)"
+username="$(get parkeze.mqtt.username)"
+password="$(get parkeze.mqtt.password)"
 qos=0
 clean_session=true
 client_id="${eui}-${section}"
 ca_cert="/etc/ssl/certs/ca-certificates.crt"
+# A broker that is down or refusing us should not be retried every second: it
+# fills the log, and on cellular it spends the data plan.
+reconnect_interval="30s"
 
 [backend]
 enabled="concentratord"
