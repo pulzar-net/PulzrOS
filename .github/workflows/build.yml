@@ -99,6 +99,9 @@ jobs:
       - name: Check the ucode console API
         run: UCODE=/tmp/ucode/build/ucode scripts/check-ucode.sh
 
+      - name: Check printf arguments match their formats
+        run: ./scripts/check-printf.sh
+
       # The upstream indexes are ~10MB and a pinned release never changes them.
       - name: Cache the upstream package indexes
         uses: actions/cache@v4

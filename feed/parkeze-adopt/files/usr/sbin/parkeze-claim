@@ -363,7 +363,7 @@ facts() {
 
     printf '{"board":"%s","osVersion":"%s","modemPresent":%s,"modemModel":"%s","simIccid":"%s","sshHostKey":"%s","wiredUsable":%s,"tunnelState":"%s","consolePort":443,"consoleScheme":"https","sshPort":22,"system":%s}' \
         "${board_id}" "${version}" "${modem_present}" "${modem_model:-}" "${iccid:-}" \
-        "${wired_usable}" "${tunnel:-none}" "$(system_facts)"
+        "${host_key:-}" "${wired_usable}" "${tunnel:-none}" "$(system_facts)"
 }
 
 # The same key=value facts the MQTT forwarder attaches to LoRaWAN stats, as a
