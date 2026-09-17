@@ -48,6 +48,12 @@
 # and is audited) but not *become* it.
 
 set -e
+# set -e aborts on a failed command substitution in an assignment, and both
+# `uci -q get` and jsonfilter exit 1 for a key that simply is not there — the
+# normal case for an optional value. Every such read below ends in `|| true`.
+# Without it, `report` died on its first run at the unset
+# parkeze.backhaul.tailscale, before saving the tailnet decision or applying a
+# tailnet key, and still looked successful from parkeze.net's side.
 
 . /etc/parkeze/board.conf
 
@@ -104,7 +110,7 @@ payload() {
     ensure_identity
     local id eui
     id="$(claim_id)"
-    eui="$(uci -q get parkeze.identity.gateway_eui)"
+    eui="$(uci -q get parkeze.identity.gateway_eui)" || true
 
     if registered; then
         # parkeze.net already knows everything about this claim. Short is
@@ -270,7 +276,7 @@ poll() {
     fi
 
     local state
-    state="$(echo "${response}" | jsonfilter -e '@.state' 2>/dev/null)"
+    state="$(echo "${response}" | jsonfilter -e '@.state' 2>/dev/null)" || true
 
     case "${state}" in
         adopted)
@@ -326,10 +332,10 @@ facts() {
     modem="$(parkeze-modem-detect --status 2>/dev/null || echo '{"present":false}')"
     wired="$(parkeze-tailscale-route status 2>/dev/null || echo '{"wiredUsable":false}')"
 
-    modem_present="$(echo "${modem}" | jsonfilter -e '@.present' 2>/dev/null)"
-    modem_model="$(echo "${modem}" | jsonfilter -e '@.model' 2>/dev/null)"
-    wired_usable="$(echo "${wired}" | jsonfilter -e '@.wiredUsable' 2>/dev/null)"
-    ts="$(tailscale status --json 2>/dev/null | jsonfilter -e '@.BackendState' 2>/dev/null)"
+    modem_present="$(echo "${modem}" | jsonfilter -e '@.present' 2>/dev/null)" || true
+    modem_model="$(echo "${modem}" | jsonfilter -e '@.model' 2>/dev/null)" || true
+    wired_usable="$(echo "${wired}" | jsonfilter -e '@.wiredUsable' 2>/dev/null)" || true
+    ts="$(tailscale status --json 2>/dev/null | jsonfilter -e '@.BackendState' 2>/dev/null)" || true
 
     # jsonfilter prints nothing for a missing key, and an empty string is not
     # valid JSON in the value position. Default every field rather than emit a
@@ -397,11 +403,11 @@ report() {
     # Whether this gateway may run a tailnet at all, decided by parkeze.net
     # from the backhaul it derived. Stored in UCI rather than board.conf so
     # the tailscale service's existing `parkeze` config trigger reloads it.
-    allowed="$(echo "${response}" | jsonfilter -e '@.tailscale' 2>/dev/null)"
+    allowed="$(echo "${response}" | jsonfilter -e '@.tailscale' 2>/dev/null)" || true
     if [ "${allowed}" = "true" ] || [ "${allowed}" = "false" ]; then
         local want current
         [ "${allowed}" = "true" ] && want=1 || want=0
-        current="$(uci -q get parkeze.backhaul.tailscale)"
+        current="$(uci -q get parkeze.backhaul.tailscale)" || true
         if [ "${current}" != "${want}" ]; then
             uci -q set parkeze.backhaul=backhaul
             uci -q set parkeze.backhaul.tailscale="${want}"
@@ -415,9 +421,9 @@ report() {
     # given ethernet. Written where parkeze-tailscale-up reads it, then the
     # service restarted so it logs in now rather than at the next boot.
     local key server
-    key="$(echo "${response}" | jsonfilter -e '@.tailscaleAuthKey' 2>/dev/null)"
+    key="$(echo "${response}" | jsonfilter -e '@.tailscaleAuthKey' 2>/dev/null)" || true
     if [ -n "${key}" ]; then
-        server="$(echo "${response}" | jsonfilter -e '@.tailscaleLoginServer' 2>/dev/null)"
+        server="$(echo "${response}" | jsonfilter -e '@.tailscaleLoginServer' 2>/dev/null)" || true
         mkdir -p /etc/parkeze/tailscale
         ( umask 077; printf '%s' "${key}" > /etc/parkeze/tailscale/authkey )
         [ -n "${server}" ] && printf '%s' "${server}" > /etc/parkeze/tailscale/login-server
