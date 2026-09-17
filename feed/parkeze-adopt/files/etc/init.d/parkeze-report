@@ -1,0 +1,36 @@
+#!/bin/sh /etc/rc.common
+#
+# Tell parkeze.net what this gateway is.
+#
+# The mirror of parkeze-claim: that one runs only while unadopted, this one
+# only once adopted. Between them a gateway is never silent — which it was,
+# completely, for the whole of its working life until this existed. Every field
+# on the console's configuration page was typed by a person standing next to a
+# device that already knew the answer.
+#
+# It sends facts, never conclusions. Whether this gateway may run a tailnet is
+# decided by parkeze.net from those facts and handed back; see parkeze-claim's
+# `report` for why that direction matters.
+
+START=97
+STOP=10
+USE_PROCD=1
+
+start_service() {
+    [ "$(uci -q get parkeze.adoption.state)" = "adopted" ] || return 0
+
+    procd_open_instance report
+    procd_set_param command /usr/sbin/parkeze-report-loop
+    procd_set_param stdout 1
+    procd_set_param stderr 1
+    procd_set_param respawn 300 10 0
+    procd_close_instance
+}
+
+service_triggers() {
+    # An uplink appearing is the one event worth re-reporting for: it is how a
+    # site that was cellular-only becomes wired, which is the change that
+    # decides whether this gateway gets a tailnet at all.
+    procd_add_reload_interface_trigger wan
+    procd_add_config_trigger "config.change" "parkeze" /etc/init.d/parkeze-report restart
+}

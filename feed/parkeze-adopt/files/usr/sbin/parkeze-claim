@@ -253,6 +253,96 @@ apply_offline() {
     echo "adopted" > "${STATE}/state"
 }
 
+# ── reporting what this gateway is ──────────────────────────────────────────
+#
+# Everything on the console's Configuration page used to be typed by a person
+# standing next to a device that already knew the answer: whether there is a
+# modem, whether the wired path works, which port the console listens on. After
+# adoption the gateway said nothing to parkeze.net ever again, so `backhaul` in
+# particular was a human guess sitting beside the only thing that could know.
+#
+# What is sent is facts, not conclusions. The gateway does not say "I am an
+# ethernet site" — it says what it can see, and parkeze.net decides. A device
+# that could name its own backhaul could name the one that gets it a tailnet
+# key, and the point of the rule is that a metered SIM never carries a tunnel.
+#
+# Authentication is the same commitment proof `poll` uses. No new credential:
+# the secret it already holds is what says this is that gateway, and it is
+# checked against a hash parkeze.net stored at registration.
+
+facts() {
+    local modem wired board_id version modem_present modem_model wired_usable ts
+
+    modem="$(parkeze-modem-detect --status 2>/dev/null || echo '{"present":false}')"
+    wired="$(parkeze-tailscale-route status 2>/dev/null || echo '{"wiredUsable":false}')"
+
+    modem_present="$(echo "${modem}" | jsonfilter -e '@.present' 2>/dev/null)"
+    modem_model="$(echo "${modem}" | jsonfilter -e '@.model' 2>/dev/null)"
+    wired_usable="$(echo "${wired}" | jsonfilter -e '@.wiredUsable' 2>/dev/null)"
+    ts="$(tailscale status --json 2>/dev/null | jsonfilter -e '@.BackendState' 2>/dev/null)"
+
+    # jsonfilter prints nothing for a missing key, and an empty string is not
+    # valid JSON in the value position. Default every field rather than emit a
+    # body parkeze.net would reject whole.
+    [ "${modem_present}" = "true" ] || modem_present="false"
+    [ "${wired_usable}" = "true" ] || wired_usable="false"
+
+    board_id="${BOARD_ID:-unknown}"
+    version="${PARKEZE_VERSION:-0.0.0}"
+
+    printf '{"board":"%s","osVersion":"%s","modemPresent":%s,"modemModel":"%s","wiredUsable":%s,"tailscaleState":"%s","consolePort":443,"consoleScheme":"https","sshPort":22}' \
+        "${board_id}" "${version}" "${modem_present}" "${modem_model:-}" \
+        "${wired_usable}" "${ts:-Stopped}"
+}
+
+report() {
+    ensure_identity
+    [ "$(uci -q get parkeze.adoption.state)" = "adopted" ] || {
+        log "not adopted; nothing to report"
+        return 0
+    }
+
+    local raw status response allowed
+    raw="$(curl -sS --max-time 20 -w '\n%{http_code}' \
+        -X POST "${NET_URL}/api/v1/gateway-ops/report" \
+        -H 'Content-Type: application/json' \
+        -d "$(printf '{"claimId":"%s","secret":"%s","facts":%s}' \
+              "$(claim_id)" "$(cat "${STATE}/secret")" "$(facts)")" 2>&1)" || {
+        log "report failed: ${raw}"
+        return 1
+    }
+    status="$(echo "${raw}" | tail -n1)"
+    response="$(echo "${raw}" | sed '$d')"
+
+    # 404 here means parkeze.net has no adopted gateway behind this claim —
+    # it was decommissioned. That is the ONE authenticated signal that may
+    # send this unit back to adoption, and it is deliberately not acted on
+    # here: see `parkeze-adopt --check`, which is the only thing allowed to
+    # unwind adoption, and only on this exact answer.
+    [ "${status}" = "200" ] || {
+        log "report rejected (${status})"
+        return 1
+    }
+
+    # Whether this gateway may run a tailnet at all, decided by parkeze.net
+    # from the backhaul it derived. Stored in UCI rather than board.conf so
+    # the tailscale service's existing `parkeze` config trigger reloads it.
+    allowed="$(echo "${response}" | jsonfilter -e '@.tailscale' 2>/dev/null)"
+    if [ "${allowed}" = "true" ] || [ "${allowed}" = "false" ]; then
+        local want current
+        [ "${allowed}" = "true" ] && want=1 || want=0
+        current="$(uci -q get parkeze.backhaul.tailscale)"
+        if [ "${current}" != "${want}" ]; then
+            uci -q set parkeze.backhaul=backhaul
+            uci -q set parkeze.backhaul.tailscale="${want}"
+            uci commit parkeze
+            log "tailnet ${want} per parkeze.net"
+        fi
+    fi
+
+    log "reported: backhaul=$(echo "${response}" | jsonfilter -e '@.backhaul' 2>/dev/null)"
+}
+
 status() {
     ensure_identity
     local adoption
@@ -276,7 +366,8 @@ case "${1:-status}" in
     qr)       qr "$2" ;;
     register) register ;;
     poll)     poll ;;
+    report)   report ;;
     apply)    apply_offline "$2" ;;
     reset)    reset_claim ;;
-    *)        die "usage: parkeze-claim {status|qr|register|poll|apply|reset}" ;;
+    *)        die "usage: parkeze-claim {status|qr|register|poll|report|apply|reset}" ;;
 esac

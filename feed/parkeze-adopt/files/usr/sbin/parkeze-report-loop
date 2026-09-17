@@ -1,0 +1,36 @@
+#!/bin/sh
+#
+# The loop behind /etc/init.d/parkeze-report. Split out for the same reason
+# parkeze-claim-loop is: the interval is the interesting part and it should be
+# readable without reading procd.
+
+log() { logger -t report -p daemon.info "$*"; }
+
+# Once on start, then every six hours.
+#
+# Six rather than six minutes because none of this changes often. A gateway's
+# model never changes, its console port never changes, and its backhaul changes
+# when somebody runs a cable — which is a site visit, not a thing that happens
+# between polls. The report exists so the console is not a form somebody typed
+# into a year ago, not so it is live telemetry.
+#
+# It also has to be cheap on a SIM. A cellular-only gateway is billed for every
+# one of these, and at six hours it is four small POSTs a day.
+INTERVAL=21600
+
+# Not immediately: adoption restarts this service, and tailscaled is coming up
+# in the same moment. Reporting `tailscaleState: Starting` as the first thing
+# parkeze.net ever hears is a worse answer than waiting half a minute for the
+# real one.
+sleep 30
+
+while :; do
+    if [ "$(uci -q get parkeze.adoption.state)" != "adopted" ]; then
+        log "not adopted; reporting stops"
+        /etc/init.d/parkeze-report stop >/dev/null 2>&1 &
+        exit 0
+    fi
+
+    parkeze-claim report >/dev/null 2>&1 || true
+    sleep "${INTERVAL}"
+done

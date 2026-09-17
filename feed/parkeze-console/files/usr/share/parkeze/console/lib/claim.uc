@@ -22,6 +22,7 @@ let _m_util = loadfile('/usr/share/parkeze/console/lib/util.uc', { raw_mode: tru
 // body is compiled, so closures capture the binding rather than a missing
 // global and definition order stops mattering. auth.uc alone had six of these.
 let status, qr, poll, applyBundle, writeBundle, isAdopted, platformUrl;
+let checkAdoption, adoptionCheckResult;
 
 let run = _m_util.run;; let runJson = _m_util.runJson;
 
@@ -51,6 +52,28 @@ status = function() {
         // one line in board.conf and not a hunt through React strings.
         platform: platformUrl(),
     };
+};
+
+// Ask parkeze.net whether this gateway is still adopted.
+//
+// The recovery screen is for an adopted gateway that cannot reach Parkeze. A
+// gateway that was decommissioned from the console is looking at the wrong
+// screen entirely — there is nobody left to sign its challenge — and this is
+// how it finds out.
+//
+// Only parkeze-adopt may act on the answer, and only on one it got from
+// parkeze.net over verified TLS, twice. Nothing here decides anything: this
+// starts the check and reads the file it leaves behind. A caller on the LAN
+// can ask; it cannot answer.
+checkAdoption = function() {
+    // Detached, because the check deliberately takes a minute and an HTTP
+    // handler may not block for one. The UI polls adoptionCheckResult.
+    run('/usr/sbin/parkeze-adopt --check >/dev/null 2>&1 &');
+    return { checking: true };
+};
+
+adoptionCheckResult = function() {
+    return runJson('/usr/sbin/parkeze-adopt --check-result') ?? { checking: true };
 };
 
 // The platform's base URL, and the bare host for places that want to show
@@ -137,4 +160,4 @@ isAdopted = function() {
 // its handler in TEMPLATE mode and loads anything else through loadfile(),
 // neither of which is module mode — `export` is a syntax error there. See the
 // header of api/index.uc for the full contract.
-return { applyBundle, isAdopted, poll, qr, status };
+return { adoptionCheckResult, applyBundle, checkAdoption, isAdopted, poll, qr, status };

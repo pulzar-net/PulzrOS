@@ -109,6 +109,36 @@ wrong direction and looks correct right up until the bill arrives.
 offline. That is the designed behaviour, not a fault. parkeze.net sees the node
 go offline and manages the gateway over the SIM instead.
 
+### A cellular-only gateway does not start tailscaled at all
+
+The three mechanisms above *confine* tailnet traffic to the wired path. They do
+not stop tailscaled running on a gateway that has no wired path — it came up,
+joined nothing, and sat there. Confined, but pointless.
+
+`parkeze-claim report` closes that. The gateway sends what it can see — is
+there a modem, is the wired path usable — parkeze.net derives the backhaul from
+those facts, and hands back whether this gateway may run a tailnet. The answer
+lands in `parkeze.backhaul.tailscale`, which `/etc/init.d/parkeze-tailscale`
+checks alongside `PARKEZE_TAILSCALE_ENABLED`.
+
+Two properties worth stating:
+
+**The device does not decide.** It reports readings, never a conclusion. A
+gateway that could name its own backhaul could name the one that gets it a
+tailnet key, and the whole point of the rule is that a metered SIM never
+carries a tunnel. The derivation lives in net-api, in one function.
+
+**Absent means start.** Only an explicit `0` suppresses tailscaled. A gateway
+that has never reported — or cannot reach parkeze.net at all — must still come
+up manageable, and the confinement above is what makes being wrong in that
+direction harmless.
+
+**Ethernet is sticky.** `wiredUsable` is a live reading, so a wired site whose
+switch is rebooting reports false for a minute. Letting that flip the backhaul
+would mean every wired-with-SIM-backup site flapping with its uplink — and the
+SIM is the backup precisely because the site is wired. Once wired, only a
+person moves a gateway off wired.
+
 ## Who may reach a gateway on the tailnet
 
 The gateway runs a real kernel TUN and does **not** set `--shields-up`, because

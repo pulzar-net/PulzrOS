@@ -139,6 +139,19 @@ start_service() {
         return 0
     }
 
+    # What parkeze.net concluded from the facts this gateway reported. A
+    # cellular-only unit has no wired path for a tunnel to ride, so running
+    # tailscaled on one achieves nothing and spends metered bytes trying.
+    #
+    # Absent means "nobody has said", which starts: a gateway that has not
+    # reported yet — or one that cannot reach parkeze.net at all — must still
+    # come up manageable. Only an explicit 0 stops it, and the confinement
+    # below is what makes being wrong here harmless either way.
+    [ "$(uci -q get parkeze.backhaul.tailscale)" != "0" ] || {
+        logger -t tailscale "cellular-only backhaul; tailnet not started"
+        return 0
+    }
+
     # Refuse to run if the confinement is not in place. A tailscaled that comes
     # up unconfined on a cellular-only gateway is the one failure mode this
     # whole package exists to prevent, so it fails closed.

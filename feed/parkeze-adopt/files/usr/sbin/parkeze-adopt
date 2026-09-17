@@ -55,6 +55,120 @@ EOF
     echo "Released. Local sign-in is enabled again."
 }
 
+# ── is this gateway still adopted? ──────────────────────────────────────────
+#
+# The recovery screen exists for an adopted gateway that cannot reach Parkeze.
+# If the unit was decommissioned from the console, recovery is the wrong screen
+# entirely: there is nobody left to sign the challenge, and the operator should
+# be claiming it again instead. This is how it finds that out.
+#
+# ── WHAT MAY UNDO AN ADOPTION, AND WHAT MAY NOT ────────────────────────────
+#
+# Returning to adoption is the dangerous direction. An unadopted gateway shows
+# a claim code and will join whichever organisation answers it, so anything
+# that can convince a working gateway it is unadopted can steal it. The rules,
+# and none of them are negotiable:
+#
+#   - Only parkeze.net's own answer counts. Not a button, not a local file, not
+#     a UCI value, and not anything the console can set.
+#   - The answer must arrive over TLS that verified. curl is run without -k and
+#     a non-zero exit is treated as no answer at all.
+#   - No answer is not an answer. A timeout, a DNS failure, a 5xx, a captive
+#     portal, an unparseable body: every one of these leaves adoption alone.
+#     This is the common case for a gateway on a broken network, which is
+#     exactly the gateway looking at the recovery screen.
+#   - It has to say so twice, a minute apart. A single 404 from a deploy that
+#     was rolling, or a momentary database fault, would otherwise unadopt
+#     whatever asked during that window. Two separated answers is cheap here —
+#     nobody is timing this screen — and it turns a blip into a non-event.
+#
+# The request is authenticated with the claim secret, so a gateway can only ask
+# about itself. Note that a 404 cannot distinguish "decommissioned" from "this
+# secret is wrong": verifying the secret needs the claim row, and decommission
+# deletes it. Unwinding on both is safe because `release` is local-only — it
+# hands the box back to local management and destroys nothing at Parkeze.
+
+probe_adoption() {
+    # Prints the HTTP status, or nothing at all if there was no answer.
+    local raw status
+    raw="$(curl -sS --max-time 20 -w '\n%{http_code}' \
+        -X POST "${NET_URL}/api/v1/gateway-ops/report" \
+        -H 'Content-Type: application/json' \
+        -d "$(printf '{"claimId":"%s","secret":"%s","facts":{}}' \
+              "$(cat "${STATE}/claim/id" 2>/dev/null)" \
+              "$(cat "${STATE}/claim/secret" 2>/dev/null)")" 2>/dev/null)" || return 1
+    status="$(echo "${raw}" | tail -n1)"
+    case "${status}" in
+        [0-9][0-9][0-9]) echo "${status}" ;;
+        *) return 1 ;;
+    esac
+}
+
+# Where the console reads the answer from. The check takes a minute by design,
+# which is far longer than an HTTP handler may block, so it runs detached and
+# leaves its result here for the UI to poll.
+CHECK_RESULT=/var/run/parkeze-adoption-check.json
+CHECK_LOCK=/var/run/parkeze-adoption-check.lock
+
+answer() {
+    printf '%s\n' "$1" > "${CHECK_RESULT}"
+    printf '%s\n' "$1"
+}
+
+check() {
+    # One at a time. Without it, anything that can reach the console can start
+    # an unbounded number of these, and on a metered SIM that is a bill.
+    if ! mkdir "${CHECK_LOCK}" 2>/dev/null; then
+        echo '{"checking":true}'
+        return 0
+    fi
+    trap 'rmdir "${CHECK_LOCK}" 2>/dev/null' EXIT INT TERM
+
+    if [ "$(uci -q get parkeze.adoption.state)" != "adopted" ]; then
+        answer '{"adopted":false,"checked":false,"reason":"not adopted"}'
+        return 0
+    fi
+
+    if [ ! -s "${STATE}/claim/id" ] || [ ! -s "${STATE}/claim/secret" ]; then
+        # No credential to ask with. That says nothing about adoption, so it
+        # must not be read as saying anything.
+        answer '{"adopted":true,"checked":false,"reason":"no claim credential"}'
+        return 0
+    fi
+
+    local first second
+    first="$(probe_adoption)" || {
+        answer '{"adopted":true,"checked":false,"reason":"unreachable"}'
+        return 0
+    }
+
+    if [ "${first}" = "200" ]; then
+        answer '{"adopted":true,"checked":true}'
+        return 0
+    fi
+
+    if [ "${first}" != "404" ]; then
+        logger -t adopt "adoption check inconclusive (${first})"
+        answer "$(printf '{"adopted":true,"checked":false,"reason":"server error %s"}' "${first}")"
+        return 0
+    fi
+
+    sleep 60
+    second="$(probe_adoption)" || {
+        answer '{"adopted":true,"checked":false,"reason":"unreachable"}'
+        return 0
+    }
+    if [ "${second}" != "404" ]; then
+        logger -t adopt "adoption check: 404 then ${second}; leaving adoption alone"
+        answer '{"adopted":true,"checked":true}'
+        return 0
+    fi
+
+    logger -t adopt "parkeze.net has no record of this gateway; returning to adoption"
+    release >/dev/null
+    answer '{"adopted":false,"checked":true,"released":true}'
+}
+
 # ── installing a bundle ─────────────────────────────────────────────────────
 
 install_bundle() {
@@ -119,6 +233,12 @@ EOF
     /etc/init.d/parkeze-tailscale restart >/dev/null 2>&1
     /etc/init.d/parkeze-packet-forwarder restart >/dev/null 2>&1
     /etc/init.d/parkeze-claim stop >/dev/null 2>&1
+
+    # The other half of the pair: claiming stops, reporting starts. Enabled as
+    # well as started, so it survives the next boot — this is the only moment
+    # a gateway crosses from one to the other.
+    /etc/init.d/parkeze-report enable >/dev/null 2>&1
+    /etc/init.d/parkeze-report start >/dev/null 2>&1
 
     logger -t adopt "adopted into ${org}"
     echo "Adopted into ${org}. Local sign-in is now disabled; manage this gateway from parkeze.net."
@@ -186,6 +306,9 @@ offline bundle cannot be verified. Adopt this gateway while it has internet."
 case "${1:-}" in
     --status)       status; exit 0 ;;
     --release)      release; exit 0 ;;
+    --check)        check; exit 0 ;;
+    --check-result) cat /var/run/parkeze-adoption-check.json 2>/dev/null \
+                        || echo '{"checking":true}'; exit 0 ;;
     --from-bundle)  apply_bundle "$2" "$3"; exit 0 ;;
     '')             die "usage: parkeze-adopt <adoption-code>" ;;
 esac

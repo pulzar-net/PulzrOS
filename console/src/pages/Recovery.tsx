@@ -1,8 +1,16 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { api } from '@/services/api';
 import { useSession } from '@/contexts/SessionContext';
 import type { RecoveryChallenge, Session } from '@/types';
+
+interface AdoptionCheck {
+  checking?: boolean;
+  adopted?: boolean;
+  checked?: boolean;
+  released?: boolean;
+  reason?: string;
+}
 import Button from '@/components/ui/Button';
 import Notice from '@/components/ui/Notice';
 import Spinner from '@/components/ui/Spinner';
@@ -33,6 +41,43 @@ export default function Recovery({
 }) {
   const { signIn } = useSession();
   const [signature, setSignature] = useState('');
+  const [checking, setChecking] = useState(false);
+
+  // "Is this gateway still adopted?"
+  //
+  // Recovery is for an adopted gateway that cannot reach Parkeze. If it was
+  // decommissioned from the console there is nobody left to sign the
+  // challenge, and the operator should be claiming it again instead — but
+  // from here that looks identical to a signature that keeps being refused.
+  //
+  // The answer comes from parkeze.net, not from this button. The device asks,
+  // twice, over TLS, with its own credential; only that can return it to
+  // adoption. Pressing this cannot unadopt a working gateway, and neither can
+  // anyone else who reaches this screen.
+  const check = useQuery({
+    queryKey: ['adoption-check'],
+    queryFn: () => api.get<AdoptionCheck>('/claim/check-adoption'),
+    enabled: checking,
+    refetchInterval: (query) =>
+      (query.state.data as AdoptionCheck | undefined)?.checking === false ? false : 3000,
+    retry: false,
+  });
+
+  const start = useMutation({
+    mutationFn: () => api.post('/claim/check-adoption'),
+    onSuccess: () => setChecking(true),
+  });
+
+  const result = check.data;
+  // A gateway that came back unadopted has already released itself locally.
+  // Reloading is what drops it to the adoption screen — which screen to show
+  // is the router's decision from session state, not a navigation to make
+  // from here. In an effect, not in render: a reload fired during render runs
+  // again on every render until it lands.
+  const released = result?.adopted === false && result?.released === true;
+  useEffect(() => {
+    if (released) window.location.reload();
+  }, [released]);
 
   const challenge = useQuery({
     queryKey: ['recovery-challenge'],
@@ -102,6 +147,25 @@ export default function Recovery({
             </Button>
             <div className={styles.spacer} />
             {canGoBack && <Button onClick={onBack}>Back to sign in</Button>}
+          </div>
+
+          <div className={styles.step}>
+            <Button
+              loading={start.isPending || (checking && result?.checking !== false)}
+              onClick={() => start.mutate()}
+            >
+              Check with Parkeze
+            </Button>
+            {result?.checked === false && result.reason && (
+              <p className={styles.hint}>
+                {result.reason === 'unreachable'
+                  ? 'Could not reach Parkeze. Nothing changed.'
+                  : `No answer: ${result.reason}. Nothing changed.`}
+              </p>
+            )}
+            {result?.checked && result.adopted && (
+              <p className={styles.hint}>Still adopted.</p>
+            )}
           </div>
         </>
       )}

@@ -79,6 +79,15 @@ const PUBLIC = {
     'GET  /api/claim/qr': true,
     'POST /api/claim/poll': true,
     'POST /api/claim/apply': true,
+
+    // Open for the same reason, and for the opposite state. The recovery
+    // screen is reached without a session — that is the whole point of it —
+    // and a gateway that was decommissioned needs to be able to say so from
+    // there. Asking is all a caller can do: parkeze-adopt decides, from an
+    // answer only parkeze.net can give, and a wrong one costs a return to
+    // local management rather than access to anything.
+    'POST /api/claim/check-adoption': true,
+    'GET  /api/claim/check-adoption': true,
 };
 
 // The provisioning routes above are open only while there is nothing to
@@ -264,6 +273,8 @@ const ROUTES = {
     'GET  /api/claim/status': () => respond(200, claim.status()),
     'GET  /api/claim/qr':     () => respond(200, claim.qr()),
     'POST /api/claim/poll':   () => respond(200, claim.poll()),
+    'POST /api/claim/check-adoption': () => respond(200, claim.checkAdoption()),
+    'GET  /api/claim/check-adoption': () => respond(200, claim.adoptionCheckResult()),
     'POST /api/claim/apply':  (env, req) => {
         const result = claim.applyBundle(req);
         return result.error ? error(400, result.error) : respond(200, result);
