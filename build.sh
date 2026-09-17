@@ -360,6 +360,66 @@ install_fleet_key() {
   log "Fleet recovery anchor installed"
 }
 
+install_mqtt_forwarder() {
+  # The piece that carries radio traffic to the LNS.
+  #
+  # The packet forwarder speaks Semtech UDP to 127.0.0.1:1700 and has always
+  # done so — but nothing in any image was listening there. No gateway bridge,
+  # no MQTT client of any kind, was ever installed. A gateway built from this
+  # tree could detect its radio, start its forwarder, and still never be heard
+  # by the LNS: every uplink was sent to a port with nobody on it.
+  #
+  # ChirpStack's MQTT Forwarder is the bridge. It is fetched here rather than
+  # packaged in the feed because it is a per-architecture binary and the feed
+  # is architecture-independent. It is statically linked, so it runs on
+  # OpenWrt's musl without a matching libc.
+  #
+  # PINNED BY HASH. ChirpStack does not publish checksums, so these are the
+  # SHA-256 of the files as first downloaded (2026-09-17). That cannot prove
+  # the first download was genuine; it does guarantee that nothing after it
+  # can be swapped in without the build failing. Bumping the version means
+  # downloading it, checking it, and updating both lines on purpose.
+  local files="$1"
+  local version="4.6.1"
+  local arch="${PARKEZE_FORWARDER_ARCH:-}"
+  local sha
+
+  case "${arch}" in
+    arm64) sha="2aa3d4b6d36020354f0997ea634eebdd2b0cffccfd57d79846fdebe4cc55a398" ;;
+    '')
+      # No build exists for MIPS, which is both RAK boards. Loud, because a
+      # gateway without this is a gateway that cannot pass a single uplink.
+      warn "No MQTT forwarder for ${BOARD_ID}: ChirpStack publishes none for"
+      warn "  this CPU. This image will detect its radio and pass no traffic."
+      return 0 ;;
+    *) die "no pinned MQTT forwarder hash for architecture '${arch}'" ;;
+  esac
+
+  local name="chirpstack-mqtt-forwarder_${version}_linux_${arch}.tar.gz"
+  local url="https://artifacts.chirpstack.io/downloads/chirpstack-mqtt-forwarder/${name}"
+  local cache="${BUILD_DIR}/downloads/${name}"
+  mkdir -p "$(dirname "${cache}")"
+
+  if [ ! -f "${cache}" ]; then
+    log "Fetching ChirpStack MQTT Forwarder ${version} (${arch})"
+    curl -fL --retry 3 -o "${cache}.part" "${url}" || die "could not download ${url}"
+    mv "${cache}.part" "${cache}"
+  fi
+
+  local got
+  got="$( (sha256sum "${cache}" 2>/dev/null || shasum -a 256 "${cache}") | cut -d' ' -f1)"
+  if [ "${got}" != "${sha}" ]; then
+    rm -f "${cache}"
+    die "MQTT forwarder checksum mismatch for ${name}: expected ${sha}, got ${got}"
+  fi
+
+  mkdir -p "${files}/usr/bin"
+  tar -xzf "${cache}" -C "${files}/usr/bin" chirpstack-mqtt-forwarder \
+    || die "could not unpack ${name}"
+  chmod 0755 "${files}/usr/bin/chirpstack-mqtt-forwarder"
+  log "MQTT forwarder ${version} installed"
+}
+
 install_ops_keys() {
   # The fleet SSH public key, baked into the image.
   #
@@ -557,6 +617,7 @@ EOF
     files="${BUILD_DIR}/files-${BOARD_ID}"
     rm -rf "${files}"; mkdir -p "${files}"
     render_board_files "${files}"
+    install_mqtt_forwarder "${files}"
 
     # Package list: shared, then board, then the removals as `-name` entries,
     # all flattened onto one line because ImageBuilder wants it that way.

@@ -1,0 +1,39 @@
+#!/bin/sh
+#
+# What this gateway is, as key=value lines.
+#
+# Run by the MQTT forwarder on every stats interval ([metadata.commands]), which
+# attaches the output to the stats message it already sends to the LNS. The LNS
+# stores it on the gateway record, and parkeze.net reads that record — so the
+# gateway page learns the firmware version and addresses over the connection
+# and credentials the gateway already uses for LoRaWAN, with no extra topic and
+# no broker change.
+#
+# Also used by `parkeze-claim report`, so a gateway with no working radio —
+# which sends no stats — still says what it is.
+#
+# Small on purpose: this rides every stats message, and on a SIM those are
+# billed. Keys are short and nothing here is slow.
+
+. /etc/parkeze/board.conf
+
+addr() {
+    # First IPv4 address on a logical interface, or nothing.
+    ubus call "network.interface.$1" status 2>/dev/null \
+        | jsonfilter -e '@["ipv4-address"][0].address' 2>/dev/null
+}
+
+echo "parkeze_version=${PARKEZE_VERSION}"
+echo "parkeze_build=${PARKEZE_BUILD}"
+echo "openwrt=${OPENWRT_VERSION}"
+echo "board=${BOARD_ID}"
+echo "uptime=$(cut -d. -f1 /proc/uptime)"
+
+wan="$(addr wan)";   [ -n "${wan}" ]   && echo "wan_ip=${wan}"
+wwan="$(addr wwan)"; [ -n "${wwan}" ]  && echo "cellular_ip=${wwan}"
+
+ts="$(tailscale --socket=/var/run/tailscale/tailscaled.sock ip -4 2>/dev/null | head -n1)"
+[ -n "${ts}" ] && echo "tailnet_ip=${ts}"
+
+echo "concentrator=$(uci -q get parkeze.concentrator.status || echo unknown)"
+exit 0

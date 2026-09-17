@@ -1,6 +1,6 @@
 Package: parkeze-concentrator
 Version: @VERSION@-@BUILD@
-Depends: ucode, ucode-mod-fs, ucode-mod-uci, jsonfilter, jshn
+Depends: ucode, ucode-mod-fs, ucode-mod-uci, jsonfilter, jshn, ca-bundle
 Source: parkeze
 Section: net
 Priority: optional

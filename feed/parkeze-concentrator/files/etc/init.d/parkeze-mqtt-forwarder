@@ -1,0 +1,98 @@
+#!/bin/sh /etc/rc.common
+#
+# ChirpStack MQTT Forwarder: the packet forwarder's traffic, onto the LNS broker.
+#
+# The packet forwarder speaks Semtech UDP to 127.0.0.1:1700. Until this existed
+# nothing listened there — no gateway bridge was ever installed — so a gateway
+# could detect its radio, run its forwarder, and still never be heard by the
+# LNS.
+#
+# Credentials are the gateway's broker identity from adoption, in UCI. The
+# config is rendered to tmpfs at start with mode 0600 and never written to
+# flash: the password lives in exactly one persistent place, not two.
+
+START=98
+STOP=14
+USE_PROCD=1
+
+BIN=/usr/bin/chirpstack-mqtt-forwarder
+CONF=/var/run/parkeze/mqtt-forwarder.toml
+
+# Region name as the gateway knows it -> the topic prefix the LNS subscribes
+# under. The adoption bundle may name one explicitly; this is the fallback.
+topic_prefix() {
+    local explicit region
+    explicit="$(uci -q get parkeze.mqtt.topic_prefix)"
+    [ -n "${explicit}" ] && { echo "${explicit}"; return; }
+    region="$(uci -q get parkeze.lorawan.region)"
+    case "${region}" in
+        US915) echo "us915_0" ;;
+        *)     echo "$(echo "${region}" | tr 'A-Z' 'a-z')" ;;
+    esac
+}
+
+start_service() {
+    [ -x "${BIN}" ] || {
+        logger -t mqtt-forwarder "no forwarder binary on this image; radio traffic cannot reach the LNS"
+        return 0
+    }
+    [ "$(uci -q get parkeze.adoption.state)" = "adopted" ] || return 0
+
+    local host port user pass
+    host="$(uci -q get parkeze.mqtt.host)"
+    port="$(uci -q get parkeze.mqtt.port)"
+    user="$(uci -q get parkeze.mqtt.username)"
+    pass="$(uci -q get parkeze.mqtt.password)"
+    if [ -z "${host}" ] || [ -z "${user}" ] || [ -z "${pass}" ]; then
+        logger -t mqtt-forwarder "no broker credentials yet; not starting"
+        return 0
+    fi
+
+    mkdir -p "$(dirname "${CONF}")"
+    umask 077
+    cat > "${CONF}" <<CONF
+[logging]
+level="info"
+log_to_syslog=true
+
+[mqtt]
+topic_prefix="$(topic_prefix)"
+json=false
+server="ssl://${host}:${port:-8883}"
+username="${user}"
+password="${pass}"
+qos=0
+clean_session=false
+ca_cert="/etc/ssl/certs/ca-certificates.crt"
+keep_alive_interval="30s"
+
+[backend]
+enabled="semtech_udp"
+
+[backend.semtech_udp]
+# Loopback only. The packet forwarder is the only thing that should ever talk
+# to this, and it is on the same box.
+bind="127.0.0.1:1700"
+time_fallback_enabled=true
+
+[metadata]
+split_delimiter="="
+
+[metadata.commands]
+facts=["/usr/sbin/parkeze-gateway-facts"]
+CONF
+
+    procd_open_instance forwarder
+    procd_set_param command "${BIN}" -c "${CONF}"
+    procd_set_param stdout 1
+    procd_set_param stderr 1
+    procd_set_param respawn 3600 10 5
+    procd_close_instance
+}
+
+service_triggers() {
+    # New credentials arrive in UCI at adoption and on every bundle collection.
+    procd_add_config_trigger "config.change" "parkeze" /etc/init.d/parkeze-mqtt-forwarder restart
+    procd_add_reload_interface_trigger wan
+    procd_add_reload_interface_trigger wwan
+}
