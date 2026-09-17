@@ -26,7 +26,14 @@ drive() {
     # gpiochip0 is the SoC's own controller on every board we ship. A board
     # with the concentrator on a secondary controller needs a chip setting in
     # board.conf; none does today.
-    gpioset "${PARKEZE_GPIOCHIP:-gpiochip0}" "${line}=${value}" 2>/dev/null
+    #
+    # libgpiod v2 syntax, which is what 24.10 ships. The v1 form,
+    # `gpioset gpiochip0 11=1`, fails there with "invalid line value", and
+    # since gpioset exists the sysfs fallback never ran: every reset silently
+    # failed and the part stayed held in reset. `-t 0` sets the value and
+    # exits, and the line keeps it (checked on a RAK7268CV2: the SX1302 reads
+    # back its version after `-t 0 11=0`, and zeros after `-t 0 11=1`).
+    gpioset -c "${PARKEZE_GPIOCHIP:-gpiochip0}" -t 0 "${line}=${value}" 2>/dev/null
     return $?
   fi
 
