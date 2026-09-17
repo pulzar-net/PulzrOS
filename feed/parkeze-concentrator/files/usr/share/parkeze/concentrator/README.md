@@ -33,3 +33,36 @@ Fields:
                  Required in some regions and not others; a region that
                  mandates it on a part that lacks it is a configuration error
                  the console surfaces rather than a silent non-compliance.
+
+## The vendor model, and why the profile's is only a default
+
+`model` in a profile is what gets written into concentratord's config, and
+concentratord uses it to pick a **radio calibration**: the RSSI offset it
+reports signal strength against, and the transmit gain table it keys power
+against. Get it wrong and the gateway still runs — it receives, it forwards,
+the LNS shows it online — while reporting signal strengths that are off and
+transmitting at powers that are not the ones asked for.
+
+The profile cannot know which board it is on. `sx1302_spi` is an SX1302 behind
+SPI, which is a RAK2287, a RAK5146, a WM1302 and a Waveshare SX1302 HAT alike,
+and none of them can be told apart over the bus. So the profile carries the
+most common one as a default and the unit names its own:
+
+    uci set parkeze.slot0.model='waveshare_sx1302_lorawan_gateway_hat'
+    uci commit parkeze
+    /etc/init.d/parkeze-packet-forwarder restart
+
+`PARKEZE_CONCENTRATOR_MODEL` in board.conf does the same for a board where the
+part is soldered down and there is nothing to guess.
+
+The names are concentratord's, not ours — `rak_2287`, `rak_5146`,
+`seeed_wm1302`, `waveshare_sx1302_lorawan_gateway_hat`, the `semtech_*` and
+`multitech_*` families. An unknown name makes concentratord exit at startup
+rather than run miscalibrated, which is the right way round.
+
+A GNSS on the UART is picked up automatically: once `parkeze-gps-detect` finds
+a receiver, the generator adds the `GNSS` model flag and the device path, and
+concentratord takes the port over for PPS and time. That detection needs
+`stty`, which is not in the image's BusyBox — hence the `coreutils-stty`
+dependency.
+
