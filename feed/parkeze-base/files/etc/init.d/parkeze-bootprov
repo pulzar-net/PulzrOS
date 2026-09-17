@@ -129,6 +129,13 @@ apply_password() {
 
 start() {
 	. /etc/parkeze/board.conf 2>/dev/null
+
+	# First, and before any of the conditions below: root's authorized_keys is
+	# composed from the image every boot, adopted or not. It is how a rotated
+	# fleet key reaches a gateway at all — see parkeze-fleet-keys.
+	/usr/sbin/parkeze-fleet-keys || \
+		logger -t parkeze -p daemon.err "could not compose authorized_keys"
+
 	[ "${PARKEZE_BOOTPART_KEYS:-1}" = "1" ] || return 0
 
 	# Nothing below happens once the gateway has something to lose.
@@ -152,9 +159,14 @@ start() {
 		# not fail, it would silently leave no working key and look like the
 		# feature is broken.
 		if grep -qE '^(ssh-(rsa|ed25519)|ecdsa-sha2-)' "${MNT}/${KEYS}"; then
-			mkdir -p /etc/dropbear
-			cat "${MNT}/${KEYS}" > /etc/dropbear/authorized_keys
-			chmod 0600 /etc/dropbear/authorized_keys
+			# Site keys, not authorized_keys. That file is composed from
+			# these plus the image's fleet key by parkeze-fleet-keys —
+			# writing it directly here used to delete Parkeze's own access
+			# on any unit a technician provisioned.
+			mkdir -p /etc/parkeze
+			cat "${MNT}/${KEYS}" > /etc/parkeze/site-keys
+			chmod 0600 /etc/parkeze/site-keys
+			/usr/sbin/parkeze-fleet-keys || true
 			logger -t parkeze -p daemon.warn \
 				"installed SSH key(s) from ${BOOT_DEV}:/${KEYS}"
 		else

@@ -409,10 +409,16 @@ install_ops_keys() {
   #     installer in the field uses; both exist because they answer to
   #     different people
   local keydir="${PARKEZE_OPS_KEYS_DIR:-${ROOT_DIR}/keys}"
-  local dropbear="${ROOT_DIR}/boards/common/files/etc/dropbear"
-  local roothome="${ROOT_DIR}/boards/common/files/root/.ssh"
+  # NOT /etc/dropbear/authorized_keys. A file shipped under /etc is a package
+  # conffile, and sysupgrade keeps conffiles — so the key a gateway was
+  # flashed with survived every upgrade that carried a new one, and rotating
+  # the fleet key silently did nothing to the fleet. This lands on /usr, which
+  # sysupgrade replaces whole, and parkeze-fleet-keys composes the real
+  # authorized_keys from it at boot.
+  local sharedir="${ROOT_DIR}/boards/common/files/usr/share/parkeze"
+  local fleet="${sharedir}/fleet-keys"
 
-  rm -f "${dropbear}/authorized_keys" "${roothome}/authorized_keys"
+  rm -f "${fleet}"
 
   if [ "${PARKEZE_OPS_KEYS:-1}" != "1" ]; then
     log "Fleet SSH key omitted (PARKEZE_OPS_KEYS=0)"
@@ -420,7 +426,7 @@ install_ops_keys() {
   fi
 
   local found=0
-  mkdir -p "${dropbear}" "${roothome}"
+  mkdir -p "${sharedir}"
   for pub in "${keydir}"/*.pub; do
     [ -f "${pub}" ] || continue
     # Checked before it goes in an image. A truncated key here does not fail,
@@ -430,13 +436,12 @@ install_ops_keys() {
       warn "${pub} holds no recognisable public key; skipped"
       continue
     fi
-    cat "${pub}" >> "${dropbear}/authorized_keys"
+    cat "${pub}" >> "${fleet}"
     found=$((found + 1))
   done
 
   if [ "${found}" -eq 0 ]; then
-    rm -f "${dropbear}/authorized_keys"
-    rmdir "${dropbear}" "${roothome}" 2>/dev/null
+    rm -f "${fleet}"
     warn "No fleet SSH key in ${keydir}."
     warn "  Gateways from this build are reachable only with the per-unit"
     warn "  password from the boot partition. Generate the pair with"
@@ -445,13 +450,7 @@ install_ops_keys() {
     return 0
   fi
 
-  # Both paths. OpenWrt patches dropbear to read /etc/dropbear/authorized_keys,
-  # which is the convention LuCI writes to, but root's home is /root and the
-  # stock dropbear behaviour is $HOME/.ssh. Writing both costs one file and
-  # removes the possibility of this silently not working.
-  cp "${dropbear}/authorized_keys" "${roothome}/authorized_keys"
-  chmod 0700 "${dropbear}" "${roothome}"
-  chmod 0600 "${dropbear}/authorized_keys" "${roothome}/authorized_keys"
+  chmod 0600 "${fleet}"
   log "Fleet SSH key installed (${found})"
 }
 

@@ -16,3 +16,7 @@
 /etc/parkeze/console/
 /etc/parkeze/wireguard/
 /etc/parkeze/recovery.pub
+# Keys a technician provisioned on this unit. Parkeze's own key is NOT here:
+# it comes from the image, so that rotating it is a firmware upgrade rather
+# than a visit. See parkeze-fleet-keys.
+/etc/parkeze/site-keys
