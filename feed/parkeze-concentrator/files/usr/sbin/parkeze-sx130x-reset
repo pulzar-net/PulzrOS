@@ -40,12 +40,34 @@
 
 . /etc/parkeze/board.conf
 
+# ── HANDING THE PINS BACK ──────────────────────────────────────────────────
+#
+# These lines are held only so a probe can read the part. Concentratord claims
+# the same reset and power-enable pins through the character device and drives
+# them itself, and a line exported through sysfs is already claimed — it fails
+# with "Resource busy (os error 16)" and crash-loops. So whoever resets for a
+# probe releases afterwards: `--release`, called at the end of detection and
+# again before the forwarder starts.
+
 RESET_GPIO="${PARKEZE_SX130X_RESET_GPIO}"
 POWER_GPIO="${PARKEZE_SX130X_POWER_EN_GPIO}"
 SX1261_GPIO="${PARKEZE_SX1261_RESET_GPIO}"
 AD5338R_GPIO="${PARKEZE_AD5338R_RESET_GPIO}"
 
 [ -n "${RESET_GPIO}" ] || exit 1
+
+SYSFS_DIR=/sys/class/gpio
+GPIO_BASE="$(cat ${SYSFS_DIR}/gpiochip*/base 2>/dev/null | sort -n | head -n1)"
+: "${GPIO_BASE:=0}"
+
+if [ "$1" = "--release" ]; then
+    for pin in ${RESET_GPIO} ${PARKEZE_SX130X_POWER_EN_GPIO} \
+               ${PARKEZE_SX1261_RESET_GPIO} ${PARKEZE_AD5338R_RESET_GPIO}; do
+        node="${SYSFS_DIR}/gpio$((GPIO_BASE + pin))"
+        [ -d "${node}" ] && echo "$((GPIO_BASE + pin))" > "${SYSFS_DIR}/unexport" 2>/dev/null
+    done
+    exit 0
+fi
 
 SYSFS=/sys/class/gpio
 BASE="$(cat ${SYSFS}/gpiochip*/base 2>/dev/null | sort -n | head -n1)"

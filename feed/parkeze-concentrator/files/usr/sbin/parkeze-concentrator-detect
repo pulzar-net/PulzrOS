@@ -267,6 +267,10 @@ else
 fi
 
 uci commit parkeze
+# The probe is done with the reset and power lines, and concentratord claims
+# the same ones. Holding them past here is what makes it crash-loop.
+parkeze-sx130x-reset --release 2>/dev/null
+
 log "detection complete: ${present}/${total} slots, ${channels} channels"
 
 [ "${present}" -gt 0 ]
