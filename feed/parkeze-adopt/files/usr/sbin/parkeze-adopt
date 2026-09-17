@@ -173,7 +173,7 @@ check() {
 
 install_bundle() {
     local response="$1"
-    local org authkey loginsrv recovery mqtt_user mqtt_pass mqtt_host
+    local org authkey loginsrv recovery mqtt_user mqtt_pass mqtt_host mqtt_prefix
 
     org="$(echo "${response}" | jsonfilter -e '@.org')"
     authkey="$(echo "${response}" | jsonfilter -e '@.tailscaleAuthKey')"
@@ -182,6 +182,7 @@ install_bundle() {
     mqtt_user="$(echo "${response}" | jsonfilter -e '@.mqtt.username')"
     mqtt_pass="$(echo "${response}" | jsonfilter -e '@.mqtt.password')"
     mqtt_host="$(echo "${response}" | jsonfilter -e '@.mqtt.host')"
+    mqtt_prefix="$(echo "${response}" | jsonfilter -e '@.mqtt.topicPrefix')"
 
     # The recovery anchor is not optional. Without it this gateway can never be
     # recovered offline, and we would only find that out on the day it matters.
@@ -223,6 +224,7 @@ set parkeze.console.local_login='0'
 set parkeze.mqtt.host='${mqtt_host}'
 set parkeze.mqtt.username='${mqtt_user}'
 set parkeze.mqtt.password='${mqtt_pass}'
+set parkeze.mqtt.topic_prefix='${mqtt_prefix}'
 EOF
     uci commit parkeze
 
@@ -232,6 +234,9 @@ EOF
 
     /etc/init.d/parkeze-tailscale restart >/dev/null 2>&1
     /etc/init.d/parkeze-packet-forwarder restart >/dev/null 2>&1
+    # The bridge from that forwarder to the LNS. It only starts once adopted
+    # and holding broker credentials, which is this moment.
+    /etc/init.d/parkeze-mqtt-forwarder restart >/dev/null 2>&1
     /etc/init.d/parkeze-claim stop >/dev/null 2>&1
 
     # The other half of the pair: claiming stops, reporting starts. Enabled as
@@ -273,8 +278,14 @@ offline bundle cannot be verified. Adopt this gateway while it has internet."
             || die "That bundle is not signed."
 
         printf '%s' "${body}" > /tmp/.bundle-body
-        echo "${signature}" | base64 -d > /tmp/.bundle-sig 2>/dev/null \
+        # openssl, not base64: the image's BusyBox has no base64 applet, so the
+        # previous `base64 -d` exited 127 and every offline bundle was refused
+        # here as "Malformed signature" — offline adoption never worked. -A
+        # because the signature is one unwrapped line.
+        printf '%s' "${signature}" | openssl base64 -d -A > /tmp/.bundle-sig 2>/dev/null \
             || { rm -f /tmp/.bundle-body; die "Malformed signature."; }
+        [ -s /tmp/.bundle-sig ] \
+            || { rm -f /tmp/.bundle-body /tmp/.bundle-sig; die "Malformed signature."; }
 
         if ! openssl pkeyutl -verify -pubin -inkey "${pubkey}" -rawin \
                  -in /tmp/.bundle-body -sigfile /tmp/.bundle-sig >/dev/null 2>&1; then
@@ -285,8 +296,9 @@ offline bundle cannot be verified. Adopt this gateway while it has internet."
 
         # The verified body is a base64 JSON document; from here it is read
         # exactly like the online one.
-        echo "${body}" | base64 -d > /tmp/.bundle.json 2>/dev/null \
+        printf '%s' "${body}" | openssl base64 -d -A > /tmp/.bundle.json 2>/dev/null \
             || die "Malformed bundle."
+        [ -s /tmp/.bundle.json ] || die "Malformed bundle."
         rm -f /tmp/.bundle-body
         file=/tmp/.bundle.json
     fi

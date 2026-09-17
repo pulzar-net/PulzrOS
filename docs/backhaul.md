@@ -14,21 +14,34 @@ between them is money.
 
 Both are defined in `feed/parkeze-base/files/etc/uci-defaults/20-parkeze-network`.
 
-### Ethernet works, but is not yours to configure
+### Ethernet is configurable where you stand
 
 Ethernet is the wired backhaul. It comes up on DHCP, it is the path Tailscale
 rides, and it is how a wired site is managed. It is on by default.
 
-It is still **not editable from the console**. Repointing a gateway's uplink is
-parkeze.net's decision, not something to do from a car park — working and
-editable are different things, and the console renders it read-only with the
-reason supplied by the device rather than hardcoded in the UI.
+The console can set it to DHCP or to a static address, gateway and DNS. This
+used to be read-only, on the reasoning that the uplink was parkeze.net's to
+decide. That broke the one case it mattered for: a site whose network needs a
+static address is a site where the gateway cannot reach parkeze.net at all until
+somebody standing there says so, and that person had no way to.
 
-> An earlier version of this shipped ethernet *disabled* by default, on the
-> reasoning that a gateway should not put itself on an unassessed network. That
-> was the wrong trade. It made the first thing anyone does with a new gateway —
-> plug it into a network — leave it silent and looking dead, and it broke
-> provisioning, because a gateway with no uplink cannot register its claim.
+Two properties make it safe to offer:
+
+- **It never cuts off the person making the change.** Only `network.wan` is
+  touched. The console (`192.168.61.1`) and link-local addresses are separate
+  interfaces on the same port, so a wrong static address costs the uplink, not
+  the page. A static address inside either of those subnets is refused. That is
+  also why there is no timed rollback: the person who can fix it is still
+  connected.
+- **The tailnet follows on its own.** Bringing `wan` up fires the report and
+  tailscale services' interface triggers. The report tells parkeze.net the
+  gateway is wired, which is what permits it a tailnet — and a gateway that was
+  cellular-only when adopted, and so was never issued a key, gets one in the
+  report's response and joins.
+
+> An earlier version shipped ethernet *disabled* by default, on the reasoning
+> that a gateway should not put itself on an unassessed network. That was the
+> wrong trade: the first thing anyone does with a new gateway is plug it in.
 
 ### Nothing is accepted from the wan zone
 
@@ -186,7 +199,25 @@ fleet the obvious implementation is the expensive one. If you extend that
 endpoint, extend it from an API that already knows.
 
 `parkeze-backhaul-check` on the device follows the same rule: the wired path is
-tested through tailscaled's own view (free), and the cellular path gets a bare
-TCP handshake and no more — about 200 bytes, against roughly 6KB for an HTTPS
-GET to a health endpoint once the certificate chain is counted. It only tests
-cellular at all when the wired path is already known to be down.
+tested through tailscaled's own view (free), and the cellular path only asks
+whether a TCP connection to parkeze.net completes — no TLS, no certificate
+chain. That is about 700 bytes, against roughly 6KB for an HTTPS GET to a health
+endpoint. It is not the 200 of a bare handshake because nothing on the image can
+stop there: BusyBox `nc` is the minimal build without `-z`, and there is no
+ucode socket module, so curl connects in plain HTTP to the HTTPS port and the
+answer is whether the connection was made. It only tests cellular at all when
+the wired path is already known to be down.
+
+The probe host comes from `PARKEZE_NET_URL`. It used to be a literal
+`parkeze.net`, which no longer resolves, and the `nc -z` it ran never worked on
+this image either — so until this was fixed the cellular path could not test as
+up on any gateway.
+
+### "Online" on the claim screen is a different question
+
+Before adoption there is no tunnel, so "manageable" is false for every gateway
+and says nothing about whether it can reach us. `parkeze-claim status` answers
+the unadopted case from its own polling instead: each register and poll attempt
+records whether parkeze.net answered, and `online` is true if one did within the
+last two hours. No extra bytes — the claim loop was making those requests anyway.
+Once adopted, `online` goes back to `parkeze-backhaul-check`.

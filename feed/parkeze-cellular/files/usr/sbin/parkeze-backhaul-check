@@ -8,11 +8,19 @@
 # BUDGET
 #
 # This runs periodically and one of the two paths it tests is billed by the
-# megabyte. So the cellular test is a single DNS-less TCP handshake to a known
-# address and nothing more — no HTTP request, no TLS, no payload. A handshake
-# is about 200 bytes round trip; an HTTPS GET to a health endpoint is closer to
-# 6KB once you count the certificate chain, which is thirty times the cost for
-# an answer that is no better.
+# megabyte. So the cellular test only asks whether a TCP connection to
+# parkeze.net completes: no TLS, no certificate chain. An HTTPS GET to a health
+# endpoint is closer to 6KB once the chain is counted, for an answer no better.
+#
+# It costs about 700 bytes, not the 200 a bare handshake would. The image has
+# no tool that can stop at the handshake: BusyBox nc here is the minimal build
+# with no -z or -w (so the `nc -w 5 -z` this used to run failed for every host,
+# and the cellular path could never test as up), and there is no ucode socket
+# module. curl is already a dependency, so it connects in plain HTTP to the
+# HTTPS port — ~83 bytes out, a ~400-byte "wrong protocol" reply back — and the
+# decision is whether the connection was made, not what came back. Adding
+# ucode-mod-socket would get this to the handshake alone, if that difference
+# ever matters on a real bill.
 #
 # The wired path is free, so it gets the fuller check.
 
@@ -21,7 +29,18 @@
 JSON=0
 [ "$1" = "--json" ] && JSON=1
 
-CHECK_HOST="${PARKEZE_HEALTH_HOST:-parkeze.net}"
+# Derived from PARKEZE_NET_URL rather than spelled out again. The default here
+# used to be a literal `parkeze.net`, which stopped existing when the platform
+# moved to net.parkeze.com — it is NXDOMAIN now, so the handshake below could
+# never connect and the cellular path tested as down on every gateway whose
+# wired path was down. That is precisely the case this check exists for: it is
+# what the fallback AP watchdog and the reset-button LED read.
+#
+# board.conf already calls PARKEZE_NET_URL the one place a host is named. This
+# makes that true of the probe as well, so the next move is still one line.
+_net_host="${PARKEZE_NET_URL#*://}"
+CHECK_HOST="${PARKEZE_HEALTH_HOST:-${_net_host%%/*}}"
+CHECK_HOST="${CHECK_HOST:-net.parkeze.com}"
 CHECK_PORT="${PARKEZE_HEALTH_PORT:-443}"
 
 # ── wired ───────────────────────────────────────────────────────────────────
@@ -41,10 +60,17 @@ cell_up=false
 if [ "${wired_up}" != "true" ]; then
     if ip link show "$(uci -q get network.wwan.device >/dev/null; echo wwan0)" >/dev/null 2>&1 \
        || ip route show table main | grep -q wwan; then
-        # -w gives up rather than holding the link open on a dead network.
-        if nc -w 5 -z "${CHECK_HOST}" "${CHECK_PORT}" >/dev/null 2>&1; then
-            cell_up=true
-        fi
+        # time_connect is 0 unless the TCP handshake completed, whatever curl
+        # does afterwards — the far end answering plain HTTP on an HTTPS port
+        # with an error is the expected outcome, not a failure. Timeouts cap
+        # how long a dead network can hold the link open.
+        connected="$(curl -s --connect-timeout 5 --max-time 6 -o /dev/null \
+                          -w '%{time_connect}' \
+                          "http://${CHECK_HOST}:${CHECK_PORT}/" </dev/null 2>/dev/null)"
+        case "${connected}" in
+            ''|0|0.0|0.00000|0.000000) ;;
+            *) cell_up=true ;;
+        esac
     fi
 fi
 

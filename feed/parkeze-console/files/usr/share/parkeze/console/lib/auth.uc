@@ -76,13 +76,14 @@ let digest = require('digest');
 // Declaring the names first makes every one of them a known local before any
 // body is compiled, so closures capture the binding rather than a missing
 // global and definition order stops mattering. auth.uc alone had six of these.
-let now, randomHex, constantTimeEqual, readJson, writeJson, crypt, hashPassword, verifyPassword, shellQuote, lockoutState, isLockedOut, recordFailure, clearFailures, sessionPath, createSession, readSession, destroySession, config, backhaulUp, loginMethods, loginLocal, setPassword, recoveryChallenge, recoveryVerify, verifySignature, loginSso, audit;
+let now, randomHex, constantTimeEqual, readJson, writeJson, crypt, hashPassword, verifyPassword, shellQuote, lockoutState, isLockedOut, recordFailure, clearFailures, sessionPath, createSession, readSession, destroySession, config, backhaulUp, loginMethods, loginLocal, setPassword, recoveryChallenge, recoveryVerify, verifySignature, loginSso, audit, platformUrl;
 
 
 const STATE_DIR      = '/etc/parkeze/console';
 const SESSION_DIR    = '/var/run/parkeze/sessions';
 const RECOVERY_PUBKEY = '/etc/parkeze/recovery.pub';
 const CHALLENGE_FILE = '/var/run/parkeze/recovery-challenge.json';
+const SSO_SPENT_FILE = '/var/run/parkeze/sso-spent.json';
 const LOCKOUT_FILE   = '/var/run/parkeze/lockout.json';
 
 // Sessions are short because a gateway console is a place you go to do one
@@ -339,6 +340,13 @@ backhaulUp = function() {
     return system('/usr/sbin/parkeze-backhaul-check >/dev/null 2>&1') == 0;
 };
 
+// The platform's base URL, from board.conf — the one place a host is named.
+platformUrl = function() {
+    const conf = readfile('/etc/parkeze/board.conf') ?? '';
+    const m = match(conf, /PARKEZE_NET_URL='([^']*)'/);
+    return (m && length(m[1])) ? m[1] : 'https://net.parkeze.com';
+};
+
 // What the login page should offer.
 loginMethods = function() {
     const cfg = config();
@@ -367,6 +375,11 @@ loginMethods = function() {
         recovery: true,
         state: 'adopted',
         online: backhaulUp(),
+        // Where "Sign in with Parkeze" sends the browser, and which gateway it
+        // asks about. Neither is a secret: the EUI is printed on the unit, and
+        // the platform address is in board.conf for anyone who can read it.
+        platform: platformUrl(),
+        deviceId: cfg.deviceId,
         note: cfg.localEnabled
             ? 'Local sign-in is on. That is not the default.'
             : null,
@@ -535,7 +548,11 @@ verifySignature = function(message, signatureB64) {
     writefile(msgFile, message);
     // base64 -d rather than passing the signature to openssl on the command
     // line: it is binary, and it is attacker-supplied.
-    const decode = popen(sprintf('busybox base64 -d > %s', sigFile), 'w');
+    // openssl, not `busybox base64`: the image's BusyBox has no base64 applet.
+    // The old command wrote nothing, openssl was handed an empty signature
+    // file, and verification failed for every signature — so recovery access
+    // and SSO handoff had never worked on a ParkezeOS gateway.
+    const decode = popen(sprintf('openssl base64 -d -A > %s', sigFile), 'w');
     if (!decode) return false;
     decode.write(signatureB64);
     decode.close();
@@ -575,7 +592,7 @@ loginSso = function(token, addr) {
 
     let payload;
     try {
-        const proc = popen(sprintf('echo %s | busybox base64 -d',
+        const proc = popen(sprintf('printf %%s %s | openssl base64 -d -A',
                                    shellQuote(parts[0])), 'r');
         payload = json(proc.read('all'));
         proc.close();
@@ -593,6 +610,23 @@ loginSso = function(token, addr) {
 
     if ((payload.exp ?? 0) <= now())
         return { error: 'That handoff token has expired.', status: 410 };
+
+    // Good once. A token arrives in a URL fragment, which is not sent to any
+    // server but does stay in the browser's history — so without this, the
+    // back button on a shared laptop reopened a staff session for the rest of
+    // the token's five minutes. Spent tokens are remembered by the hash of
+    // their signature until they would have expired anyway, in tmpfs, so a
+    // reboot forgets them only once they are useless.
+    const spent = readJson(SSO_SPENT_FILE) ?? {};
+    const id = digest.sha256(parts[1]);
+    const t = now();
+    for (let k in keys(spent)) if (spent[k] <= t) delete spent[k];
+    if (spent[id]) {
+        recordFailure(addr);
+        return { error: 'That handoff token has already been used.', status: 409 };
+    }
+    spent[id] = payload.exp;
+    writeJson(SSO_SPENT_FILE, spent);
 
     clearFailures(addr);
     const session = createSession(payload.sub ?? 'Parkeze', 'sso',

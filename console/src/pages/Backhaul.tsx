@@ -17,10 +17,9 @@ import styles from './Pages.module.css';
 /**
  * How this gateway reaches the network, and how we reach it.
  *
- * Narrower than LuCI's networking pages on purpose. A Parkeze gateway has two
- * uplinks and only one of them is the operator's to configure — see
- * docs/backhaul.md. Ethernet is rendered read-only with the reason supplied by
- * the API, so the UI cannot drift from the device's own policy.
+ * Narrower than LuCI's networking pages on purpose: DHCP or a static address
+ * for ethernet, APN and on/off for cellular, and nothing that could take the
+ * console address away from the person using it. See docs/backhaul.md.
  */
 export default function Backhaul() {
   const queryClient = useQueryClient();
@@ -54,16 +53,13 @@ export default function Backhaul() {
         }}
       />
 
-      {/* Shown, never editable. */}
-      <Card title="Ethernet" icon={Network}>
-        <Notice tone="info">{state.wan.reason}</Notice>
-        <FactList>
-          <Fact label="Configured" value={state.wan.enabled ? 'Enabled' : 'Disabled'} />
-          <Fact label="State" value={<StatusBadge ok={state.wan.up === true} />} />
-          <Fact label="Address" value={state.wan.address} mono />
-          <Fact label="Gateway" value={state.wan.gateway} mono />
-        </FactList>
-      </Card>
+      <EthernetCard
+        state={state}
+        onApplied={() => {
+          queryClient.invalidateQueries({ queryKey: ['network-status'] });
+          queryClient.invalidateQueries({ queryKey: ['backhaul'] });
+        }}
+      />
 
       <Card title="Tailscale" icon={ShieldCheck}>
         <FactList>
@@ -173,6 +169,76 @@ function CellularCard({
 
       {apply.isError && <Notice tone="error">{(apply.error as Error).message}</Notice>}
       {apply.isSuccess && <Notice tone="success">Applied. The modem is re-attaching.</Notice>}
+
+      <div className={styles.actions}>
+        <Button variant="primary" loading={apply.isPending} onClick={() => apply.mutate()}>
+          Apply
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * The wired uplink: DHCP, or a static address for a site that needs one.
+ *
+ * Changing it never cuts off the person doing it. The console address lives on
+ * the same port as a separate interface and is not touched, so a wrong static
+ * address costs the uplink, not this page — which is also why there is no
+ * timed rollback. Tailscale follows on its own once the uplink comes up.
+ */
+function EthernetCard({ state, onApplied }: { state: NetworkStatus; onApplied: () => void }) {
+  const wan = state.wan;
+  const [mode, setMode] = useState<'dhcp' | 'static'>(wan.mode);
+  const [address, setAddress] = useState(wan.staticAddress ?? '');
+  const [netmask, setNetmask] = useState(wan.staticNetmask ?? '255.255.255.0');
+  const [gateway, setGateway] = useState(wan.staticGateway ?? '');
+  const [dns, setDns] = useState((wan.dns ?? []).join(', '));
+
+  const apply = useMutation({
+    mutationFn: () =>
+      api.post('/network/ethernet', {
+        mode,
+        address,
+        netmask,
+        gateway,
+        dns: dns.split(',').map((server) => server.trim()).filter(Boolean),
+      }),
+    onSuccess: onApplied,
+  });
+
+  return (
+    <Card title="Ethernet" icon={Network}>
+      <FactList>
+        <Fact label="State" value={<StatusBadge ok={wan.up === true} />} />
+        <Fact label="Address" value={wan.address} mono />
+        <Fact label="Gateway" value={wan.gateway} mono />
+      </FactList>
+
+      <div className={styles.row}>
+        <Button variant={mode === 'dhcp' ? 'primary' : undefined} onClick={() => setMode('dhcp')}>
+          DHCP
+        </Button>
+        <Button variant={mode === 'static' ? 'primary' : undefined} onClick={() => setMode('static')}>
+          Static
+        </Button>
+      </div>
+
+      {mode === 'static' && (
+        <>
+          <TextField label="Address" value={address} placeholder="10.0.0.50"
+                     onChange={(event) => setAddress(event.target.value)} />
+          <TextField label="Netmask" value={netmask}
+                     onChange={(event) => setNetmask(event.target.value)} />
+          <TextField label="Gateway" value={gateway} placeholder="10.0.0.1"
+                     onChange={(event) => setGateway(event.target.value)} />
+          <TextField label="DNS" value={dns} placeholder="1.1.1.1, 8.8.8.8"
+                     onChange={(event) => setDns(event.target.value)} />
+        </>
+      )}
+
+      {apply.isError && <Notice tone="error">{(apply.error as Error).message}</Notice>}
+      {apply.isSuccess && <Notice tone="success">Applied.</Notice>}
 
       <div className={styles.actions}>
         <Button variant="primary" loading={apply.isPending} onClick={() => apply.mutate()}>

@@ -1,6 +1,6 @@
 Package: parkeze-cellular
 Version: @VERSION@-@BUILD@
-Depends: modemmanager, kmod-usb-net-qmi-wwan, ucode
+Depends: modemmanager, kmod-usb-net-qmi-wwan, ucode, curl
 Source: parkeze
 Section: net
 Priority: optional

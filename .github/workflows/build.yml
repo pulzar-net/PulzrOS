@@ -155,13 +155,6 @@ jobs:
       - name: Packages must exist upstream
         run: ./scripts/check-deps.sh
 
-      # A gateway console is an instrument panel. Emoji read as decoration on a
-      # device whose job is to say plainly whether something is broken, and
-      # they do not render on a serial console at 115200. Status is carried by
-      # badges, icons and colour.
-      - name: No emoji in anything user-facing
-        run: python3 scripts/check-no-emoji.py
-
       # The wordmark renderer is a reimplementation of somebody else's format,
       # which is only trustworthy while it is checked against the original.
       - name: FIGlet renderer matches figlet

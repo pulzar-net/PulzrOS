@@ -45,6 +45,7 @@ let lorawan = loadfile('/usr/share/parkeze/console/lib/lorawan.uc', { raw_mode: 
 let claim = loadfile('/usr/share/parkeze/console/lib/claim.uc', { raw_mode: true })();
 let io = loadfile('/usr/share/parkeze/console/lib/io.uc', { raw_mode: true })();
 let access = loadfile('/usr/share/parkeze/console/lib/access.uc', { raw_mode: true })();
+let firmware = loadfile('/usr/share/parkeze/console/lib/firmware.uc', { raw_mode: true })();
 
 const SESSION_COOKIE = 'parkeze_session';
 
@@ -263,11 +264,25 @@ const ROUTES = {
     'GET  /api/system/summary':   () => respond(200, system.summary()),
     'GET  /api/system/logs':      (env, req) => respond(200, system.logs(env.QUERY_STRING)),
     'POST /api/system/reboot':    (env, req, s) => { auth.audit('system.reboot', { by: s.subject }); return respond(200, system.reboot()); },
+    'POST /api/system/firmware':  (env, req, s) => {
+        auth.audit('system.firmware.upload', { by: s.subject, bytes: int(env.CONTENT_LENGTH ?? 0) });
+        const result = firmware.upload(env);
+        if (result.error) return error(result.status, result.error);
+        auth.audit('system.firmware.apply', { by: s.subject, bytes: result.bytes });
+        return respond(202, result);
+    },
 
     // ── network ─────────────────────────────────────────────────────────────
     'GET  /api/network/status':   () => respond(200, network.status()),
     'GET  /api/network/backhaul': () => respond(200, network.backhaul()),
     'POST /api/network/cellular': (env, req, s) => respond(200, network.setCellular(req, s)),
+    'POST /api/network/ethernet': (env, req, s) => {
+        const result = network.setEthernet(req, s);
+        if (result.error) return error(400, result.error);
+        auth.audit('network.ethernet', { by: s.subject, mode: req.mode,
+                                         address: req.address, gateway: req.gateway });
+        return respond(200, result);
+    },
 
     // ── provisioning ────────────────────────────────────────────────────────
     'GET  /api/claim/status': () => respond(200, claim.status()),
@@ -324,6 +339,13 @@ const ROUTES = {
     'POST /api/lorawan/restart':      (env, req, s) => { auth.audit('lorawan.restart', { by: s.subject }); return respond(200, lorawan.restart()); },
 };
 
+// Routes whose body is not JSON but the payload itself — read by the handler,
+// in chunks, after authentication. Everything else goes through body(), which
+// runs before the session check and is capped at 64KB on purpose.
+const STREAMED = {
+    'POST /api/system/firmware': true,
+};
+
 // Normalised so 'GET  /api/x' in the tables above matches a real request
 // regardless of how many spaces the table used to line its columns up.
 function routeKey(method, path) {
@@ -360,7 +382,10 @@ function route(env) {
     if (PROVISIONING_ONLY[key] && claim.isAdopted())
         return error(404, 'This gateway is already adopted.');
 
-    const req = (method == 'POST' || method == 'PUT') ? body(env) : {};
+    // Not for a streamed route: its body is the payload, and must not be read
+    // here — before authentication — at all.
+    const req = STREAMED[key] ? {} :
+        ((method == 'POST' || method == 'PUT') ? body(env) : {});
 
     if (PUBLIC[key])
         return handler(env, req, null, null);
@@ -390,7 +415,7 @@ function route(env) {
 // String keys: ucode object literals take identifiers or quoted strings, not
 // bare integers, and lookups are by string too.
 const STATUS_TEXT = {
-	'200': 'OK', '201': 'Created', '204': 'No Content',
+	'200': 'OK', '201': 'Created', '202': 'Accepted', '204': 'No Content',
 	'301': 'Moved Permanently', '302': 'Found', '304': 'Not Modified',
 	'400': 'Bad Request', '401': 'Unauthorized', '403': 'Forbidden',
 	'404': 'Not Found', '405': 'Method Not Allowed', '409': 'Conflict',

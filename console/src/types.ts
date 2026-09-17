@@ -23,6 +23,10 @@ export interface LoginMethods {
   recovery: boolean;
   state: 'unadopted' | 'adopted';
   online?: boolean;
+  /** Where "Sign in with Parkeze" sends the browser. Adopted gateways only. */
+  platform?: string;
+  /** This gateway's EUI, for the same link. */
+  deviceId?: string;
   /** Null when there is nothing worth saying. */
   note: string | null;
 }
@@ -107,12 +111,14 @@ export interface NetworkStatus {
       in. Up independently of whether the uplink has a lease. */
   linkLocal: InterfaceStatus;
   wan: InterfaceStatus & {
-    /** Always false. Ethernet WAN is parkeze.net's to manage — see
-        docs/backhaul.md. The reason travels with the payload so the UI cannot
-        drift from the device's own policy. */
     manageable: boolean;
-    reason: string;
+    reason: string | null;
     enabled: boolean;
+    mode: 'dhcp' | 'static';
+    staticAddress: string | null;
+    staticNetmask: string | null;
+    staticGateway: string | null;
+    dns: string[];
   };
   cellular: InterfaceStatus & {
     manageable: boolean;

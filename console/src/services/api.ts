@@ -94,6 +94,49 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   return payload as T;
 }
 
+/**
+ * Upload a file as the raw request body, reporting progress.
+ *
+ * XHR rather than fetch because fetch cannot report upload progress, and a
+ * 30MB firmware image over a slow link with no indication of movement looks
+ * exactly like a hang. Same CSRF and 401 handling as `request`.
+ */
+export function upload<T>(
+  path: string,
+  file: Blob,
+  onProgress: (fraction: number) => void,
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `/api${path}`);
+    xhr.withCredentials = true;
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+    if (csrfToken) xhr.setRequestHeader('X-Parkeze-CSRF', csrfToken);
+
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress(event.loaded / event.total);
+    };
+    xhr.onerror = () => reject(new ApiError('The upload was interrupted.', 0));
+    xhr.onload = () => {
+      let payload: { error?: string } & Record<string, unknown> = {};
+      try {
+        payload = JSON.parse(xhr.responseText);
+      } catch {
+        // Non-JSON answer; the status says enough.
+      }
+      if (xhr.status === 401) {
+        onUnauthenticated?.();
+        reject(new ApiError('Your session has ended. Sign in again.', 401));
+      } else if (xhr.status < 200 || xhr.status >= 300) {
+        reject(new ApiError(payload.error ?? `Upload failed (${xhr.status})`, xhr.status));
+      } else {
+        resolve(payload as T);
+      }
+    };
+    xhr.send(file);
+  });
+}
+
 export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) => request<T>(path, { method: 'POST', body }),

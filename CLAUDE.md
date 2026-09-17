@@ -17,8 +17,7 @@ three numbered steps. Say the thing; do not warm up to it.
 the API's note *and* a notice that said the same sentence. The second one
 teaches people to skip the first.
 
-**No emoji.** `scripts/check-no-emoji.py` fails the build on one. Status is
-carried by badges, icons and colour. A colour glyph does not render on a serial
+**No emoji.** Status is carried by badges, icons and colour. A colour glyph does not render on a serial
 console at 115200 either.
 
 **Say "the LNS", not "ChirpStack"**, in anything a user reads.

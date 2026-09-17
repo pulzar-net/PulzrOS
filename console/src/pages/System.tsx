@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { KeyRound, Power, Settings2 } from 'lucide-react';
-import { api } from '@/services/api';
+import { KeyRound, Power, Settings2, Upload } from 'lucide-react';
+import { api, upload } from '@/services/api';
 import type { SystemSummary } from '@/types';
 import Card from '@/components/ui/Card';
 import Fact, { FactList } from '@/components/Fact';
@@ -46,6 +46,7 @@ export default function System() {
           <Fact label="Kernel" value={system.firmware.kernel} mono />
           <Fact label="Board" value={system.identity.boardName} />
         </FactList>
+        <FirmwareUpload />
       </Card>
 
       <RebootCard />
@@ -109,6 +110,67 @@ function PasswordCard({ adopted }: { adopted: boolean }) {
         </Button>
       </div>
     </Card>
+  );
+}
+
+/**
+ * Replacing the firmware in place, from a sysupgrade image.
+ *
+ * The gateway checks the image is for this board before it writes anything,
+ * and keeps its settings and its identity across the upgrade. Two steps —
+ * choose, then confirm — because the second one takes the gateway down.
+ */
+function FirmwareUpload() {
+  const [file, setFile] = useState<File | null>(null);
+  const [progress, setProgress] = useState(0);
+
+  const send = useMutation({
+    mutationFn: (image: File) =>
+      upload<{ target?: string; openwrt?: string }>('/system/firmware', image, setProgress),
+  });
+
+  if (send.isSuccess) {
+    return (
+      <Notice tone="info">
+        Upgrading. The gateway writes the image and restarts, which takes a few
+        minutes. Reload this page after that.
+      </Notice>
+    );
+  }
+
+  return (
+    <>
+      <div className={styles.row}>
+        <label className={styles.fileButton}>
+          <Upload size={14} strokeWidth={2} />
+          {file ? file.name : 'Choose image'}
+          <input
+            type="file"
+            accept=".bin,.img,.gz"
+            hidden
+            onChange={(event) => {
+              setFile(event.target.files?.[0] ?? null);
+              send.reset();
+              setProgress(0);
+            }}
+          />
+        </label>
+        {file && (
+          <Button
+            variant="danger"
+            loading={send.isPending}
+            onClick={() => send.mutate(file)}
+          >
+            Upgrade
+          </Button>
+        )}
+      </div>
+
+      {send.isPending && (
+        <progress className={styles.progress} value={progress} max={1} />
+      )}
+      {send.isError && <Notice tone="error">{(send.error as Error).message}</Notice>}
+    </>
   );
 }
 

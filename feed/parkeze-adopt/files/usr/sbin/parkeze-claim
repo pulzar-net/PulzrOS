@@ -150,6 +150,52 @@ qr() {
 
 # ── talking to parkeze.net ──────────────────────────────────────────────────
 
+# Whether the last attempt to reach parkeze.net worked.
+#
+# WHY NOT parkeze-backhaul-check
+#
+# That script answers "can this gateway be MANAGED", and it answers it
+# correctly: it asks tailscaled whether its tunnel is up, because the tunnel is
+# what we manage over. Before adoption there is no tunnel — no auth key has
+# been issued yet — so the answer is false, and on a board with no modem the
+# cellular fallback is false too. Every unadopted gateway therefore read as
+# offline, including one that had just registered its claim over the very link
+# being reported as down. The claim screen showed "No internet" to an installer
+# standing in front of a working gateway.
+#
+# The honest answer for this state is not a probe at all. This script talks to
+# parkeze.net every few seconds while it waits to be claimed, and each of those
+# attempts is a definitive statement about reachability that has already been
+# paid for. So it is recorded rather than re-measured, which also keeps the
+# budget rule intact: no extra bytes on a metered SIM to learn something we
+# just found out for free.
+
+REACHED="${STATE}/reached"
+
+# Two hours. The poll interval opens out to an hour once nobody is watching, so
+# a shorter window would report a gateway offline merely for being patient. It
+# bounds how stale the answer can be after somebody pulls the cable: false for
+# up to two hours rather than false forever, which is the trade the previous
+# behaviour got backwards.
+REACHED_MAX_AGE=7200
+
+mark_reached() {
+    mkdir -p "${STATE}"
+    date +%s > "${REACHED}" 2>/dev/null || true
+}
+
+mark_unreached() {
+    rm -f "${REACHED}"
+}
+
+reached_recently() {
+    local when now
+    when="$(cat "${REACHED}" 2>/dev/null)" || return 1
+    case "${when}" in ''|*[!0-9]*) return 1 ;; esac
+    now="$(date +%s)"
+    [ "$((now - when))" -lt "${REACHED_MAX_AGE}" ]
+}
+
 register() {
     ensure_identity
     registered && { log "already registered"; return 0; }
@@ -167,9 +213,11 @@ register() {
         # uplink is the normal state five minutes into an install. The QR
         # falls back to the offline form and everything still works.
         log "could not register claim (offline?): ${response}"
+        mark_unreached
         return 1
     }
 
+    mark_reached
     touch "${STATE}/registered"
     log "claim registered with parkeze.net"
     return 0
@@ -191,8 +239,10 @@ poll() {
         -d "$(printf '{"claimId":"%s","secret":"%s"}' \
               "$(claim_id)" "$(cat "${STATE}/secret")")" 2>&1)" || {
         log "poll failed: ${raw}"
+        mark_unreached
         return 1
     }
+    mark_reached
     status="$(echo "${raw}" | tail -n1)"
     response="$(echo "${raw}" | sed '$d')"
 
@@ -290,9 +340,29 @@ facts() {
     board_id="${BOARD_ID:-unknown}"
     version="${PARKEZE_VERSION:-0.0.0}"
 
-    printf '{"board":"%s","osVersion":"%s","modemPresent":%s,"modemModel":"%s","wiredUsable":%s,"tailscaleState":"%s","consolePort":443,"consoleScheme":"https","sshPort":22}' \
+    printf '{"board":"%s","osVersion":"%s","modemPresent":%s,"modemModel":"%s","wiredUsable":%s,"tailscaleState":"%s","consolePort":443,"consoleScheme":"https","sshPort":22,"system":%s}' \
         "${board_id}" "${version}" "${modem_present}" "${modem_model:-}" \
-        "${wired_usable}" "${ts:-Stopped}"
+        "${wired_usable}" "${ts:-Stopped}" "$(system_facts)"
+}
+
+# The same key=value facts the MQTT forwarder attaches to LoRaWAN stats, as a
+# JSON object. Sent here too because a gateway whose radio is missing or broken
+# sends no stats — and that is the gateway somebody is trying to diagnose.
+#
+# Values are stripped to a safe character set before they go into JSON by
+# hand: none of these legitimately contain a quote or a backslash, and one that
+# did would otherwise break the whole report.
+system_facts() {
+    command -v parkeze-gateway-facts >/dev/null 2>&1 || { echo '{}'; return; }
+    local out="" key value
+    while IFS='=' read -r key value; do
+        case "${key}" in ''|*[!a-z_]*) continue ;; esac
+        value="$(printf '%s' "${value}" | tr -cd 'A-Za-z0-9._:/+-')"
+        out="${out}${out:+,}\"${key}\":\"${value}\""
+    done <<EOF
+$(parkeze-gateway-facts 2>/dev/null)
+EOF
+    printf '{%s}' "${out}"
 }
 
 report() {
@@ -340,19 +410,51 @@ report() {
         fi
     fi
 
+    # A key, when Parkeze has decided this gateway may now join a tailnet it
+    # has never joined — typically a cellular-only site that has just been
+    # given ethernet. Written where parkeze-tailscale-up reads it, then the
+    # service restarted so it logs in now rather than at the next boot.
+    local key server
+    key="$(echo "${response}" | jsonfilter -e '@.tailscaleAuthKey' 2>/dev/null)"
+    if [ -n "${key}" ]; then
+        server="$(echo "${response}" | jsonfilter -e '@.tailscaleLoginServer' 2>/dev/null)"
+        mkdir -p /etc/parkeze/tailscale
+        ( umask 077; printf '%s' "${key}" > /etc/parkeze/tailscale/authkey )
+        [ -n "${server}" ] && printf '%s' "${server}" > /etc/parkeze/tailscale/login-server
+        /etc/init.d/parkeze-tailscale restart >/dev/null 2>&1
+        log "tailnet key received; joining"
+    fi
+
     log "reported: backhaul=$(echo "${response}" | jsonfilter -e '@.backhaul' 2>/dev/null)"
 }
 
 status() {
     ensure_identity
-    local adoption
+    local adoption online
     adoption="$(uci -q get parkeze.adoption.state || echo unadopted)"
+
+    # Two different questions, and they only look like one.
+    #
+    # Adopted: "are we manageable" — tailscaled's own view, which is the path
+    # we would actually be managed over. parkeze-backhaul-check answers that.
+    #
+    # Unadopted: there is no tunnel to ask about yet, so the question is "did
+    # we reach parkeze.net", which this script already knows from its own
+    # polling. Asking backhaul-check here returned false for every gateway
+    # that had not been adopted, which is the whole fleet at the exact moment
+    # an installer is reading the indicator.
+    if [ "${adoption}" = "adopted" ]; then
+        online="$(parkeze-backhaul-check >/dev/null 2>&1 && echo true || echo false)"
+    else
+        online="$(reached_recently && echo true || echo false)"
+    fi
+
     printf '{"claimId":"%s","state":"%s","registered":%s,"url":"%s","online":%s}\n' \
         "$(claim_id)" \
         "${adoption}" \
         "$(registered && echo true || echo false)" \
         "$(payload)" \
-        "$(parkeze-backhaul-check >/dev/null 2>&1 && echo true || echo false)"
+        "${online}"
 }
 
 reset_claim() {
