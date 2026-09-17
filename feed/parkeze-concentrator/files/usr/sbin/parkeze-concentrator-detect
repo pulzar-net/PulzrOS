@@ -76,12 +76,20 @@ probe_spi() {
     local spidev="$1" reset="$2" power="$3"
     [ -c "${spidev}" ] || { log "no ${spidev}"; return 1; }
 
-    PARKEZE_SX130X_RESET_GPIO="${reset}" \
-    PARKEZE_SX130X_POWER_EN_GPIO="${power}" \
-        parkeze-sx130x-reset || { log "reset line ${reset} failed"; return 1; }
+    # Every plausible reset line, not just one. The pin belongs to the HAT, not
+    # the board, and a Pi takes whatever is bolted to it: RAK modules use
+    # GPIO17, Waveshare's SX1302 HAT uses GPIO23. Nothing can ask which is
+    # fitted, and a pulse on an unwired pin costs nothing.
+    local version=""
+    for line in ${reset}; do
+        PARKEZE_SX130X_RESET_GPIO="${line}" \
+        PARKEZE_SX130X_POWER_EN_GPIO="${power}" \
+            parkeze-sx130x-reset || { log "reset line ${line} failed"; continue; }
 
-    local version
-    version="$(sx130x_probe "${spidev}" 2>/dev/null)" || return 1
+        version="$(sx130x_probe "${spidev}" 2>/dev/null)" || { version=""; continue; }
+        [ -n "${version}" ] && { log "answered after reset on GPIO${line}"; break; }
+    done
+    [ -n "${version}" ] || return 1
     case "${version}" in
         # What sx130x_probe returns: the SX1302/3 version register (0x5606)
         # or the SX1301's (register 1). These used to be off by one part —
