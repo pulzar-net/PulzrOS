@@ -1,66 +1,100 @@
 #!/bin/sh
 #
-# Pulse the SX130x reset line, and raise the power-enable line if the board has
-# one. Returns 0 if the lines were driven, 1 if the board does not describe
-# them or the GPIO could not be claimed.
+# Bring a CoreCell-style concentrator out of reset, the way its own vendor does.
 #
 # This is separate from the probe because it is needed in three places — the
 # probe, the packet forwarder's startup, and an operator hitting "reset
 # concentrator" in the console — and a concentrator that is not reset before
-# first SPI access reads back as absent. Nearly every "my HAT is not detected"
-# report is this line not being pulsed, or being pulsed on the wrong GPIO.
+# first SPI access reads back as absent.
+#
+# ── WHAT THE SEQUENCE IS, AND WHY IT IS FOUR LINES ─────────────────────────
+#
+# Semtech's reference design (sx1302_hal/tools/reset_lgw.sh), which Waveshare's
+# SX1302 HAT follows, drives four lines in order:
+#
+#   power enable   BCM18   high, and left high — this is the module's supply
+#   SX1302 reset   BCM23   high then low
+#   SX1261 reset   BCM22   low then high, left high
+#   AD5338R reset  BCM13   low then high, left high
+#
+# This used to pulse two of them and let go. Both halves of that were wrong: a
+# CoreCell module whose SX1261 and ADC are still held in reset does not come
+# up, and — the part that actually silenced it — a released line stops being
+# driven, so the supply we had just enabled dropped again before the first SPI
+# read. Measured on a Waveshare SX1302 HAT: with all four held as above, the
+# pins read back exactly as the vendor script leaves them.
+#
+# ── WHY SYSFS AND NOT gpioset ──────────────────────────────────────────────
+#
+# Because these lines have to stay driven after this script exits, and that is
+# the one thing the character-device interface will not do: it hands a line
+# back when the process ends. libgpiod v2 can hold one with `gpioset -z`, but
+# that leaves a daemon per line to reap, and the reset has to survive whoever
+# calls it. The deprecated sysfs interface persists by design, which is why the
+# vendor scripts all use it — and OpenWrt 24.10 still ships it.
+#
+# Note the base offset: sysfs numbers are not BCM numbers on a modern kernel.
+# gpiochip0 starts at 512 on a Pi with kernel 6.6, so BCM18 is /sys/.../gpio530.
+# Writing "18" there drives whatever line 18 of the first controller happens to
+# be, which on this hardware is nothing at all.
 
 . /etc/parkeze/board.conf
 
 RESET_GPIO="${PARKEZE_SX130X_RESET_GPIO}"
 POWER_GPIO="${PARKEZE_SX130X_POWER_EN_GPIO}"
+SX1261_GPIO="${PARKEZE_SX1261_RESET_GPIO}"
+AD5338R_GPIO="${PARKEZE_AD5338R_RESET_GPIO}"
 
 [ -n "${RESET_GPIO}" ] || exit 1
 
-# OpenWrt 24.10 has the character-device GPIO interface (gpioset from
-# libgpiod). The old /sys/class/gpio sysfs interface is deprecated upstream and
-# gone on some targets, so prefer gpioset and fall back only if it is missing.
+SYSFS=/sys/class/gpio
+BASE="$(cat ${SYSFS}/gpiochip*/base 2>/dev/null | sort -n | head -n1)"
+: "${BASE:=0}"
+
+settle() { usleep 100000 2>/dev/null || sleep 1; }
+
+# Drive one BCM line and leave it driven.
 drive() {
-  local line="$1" value="$2"
-  if command -v gpioset >/dev/null 2>&1; then
-    # gpiochip0 is the SoC's own controller on every board we ship. A board
-    # with the concentrator on a secondary controller needs a chip setting in
-    # board.conf; none does today.
-    local chip="${PARKEZE_GPIOCHIP:-gpiochip0}"
+    local pin="$1" value="$2" node="${SYSFS}/gpio$((BASE + $1))"
 
-    # libgpiod v2 first. OpenWrt 24.10 ships v2.1, which changed the syntax:
-    # the chip moved behind -c, and without `-t 0` gpioset holds the line and
-    # never exits. The v1 form below is rejected outright by v2 ("invalid line
-    # value: 'gpiochip0'"), so while this was the only form the reset pulse
-    # never fired, and every SPI concentrator probed as absent. After `-t 0`
-    # exits the line keeps its value: checked on a RAK7268CV2, where the SX1302
-    # reads back its version after `-t 0 11=0` and zeros after `-t 0 11=1`.
-    gpioset -c "${chip}" -t 0 "${line}=${value}" 2>/dev/null && return 0
+    if [ -d "${SYSFS}" ] && [ -w "${SYSFS}/export" ]; then
+        [ -d "${node}" ] || echo "$((BASE + pin))" > "${SYSFS}/export" 2>/dev/null
+        [ -d "${node}" ] || return 1
+        echo out > "${node}/direction" 2>/dev/null
+        echo "${value}" > "${node}/value" 2>/dev/null || return 1
+        return 0
+    fi
 
-    # libgpiod v1, for an image that still carries it.
-    gpioset "${chip}" "${line}=${value}" 2>/dev/null
-    return $?
-  fi
-
-  # sysfs fallback.
-  [ -d "/sys/class/gpio/gpio${line}" ] || echo "${line}" > /sys/class/gpio/export 2>/dev/null
-  [ -d "/sys/class/gpio/gpio${line}" ] || return 1
-  echo out > "/sys/class/gpio/gpio${line}/direction" 2>/dev/null
-  echo "${value}" > "/sys/class/gpio/gpio${line}/value" 2>/dev/null
+    # No sysfs. Hold the line with a detached gpioset instead, which is the
+    # only way the character device will keep it driven. One per line, and they
+    # are left running on purpose: the module needs them for as long as it is
+    # powered.
+    command -v gpioset >/dev/null 2>&1 || return 1
+    gpioset -z -c "${PARKEZE_GPIOCHIP:-gpiochip0}" "${pin}=${value}" 2>/dev/null
 }
 
-# Power first, if the board gates it. A reset pulse into an unpowered part does
-# nothing and the probe that follows reads zeros.
+# Power first. The SX1302 datasheet asks for a stable supply before reset is
+# released, and a reset pulse into an unpowered part does nothing.
 if [ -n "${POWER_GPIO}" ]; then
-  drive "${POWER_GPIO}" 1 || exit 1
-  # The SX1302 datasheet asks for a stable supply before reset is released.
-  # 100ms is far more than it needs and costs nothing at boot.
-  usleep 100000 2>/dev/null || sleep 1
+    drive "${POWER_GPIO}" 1 || exit 1
+    settle
 fi
 
 drive "${RESET_GPIO}" 1 || exit 1
-usleep 100000 2>/dev/null || sleep 1
+settle
 drive "${RESET_GPIO}" 0 || exit 1
-usleep 100000 2>/dev/null || sleep 1
+settle
+
+# The radio front-end and the DAC that sets transmit power. Absent on boards
+# that do not have them, and skipped rather than failed: an SX1301 module has
+# neither and still resets correctly.
+if [ -n "${SX1261_GPIO}" ]; then
+    drive "${SX1261_GPIO}" 0; settle
+    drive "${SX1261_GPIO}" 1; settle
+fi
+if [ -n "${AD5338R_GPIO}" ]; then
+    drive "${AD5338R_GPIO}" 0; settle
+    drive "${AD5338R_GPIO}" 1; settle
+fi
 
 exit 0

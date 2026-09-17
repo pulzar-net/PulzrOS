@@ -55,6 +55,11 @@ add_line() {
 # in the device tree and /dev/spidev0.0 never appears.
 [ -n "${PARKEZE_SPI_DEV}" ] && add_line 'dtparam=spi=on'
 
+# I2C, for the AD5338R that sets transmit power on a CoreCell-style module.
+# Only where the board describes that part, since it is the only thing on this
+# bus and a board without one has no reason to expose it.
+[ -n "${PARKEZE_AD5338R_RESET_GPIO}" ] && add_line 'dtparam=i2c_arm=on'
+
 if [ "${role}" = "gps" ]; then
     # PL011 on the header pins, not the Bluetooth-shared mini UART: a GNSS at
     # 9600 on the mini UART drifts with the core clock.
