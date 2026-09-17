@@ -1,0 +1,28 @@
+#!/bin/sh
+#
+# Apply the Pi firmware settings a HAT needs, on first boot, and reboot once if
+# that changed anything. See parkeze-boot-config for what and why.
+
+# OpenWrt's prepare_rootfs runs every uci-defaults script during image assembly,
+# on the build host. Guarded before anything else: unguarded, this would source
+# the host's board.conf and edit the host's own /boot/config.txt.
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+
+. /etc/parkeze/board.conf
+
+# The unit's own choice of who owns the UART, seeded from the board so the
+# value is visible in UCI rather than implied by its absence.
+uci -q get parkeze.hardware >/dev/null 2>&1 || {
+    uci -q set parkeze.hardware=hardware
+    uci -q set parkeze.hardware.uart_role="${PARKEZE_UART_ROLE:-console}"
+    uci -q commit parkeze
+}
+
+result="$(/usr/sbin/parkeze-boot-config)"
+case "${result}" in
+    *'"changed":true'*)
+        logger -t boot-config "firmware settings changed; rebooting once at the end of boot"
+        touch /etc/parkeze/boot-config-reboot-pending
+        ;;
+esac
+exit 0

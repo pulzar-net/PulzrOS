@@ -264,6 +264,13 @@ const ROUTES = {
     'GET  /api/system/summary':   () => respond(200, system.summary()),
     'GET  /api/system/logs':      (env, req) => respond(200, system.logs(env.QUERY_STRING)),
     'POST /api/system/reboot':    (env, req, s) => { auth.audit('system.reboot', { by: s.subject }); return respond(200, system.reboot()); },
+    'GET  /api/system/uart':      () => respond(200, system.uart()),
+    'POST /api/system/uart':      (env, req, s) => {
+        const result = system.setUart(req.role);
+        if (result.error) return error(400, result.error);
+        auth.audit('system.uart', { by: s.subject, role: req.role });
+        return respond(200, result);
+    },
     'POST /api/system/firmware':  (env, req, s) => {
         auth.audit('system.firmware.upload', { by: s.subject, bytes: int(env.CONTENT_LENGTH ?? 0) });
         const result = firmware.upload(env);

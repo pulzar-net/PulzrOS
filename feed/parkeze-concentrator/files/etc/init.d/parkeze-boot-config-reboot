@@ -1,0 +1,17 @@
+#!/bin/sh /etc/rc.common
+#
+# The one reboot 35-parkeze-boot-config asks for, after it changes a Pi
+# firmware setting that is only read at boot. Last in the boot order so the
+# gateway finishes coming up — and a first-boot claim code has been minted —
+# before it goes down. It cannot loop: the settings are in place by the next
+# boot, so nothing is scheduled again.
+
+START=99
+
+boot() {
+    [ -f /etc/parkeze/boot-config-reboot-pending ] || return 0
+    rm -f /etc/parkeze/boot-config-reboot-pending
+    sync
+    logger -t boot-config "rebooting to load the new firmware settings"
+    ( sleep 5; reboot ) >/dev/null 2>&1 &
+}

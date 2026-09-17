@@ -1,7 +1,7 @@
 // System overview: what this gateway is, and how it is doing.
 
 let _m_fs = require('fs');
-let readfile = _m_fs.readfile;
+let readfile = _m_fs.readfile;; let writefile = _m_fs.writefile;
 let _m_uci = require('uci');
 let cursor = _m_uci.cursor;
 let _m_util = loadfile('/usr/share/parkeze/console/lib/util.uc', { raw_mode: true })();
@@ -16,7 +16,7 @@ let _m_util = loadfile('/usr/share/parkeze/console/lib/util.uc', { raw_mode: tru
 // Declaring the names first makes every one of them a known local before any
 // body is compiled, so closures capture the binding rather than a missing
 // global and definition order stops mattering. auth.uc alone had six of these.
-let boardConf, summary, thermal, logs, reboot;
+let boardConf, summary, thermal, logs, reboot, uart, setUart;
 
 let run = _m_util.run;; let runJson = _m_util.runJson;; let ubus = _m_util.ubus;
 
@@ -117,10 +117,44 @@ reboot = function() {
     return { ok: true, message: 'Rebooting.' };
 };
 
+// Who owns the Pi's UART: the kernel console, or a HAT's GNSS.
+//
+// Settable here because nothing can detect which HAT is fitted, and not every
+// board of the same model has the same one — a unit with a Waveshare SX1302
+// HAT needs the port for its GNSS, and a unit without one is better off
+// keeping the console. The board supplies the default; this is the override.
+uart = function() {
+    const uci = cursor();
+    const applied = runJson('/usr/sbin/parkeze-boot-config --dry-run') ?? {};
+    return {
+        role: uci.get('parkeze', 'hardware', 'uart_role') ?? 'console',
+        // False on a board with no Pi boot partition, where this is moot.
+        applies: applied.applies !== false,
+        // Set once the firmware settings on disk match the role, which is only
+        // true after the reboot that reads them.
+        pending: !!readfile('/etc/parkeze/boot-config-reboot-pending'),
+    };
+};
+
+setUart = function(role) {
+    if (role != 'console' && role != 'gps')
+        return { error: 'Role must be console or gps.' };
+
+    const uci = cursor();
+    uci.set('parkeze', 'hardware', 'uart_role', role);
+    uci.commit('parkeze');
+
+    // Applied to the boot files now, but the Pi firmware only reads them at
+    // boot — so this reports whether a reboot is needed rather than doing one.
+    const result = runJson('/usr/sbin/parkeze-boot-config') ?? {};
+    if (result.changed) writefile('/etc/parkeze/boot-config-reboot-pending', '');
+    return { ok: true, role, rebootRequired: !!result.changed };
+};
+
 // ── module exports ──────────────────────────────────────────────────────────
 //
 // A returned object, not `export` statements. uhttpd's ucode plugin compiles
 // its handler in TEMPLATE mode and loads anything else through loadfile(),
 // neither of which is module mode — `export` is a syntax error there. See the
 // header of api/index.uc for the full contract.
-return { logs, reboot, summary };
+return { logs, reboot, setUart, summary, uart };
