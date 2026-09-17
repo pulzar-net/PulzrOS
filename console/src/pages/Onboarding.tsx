@@ -72,9 +72,16 @@ export default function Onboarding({ onBrowse }: { onBrowse?: () => void } = {})
 
   return (
     <div className={styles.wrap}>
+      {/* Corner of the screen, not the card. The card is about one gateway;
+          the logo says whose software this is, which is a property of the
+          page. Inside the header it competed with the title for the first
+          thing you read. */}
+      <div className={styles.corner}>
+        <Brand size="sm" />
+      </div>
+
       <div className={`${styles.card} fade-in`}>
         <header className={styles.head}>
-          <Brand size="lg" />
           <h1 className={styles.title}>Claim this gateway</h1>
         </header>
 
@@ -137,10 +144,6 @@ export default function Onboarding({ onBrowse }: { onBrowse?: () => void } = {})
               <Settings size={13} strokeWidth={2} />
               Look at the console without adopting
             </button>
-            <p className={styles.browseNote}>
-              Password is on the card&rsquo;s boot partition. Adoption
-              overwrites anything changed here.
-            </p>
           </div>
         )}
 

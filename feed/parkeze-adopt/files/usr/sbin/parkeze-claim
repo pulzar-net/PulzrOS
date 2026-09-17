@@ -181,15 +181,43 @@ poll() {
 
     registered || register || return 1
 
-    local response
-    response="$(curl -fsS --max-time 20 \
+    # Status captured rather than thrown away by -f, because 404 means
+    # something specific here and is worth acting on. Body and status are
+    # separated by a newline that curl appends last.
+    local raw status response
+    raw="$(curl -sS --max-time 20 -w '\n%{http_code}' \
         -X POST "${NET_URL}/api/v1/gateway-ops/claim/poll" \
         -H 'Content-Type: application/json' \
         -d "$(printf '{"claimId":"%s","secret":"%s"}' \
               "$(claim_id)" "$(cat "${STATE}/secret")")" 2>&1)" || {
-        log "poll failed: ${response}"
+        log "poll failed: ${raw}"
         return 1
     }
+    status="$(echo "${raw}" | tail -n1)"
+    response="$(echo "${raw}" | sed '$d')"
+
+    if [ "${status}" = "404" ]; then
+        # parkeze.net does not know this claim. The local `registered` file is
+        # a cache of a fact that lives on the server, and the server has just
+        # said otherwise — so the cache is wrong, not the server.
+        #
+        # This is what happens when a gateway is removed from the fleet while
+        # it is still running and unadopted: the claim row goes with it, and
+        # without this the device would poll a claim nobody has forever,
+        # never re-register, and stay invisible until it was reflashed.
+        #
+        # Dropping the marker makes the next tick register again, under the
+        # same claim id — so the code already on the screen and the QR beside
+        # it keep working.
+        rm -f "${STATE}/registered"
+        log "parkeze.net does not know claim $(claim_id); will register again"
+        return 1
+    fi
+
+    if [ "${status}" -ge 400 ] 2>/dev/null; then
+        log "poll failed (${status}): ${response}"
+        return 1
+    fi
 
     local state
     state="$(echo "${response}" | jsonfilter -e '@.state' 2>/dev/null)"
