@@ -51,7 +51,10 @@ fi
 #
 # So the mode is chosen per file, matching the loader:
 #
-#   api/index.uc     template mode. Compiled without -R, like uhttpd does.
+#   opens with {%    template mode. Compiled without -R, like uhttpd does.
+#                    This is every file uhttpd loads directly through a
+#                    ucode_prefix mapping — api/index.uc and assets.uc today,
+#                    and whatever the console's uci-defaults maps in next.
 #   lib/*.uc         raw mode, no module flag. `export` here is a syntax error,
 #                    which is the point — it is one on the device too.
 #   everything else  raw mode. Standalone ucode programs with a shebang.
@@ -59,18 +62,22 @@ fail=0
 count=0
 while IFS= read -r file; do
   count=$((count + 1))
-  # index.uc is a ucode TEMPLATE, because that is how uhttpd compiles it: the
-  # code lives inside {% %} and anything outside is text. Rather than depend on
-  # which way a given ucode build defaults (the CLI has flipped between raw and
-  # template as the default, so -R/-T is not portable across versions), the
-  # wrapper is stripped and the code inside is compiled in raw mode. That tests
-  # the thing that matters and behaves the same on every ucode.
+  # Detected by content, not by naming one path: anything uhttpd loads as a
+  # ucode_prefix handler opens with {%, because that is what makes it a
+  # TEMPLATE rather than a module to the loader, and the check has to agree
+  # with uhttpd about which files those are or it validates the wrong thing
+  # for the next one — which is exactly how assets.uc first shipped, compiling
+  # clean here while carrying a mode this script had never heard of. Rather
+  # than depend on which way a given ucode build defaults (the CLI has flipped
+  # between raw and template as the default, so -R/-T is not portable across
+  # versions), the wrapper is stripped and the code inside is compiled in raw
+  # mode. That tests the thing that matters and behaves the same on every
+  # ucode.
   target="${file}"
-  case "${file}" in
-    */console/api/index.uc)
-      target="$(mktemp)"
-      sed -e '1{/^{%$/d;}' -e '${/^%}$/d;}' "${file}" > "${target}" ;;
-  esac
+  if [ "$(head -c 2 -- "${file}")" = '{%' ]; then
+    target="$(mktemp)"
+    sed -e '1{/^{%$/d;}' -e '${/^%}$/d;}' "${file}" > "${target}"
+  fi
   set -- -R -L "${STUBS}/*.uc" -o /dev/null "${target}"
   if ! out="$("${UCODE}" "$@" 2>&1)"; then
     echo "FAIL ${file}"
@@ -112,16 +119,31 @@ fi
 # cleanly — that is exactly why this went unnoticed — so the one thing uhttpd
 # actually looks for is asserted directly: a bare assignment to an undeclared
 # `handle_request`, which is what lands in the VM global scope it reads.
-HANDLER="feed/parkeze-console/files/usr/share/parkeze/console/api/index.uc"
-if [ -f "${HANDLER}" ]; then
-  if ! head -c 4 "${HANDLER}" | grep -q '{%'; then
-    echo "FAIL ${HANDLER}"
+#
+# The handler list comes from the uci-defaults that registers ucode_prefix,
+# not from finding files that already look right. Sniffing by content (does it
+# open with '{%'?) can only confirm the wrapper on a file that already has
+# one — a handler that forgot it entirely would look exactly like an ordinary
+# raw-mode script and pass silently, which is the same failure this section
+# exists to catch. Read from the actual mapping instead, the way uhttpd itself
+# decides what to load.
+while IFS= read -r suffix; do
+  handler="feed/parkeze-console/files${suffix}"
+  if [ ! -f "${handler}" ]; then
+    echo "FAIL ${handler}"
+    echo "     registered as a ucode_prefix handler in 30-parkeze-console but"
+    echo "     does not exist."
+    fail=$((fail + 1))
+    continue
+  fi
+  if [ "$(head -c 2 -- "${handler}")" != '{%' ]; then
+    echo "FAIL ${handler}"
     echo "     must open with '{%' — uhttpd compiles it as a template, and an"
     echo "     unwrapped file defines nothing at all."
     fail=$((fail + 1))
   fi
-  if ! grep -qE '^handle_request[[:space:]]*=' "${HANDLER}"; then
-    echo "FAIL ${HANDLER}"
+  if ! grep -qE '^handle_request[[:space:]]*=' "${handler}"; then
+    echo "FAIL ${handler}"
     echo "     must assign handle_request as a bare global:"
     echo "         handle_request = function(env) { ... };"
     echo "     'export function', 'function' and 'return { handle_request }'"
@@ -129,7 +151,8 @@ if [ -f "${HANDLER}" ]; then
     echo "     declares no handle_request() callback."
     fail=$((fail + 1))
   fi
-fi
+done < <(grep -rohE "ucode_prefix='[^=]*=[^']*'" feed/ \
+          | sed -E "s/^ucode_prefix='[^=]*=([^']*)'\$/\1/" | sort -u)
 
 # lib/*.uc are loaded with loadfile(), so they must end in a returned object
 # rather than exports.
