@@ -74,10 +74,17 @@ log() { logger -t wireguard-route -p daemon.info "$*"; }
 # configured interface and no gateway, and installing a default route to a
 # gateway that does not answer is worse than having no route. Shared between
 # wired and cellular — an interface is an interface once it has one.
+#
+# network_get_device (.l3_device), not network_get_physdev (.device): the
+# latter is only populated for an interface with a statically configured
+# device, which a DHCP-managed wired WAN happens to be and a modemmanager one
+# never is — wwan reported a real gateway and an empty device, so cellular
+# read as unusable even attached and registered. .l3_device is what netifd
+# actually ended up using either way.
 iface_gateway() {
   local gw dev
   network_get_gateway gw "$1" || return 1
-  network_get_physdev dev "$1" || return 1
+  network_get_device dev "$1" || return 1
   [ -n "${gw}" ] && [ -n "${dev}" ] || return 1
   echo "${gw} ${dev}"
 }
@@ -138,7 +145,13 @@ flush() {
   ip rule del fwmark "${MARK}/${MASK}" table "${TABLE_ID}" 2>/dev/null || true
   ip rule del fwmark "${MARK}/${MASK}" unreachable 2>/dev/null || true
   ip route flush table "${TABLE_ID}" 2>/dev/null || true
-  rm -f "${STATE}"
+  # NOT the state file. `restart` calls stop (this) then start, and start's
+  # apply() needs to still remember what the egress was *before* the bounce
+  # to announce a real recovery — cellular back to wired, say. Every wired
+  # ifup runs a full restart for other reasons (re-enrolment, re-resolving
+  # the endpoint), and clearing this here meant that path could never
+  # announce anything: apply() always saw a blank "previous" and skipped it,
+  # exactly the transition an operator most wants to hear about.
   log "tunnel routing confinement removed"
 }
 
