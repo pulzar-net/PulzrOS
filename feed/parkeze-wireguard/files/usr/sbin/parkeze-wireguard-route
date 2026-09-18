@@ -14,15 +14,24 @@
 # decides the tunnel's egress explicitly rather than letting it drift onto
 # whatever the main routing table says today.
 #
-# WIRED, THEN CELLULAR, THEN NOTHING
+# WIRED, OR NOTHING
 #
-# Wired is free and preferred. When it drops, a keepalive every 25 seconds is
-# a few bytes a day — negligible against a 1NCE SIM's allowance — so cellular
-# is the fallback for management rather than dropping the gateway off the
-# platform's map the moment somebody unplugs a cable. PARKEZE_WIREGUARD_ALLOW_
-# CELLULAR is the board-wide switch for that; per-gateway, cellular is only
-# ever tried when it is actually usable (a modem with a gateway address), so
-# this changes nothing on a board with no modem.
+# Wired is the only backhaul this tunnel is allowed on by default —
+# PARKEZE_WIREGUARD_ALLOW_CELLULAR is "0" on every board — and that is not
+# about the cost of a 25-second keepalive. It is that a cellular gateway is
+# already reachable: gateway-link holds an OpenVPN tunnel open into the SIM
+# provider's CGNAT'd network, and every SIM answers on a fixed address inside
+# it (see `_management_address` in net-api). A second tunnel over the same SIM
+# to reach the same box is two management paths for one gateway, for nothing.
+#
+# Enrolment is not gated by this — `parkeze-wireguard` enrols regardless of
+# backhaul, so a gateway that is cellular-only today has a tunnel sitting
+# ready the moment ethernet actually appears, rather than enrolling late and
+# making whoever is waiting watch a round trip. Only routing is confined here:
+# on a cellular-only gateway `apply` below refuses to route wg0's traffic over
+# it, so it sits enrolled and unreachable until wired shows up. Per-gateway,
+# cellular is tried at all only when it is actually usable — a modem with a
+# gateway address — so none of this changes anything on a board with no modem.
 #
 # This is still confinement, not "whatever is up wins": the table holds
 # exactly one route, chosen here, and an unreachable rule below it means a
