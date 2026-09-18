@@ -175,6 +175,10 @@ export interface Slot {
   device: string;
   resetGpio: string;
   powerGpio: string;
+  /** The operator's own reset line, if they typed one. Separate from
+      resetGpio, which detection overwrites every run with whatever it
+      actually probed with. */
+  resetGpioOverride: string;
   status: 'present' | 'absent' | 'unsupported' | 'unknown';
   detected: string | null;
   override: string | null;

@@ -28,7 +28,12 @@
 DRY_RUN=0
 [ "$1" = "--dry-run" ] && DRY_RUN=1
 
-log() { logger -t concentrator -p daemon.info "$*"; [ "${DRY_RUN}" = 1 ] && echo "$*"; }
+# Stderr under --dry-run, not stdout: every probe function is called through
+# $(...) to capture its one-line result, and a log line written to stdout from
+# inside one of them lands in that capture instead of the terminal — the
+# result garbled with its own diagnostic, on a failed probe specifically,
+# which is the one case somebody running --dry-run is trying to read.
+log() { logger -t concentrator -p daemon.info "$*"; [ "${DRY_RUN}" = 1 ] && echo "$*" >&2; }
 
 PROFILE_DIR=/usr/share/parkeze/concentrator
 
@@ -70,26 +75,29 @@ probe_usb() {
 
 probe_spi() {
     # An SX130x on SPI cannot be enumerated: SPI has no discovery. So we do the
-    # only thing that actually answers the question — reset the part and read
-    # its version register. Anything else (checking that spidev exists,
-    # checking for a HAT EEPROM) tests the wiring, not the chip.
-    local spidev="$1" reset="$2" power="$3"
+    # only thing that actually answers the question — reset the part with the
+    # pins one specific profile claims, and read its version register.
+    # Anything else (checking that spidev exists, checking for a HAT EEPROM)
+    # tests the wiring, not the chip.
+    #
+    # One profile's pins, not a sweep of plausible ones. That used to mean
+    # trying GPIO 4-27 in turn to find whichever line the fitted HAT actually
+    # resets on, which worked — and also reset whatever else on the board used
+    # one of those lines for something else. Measured on a Waveshare HAT,
+    # where the sweep put its own GNSS into standby, because the same pins
+    # this scheme was guessing through are the HAT's GNSS control lines. A
+    # profile carries exactly the pins its part uses and nothing it does not.
+    local spidev="$1" reset="$2" power="$3" sx1261="$4" ad5338r="$5"
     [ -c "${spidev}" ] || { log "no ${spidev}"; return 1; }
 
-    # Every plausible reset line, not just one. The pin belongs to the HAT, not
-    # the board, and a Pi takes whatever is bolted to it: RAK modules use
-    # GPIO17, Waveshare's SX1302 HAT uses GPIO23. Nothing can ask which is
-    # fitted, and a pulse on an unwired pin costs nothing.
-    local version=""
-    for line in ${reset}; do
-        PARKEZE_SX130X_RESET_GPIO="${line}" \
-        PARKEZE_SX130X_POWER_EN_GPIO="${power}" \
-            parkeze-sx130x-reset || { log "reset line ${line} failed"; continue; }
+    PARKEZE_SX130X_RESET_GPIO="${reset}" \
+    PARKEZE_SX130X_POWER_EN_GPIO="${power}" \
+    PARKEZE_SX1261_RESET_GPIO="${sx1261}" \
+    PARKEZE_AD5338R_RESET_GPIO="${ad5338r}" \
+        parkeze-sx130x-reset || { log "reset on GPIO${reset} failed"; return 1; }
 
-        version="$(sx130x_probe "${spidev}" 2>/dev/null)" || { version=""; continue; }
-        [ -n "${version}" ] && { log "answered after reset on GPIO${line}"; break; }
-    done
-    [ -n "${version}" ] || return 1
+    local version
+    version="$(sx130x_probe "${spidev}" 2>/dev/null)" || return 1
     case "${version}" in
         # What sx130x_probe returns: the SX1302/3 version register (0x5606)
         # or the SX1301's (register 1). These used to be off by one part —
@@ -127,14 +135,51 @@ detect_slot() {
 
     if [ "${spec}" = "auto" ]; then
         # A kit. Probe every bus in the configured order.
-        device=""; reset="${PARKEZE_SX130X_RESET_GPIO}"
-        power="${PARKEZE_SX130X_POWER_EN_GPIO}"
+        device=""
+
+        # Which SPI profile's pins to probe with. An operator's earlier choice
+        # outranks the board default: a HAT that has already been identified
+        # is confirmed with its own pins, not re-guessed with the board's —
+        # and it is what makes a second run after picking a HAT in the
+        # console actually find it, rather than trying the same default pins
+        # again and reporting the same silence.
+        #
+        # The default is the board's most common fitment, not a guess across
+        # every HAT this catalogue knows: probing with pins a HAT does not use
+        # is how a Waveshare SX1302 HAT's GNSS ended up in standby earlier —
+        # see probe_spi. A HAT that is not the default is found by picking it
+        # in the console, not by the detector trying harder on its own.
+        local spi_profile=""
+        [ "${PARKEZE_CONCENTRATOR_CONFIGURABLE}" = "1" ] \
+            && spi_profile="$(uci -q get "parkeze.slot${index}.override")"
+        [ -n "${spi_profile}" ] || spi_profile="${PARKEZE_CONCENTRATOR_DEFAULT_PROFILE:-sx1302_spi}"
+
+        local spi_pf="${PROFILE_DIR}/${spi_profile}.json"
+        # Falls back to board.conf's own pins when the chosen profile has none
+        # of its own — a USB or UART profile picked by mistake, or an older
+        # profile nobody has updated — rather than probing SPI with nothing.
+        reset="$(jsonfilter -i "${spi_pf}" -e '@.resetGpio' 2>/dev/null)"
+        power="$(jsonfilter -i "${spi_pf}" -e '@.powerGpio' 2>/dev/null)"
+        sx1261="$(jsonfilter -i "${spi_pf}" -e '@.sx1261ResetGpio' 2>/dev/null)"
+        ad5338r="$(jsonfilter -i "${spi_pf}" -e '@.ad5338rResetGpio' 2>/dev/null)"
+        [ -n "${reset}" ] || reset="${PARKEZE_SX130X_RESET_GPIO}"
+        [ -n "${power}" ] || power="${PARKEZE_SX130X_POWER_EN_GPIO}"
+
+        # An operator's own typed reset line outranks even a picked profile —
+        # it is the escape hatch for a HAT this catalogue has no profile for
+        # at all, or for correcting one whose pins are simply wrong.
+        if [ "${PARKEZE_CONCENTRATOR_CONFIGURABLE}" = "1" ]; then
+            local manual_reset
+            manual_reset="$(uci -q get "parkeze.slot${index}.reset_gpio_override")"
+            [ -n "${manual_reset}" ] && reset="${manual_reset}"
+        fi
+
         for try in ${PARKEZE_CONCENTRATOR_PROBE_ORDER:-usb spi uart}; do
             log "slot ${index}: probing ${try}"
             case "${try}" in
                 usb)  detected="$(probe_usb)" && bus=usb  && device="usb" ;;
                 spi)  detected="$(probe_spi "${PARKEZE_SPI_DEV:-/dev/spidev0.0}" \
-                                            "${reset}" "${power}")" \
+                                            "${reset}" "${power}" "${sx1261}" "${ad5338r}")" \
                           && bus=spi && device="${PARKEZE_SPI_DEV:-/dev/spidev0.0}" ;;
                 uart) detected="$(probe_uart "${PARKEZE_UART_DEV:-/dev/ttyAMA0}")" \
                           && bus=uart && device="${PARKEZE_UART_DEV:-/dev/ttyAMA0}" ;;

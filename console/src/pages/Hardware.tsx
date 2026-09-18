@@ -154,14 +154,14 @@ function SlotCard({
   const [override, setOverride] = useState(slot.override ?? '');
   const [bus, setBus] = useState(slot.bus);
   const [device, setDevice] = useState(slot.device);
-  const [resetGpio, setResetGpio] = useState(slot.resetGpio);
+  const [resetGpio, setResetGpio] = useState(slot.resetGpioOverride);
 
   useEffect(() => {
     setOverride(slot.override ?? '');
     setBus(slot.bus);
     setDevice(slot.device);
-    setResetGpio(slot.resetGpio);
-  }, [slot.override, slot.bus, slot.device, slot.resetGpio]);
+    setResetGpio(slot.resetGpioOverride);
+  }, [slot.override, slot.bus, slot.device, slot.resetGpioOverride]);
 
   const save = useMutation({
     mutationFn: () =>
@@ -198,6 +198,9 @@ function SlotCard({
         <Fact label="Chip" value={slot.profile?.chip} />
         <Fact label="Channels" value={slot.profile?.channels ?? slot.channels} />
         <Fact label="Also sold as" value={slot.profile?.known_as?.join(', ')} />
+        {slot.bus === 'spi' && (
+          <Fact label="Reset GPIO used" value={slot.resetGpio || 'not probed yet'} mono />
+        )}
       </FactList>
 
       {view.configurable && (
@@ -240,12 +243,12 @@ function SlotCard({
           />
 
           <TextField
-            label="Reset GPIO"
+            label="Reset GPIO override"
             mono
             value={resetGpio}
-            placeholder="17"
+            placeholder="Use the part's own pin"
             onChange={(event) => setResetGpio(event.target.value)}
-            hint="The line that resets the SX130x. Nearly every 'not detected' report is this being wrong for the HAT actually fitted — 17 suits most RAK and Seeed boards."
+            hint="Only for a HAT this list has no part for, or to correct one whose pins are wrong. Leave blank to use the pin the selected part declares."
           />
 
           {save.isError && <Notice tone="error">{(save.error as Error).message}</Notice>}

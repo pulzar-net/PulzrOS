@@ -12,5 +12,6 @@
     "RAK831",
     "IMST iC880A"
   ],
-  "comment": "Legacy. Detected and configurable, but a single-chain part on old firmware \u2014 do not spec it into new sites."
+  "comment": "Legacy. Detected and configurable, but a single-chain part on old firmware \u2014 do not spec it into new sites.",
+  "resetGpio": 17
 }
