@@ -21,6 +21,15 @@
 # order is cheapest-first — it is about how long detection takes, not about
 # which hardware we expect to find — and an operator override always wins over
 # whatever the probe concluded.
+#
+# A board can also declare more than one auto slot ("auto auto") for a kit
+# that genuinely may carry two concentrators at once on different buses — a
+# USB RAK5146 alongside an SPI Waveshare HAT, say. Each auto slot is probed in
+# turn, and a bus an earlier slot already found hardware on is skipped by the
+# ones after it: an SX130x answers on the one bus it is wired to, not two, so
+# there is nothing left there for a later slot to find, and trying anyway is
+# how the same USB stick would end up recorded in both slots while the SPI HAT
+# next to it was never even probed.
 
 . /lib/functions.sh
 . /etc/parkeze/board.conf
@@ -175,6 +184,18 @@ detect_slot() {
         fi
 
         for try in ${PARKEZE_CONCENTRATOR_PROBE_ORDER:-usb spi uart}; do
+            # A bus an earlier auto slot already found hardware on is not
+            # tried again. Without this, a Pi with a USB RAK5146 *and* an SPI
+            # Waveshare HAT — "auto auto" in PARKEZE_CONCENTRATOR_SLOTS —
+            # would have slot 1 walk the same probe order as slot 0, find the
+            # same USB bridge first, and report it a second time in its own
+            # slot while never reaching the SPI probe that would have found
+            # the HAT. One SX130x does not answer on two buses at once, so a
+            # bus already claimed has nothing left on it for another slot to
+            # find.
+            case " ${CLAIMED_BUSES} " in
+                *" ${try} "*) log "slot ${index}: skipping ${try}, already claimed by an earlier slot"; continue ;;
+            esac
             log "slot ${index}: probing ${try}"
             case "${try}" in
                 usb)  detected="$(probe_usb)" && bus=usb  && device="usb" ;;
@@ -186,6 +207,7 @@ detect_slot() {
             esac
             [ -n "${detected}" ] && break
         done
+        [ -n "${detected}" ] && CLAIMED_BUSES="${CLAIMED_BUSES} ${bus}"
     else
         # A product. Trust the board.
         bus="${spec%%:*}"
@@ -268,6 +290,9 @@ index=0
 present=0
 total=0
 channels=0
+# Buses an auto slot has already found hardware on, across this whole run —
+# see the skip in detect_slot's probe loop above.
+CLAIMED_BUSES=""
 
 for spec in ${PARKEZE_CONCENTRATOR_SLOTS:-auto}; do
     total=$((total + 1))
