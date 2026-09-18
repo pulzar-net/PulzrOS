@@ -67,4 +67,4 @@ logs/
 
 # Per-unit flash dumps (factory calibration, MACs) taken by a harvest.
 # Only useful to the unit they came from.
-devices/*/backup/
+devices/
