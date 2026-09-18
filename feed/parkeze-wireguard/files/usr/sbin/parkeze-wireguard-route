@@ -1,34 +1,56 @@
 #!/bin/sh
 #
-# Confine the WireGuard tunnel's traffic to the wired WAN.
+# Confine the WireGuard tunnel's traffic to a backhaul we chose on purpose.
 #
-#   parkeze-wireguard-route apply     install the rule and table
-#   parkeze-wireguard-route flush     remove them
-#   parkeze-wireguard-route status    report whether the wired path is usable
+#   parkeze-wireguard-route apply     point the tunnel at the best backhaul
+#   parkeze-wireguard-route flush     remove the rule and table
+#   parkeze-wireguard-route status    report which path the tunnel is on
 #
 # WHY THIS EXISTS
 #
-# Cellular data is billed by the megabyte and the SIM is the *control* path of
-# last resort, with its own VPN. A management tunnel left alone would keep
-# itself alive over whatever route it can find — keepalives every 25 seconds,
-# forever. On a metered SIM that is a bill, not a backhaul.
+# A management tunnel left alone would keep itself alive over whatever route
+# the kernel finds — keepalives every 25 seconds, forever, wherever that
+# happens to be. That is fine on wired and a bill on a metered SIM, so this
+# decides the tunnel's egress explicitly rather than letting it drift onto
+# whatever the main routing table says today.
 #
-# So the wired path is not merely *preferred* for the tunnel, it is the only
-# one permitted. When ethernet is down the tunnel's packets have nowhere to go
-# and the hub stops hearing from the gateway. That is the intended behaviour:
-# parkeze.net sees the handshake go stale and manages the gateway over the
-# cellular/1NCE path instead.
+# WIRED, THEN CELLULAR, THEN NOTHING
+#
+# Wired is free and preferred. When it drops, a keepalive every 25 seconds is
+# a few bytes a day — negligible against a 1NCE SIM's allowance — so cellular
+# is the fallback for management rather than dropping the gateway off the
+# platform's map the moment somebody unplugs a cable. PARKEZE_WIREGUARD_ALLOW_
+# CELLULAR is the board-wide switch for that; per-gateway, cellular is only
+# ever tried when it is actually usable (a modem with a gateway address), so
+# this changes nothing on a board with no modem.
+#
+# This is still confinement, not "whatever is up wins": the table holds
+# exactly one route, chosen here, and an unreachable rule below it means a
+# gap between the two — wired just dropped, cellular has not registered yet —
+# drops the tunnel's packets rather than leaking them onto a path nobody
+# decided to trust with it.
 #
 # HOW
 #
 # WireGuard marks the encrypted UDP it sends with the interface's fwmark. A
-# routing rule sends marked packets to a table of our own, and that table holds
-# a default route via the wired WAN and nothing else. Below it, an unreachable
-# rule for the same mark, so a marked packet never falls through to the main
-# table — and out over cellular — when our table is empty.
+# routing rule sends marked packets to a table of our own, and that table
+# holds a default route via whichever backhaul `apply` chose. Below it, an
+# unreachable rule for the same mark, so a marked packet never falls through
+# to the main table when our table is empty.
 #
-# The mark is on the *outer* packets, which is exactly the traffic that must be
-# confined: the encrypted datagrams to the hub, not what travels inside wg0.
+# The mark is on the *outer* packets, which is exactly the traffic that must
+# be confined: the encrypted datagrams to the hub, not what travels inside
+# wg0.
+#
+# QUICK, NOT EVENTUALLY
+#
+# `apply` is called straight from the hotplug handlers for both the wired and
+# the cellular interface, on every ifup and ifdown of either — not just wired
+# ifup. Table 97 is the only thing that has to change to re-home the tunnel:
+# wg0 itself is untouched, so a failover costs one route replace, not a new
+# handshake. The alternative — leaving table 97 alone and waiting for
+# somebody to notice the handshake has gone stale — is what used to happen
+# with a wired-only tunnel, and it was minutes, not seconds.
 
 set -e
 
@@ -39,46 +61,75 @@ TABLE_ID="${PARKEZE_WIREGUARD_TABLE:-97}"
 MARK="${PARKEZE_WIREGUARD_MARK:-0x9700}"
 MASK="0xff00"
 WIRED_IFACE="${PARKEZE_WAN_ETH_IFACE:-wan}"
+CELL_IFACE="${PARKEZE_WAN_CELL_IFACE:-wwan}"
+# Where the last-applied egress is remembered, purely to notice a change.
+# tmpfs: forgetting it across a reboot means one extra report at most, not a
+# wrong answer.
+STATE=/var/run/parkeze/wireguard-egress
 
 log() { logger -t wireguard-route -p daemon.info "$*"; }
 
-wired_gateway() {
-  # The L3 device and gateway of the wired WAN, as netifd currently sees them.
-  # Read live rather than from UCI: a DHCP lease that has not come up yet has a
-  # configured interface and no gateway, and installing a default route to a
-  # gateway that does not answer is worse than having no route.
+# The L3 device and gateway of an interface, as netifd currently sees them.
+# Read live rather than from UCI: a lease that has not come up yet has a
+# configured interface and no gateway, and installing a default route to a
+# gateway that does not answer is worse than having no route. Shared between
+# wired and cellular — an interface is an interface once it has one.
+iface_gateway() {
   local gw dev
-  network_get_gateway gw "${WIRED_IFACE}" || return 1
-  network_get_physdev dev "${WIRED_IFACE}" || return 1
+  network_get_gateway gw "$1" || return 1
+  network_get_physdev dev "$1" || return 1
   [ -n "${gw}" ] && [ -n "${dev}" ] || return 1
   echo "${gw} ${dev}"
 }
 
+# Tell parkeze.net promptly when the tunnel's path actually changes, rather
+# than however long it takes the six-hourly report or a stale handshake to
+# say so. `parkeze-claim report` already no-ops in half a second when this
+# gateway is not adopted, so this is safe to call unconditionally.
+announce_if_changed() {
+  local via="$1" previous=""
+  mkdir -p "$(dirname "${STATE}")"
+  [ -f "${STATE}" ] && previous="$(cat "${STATE}")"
+  [ "${via}" = "${previous}" ] && return 0
+  echo "${via}" > "${STATE}"
+  [ -z "${previous}" ] && return 0    # first apply since boot: nothing to announce
+  log "tunnel egress changed: ${previous} -> ${via}"
+  ( parkeze-claim report >/dev/null 2>&1 & ) 2>/dev/null || true
+}
+
 apply() {
-  local spec gw dev
-  if ! spec="$(wired_gateway)"; then
-    log "wired WAN has no gateway — leaving the table empty so tunnel traffic is dropped rather than escaping to cellular"
+  local spec gw dev via
+
+  if spec="$(iface_gateway "${WIRED_IFACE}")"; then
+    via=wired
+  elif [ "${PARKEZE_WIREGUARD_ALLOW_CELLULAR:-0}" = "1" ] \
+       && spec="$(iface_gateway "${CELL_IFACE}")"; then
+    via=cellular
+  else
+    log "no usable backhaul for the tunnel — leaving the table empty so its traffic is dropped rather than escaping"
     ip route flush table "${TABLE_ID}" 2>/dev/null || true
     install_rule
+    announce_if_changed none
     return 0
   fi
-  gw="${spec% *}"; dev="${spec#* }"
 
+  gw="${spec% *}"; dev="${spec#* }"
   ip route flush table "${TABLE_ID}" 2>/dev/null || true
   ip route add default via "${gw}" dev "${dev}" table "${TABLE_ID}"
-  log "tunnel egress pinned to ${dev} via ${gw}"
+  log "tunnel egress pinned to ${dev} via ${gw} (${via})"
 
   install_rule
+  announce_if_changed "${via}"
 }
 
 install_rule() {
-  # Idempotent: this runs on every ifup of the wired WAN.
+  # Idempotent: this runs on every ifup/ifdown of either backhaul.
   ip rule del fwmark "${MARK}/${MASK}" table "${TABLE_ID}" 2>/dev/null || true
   ip rule add fwmark "${MARK}/${MASK}" table "${TABLE_ID}" priority 30000
 
   # An unreachable fallback *below* the main table, so that a marked packet
-  # never falls through to main and out over cellular when our table is empty.
-  # Without this the whole scheme leaks in exactly the situation it exists for.
+  # never falls through to main when our table is empty. Without this the
+  # whole scheme leaks in exactly the situation it exists for.
   ip rule del fwmark "${MARK}/${MASK}" unreachable 2>/dev/null || true
   ip rule add fwmark "${MARK}/${MASK}" unreachable priority 30001
 }
@@ -87,19 +138,35 @@ flush() {
   ip rule del fwmark "${MARK}/${MASK}" table "${TABLE_ID}" 2>/dev/null || true
   ip rule del fwmark "${MARK}/${MASK}" unreachable 2>/dev/null || true
   ip route flush table "${TABLE_ID}" 2>/dev/null || true
+  rm -f "${STATE}"
   log "tunnel routing confinement removed"
 }
 
 status() {
   # Used by the console and by the status reporter. Prints JSON because both
   # consumers parse it and neither wants to scrape prose.
-  local gw dev usable="false" reason="wired WAN is down"
-  if spec="$(wired_gateway)"; then
-    gw="${spec% *}"; dev="${spec#* }"
-    usable="true"; reason=""
+  #
+  # `wiredUsable` is kept exactly as it was — several things already parse it
+  # — and `via` is additive: which path the tunnel is actually on right now,
+  # including "none" and, on a board that never allows it, "cellular" never
+  # appearing at all.
+  local wired_spec cell_spec wired_usable="false" cell_usable="false"
+  local wgw wdev cgw cdev via="none"
+
+  if wired_spec="$(iface_gateway "${WIRED_IFACE}")"; then
+    wired_usable="true"; wgw="${wired_spec% *}"; wdev="${wired_spec#* }"
+    via=wired
   fi
-  printf '{"wiredUsable":%s,"iface":"%s","gateway":"%s","device":"%s","reason":"%s"}\n' \
-    "${usable}" "${WIRED_IFACE}" "${gw:-}" "${dev:-}" "${reason}"
+  if [ "${PARKEZE_WIREGUARD_ALLOW_CELLULAR:-0}" = "1" ] \
+     && cell_spec="$(iface_gateway "${CELL_IFACE}")"; then
+    cell_usable="true"; cgw="${cell_spec% *}"; cdev="${cell_spec#* }"
+    [ "${via}" = "none" ] && via=cellular
+  fi
+
+  printf '{"wiredUsable":%s,"iface":"%s","gateway":"%s","device":"%s","reason":"%s",' \
+    "${wired_usable}" "${WIRED_IFACE}" "${wgw:-}" "${wdev:-}" \
+    "$([ "${wired_usable}" = "true" ] && echo "" || echo "wired WAN is down")"
+  printf '"cellularUsable":%s,"via":"%s"}\n' "${cell_usable}" "${via}"
 }
 
 case "${1:-}" in

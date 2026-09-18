@@ -327,7 +327,7 @@ apply_offline() {
 # checked against a hash parkeze.net stored at registration.
 
 facts() {
-    local modem wired board_id version modem_present modem_model wired_usable tunnel iccid host_key
+    local modem wired board_id version modem_present modem_model wired_usable tunnel iccid host_key tunnel_via
 
     modem="$(parkeze-modem-detect --status 2>/dev/null || echo '{"present":false}')"
     wired="$(parkeze-wireguard-route status 2>/dev/null || echo '{"wiredUsable":false}')"
@@ -350,6 +350,11 @@ facts() {
         [ -n "${host_key}" ] && break
     done
     wired_usable="$(echo "${wired}" | jsonfilter -e '@.wiredUsable' 2>/dev/null)" || true
+    # Which path the tunnel's own packets are actually leaving on right now —
+    # not inferred from a stale handshake, stated. This is the field that
+    # changing backhaul is supposed to move promptly: see the immediate
+    # report parkeze-wireguard-route fires on a transition.
+    tunnel_via="$(echo "${wired}" | jsonfilter -e '@.via' 2>/dev/null)" || true
     tunnel="$(parkeze-backhaul-check --tunnel 2>/dev/null)" || true
 
     # jsonfilter prints nothing for a missing key, and an empty string is not
@@ -361,9 +366,9 @@ facts() {
     board_id="${BOARD_ID:-unknown}"
     version="${PARKEZE_VERSION:-0.0.0}"
 
-    printf '{"board":"%s","osVersion":"%s","modemPresent":%s,"modemModel":"%s","simIccid":"%s","sshHostKey":"%s","wiredUsable":%s,"tunnelState":"%s","consolePort":443,"consoleScheme":"https","sshPort":22,"system":%s}' \
+    printf '{"board":"%s","osVersion":"%s","modemPresent":%s,"modemModel":"%s","simIccid":"%s","sshHostKey":"%s","wiredUsable":%s,"tunnelVia":"%s","tunnelState":"%s","consolePort":443,"consoleScheme":"https","sshPort":22,"system":%s}' \
         "${board_id}" "${version}" "${modem_present}" "${modem_model:-}" "${iccid:-}" \
-        "${host_key:-}" "${wired_usable}" "${tunnel:-none}" "$(system_facts)"
+        "${host_key:-}" "${wired_usable}" "${tunnel_via:-none}" "${tunnel:-none}" "$(system_facts)"
 }
 
 # The same key=value facts the MQTT forwarder attaches to LoRaWAN stats, as a

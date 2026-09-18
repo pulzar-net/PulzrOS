@@ -1,19 +1,32 @@
 #!/bin/sh
 #
-# Follow the wired WAN.
+# Follow whichever backhaul the tunnel is allowed to use.
 #
-# On ifdown the confinement table is emptied, which is what stops the tunnel's
-# packets finding their way onto cellular in the window before anything else
-# notices ethernet is gone. On ifup the tunnel is restarted: the table gets its
-# route back and the hub's name is resolved again.
+# Re-homing the tunnel is one route replace in table 97 — wg0 itself, its
+# keys and its peer are untouched — so `apply` alone is enough on every
+# ifup/ifdown of either interface, and is what makes a failover take seconds
+# rather than however long it takes something else to notice the handshake
+# went stale.
+#
+# Wired ifup gets a full service restart instead, because it is also the
+# moment enrolment finally has a link home: a gateway that missed its tunnel
+# config the first time round retries there. That path already requires
+# somebody to run a cable, so paying for a restart on it is free.
 
 . /etc/parkeze/board.conf
 
-[ "${INTERFACE}" = "${PARKEZE_WAN_ETH_IFACE:-wan}" ] || exit 0
 [ "${PARKEZE_WIREGUARD_ENABLED:-1}" = "1" ] || exit 0
 
-case "${ACTION}" in
-    ifup)   /etc/init.d/parkeze-wireguard restart ;;
-    ifdown) [ "${PARKEZE_WIREGUARD_ALLOW_CELLULAR:-0}" = "1" ] \
-                || /usr/sbin/parkeze-wireguard-route apply ;;
-esac
+WIRED="${PARKEZE_WAN_ETH_IFACE:-wan}"
+CELL="${PARKEZE_WAN_CELL_IFACE:-wwan}"
+
+if [ "${INTERFACE}" = "${WIRED}" ]; then
+    case "${ACTION}" in
+        ifup)   /etc/init.d/parkeze-wireguard restart ;;
+        ifdown) /usr/sbin/parkeze-wireguard-route apply ;;
+    esac
+elif [ "${INTERFACE}" = "${CELL}" ]; then
+    case "${ACTION}" in
+        ifup|ifdown) /usr/sbin/parkeze-wireguard-route apply ;;
+    esac
+fi

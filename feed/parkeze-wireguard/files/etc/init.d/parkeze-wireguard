@@ -1,6 +1,8 @@
 #!/bin/sh /etc/rc.common
 #
-# The management tunnel: WireGuard to the parkeze.net hub, over wired only.
+# The management tunnel: WireGuard to the parkeze.net hub, wired preferred and
+# cellular as a fast fallback. See parkeze-wireguard-route for how the choice
+# is made and confined.
 #
 # gateway-link reaches this gateway's console and SSH through the hub. The
 # gateway dials out, so nothing at the site has to accept an inbound
@@ -19,7 +21,7 @@
 #   not adopted          no tunnel, and any old one is torn down
 #   adopted, no config   enrolment runs in the background until parkeze.net
 #                        answers, then this service restarts itself
-#   adopted, configured  wg0 up, confined to the wired WAN
+#   adopted, configured  wg0 up, routed over whichever backhaul is chosen
 #
 # The keypair is generated here on first start, on the gateway. Only the public
 # half is ever sent anywhere.
@@ -84,15 +86,15 @@ start() {
         return 0
     fi
 
-    # Confinement first, and fail closed: a tunnel that could fall back to
-    # cellular is worse than no tunnel, because it bills quietly.
-    if [ "${PARKEZE_WIREGUARD_ALLOW_CELLULAR:-0}" != "1" ]; then
-        /usr/sbin/parkeze-wireguard-route apply || {
-            logger -t wireguard -p daemon.err "could not confine the tunnel to wired; not starting it"
-            down
-            return 1
-        }
-    fi
+    # Confinement first, and fail closed: a tunnel with no table at all is
+    # worse than no tunnel, because its packets would go out over whatever
+    # the main table says instead of somewhere this script chose. The table
+    # itself decides wired vs. cellular vs. nothing — see its own header.
+    /usr/sbin/parkeze-wireguard-route apply || {
+        logger -t wireguard -p daemon.err "could not set up the tunnel's routing; not starting it"
+        down
+        return 1
+    }
 
     # Recreated rather than edited, so no stale peer or address survives a
     # re-enrolment. The endpoint's name is resolved here, once; the hotplug
