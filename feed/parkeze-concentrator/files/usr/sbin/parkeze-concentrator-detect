@@ -54,9 +54,13 @@ PROFILE_DIR=/usr/share/parkeze/concentrator
 # it, so keep the two in step.
 
 probe_usb() {
-    # RAK5146 / RAK2287 USB and the WM1302 USB variant all present as a CP210x
-    # or FTDI bridge in front of an SX1302/SX1303. The USB IDs are the reliable
-    # discriminator; the concentrator itself is invisible until the bridge is up.
+    # RAK5146 / RAK2287 USB and the WM1302 USB variant present as one of a
+    # CP210x bridge, an FTDI FT2232H bridge, or — the RAK5146 revision
+    # actually seen on a Pi 4 in the field — an onboard STM32 running its own
+    # firmware and exposing a CDC-ACM virtual COM port rather than a bridge
+    # chip in front of the SX1302 at all. The USB IDs are the reliable
+    # discriminator in every case; the concentrator itself is invisible until
+    # whichever interface it presents is up.
     #
     # Enumerated per-device rather than by grepping all the idVendor files at
     # once: several devices are always attached, and we need each device's
@@ -77,6 +81,16 @@ probe_usb() {
                 ;;
             # FTDI FT2232H — WM1302 USB and some RAK2245 breakouts.
             0403:6010) echo "sx1302_usb"; return 0 ;;
+            # STMicroelectronics CDC-ACM — the RAK5146 USB module's own STM32,
+            # not a bridge chip. Its descriptor says "STM32 Virtual ComPort"
+            # and nothing more specific to LoRa, the same way an unlabelled
+            # CP210x does not either — there being nothing this fleet plugs
+            # into a Pi's USB port that shares this VID:PID is the actual
+            # discriminator, same as that case.
+            0483:5740)
+                log "STM32 CDC-ACM at ${dev} — assuming RAK5146"
+                echo "sx1302_usb"; return 0
+                ;;
         esac
     done
     return 1
