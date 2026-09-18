@@ -315,6 +315,19 @@ build_console() {
   [ -f "${CONSOLE_PAYLOAD}/index.html" ] \
     || die "the console build produced no index.html"
 
+  # uhttpd has no gzip support of its own — checked the binary, nothing there
+  # for Content-Encoding or a .gz sidecar. assets.uc serves these directly
+  # when the browser sends Accept-Encoding: gzip, and falls back to the plain
+  # file otherwise, so shipping the .gz costs nothing on a client that can't
+  # use it. -k keeps the original; -f overwrites a stale .gz from a previous
+  # build of the same file.
+  if command -v gzip >/dev/null 2>&1; then
+    find "${CONSOLE_PAYLOAD}/assets" -type f \( -name '*.js' -o -name '*.css' \) \
+      -exec gzip -9 -k -f {} \;
+  else
+    warn "no gzip on this host — the console will ship without precompressed assets"
+  fi
+
   log "Console: $(du -sh "${CONSOLE_PAYLOAD}" | cut -f1)"
 }
 

@@ -68,6 +68,15 @@ set uhttpd.main.cgi_prefix=''
 # console working right up until you read the body.
 add_list uhttpd.main.ucode_prefix='/api=/usr/share/parkeze/console/api/index.uc'
 
+# Same mechanism, for /assets: uhttpd itself has no gzip support at all, and
+# build.sh ships a .gz next to every JS/CSS chunk for this to serve instead of
+# the plain file when the browser will take it. See assets.uc's own header
+# comment for why this could not just be folded into a static-file option —
+# claiming the prefix here means uhttpd's own file serving never sees it
+# again, so the handler has to answer the plain-file and missing-file cases
+# too, not only the compressed one.
+add_list uhttpd.main.ucode_prefix='/assets=/usr/share/parkeze/console/assets.uc'
+
 set uhttpd.main.cert='${STATE}/cert.pem'
 set uhttpd.main.key='${STATE}/key.pem'
 
