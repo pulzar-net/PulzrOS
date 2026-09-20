@@ -21,6 +21,9 @@
 #             blink 1s/1s      reachable over cellular only — working, but
 #                              every byte is billed
 #             off              no management path at all
+#             (on an RGB breathing LED, the RAK7268's big light on top: breathes
+#              blue on wired, breathes yellow on cellular, solid red when there
+#              is no path — breathing means alive)
 #
 #   cellular  solid            modem attached
 #             blink            attaching
@@ -118,11 +121,9 @@ while :; do
     adopted="$(uci -q get parkeze.adoption.state)"
 
     # ── cloud ───────────────────────────────────────────────────────────────
-    case "${backhaul}" in
-        wired)    led cloud on ;;
-        cellular) led cloud blink 1000 1000 ;;
-        none)     led cloud off ;;
-    esac
+    # Which path, not how to draw it: a plain LED is solid / 1Hz / off, the RGB
+    # one on a RAK7268 breathes blue, breathes yellow, or sits solid red.
+    led cloud path "${backhaul}"
 
     # ── cellular ────────────────────────────────────────────────────────────
     case "$(modem_state)" in
