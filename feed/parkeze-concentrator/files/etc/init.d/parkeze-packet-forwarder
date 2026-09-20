@@ -39,6 +39,12 @@ start_service() {
     # boots, and slot 0's config depends on whether one is there.
     /usr/sbin/parkeze-gps-detect >/dev/null 2>&1
 
+    # Whether these uplinks may go out over the SIM. Applied before the
+    # forwarder starts rather than after: the confinement is a routing rule,
+    # and a forwarder that connects first would hold an established
+    # connection the new rule does not affect.
+    /usr/sbin/parkeze-lora-route apply >/dev/null 2>&1
+
     slots="$(uci -q get parkeze.concentrator.slots || echo 0)"
     present="$(uci -q get parkeze.concentrator.present || echo 0)"
 

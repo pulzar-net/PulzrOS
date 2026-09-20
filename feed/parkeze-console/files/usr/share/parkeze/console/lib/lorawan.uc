@@ -16,7 +16,7 @@ let _m_util = loadfile('/usr/share/parkeze/console/lib/util.uc', { raw_mode: tru
 // Declaring the names first makes every one of them a known local before any
 // body is compiled, so closures capture the binding rather than a missing
 // global and definition order stops mattering. auth.uc alone had six of these.
-let profile, supported, slotView, concentrator, setConcentrator, setSlot, detect, gps, syncGps, detectGps, status, restart;
+let profile, supported, slotView, concentrator, setConcentrator, setSlot, detect, gps, syncGps, detectGps, status, restart, setBackhaul;
 
 let run = _m_util.run;; let runJson = _m_util.runJson;
 
@@ -266,7 +266,28 @@ status = function() {
             connected: run('cat /var/run/parkeze/lora/slot0.mqtt 2>/dev/null') == 'connected',
             broker: uci.get('parkeze', 'mqtt', 'host'),
         },
+        // Whether uplinks may use the metered link, and whether they are
+        // getting out right now. Distinct from bridge.connected: a gateway
+        // confined to wired with wired down is deliberately not sending, and
+        // that reads very differently from a broker it cannot reach.
+        backhaul: runJson('/usr/sbin/parkeze-lora-route status 2>/dev/null'),
     };
+};
+
+// Whether uplinks may fail over to cellular. Per gateway: whether a metered
+// uplink is worth it is a property of the site, not of the board.
+setBackhaul = function(req, session) {
+    if (req.allowCellular == null)
+        return { error: 'Nothing to change.' };
+
+    const uci = cursor();
+    uci.set('parkeze', 'lorawan', 'allow_cellular', req.allowCellular ? '1' : '0');
+    uci.commit('parkeze');
+
+    // Applied now rather than at the next ifup, so the setting takes effect
+    // while whoever changed it is still looking at the page.
+    run('/usr/sbin/parkeze-lora-route apply');
+    return runJson('/usr/sbin/parkeze-lora-route status 2>/dev/null') ?? { ok: true };
 };
 
 restart = function() {
@@ -280,4 +301,4 @@ restart = function() {
 // its handler in TEMPLATE mode and loads anything else through loadfile(),
 // neither of which is module mode — `export` is a syntax error there. See the
 // header of api/index.uc for the full contract.
-return { concentrator, detect, detectGps, gps, restart, setConcentrator, setSlot, status, supported, syncGps };
+return { concentrator, detect, detectGps, gps, restart, setBackhaul, setConcentrator, setSlot, status, supported, syncGps };
