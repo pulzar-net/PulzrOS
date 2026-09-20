@@ -14,15 +14,19 @@
 # decides the tunnel's egress explicitly rather than letting it drift onto
 # whatever the main routing table says today.
 #
-# WIRED, OR NOTHING
+# UNMETERED, OR NOTHING
 #
-# Wired is the only backhaul this tunnel is allowed on by default —
+# Wired and WiFi are allowed; cellular is not, by default —
 # PARKEZE_WIREGUARD_ALLOW_CELLULAR is "0" on every board — and that is not
 # about the cost of a 25-second keepalive. It is that a cellular gateway is
 # already reachable: gateway-link holds an OpenVPN tunnel open into the SIM
 # provider's CGNAT'd network, and every SIM answers on a fixed address inside
 # it (see `_management_address` in net-api). A second tunnel over the same SIM
 # to reach the same box is two management paths for one gateway, for nothing.
+#
+# WiFi is allowed for the mirror of that reason: the objection to cellular is
+# the bill, and joining somebody's WiFi does not produce one. A gateway
+# backhauled over WiFi is reachable exactly as a wired one is.
 #
 # Enrolment is not gated by this — `parkeze-wireguard` enrols regardless of
 # backhaul, so a gateway that is cellular-only today has a tunnel sitting
@@ -71,6 +75,7 @@ MARK="${PARKEZE_WIREGUARD_MARK:-0x9700}"
 MASK="0xff00"
 WIRED_IFACE="${PARKEZE_WAN_ETH_IFACE:-wan}"
 CELL_IFACE="${PARKEZE_WAN_CELL_IFACE:-wwan}"
+WIFI_IFACE="${PARKEZE_WAN_WIFI_IFACE:-wwifi}"
 # Where the last-applied egress is remembered, purely to notice a change.
 # tmpfs: forgetting it across a reboot means one extra report at most, not a
 # wrong answer.
@@ -118,6 +123,12 @@ apply() {
 
   if spec="$(iface_gateway "${WIRED_IFACE}")"; then
     via=wired
+  # WiFi counts as wired here, and that is not an oversight. The reason the
+  # tunnel is kept off cellular is the bill — see the header — and joining
+  # somebody's WiFi does not produce one. A gateway backhauled over WiFi with
+  # no tunnel would be a gateway nobody can reach for no reason at all.
+  elif spec="$(iface_gateway "${WIFI_IFACE}")"; then
+    via=wifi
   elif [ "${PARKEZE_WIREGUARD_ALLOW_CELLULAR:-0}" = "1" ] \
        && spec="$(iface_gateway "${CELL_IFACE}")"; then
     via=cellular

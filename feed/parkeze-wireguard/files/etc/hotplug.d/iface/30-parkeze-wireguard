@@ -19,8 +19,16 @@
 
 WIRED="${PARKEZE_WAN_ETH_IFACE:-wan}"
 CELL="${PARKEZE_WAN_CELL_IFACE:-wwan}"
+WIFI="${PARKEZE_WAN_WIFI_IFACE:-wwifi}"
 
 if [ "${INTERFACE}" = "${WIRED}" ]; then
+    case "${ACTION}" in
+        ifup)   /etc/init.d/parkeze-wireguard restart ;;
+        ifdown) /usr/sbin/parkeze-wireguard-route apply ;;
+    esac
+elif [ "${INTERFACE}" = "${WIFI}" ]; then
+    # Same as wired: WiFi is an egress the tunnel may use, so coming up on it
+    # is worth a restart to re-resolve the hub's endpoint on the new path.
     case "${ACTION}" in
         ifup)   /etc/init.d/parkeze-wireguard restart ;;
         ifdown) /usr/sbin/parkeze-wireguard-route apply ;;

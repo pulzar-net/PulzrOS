@@ -31,7 +31,7 @@ let _m_util = loadfile('/usr/share/parkeze/console/lib/util.uc', { raw_mode: tru
 // Declaring the names first makes every one of them a known local before any
 // body is compiled, so closures capture the binding rather than a missing
 // global and definition order stops mattering. auth.uc alone had six of these.
-let status, key, setAp, raiseAp, lowerAp, scan, joinWifi;
+let status, key, setAp, raiseAp, lowerAp, scan, joinWifi, forgetWifi;
 
 let run = _m_util.run;; let runJson = _m_util.runJson;
 
@@ -70,6 +70,21 @@ status = function() {
             servesDhcp: false,
         },
         adopted: uci.get('parkeze', 'adoption', 'state') == 'adopted',
+        // The WiFi uplink, if one has been joined. Distinct from `ap` above:
+        // that is the radio serving a setup network, this is the radio using
+        // somebody else's. They share one chip and are rarely both wanted.
+        wifi: (() => {
+            const ssid = uci.get('wireless', 'parkeze_sta', 'ssid');
+            if (!ssid) return { configured: false };
+            const link = runJson('ubus call network.interface.wwifi status') || {};
+            const addresses = link['ipv4-address'] || [];
+            return {
+                configured: true,
+                ssid: ssid,
+                up: link.up == true,
+                address: length(addresses) ? addresses[0].address : null,
+            };
+        })(),
     };
 };
 
@@ -213,17 +228,60 @@ joinWifi = function(req) {
     uci.set('network', 'wwifi', 'proto', 'dhcp');
     uci.set('network', 'wwifi', 'metric', '15');
 
+    // Into the wan zone with the wired uplink, which it was not before.
+    // An interface in no zone falls to fw4's default chains — safe, because
+    // 20-parkeze-network sets those to DROP, but it also means none of the
+    // zone's rules apply to it and nothing says why. The far side is somebody
+    // else's network exactly as the ethernet case is, so it belongs in the
+    // same zone and gets the same answer: nothing reachable inbound.
+    const zone = uci.get('firewall', 'wan', 'network') || '';
+    if (index(zone, 'wwifi') < 0)
+        uci.set('firewall', 'wan', 'network', trim(zone + ' wwifi'));
+
     uci.commit('wireless');
     uci.commit('network');
+    uci.commit('firewall');
 
     // Applied in the background: bringing the radio down takes the caller's own
     // connection with it if they are on the setup AP, and the reply has to get
     // out first.
-    run('(sleep 2; wifi reload; /sbin/ifup wwifi) >/dev/null 2>&1 &');
+    // The tunnel is re-homed too. WiFi is an egress it may use — the reason
+    // it stays off cellular is the bill, and there is none here — but nothing
+    // would have told it that until the next ifup of something else.
+    run('(sleep 2; wifi reload; /sbin/ifup wwifi; /etc/init.d/firewall reload; '
+        + '/usr/sbin/parkeze-wireguard-route apply) >/dev/null 2>&1 &');
 
     return { ok: true,
              message: 'Joining ' + ssid + '. If you are connected to the setup '
                     + 'network, it will drop while the radio switches over.' };
+};
+
+// Leave the network, and take the configuration with it.
+//
+// The way back from a joined network that does not work. Without it the only
+// way off a WiFi uplink whose password has changed is a serial cable, which
+// on a roof is the same as a truck.
+forgetWifi = function() {
+    const uci = cursor();
+    const ssid = uci.get('wireless', 'parkeze_sta', 'ssid');
+    if (!ssid) return { ok: true, message: 'No WiFi network is configured.' };
+
+    uci.delete('wireless', 'parkeze_sta');
+    uci.delete('network', 'wwifi');
+    const zone = uci.get('firewall', 'wan', 'network') || '';
+    uci.set('firewall', 'wan', 'network',
+            trim(replace(zone, /\s*wwifi\s*/, ' ')));
+    uci.commit('wireless');
+    uci.commit('network');
+    uci.commit('firewall');
+
+    // Backgrounded for the same reason as joining: if the caller is on the
+    // setup AP, reloading the radio takes their connection with it, and the
+    // reply has to leave first.
+    run('(sleep 2; wifi reload; /etc/init.d/firewall reload; '
+        + '/usr/sbin/parkeze-wireguard-route apply) >/dev/null 2>&1 &');
+
+    return { ok: true, message: 'Left ' + ssid + '.' };
 };
 
 // ── module exports ──────────────────────────────────────────────────────────
@@ -232,4 +290,4 @@ joinWifi = function(req) {
 // its handler in TEMPLATE mode and loads anything else through loadfile(),
 // neither of which is module mode — `export` is a syntax error there. See the
 // header of api/index.uc for the full contract.
-return { joinWifi, key, lowerAp, raiseAp, scan, setAp, status };
+return { forgetWifi, joinWifi, key, lowerAp, raiseAp, scan, setAp, status };
