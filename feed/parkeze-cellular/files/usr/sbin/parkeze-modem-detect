@@ -45,9 +45,14 @@ if [ -z "${modem_index}" ]; then
         printf '{"present":false,"reason":"No modem. Normal on a wired-only gateway."}\n'
     else
         log "no modem found after ${waited}s"
-        uci -q set parkeze.cellular=cellular
-        uci -q set parkeze.cellular.modem_present='0'
-        uci commit parkeze
+        # Same reasoning as the commit at the end of this script: hotplug
+        # runs this on every interface event, and a gateway with no modem
+        # gets here every time.
+        if [ "$(uci -q get parkeze.cellular.modem_present)" != "0" ]; then
+            uci -q set parkeze.cellular=cellular
+            uci -q set parkeze.cellular.modem_present='0'
+            uci commit parkeze
+        fi
     fi
     exit 1
 fi
@@ -201,13 +206,25 @@ if [ "${current}" != "${device_path}" ]; then
     /sbin/ifup wwan >/dev/null 2>&1
 fi
 
-uci -q batch <<EOF
-set parkeze.cellular=cellular
-set parkeze.cellular.modem_present='1'
-set parkeze.cellular.model='${manufacturer} ${model}'
-set parkeze.cellular.imei='${imei}'
-set parkeze.cellular.iccid='${iccid}'
-set parkeze.cellular.gps_capable='$([ "${gps_capable}" = "true" ] && echo 1 || echo 0)'
-EOF
-uci commit parkeze
+# Only if something differs. This script runs from hotplug.d/iface, so it
+# re-runs on every interface event — and on a gateway whose wwan cannot bind
+# ModemManager, netifd retries that interface continuously. Committing
+# unconditionally turned each of those retries into a `config.change` on
+# "parkeze", which restarts the packet forwarder, which is how a Pi4 ended up
+# restarting its LoRa stack every ten seconds and never forwarding an uplink.
+# These values — model, IMEI, ICCID — do not change between runs anyway.
+changed=0
+put() {
+    [ "$(uci -q get "parkeze.$1")" = "$2" ] && return 0
+    uci -q set "parkeze.$1=$2"
+    changed=1
+}
+
+put cellular cellular
+put cellular.modem_present 1
+put cellular.model "${manufacturer} ${model}"
+put cellular.imei "${imei}"
+put cellular.iccid "${iccid}"
+put cellular.gps_capable "$([ "${gps_capable}" = "true" ] && echo 1 || echo 0)"
+[ "${changed}" = 1 ] && uci commit parkeze
 exit 0
