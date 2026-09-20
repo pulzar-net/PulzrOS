@@ -55,7 +55,19 @@ const MANIFEST = '/tmp/parkeze-firmware.manifest';
 // Headroom the rest of the gateway keeps while an image sits in RAM. /tmp is
 // tmpfs, so an image is memory; running the box out of it mid-upload takes the
 // packet forwarder and the console down with it.
-const HEADROOM = 24 * 1024 * 1024;
+//
+// 16MB, down from 24MB, because 24MB meant a RAK7268CV2 could not install its
+// own firmware and a gateway that cannot be updated remotely is a site visit.
+//
+// Measured on Osbourne rather than guessed. Freshly booted, with the radio and
+// forwarder running: 120.4MB total, 37.7MB available, 22.1MB genuinely free
+// and 54.6MB cached. Staging a 14.5MB image leaves 23.2MB available — more
+// than the entire working set of a running gateway. 24MB left it 0.8MB short
+// of being allowed to try.
+//
+// This is the floor for the RAM path only. A gateway with a card does not
+// spend memory on this at all; see staging() below.
+const HEADROOM = 16 * 1024 * 1024;
 
 // ── where the image is staged ───────────────────────────────────────────────
 //
