@@ -144,8 +144,25 @@ ${gateway_id}
 com_dev_path="${device}"
 ${gps}
 EOF
-    [ -n "${reset}" ] && printf '%s_reset_chip="%s"\n%s_reset_pin=%s\n' "${chipset}" "${chip}" "${chipset}" "${reset}"
-    [ -n "${power}" ] && printf '%s_power_en_chip="%s"\n%s_power_en_pin=%s\n' "${chipset}" "${chip}" "${chipset}" "${power}"
+    # Reset and power-enable pins, but never on USB.
+    #
+    # A USB concentrator resets itself: on a RAK5146 USB the module's own STM32
+    # owns that line, and on the CP210x/FT2232H variants it is on the adapter
+    # board. Either way nothing on the Pi's header is connected to the
+    # concentrator, so the pins in board.conf — which describe the SPI HAT that
+    # board normally carries — address something else entirely.
+    #
+    # Detection copies those pins into the slot whatever bus it finds, which is
+    # right for the record and wrong for this file. Handed them, concentratord
+    # configured both radios and all eight channels over USB perfectly well and
+    # then hung on "Starting the concentrator", so chirpstack-mqtt-forwarder sat
+    # on "Reading gateway id" forever and the gateway never forwarded anything.
+    # It looked like a dead concentrator; it was a reset line pointing at GPIO
+    # 17 on a board whose concentrator is on the end of a USB cable.
+    if [ "${bus}" != "usb" ]; then
+        [ -n "${reset}" ] && printf '%s_reset_chip="%s"\n%s_reset_pin=%s\n' "${chipset}" "${chip}" "${chipset}" "${reset}"
+        [ -n "${power}" ] && printf '%s_power_en_chip="%s"\n%s_power_en_pin=%s\n' "${chipset}" "${chip}" "${chipset}" "${power}"
+    fi
     [ -n "${PARKEZE_CONCENTRATOR_I2C}" ] && printf 'i2c_dev_path="%s"\n' "${PARKEZE_CONCENTRATOR_I2C}"
 
     # With no receiver the network server still needs to know where the
