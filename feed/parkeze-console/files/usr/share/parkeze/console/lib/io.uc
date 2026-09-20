@@ -62,7 +62,11 @@ status = function() {
             physical: physical,
             // Mapped *and* actually present. A board file naming an LED the
             // kernel does not expose is the exact failure this surfaces.
-            present: !!(physical && index(present, physical) >= 0),
+            present: !!(physical && (index(present, physical) >= 0 ||
+                // An I2C-attached LED (the RAK7268's breathing light) is not a
+                // directory to list; parkeze-led knows how to ask the chip.
+                (substr(physical, 0, 7) == 'aw2013:' &&
+                 system(sprintf('/usr/sbin/parkeze-led --has %s >/dev/null 2>&1', logical)) == 0))),
         };
     }
 
