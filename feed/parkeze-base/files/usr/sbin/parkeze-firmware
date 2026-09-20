@@ -1,0 +1,200 @@
+#!/bin/sh
+#
+# What happened to this gateway's firmware, and what it can go back to.
+#
+#   parkeze-firmware status              JSON: state, versions, what is stashed
+#   parkeze-firmware pending <img> [who] record an upgrade about to be applied
+#   parkeze-firmware confirm             this boot is healthy; keep it
+#   parkeze-firmware rollback-target     print the image to flash to go back
+#
+# ── WHY THERE IS A JOURNAL AT ALL ──────────────────────────────────────────
+#
+# Until this existed, an upgrade left no trace. The console ran sysupgrade in
+# a background subshell and returned 202; nothing on the gateway recorded that
+# an upgrade had happened, what version it came from, or who asked for it. So
+# a gateway that came back up broken could not tell it had just been upgraded,
+# which is the one fact a recovery needs before it can do anything useful.
+#
+# Stock WisGateOS kept two variables in its U-Boot environment for this —
+# `last_fb_issuer` and `last_fb_timestamp`. They could not act on them, since
+# that bootloader has no bootcount and no second slot, but they could at least
+# answer "what did this to you". This is the same idea with somewhere to put
+# the answer.
+#
+# ── WHERE THE IMAGE TO GO BACK TO COMES FROM ───────────────────────────────
+#
+# Not from the running system: what is running is an unpacked rootfs, not the
+# .img that produced it, and there is no way to reconstitute one from the
+# other. So each upgrade stashes the image it is *installing*, and that copy
+# is what the upgrade after it rolls back to. Version N's image is written
+# when N is installed and read when N+1 fails.
+#
+# The consequence worth stating plainly: the first upgrade a gateway does
+# under this scheme has no predecessor stashed, so it cannot roll back. Every
+# one after it can. `status` reports that honestly rather than implying a
+# safety net that is not there yet.
+#
+# They go on the SD card because they do not fit anywhere else. A RAK has
+# ~1.5MB spare in a 32MB chip against a 26MB image; the card the case ships
+# with has 30GB. A gateway with no card keeps a journal and cannot roll back,
+# and says so.
+
+. /etc/parkeze/board.conf
+
+JOURNAL_DIR=/etc/parkeze/upgrade
+JOURNAL="${JOURNAL_DIR}/journal"
+
+log() { logger -t firmware -p daemon.info "$*"; }
+
+storage_dir() {
+    [ "$(uci -q get parkeze.storage.present)" = "1" ] || return 1
+    [ "$(uci -q get parkeze.storage.writable)" = "1" ] || return 1
+    local mount; mount="$(uci -q get parkeze.storage.mount)"
+    [ -d "${mount}/parkeze/firmware" ] || return 1
+    echo "${mount}/parkeze/firmware"
+}
+
+# Journal reads are `get key`, writes are `set key value`. Flat key=value
+# rather than JSON because every reader of it is shell, including the one that
+# runs before the console exists.
+get() {
+    [ -f "${JOURNAL}" ] || return 1
+    sed -n "s/^$1=//p" "${JOURNAL}" | tail -n1
+}
+
+set_keys() {
+    mkdir -p "${JOURNAL_DIR}"
+    local tmp="${JOURNAL}.new" key
+    : > "${tmp}"
+    # Carry forward anything not being overwritten by this call.
+    if [ -f "${JOURNAL}" ]; then
+        while IFS= read -r line; do
+            key="${line%%=*}"
+            for given in "$@"; do
+                [ "${key}" = "${given%%=*}" ] && continue 2
+            done
+            printf '%s\n' "${line}" >> "${tmp}"
+        done < "${JOURNAL}"
+    fi
+    for given in "$@"; do printf '%s\n' "${given}" >> "${tmp}"; done
+    mv "${tmp}" "${JOURNAL}"
+}
+
+digest() {
+    sha256sum "$1" 2>/dev/null | awk '{ print $1 }'
+}
+
+now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+
+case "${1:-status}" in
+
+# ── before the upgrade ──────────────────────────────────────────────────────
+#
+# Called by whatever is about to run sysupgrade, while the old system is still
+# the running one — this is the only moment at which "what we are now" can be
+# recorded, and the only moment the outgoing image is still identifiable.
+pending)
+    image="${2:?usage: parkeze-firmware pending <image> [issuer]}"
+    issuer="${3:-unknown}"
+    [ -s "${image}" ] || { echo "no such image: ${image}" >&2; exit 1; }
+
+    target_sha="$(digest "${image}")"
+
+    # Whatever the last upgrade stashed is what this one can fall back to. On
+    # the first run under this scheme there is nothing, which is recorded as
+    # an empty from_image rather than left to look like an error.
+    from_image="$(get target_image 2>/dev/null)"
+    [ -f "${from_image}" ] || from_image=""
+
+    stashed=""
+    if dir="$(storage_dir)"; then
+        # Named for its own digest, not for a version.
+        #
+        # The obvious name is the version — and it is wrong. At this point the
+        # running version is known and the image's version is not: this is the
+        # *outgoing* system inspecting an image built to replace it. Naming
+        # the file after the running version produced a 0.1.0-pending.img
+        # holding the 0.2.0 image, which is exactly the sort of thing somebody
+        # reads off a card at 2am and acts on. The digest is the one name that
+        # cannot be wrong, it is already in the journal beside it, and two
+        # installs of the same image collapse onto one file for free.
+        stashed="${dir}/${target_sha:-unknown}.img"
+        # Copy, then rename: a card pulled half way through a 26MB write
+        # leaves a partial file, and a partial file named as though it were
+        # whole is worse than no file at all.
+        if cp "${image}" "${stashed}.part" 2>/dev/null && sync 2>/dev/null; then
+            mv "${stashed}.part" "${stashed}" 2>/dev/null || stashed=""
+        else
+            rm -f "${stashed}.part" 2>/dev/null
+            stashed=""
+            log "could not stash the image on removable storage"
+        fi
+
+        # Keep only what is reachable: the image going on now, and the one it
+        # would fall back to. Everything older is a version nothing can decide
+        # to return to any more. 30GB takes a long time to fill 26MB at a
+        # time, but unbounded is unbounded, and a full card fails the next
+        # stash — which is the one that matters.
+        for old in "${dir}"/*.img "${dir}"/*.img.part; do
+            [ -f "${old}" ] || continue
+            [ "${old}" = "${stashed}" ] && continue
+            [ "${old}" = "${from_image}" ] && continue
+            rm -f "${old}" 2>/dev/null
+        done
+    fi
+
+    set_keys \
+        "state=pending" \
+        "issuer=${issuer}" \
+        "started_at=$(now)" \
+        "from_version=${PARKEZE_VERSION:-unknown}" \
+        "from_build=${PARKEZE_BUILD:-unknown}" \
+        "from_image=${from_image}" \
+        "target_sha256=${target_sha}" \
+        "target_image=${stashed}" \
+        "attempts=$(( $(get attempts 2>/dev/null || echo 0) + 1 ))"
+
+    log "upgrade pending: ${PARKEZE_VERSION:-unknown} -> (new image ${target_sha:-unknown}), by ${issuer}"
+    [ -n "${from_image}" ] || log "no previous image stashed yet — this upgrade cannot be rolled back"
+    ;;
+
+# ── after a healthy boot ────────────────────────────────────────────────────
+confirm)
+    [ "$(get state)" = "pending" ] || exit 0
+    set_keys \
+        "state=good" \
+        "confirmed_at=$(now)" \
+        "attempts=0"
+    log "upgrade to ${PARKEZE_VERSION:-unknown} confirmed healthy"
+    ;;
+
+# What to flash to undo the pending upgrade, or nothing if we cannot.
+rollback-target)
+    target="$(get from_image)"
+    [ -n "${target}" ] && [ -f "${target}" ] || exit 1
+    echo "${target}"
+    ;;
+
+status)
+    state="$(get state 2>/dev/null)"
+    target="$(get from_image 2>/dev/null)"
+    can_roll_back=false
+    [ -n "${target}" ] && [ -f "${target}" ] && can_roll_back=true
+    printf '{"state":"%s","version":"%s","build":"%s","fromVersion":"%s","issuer":"%s","startedAt":"%s","confirmedAt":"%s","attempts":%s,"canRollBack":%s}\n' \
+        "${state:-none}" \
+        "${PARKEZE_VERSION:-unknown}" "${PARKEZE_BUILD:-unknown}" \
+        "$(get from_version 2>/dev/null)" \
+        "$(get issuer 2>/dev/null)" \
+        "$(get started_at 2>/dev/null)" \
+        "$(get confirmed_at 2>/dev/null)" \
+        "$(get attempts 2>/dev/null || echo 0)" \
+        "${can_roll_back}"
+    ;;
+
+*)
+    echo "usage: parkeze-firmware {status|pending <image> [issuer]|confirm|rollback-target}" >&2
+    exit 2
+    ;;
+esac
+
+exit 0

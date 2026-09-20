@@ -16,6 +16,12 @@
 /etc/parkeze/console/
 /etc/parkeze/wireguard/
 /etc/parkeze/recovery.pub
+# The upgrade journal, which exists to be read on the boot *after* an upgrade:
+# what we came from, who asked, and which stashed image undoes it. Written by
+# the old system and read by the new one, so the one reboot it has to survive
+# is the one it is about. In /tmp or /var/run it would be gone exactly when it
+# was wanted. See parkeze-firmware.
+/etc/parkeze/upgrade/
 # Keys a technician provisioned on this unit. Parkeze's own key is NOT here:
 # it comes from the image, so that rotating it is a firmware upgrade rather
 # than a visit. See parkeze-fleet-keys.

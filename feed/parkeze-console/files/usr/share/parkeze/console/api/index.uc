@@ -273,7 +273,7 @@ const ROUTES = {
     },
     'POST /api/system/firmware':  (env, req, s) => {
         auth.audit('system.firmware.upload', { by: s.subject, bytes: int(env.CONTENT_LENGTH ?? 0) });
-        const result = firmware.upload(env);
+        const result = firmware.upload(env, s.subject);
         if (result.error) return error(result.status, result.error);
         auth.audit('system.firmware.apply', { by: s.subject, bytes: result.bytes });
         return respond(202, result);

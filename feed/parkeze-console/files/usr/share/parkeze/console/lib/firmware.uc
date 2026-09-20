@@ -77,7 +77,7 @@ inspect = function() {
     return { board, target: meta?.version?.target, openwrt: meta?.version?.version };
 };
 
-upload = function(env) {
+upload = function(env, issuer) {
     const len = int(env.CONTENT_LENGTH ?? 0);
     if (len <= 0)
         return { status: 400, error: 'No image in the request.' };
@@ -128,6 +128,18 @@ upload = function(env) {
             ? sprintf('Not a valid image for this gateway: %s', verdict)
             : 'Not a valid image for this gateway.' };
     }
+
+    // Record what is about to happen while the system that knows it is still
+    // running. After sysupgrade there is no longer anything here that can say
+    // what version this was or who asked — see parkeze-firmware. Synchronous
+    // and before the detach on purpose: a journal written after the upgrade
+    // has started is a race with the reboot.
+    //
+    // The issuer is reduced to a safe character set first. It is a session
+    // subject, it is going into a shell command string, and a subject
+    // containing a quote would otherwise be running as one.
+    const who = replace(issuer ?? 'console', /[^A-Za-z0-9._@-]/g, '') || 'console';
+    _m_util.run(sprintf('parkeze-firmware pending %s %s', IMAGE, who));
 
     // Detached, after a pause, so this response reaches the browser before
     // sysupgrade stops uhttpd. Settings kept.
