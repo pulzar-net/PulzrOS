@@ -209,21 +209,40 @@ fi
 
 [ "${DRY_RUN}" = 1 ] && { echo "${found:-none} ${found_baud}"; exit 0; }
 
-uci -q set parkeze.gps=gps
+# ── record, but only if it differs ──────────────────────────────────────────
+#
+# `uci commit` rewrites the package file whether or not any value actually
+# changed, and procd's config.change trigger on "parkeze" watches that file.
+# This script runs from parkeze-packet-forwarder's start_service, so an
+# unconditional commit restarts the service that just called it — which calls
+# it again. It is a loop with nothing to stop it.
+#
+# Found on a Pi4 that had never forwarded a single uplink: the cycle ran every
+# ten seconds and chirpstack-mqtt-forwarder never stayed alive long enough to
+# finish connecting to the broker. Nothing in the log said "restarting", so it
+# read as a broken forwarder rather than as a config trigger eating itself.
+#
+# Comparing before setting is what breaks it: on the boots where detection
+# finds what it found last time — which is nearly all of them — there is
+# nothing to commit and the trigger never fires.
+changed=0
+put() {
+    [ "$(uci -q get "parkeze.$1")" = "$2" ] && return 0
+    uci -q set "parkeze.$1=$2"
+    changed=1
+}
+
+put gps gps
 if [ -z "${found}" ]; then
-    uci -q batch <<EOF
-set parkeze.gps.status='absent'
-set parkeze.gps.device=''
-EOF
-    uci commit parkeze
+    put gps.status absent
+    put gps.device ''
+    [ "${changed}" = 1 ] && uci commit parkeze
     log "no GNSS receiver found"
     exit 1
 fi
 
-uci -q batch <<EOF
-set parkeze.gps.status='present'
-set parkeze.gps.device='${found}'
-set parkeze.gps.baud='${found_baud}'
-EOF
-uci commit parkeze
+put gps.status present
+put gps.device "${found}"
+put gps.baud "${found_baud}"
+[ "${changed}" = 1 ] && uci commit parkeze
 exit 0

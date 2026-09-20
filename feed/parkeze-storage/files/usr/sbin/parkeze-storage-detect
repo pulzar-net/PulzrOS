@@ -166,17 +166,28 @@ blocks_mb() {
     df -k "${MOUNT_POINT}" 2>/dev/null | awk 'NR == 2 { printf "%d %d\n", $2 / 1024, $4 / 1024 }'
 }
 
+# Committing rewrites the package file even when no value differs, and procd's
+# config.change trigger on "parkeze" watches it — which restarts the LoRa stack.
+# This script runs from hotplug, so a card that re-enumerates a few times on a
+# bad contact would otherwise restart the forwarder once per event. See
+# parkeze-gps-detect for the version of this that ate itself in a loop.
+changed=0
+put() {
+    [ "$(uci -q get "parkeze.$1")" = "$2" ] && return 0
+    uci -q set "parkeze.$1=$2"
+    changed=1
+}
+
 record_absent() {
     [ "${DRY_RUN}" = 1 ] && { echo "no removable storage"; return 0; }
-    uci -q set parkeze.storage=storage
-    uci -q batch <<EOF
-set parkeze.storage.present='0'
-set parkeze.storage.device=''
-set parkeze.storage.mount=''
-set parkeze.storage.fstype=''
-set parkeze.storage.writable='0'
-EOF
-    uci commit parkeze
+    put storage storage
+    put storage.present 0
+    put storage.device ''
+    put storage.mount ''
+    put storage.fstype ''
+    put storage.writable 0
+    [ "${changed}" = 1 ] && uci commit parkeze
+    return 0
 }
 
 # ── unmount ─────────────────────────────────────────────────────────────────
@@ -246,16 +257,14 @@ else
 fi
 
 set -- $(blocks_mb)
-uci -q set parkeze.storage=storage
-uci -q batch <<EOF
-set parkeze.storage.present='1'
-set parkeze.storage.device='${existing}'
-set parkeze.storage.mount='${MOUNT_POINT}'
-set parkeze.storage.fstype='$(fstype_of)'
-set parkeze.storage.writable='${is_writable}'
-set parkeze.storage.size_mb='${1:-0}'
-set parkeze.storage.free_mb='${2:-0}'
-EOF
-uci commit parkeze
+put storage storage
+put storage.present 1
+put storage.device "${existing}"
+put storage.mount "${MOUNT_POINT}"
+put storage.fstype "$(fstype_of)"
+put storage.writable "${is_writable}"
+put storage.size_mb "${1:-0}"
+put storage.free_mb "${2:-0}"
+[ "${changed}" = 1 ] && uci commit parkeze
 
 exit 0

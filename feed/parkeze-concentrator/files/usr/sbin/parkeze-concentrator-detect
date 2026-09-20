@@ -255,26 +255,24 @@ detect_slot() {
     local section="slot${index}"
     [ "${DRY_RUN}" = 1 ] && { echo "slot ${index}: ${detected:-nothing} on ${bus:-?} ${device:-?}"; return 0; }
 
-    uci -q batch <<EOF
-set parkeze.${section}=slot
-set parkeze.${section}.index='${index}'
-set parkeze.${section}.bus='${bus}'
-set parkeze.${section}.device='${device}'
-set parkeze.${section}.reset_gpio='${reset}'
-set parkeze.${section}.power_gpio='${power}'
-set parkeze.${section}.detected='${detected}'
-EOF
+    put "${section}" slot
+    put "${section}.index" "${index}"
+    put "${section}.bus" "${bus}"
+    put "${section}.device" "${device}"
+    put "${section}.reset_gpio" "${reset}"
+    put "${section}.power_gpio" "${power}"
+    put "${section}.detected" "${detected}"
 
     if [ -z "${detected}" ]; then
-        uci -q set "parkeze.${section}.status=absent"
-        uci -q set "parkeze.${section}.active="
+        put "${section}.status" absent
+        put "${section}.active" ''
         return 1
     fi
 
     if [ ! -f "${PROFILE_DIR}/${detected}.json" ]; then
         log "slot ${index}: detected ${detected} but no profile ships for it"
-        uci -q set "parkeze.${section}.status=unsupported"
-        uci -q set "parkeze.${section}.active="
+        put "${section}.status" unsupported
+        put "${section}.active" ''
         return 1
     fi
 
@@ -288,17 +286,37 @@ EOF
     [ "${PARKEZE_CONCENTRATOR_CONFIGURABLE}" = "1" ] \
         && override="$(uci -q get "parkeze.${section}.override")"
 
-    uci -q set "parkeze.${section}.status=present"
+    put "${section}.status" present
     if [ -n "${override}" ] && [ "${override}" != "${detected}" ]; then
         log "slot ${index}: operator override ${override} kept over detected ${detected}"
-        uci -q set "parkeze.${section}.active=${override}"
+        put "${section}.active" "${override}"
     else
-        uci -q set "parkeze.${section}.active=${detected}"
+        put "${section}.active" "${detected}"
     fi
     return 0
 }
 
 # ── Every slot ──────────────────────────────────────────────────────────────
+#
+# `uci commit` rewrites the package file whether or not any value differs, and
+# procd's config.change trigger on "parkeze" watches that file. This script
+# runs from parkeze-packet-forwarder's start_service, so committing when
+# nothing changed restarts the service that just called it, which calls it
+# again — see the same note in parkeze-gps-detect, where the loop was found.
+#
+# Detection is overwhelmingly stable: the same board finds the same part on
+# every boot. Comparing first means the common case writes nothing at all.
+changed=0
+put() {
+    [ "$(uci -q get "parkeze.$1")" = "$2" ] && return 0
+    uci -q set "parkeze.$1=$2"
+    changed=1
+}
+drop() {
+    uci -q get "parkeze.$1" >/dev/null 2>&1 || return 0
+    uci -q delete "parkeze.$1"
+    changed=1
+}
 
 index=0
 present=0
@@ -326,31 +344,29 @@ done
 # one leaves a phantom slot the console renders and the forwarder cannot start.
 stale="${index}"
 while uci -q get "parkeze.slot${stale}" >/dev/null 2>&1; do
-    uci -q delete "parkeze.slot${stale}"
+    drop "slot${stale}"
     stale=$((stale + 1))
 done
 
-uci -q batch <<EOF
-set parkeze.concentrator=concentrator
-set parkeze.concentrator.slots='${total}'
-set parkeze.concentrator.present='${present}'
-set parkeze.concentrator.channels='${channels}'
-set parkeze.concentrator.configurable='${PARKEZE_CONCENTRATOR_CONFIGURABLE:-1}'
-EOF
+put concentrator concentrator
+put concentrator.slots "${total}"
+put concentrator.present "${present}"
+put concentrator.channels "${channels}"
+put concentrator.configurable "${PARKEZE_CONCENTRATOR_CONFIGURABLE:-1}"
 
 # A partial detection on a multi-slot board is its own state, and a loud one:
 # the gateway works, at half its channel count, and nothing about the uplink
 # counts makes that obvious.
 if [ "${present}" = 0 ]; then
-    uci -q set parkeze.concentrator.status='absent'
+    put concentrator.status absent
 elif [ "${present}" -lt "${total}" ]; then
-    uci -q set parkeze.concentrator.status='partial'
+    put concentrator.status partial
     log "WARNING: only ${present} of ${total} concentrators responded — this gateway is running at ${channels} channels"
 else
-    uci -q set parkeze.concentrator.status='present'
+    put concentrator.status present
 fi
 
-uci commit parkeze
+[ "${changed}" = 1 ] && uci commit parkeze
 # The probe is done with the reset and power lines, and concentratord claims
 # the same ones. Holding them past here is what makes it crash-loop.
 parkeze-sx130x-reset --release 2>/dev/null
