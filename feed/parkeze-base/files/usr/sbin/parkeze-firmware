@@ -238,6 +238,53 @@ rollback-target)
     echo "${target}"
     ;;
 
+# ── put the previous firmware back ──────────────────────────────────────────
+#
+# Called by the health gate when a gateway has come up unable to reach
+# parkeze.net after an upgrade. Does not decide anything: whether this is
+# warranted is the gate's judgement, and everything here is about doing it
+# safely once that judgement is made.
+rollback)
+    target="$(get from_image)"
+    [ -n "${target}" ] && [ -f "${target}" ] || {
+        # Recorded rather than silent. A gateway that needed to go back and
+        # could not is the state somebody has to be told about, because the
+        # next move is a visit.
+        set_keys "state=unrecoverable"
+        log "ERROR: this gateway needs its previous firmware and there is none stashed"
+        exit 1
+    }
+
+    # The stash is on a card that can be pulled, worn out, or quietly corrupt,
+    # and this is the one moment where flashing something damaged turns a
+    # broken gateway into a dead one. The filename is the digest the image had
+    # when it was stashed, so the file verifies itself: recompute and compare.
+    actual="$(digest "${target}")"
+    expected="$(basename "${target}" .img)"
+    if [ -z "${actual}" ] || [ "${actual}" != "${expected}" ]; then
+        set_keys "state=unrecoverable"
+        log "ERROR: the stashed image is damaged (${actual:-unreadable} is not ${expected}) — refusing to flash it"
+        exit 1
+    fi
+
+    # Written before the flash, not after: sysupgrade reboots, and a journal
+    # entry made after it is a journal entry that never happens. This is also
+    # what stops a loop — the next boot sees state=rolled-back rather than
+    # pending, so the gate leaves it alone instead of rolling back again to
+    # something older still.
+    set_keys \
+        "state=rolled-back" \
+        "rolled_back_at=$(now)" \
+        "rolled_back_to=${expected}"
+
+    log "rolling back to ${expected}"
+    # Settings kept, same as the forward path. The failure this exists for is
+    # the image; wiping config would also throw away the claim secret, which
+    # would stop the gateway proving who it is — turning a recoverable gateway
+    # into one nobody can adopt back.
+    sysupgrade "${target}"
+    ;;
+
 status)
     state="$(get state 2>/dev/null)"
     target="$(get from_image 2>/dev/null)"

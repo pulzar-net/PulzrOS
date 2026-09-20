@@ -1,0 +1,132 @@
+#!/bin/sh
+#
+# Decide whether the firmware that just booted is one we can keep.
+#
+#   parkeze-health-gate          judge this boot, act on the verdict
+#   parkeze-health-gate --check  print the verdict, change nothing
+#
+# ── WHAT THIS IS FOR ───────────────────────────────────────────────────────
+#
+# Most of this fleet is reachable only over cellular. An upgrade that boots
+# into something unmanageable has no recovery path short of someone driving to
+# it, and on a RAK the bootloader cannot help: a Ralink U-Boot 1.1.3 with no
+# bootcount, no altbootcmd and one firmware partition. So the recovery has to
+# happen from the running system, in the window where it is still running.
+#
+# That is the limit worth stating plainly rather than letting "we have
+# rollback" imply more than it does: this catches a gateway that BOOTS and is
+# unreachable. It cannot catch a kernel that does not boot at all, because
+# nothing of ours runs to notice. On a Pi that class of failure needs a card
+# reader; on a RAK, a serial cable and the U-Boot TFTP menu.
+#
+# ── WHAT COUNTS AS HEALTHY ─────────────────────────────────────────────────
+#
+# "parkeze.net is reachable and still accepts us as this gateway."
+#
+# Not the LoRaWAN radio. A concentrator can be legitimately absent — a Pi kit
+# with nothing fitted yet is a normal gateway — and rolling back working
+# firmware because a radio is missing would be its own outage.
+#
+# Not the WireGuard tunnel. It is wired-only by default, so on the
+# cellular-only units this exists for it is never up and never will be.
+#
+# Reachability alone is not enough either. An upgrade once threw away the
+# claim secret (see /lib/upgrade/keep.d/parkeze): those gateways had perfect
+# connectivity and could not prove who they were, and every report they made
+# was refused. A TCP check passes that. So the gate finishes with a real
+# authenticated report — which exercises DNS, TLS, the clock, and the secret
+# that survived the upgrade — and only a gateway that completes one is kept.
+#
+# ── COST ───────────────────────────────────────────────────────────────────
+#
+# The cheap check runs on the loop and the expensive one runs once. Polling
+# parkeze-backhaul-check is ~700 bytes; a report is a TLS session. On a metered
+# SIM the difference over a ten-minute window is the whole budget, so the
+# report is only attempted once the cheap check says the link is there.
+
+. /etc/parkeze/board.conf
+
+# Long enough for a cold cellular boot to finish: the modem can take twenty
+# seconds to enumerate, the network attach and DNS take longer, and TLS needs
+# the clock to be right, which needs NTP. Ten minutes is generous for all of
+# that and still an eternity shorter than the six hours the report loop would
+# otherwise take to notice anything.
+WINDOW="${PARKEZE_HEALTH_WINDOW:-600}"
+INTERVAL=30
+
+# A report that is refused while the link is plainly up is the claim-secret
+# failure, and retrying it does not fix that. A couple of attempts covers a
+# server hiccup; past that the answer is not going to change.
+REPORT_TRIES=3
+
+log() { logger -t health-gate -p daemon.info "$*"; }
+
+adopted() { [ "$(uci -q get parkeze.adoption.state)" = "adopted" ]; }
+
+# Reachable, and still ourselves. Exits non-zero with a reason on stdout.
+verdict() {
+    if ! parkeze-backhaul-check >/dev/null 2>&1; then
+        echo "unreachable"
+        return 1
+    fi
+
+    # Nothing to authenticate as yet. A gateway that reaches parkeze.net
+    # before anyone has adopted it is as healthy as it can be, and there is no
+    # secret to have lost.
+    adopted || { echo "reachable, not adopted"; return 0; }
+
+    local try=1
+    while [ "${try}" -le "${REPORT_TRIES}" ]; do
+        if parkeze-claim report >/dev/null 2>&1; then
+            echo "reachable and accepted"
+            return 0
+        fi
+        try=$((try + 1))
+        sleep 5
+    done
+
+    echo "reachable but parkeze.net will not accept our reports"
+    return 1
+}
+
+if [ "$1" = "--check" ]; then
+    result="$(verdict)"; rc=$?
+    echo "${result}"
+    exit "${rc}"
+fi
+
+# ── only after an upgrade ───────────────────────────────────────────────────
+#
+# Any other boot is not this script's business. A gateway that has been up for
+# a year and loses its SIM is a monitoring problem, not a rollback: putting
+# older firmware on it would not bring the SIM back, and would throw away
+# whatever it had learned since.
+state="$(parkeze-firmware status | jsonfilter -e '@.state' 2>/dev/null)"
+if [ "${state}" != "pending" ]; then
+    exit 0
+fi
+
+log "first boot after an upgrade — watching for ${WINDOW}s"
+
+deadline=$(( $(date +%s) + WINDOW ))
+while [ "$(date +%s)" -lt "${deadline}" ]; do
+    if reason="$(verdict)"; then
+        log "healthy: ${reason}"
+        parkeze-firmware confirm
+        exit 0
+    fi
+    sleep "${INTERVAL}"
+done
+
+# The window closed with the gateway still unable to reach or prove itself.
+log "unhealthy after ${WINDOW}s: $(verdict 2>/dev/null || true)"
+
+if ! parkeze-firmware rollback-target >/dev/null 2>&1; then
+    # Nothing to go back to. Say so in the journal and leave it running: an
+    # unreachable gateway is still a gateway, and there is nothing here that
+    # rebooting or flashing would improve.
+    log "no previous firmware stashed — staying on this one"
+    exit 1
+fi
+
+parkeze-firmware rollback
