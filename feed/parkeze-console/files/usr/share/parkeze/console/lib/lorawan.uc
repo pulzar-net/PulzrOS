@@ -271,23 +271,42 @@ status = function() {
         // confined to wired with wired down is deliberately not sending, and
         // that reads very differently from a broker it cannot reach.
         backhaul: runJson('/usr/sbin/parkeze-lora-route status 2>/dev/null'),
+        // What happens to uplinks that cannot be sent: held, or dropped. It
+        // belongs next to backhaul because it is what decides whether
+        // backhaul.sending == false is a delay or a hole in the data.
+        buffer: runJson('/usr/sbin/parkeze-lora-buffer status 2>/dev/null'),
     };
 };
 
-// Whether uplinks may fail over to cellular. Per gateway: whether a metered
-// uplink is worth it is a property of the site, not of the board.
+// Whether uplinks may fail over to cellular, and what happens to them when
+// they cannot go. Per gateway: whether a metered uplink is worth it is a
+// property of the site, not of the board.
 setBackhaul = function(req, session) {
-    if (req.allowCellular == null)
+    if (req.allowCellular == null && req.buffer == null)
         return { error: 'Nothing to change.' };
 
     const uci = cursor();
-    uci.set('parkeze', 'lorawan', 'allow_cellular', req.allowCellular ? '1' : '0');
+    if (req.allowCellular != null)
+        uci.set('parkeze', 'lorawan', 'allow_cellular', req.allowCellular ? '1' : '0');
+    if (req.buffer != null)
+        uci.set('parkeze', 'lorawan', 'buffer', req.buffer ? '1' : '0');
     uci.commit('parkeze');
 
     // Applied now rather than at the next ifup, so the setting takes effect
     // while whoever changed it is still looking at the page.
     run('/usr/sbin/parkeze-lora-route apply');
-    return runJson('/usr/sbin/parkeze-lora-route status 2>/dev/null') ?? { ok: true };
+
+    // Buffering changes where the forwarder publishes, which is rendered
+    // config — so it needs a restart, where allow_cellular does not. Costs a
+    // few seconds of uplinks, which is why it is not done unconditionally.
+    if (req.buffer != null)
+        run('/etc/init.d/parkeze-packet-forwarder restart >/dev/null 2>&1 &');
+
+    return {
+        ok: true,
+        backhaul: runJson('/usr/sbin/parkeze-lora-route status 2>/dev/null'),
+        buffer: runJson('/usr/sbin/parkeze-lora-buffer status 2>/dev/null'),
+    };
 };
 
 restart = function() {

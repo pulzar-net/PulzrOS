@@ -185,6 +185,44 @@ topic_prefix="${topic_prefix:-${TOPIC_PREFIX}}"
 mkdir -p "${STATE_DIR}"
 state="${STATE_DIR}/${section}.mqtt"
 
+# ── through the local broker, or straight out ───────────────────────────────
+#
+# When buffering is on the forwarder publishes to a broker on loopback and a
+# bridge carries it to ${host} — see parkeze-lora-buffer. The forwarder cannot
+# tell the difference and does not need to.
+#
+# QoS 1 in that mode, and it is load-bearing rather than tidy: a mosquitto
+# bridge does not queue QoS 0 messages, because QoS 0 obliges it to deliver
+# nothing. Left at 0, an outage would buffer exactly nothing while every part
+# of this looked like it was working. Over loopback the acknowledgement costs
+# a round trip to a process on the same machine.
+#
+# No TLS and no credentials on that leg: it is 127.0.0.1, the broker listens
+# nowhere else, and the bridge is what holds the real credentials.
+#
+# The setting is not enough on its own: what decides this is whether there is
+# actually a broker to publish to, so the rendered config is what gets tested.
+# parkeze-packet-forwarder renders it before reaching here, and the render
+# fails when mosquitto is missing or the gateway is not adopted — in which case
+# pointing the forwarder at loopback would send every uplink to a closed port,
+# which looks exactly like working until somebody counts them.
+buffer="$(get parkeze.lorawan.buffer)"
+buffer="${buffer:-${PARKEZE_LORA_BUFFER:-0}}"
+[ -s "${STATE_DIR}/mosquitto.conf" ] || buffer=0
+if [ "${buffer}" = "1" ]; then
+    mqtt_server="tcp://127.0.0.1:1883"
+    mqtt_user=""
+    mqtt_pass=""
+    mqtt_qos=1
+    mqtt_ca=""
+else
+    mqtt_server="ssl://${host}:${port}"
+    mqtt_user="$(get parkeze.mqtt.username)"
+    mqtt_pass="$(get parkeze.mqtt.password)"
+    mqtt_qos=0
+    mqtt_ca="/etc/ssl/certs/ca-certificates.crt"
+fi
+
 cat > "${OUT}/mqtt-forwarder.toml" <<EOF
 [logging]
 level="info"
@@ -193,14 +231,14 @@ log_to_syslog=true
 [mqtt]
 topic_prefix="${topic_prefix}"
 json=false
-server="ssl://${host}:${port}"
-username="$(get parkeze.mqtt.username)"
-password="$(get parkeze.mqtt.password)"
-qos=0
+server="${mqtt_server}"
+username="${mqtt_user}"
+password="${mqtt_pass}"
+qos=${mqtt_qos}
 clean_session=false
 keep_alive_interval="30s"
 client_id="${eui}-${section}"
-ca_cert="/etc/ssl/certs/ca-certificates.crt"
+ca_cert="${mqtt_ca}"
 # A broker that is down or refusing us should not be retried every second: it
 # fills the log, and on cellular it spends the data plan.
 reconnect_interval="30s"

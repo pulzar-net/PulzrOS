@@ -344,7 +344,7 @@ const ROUTES = {
         auth.audit('gps.sync', { by: s.subject });
         return respond(200, result);
     },
-    'POST /api/lorawan/backhaul':     (env, req, s) => { auth.audit('lorawan.backhaul', { by: s.subject, allowCellular: req.allowCellular }); return respond(200, lorawan.setBackhaul(req, s)); },
+    'POST /api/lorawan/backhaul':     (env, req, s) => { auth.audit('lorawan.backhaul', { by: s.subject, allowCellular: req.allowCellular, buffer: req.buffer }); return respond(200, lorawan.setBackhaul(req, s)); },
     'POST /api/lorawan/restart':      (env, req, s) => { auth.audit('lorawan.restart', { by: s.subject }); return respond(200, lorawan.restart()); },
 };
 

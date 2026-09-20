@@ -23,13 +23,15 @@
 #
 # ── WHAT "NOT ALLOWED" COSTS TODAY ─────────────────────────────────────────
 #
-# Uplinks are dropped while wired is down, not held. The forwarder publishes
-# at QoS 0 to a broker it cannot reach, and nothing on the gateway stores
-# them. Local buffering — a broker here that queues and replays when the link
-# returns — is the next piece of this and is what makes "not allowed" a
-# trade rather than a loss. Until then the default is deliberately 1: every
-# gateway keeps behaving exactly as it does now unless somebody chooses
-# otherwise.
+# It depends on whether buffering is on — see parkeze-lora-buffer.
+#
+# With it, uplinks queue on the gateway and go out when wired returns, which
+# makes this setting a trade: later data, no bill.
+#
+# Without it they are dropped, because the forwarder publishes to a broker it
+# cannot reach and nothing here stores them. Both defaults are deliberately
+# the harmless ones — cellular allowed, buffering off — so a gateway behaves
+# exactly as it does now until somebody chooses otherwise.
 #
 # ── HOW ────────────────────────────────────────────────────────────────────
 #
@@ -55,11 +57,22 @@ WIRED_IFACE="${PARKEZE_WAN_ETH_IFACE:-wan}"
 
 log() { logger -t lora-route -p daemon.info "$*"; }
 
-# The port the forwarder actually talks to, read from the config that was
-# rendered for it rather than assumed. A deployment that moves its broker
+# The port whose traffic actually leaves this gateway, read from the config
+# that was rendered rather than assumed — a deployment that moves its broker
 # should not have to remember this file exists.
+#
+# Which config depends on whether uplinks are buffered. With buffering on the
+# forwarder talks to 127.0.0.1:1883 and it is the *bridge* that goes out, so
+# reading the forwarder's config would confine loopback traffic and leave the
+# connection that actually costs money unmarked — the confinement would look
+# installed and do nothing.
 broker_port() {
     local conf port
+    if [ -f /var/run/parkeze/lora/mosquitto.conf ]; then
+        port="$(sed -n 's/^address .*:\([0-9]\+\)$/\1/p' \
+                /var/run/parkeze/lora/mosquitto.conf | head -n1)"
+        [ -n "${port}" ] && { echo "${port}"; return; }
+    fi
     for conf in /tmp/run/parkeze/lora/slot*/mqtt-forwarder.toml; do
         [ -f "${conf}" ] || continue
         port="$(sed -n 's/^server=".*:\([0-9]\+\)"/\1/p' "${conf}" | head -n1)"

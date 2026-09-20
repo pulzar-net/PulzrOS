@@ -221,6 +221,24 @@ export interface LorawanStatus {
     lastUplink: string | null;
   };
   bridge: { connected: boolean; broker: string | null };
+  /** Whether uplinks may use the metered link, and whether they are leaving
+      the gateway right now. `sending: false` with `allowCellular: false` is a
+      deliberate hold, not a fault — it reads very differently from a broker
+      that cannot be reached. Null on a gateway whose firmware predates it. */
+  backhaul: {
+    allowCellular: boolean;
+    wiredUp: boolean;
+    sending: boolean;
+    brokerPort: number;
+  } | null;
+  /** What happens to uplinks that cannot be sent: held, or dropped. */
+  buffer: {
+    enabled: boolean;
+    running: boolean;
+    /** Whether the queue survives a reboot, which needs an SD card. */
+    persistent: boolean;
+    queuedBytes: number;
+  } | null;
 }
 
 // ── gnss ────────────────────────────────────────────────────────────────────
