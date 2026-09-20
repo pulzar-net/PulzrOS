@@ -205,14 +205,52 @@ mkdir -p "${STATE_DIR}"
 REQUEST="${TOPIC_ROOT}/$(eui)/mgmt/request"
 RESPONSE="${TOPIC_ROOT}/$(eui)/mgmt/response"
 
+# ── backing off when the broker will not have us ────────────────────────────
+#
+# procd respawns this every five seconds. That is right for a broker that has
+# gone away for a moment and wrong for one that is refusing us: a gateway
+# whose ACL does not grant the management topics — the state every gateway is
+# in until the authorizer is deployed — would otherwise open a TLS connection,
+# collect a full status, publish a retained message and be denied, twenty
+# times a minute, for as long as it is powered on. On a metered SIM that is a
+# data plan spent on being told no.
+#
+# So a subscription that dies almost immediately is treated as a refusal and
+# slept off, doubling up to five minutes. One that lasts is a real session,
+# and the count resets. procd still supervises; this only decides how quickly
+# it is allowed to try again.
+BACKOFF_FILE="${STATE_DIR}/backoff"
+FAST_FAILURE=10
+BACKOFF_MAX=300
+
+backoff_seconds() {
+    local n; n="$(cat "${BACKOFF_FILE}" 2>/dev/null)"
+    case "${n}" in ''|*[!0-9]*) n=0 ;; esac
+    n=$((n + 1)); [ "${n}" -gt 6 ] && n=6
+    echo "${n}" > "${BACKOFF_FILE}"
+    local s=15; local i=1
+    while [ "${i}" -lt "${n}" ]; do
+        s=$((s * 2)); [ "${s}" -ge "${BACKOFF_MAX}" ] && { s="${BACKOFF_MAX}"; break; }
+        i=$((i + 1))
+    done
+    echo "${s}"
+}
+
 # Retained, so a platform that subscribes later gets the gateway's state
 # without having to ask. Published once at startup rather than on a timer:
 # the forwarder already sends stats every thirty seconds, and a second
 # periodic publisher on the same SIM is chatter nobody asked for.
-dispatch all "" > "${STATE_DIR}/state.json"
-publish "${TOPIC_ROOT}/$(eui)/mgmt/state" "${STATE_DIR}/state.json" retain
+#
+# Skipped entirely while backing off. The state has not changed since the last
+# attempt fifteen seconds ago, and collecting it costs a run of every status
+# command on the gateway.
+if [ ! -s "${BACKOFF_FILE}" ]; then
+    dispatch all "" > "${STATE_DIR}/state.json"
+    publish "${TOPIC_ROOT}/$(eui)/mgmt/state" "${STATE_DIR}/state.json" retain
+fi
 
 log "listening on ${REQUEST}"
+STARTED="$(date +%s)"
 
 # One JSON document per message, one message per line. -N suppresses the
 # topic prefix mosquitto_sub would otherwise print, which would have to be
@@ -248,4 +286,16 @@ while IFS= read -r line; do
     log "${op:-?} -> ${ok}"
 done
 
-log "subscription ended"
+# How long it lasted is the only signal available for why it ended:
+# mosquitto_sub's stderr is discarded (it would otherwise log a line per
+# reconnect) and it exits 0 on a clean denial just as it does on a broker
+# restart.
+LASTED=$(( $(date +%s) - STARTED ))
+if [ "${LASTED}" -lt "${FAST_FAILURE}" ]; then
+    WAIT="$(backoff_seconds)"
+    log "subscription refused after ${LASTED}s — retrying in ${WAIT}s"
+    sleep "${WAIT}"
+else
+    rm -f "${BACKOFF_FILE}"
+    log "subscription ended after ${LASTED}s"
+fi
