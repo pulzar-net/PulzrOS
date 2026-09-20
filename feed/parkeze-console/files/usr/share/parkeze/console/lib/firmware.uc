@@ -44,11 +44,11 @@
 // /lib/upgrade/keep.d/parkeze for the state that has to survive.
 
 let _m_fs = require('fs');
+let _m_uci = require('uci');
 let _m_util = loadfile('/usr/share/parkeze/console/lib/util.uc', { raw_mode: true })();
 
-let upload, meminfoAvailable, inspect;
+let upload, meminfoAvailable, cardRoom, staging, inspect;
 
-const IMAGE = '/tmp/parkeze-firmware.img';
 const META = '/tmp/parkeze-firmware.json';
 const MANIFEST = '/tmp/parkeze-firmware.manifest';
 
@@ -57,6 +57,47 @@ const MANIFEST = '/tmp/parkeze-firmware.manifest';
 // packet forwarder and the console down with it.
 const HEADROOM = 24 * 1024 * 1024;
 
+// ── where the image is staged ───────────────────────────────────────────────
+//
+// On the SD card when there is one, and in /tmp when there is not.
+//
+// This is not a tidiness preference. A RAK7268CV2 has 128MB of RAM, perhaps
+// 40MB of it available on a running gateway, and its own image is 14.5MB —
+// so with 24MB of headroom the box cannot accept its own firmware. Measured,
+// not predicted: the upload came back 413 "Image is 14 MB; this gateway has
+// room for 14 MB", which is a gateway that can never be updated remotely.
+//
+// Every RAK ships with a card, which is the whole reason parkeze-storage
+// exists. Staging there costs nothing and leaves RAM alone.
+const CARD_SUBDIR = '/parkeze/firmware';
+
+cardRoom = function() {
+    const cursor = _m_uci.cursor();
+    if (cursor.get('parkeze', 'storage', 'present') != '1') return null;
+    if (cursor.get('parkeze', 'storage', 'writable') != '1') return null;
+    const mount = cursor.get('parkeze', 'storage', 'mount');
+    if (!mount || !length(mount)) return null;
+
+    const dir = mount + CARD_SUBDIR;
+    if (system(sprintf('mkdir -p %s', dir)) != 0) return null;
+
+    // Free bytes on the card, from df. Its own filesystem, so MemAvailable
+    // says nothing about it.
+    const proc = _m_fs.popen(sprintf("df -k %s 2>/dev/null | awk 'NR==2 {print $4}'", dir), 'r');
+    const free = proc ? int(trim(proc.read('all') ?? '0')) * 1024 : 0;
+    if (proc) proc.close();
+    return free > 0 ? { dir, free } : null;
+};
+
+// Returns { path, room, onCard }. room is what may be spent here.
+staging = function() {
+    const card = cardRoom();
+    if (card)
+        return { path: card.dir + '/parkeze-firmware.img', room: card.free, onCard: true };
+    return { path: '/tmp/parkeze-firmware.img',
+             room: meminfoAvailable() - HEADROOM, onCard: false };
+};
+
 meminfoAvailable = function() {
     const text = _m_fs.readfile('/proc/meminfo') ?? '';
     const m = match(text, /MemAvailable:\s+([0-9]+) kB/);
@@ -64,7 +105,7 @@ meminfoAvailable = function() {
 };
 
 // The metadata of an uploaded image, and whether it is for this board.
-inspect = function() {
+inspect = function(IMAGE) {
     _m_fs.unlink(META);
     if (system(sprintf('fwtool -q -i %s %s', META, IMAGE)) != 0)
         return { error: 'Not a firmware image.' };
@@ -90,11 +131,13 @@ upload = function(env, issuer) {
     if (len <= 0)
         return { status: 400, error: 'No image in the request.' };
 
-    const available = meminfoAvailable();
-    if (len + HEADROOM > available)
+    const stage = staging();
+    const IMAGE = stage.path;
+    if (len > stage.room)
         return { status: 413, error: sprintf(
-            'Image is %d MB; this gateway has room for %d MB.',
-            len / 1048576, (available - HEADROOM) / 1048576) };
+            'Image is %d MB; this gateway has room for %d MB%s.',
+            len / 1048576, stage.room / 1048576,
+            stage.onCard ? ' on its card' : ' in memory, and has no card to stage on') };
 
     _m_fs.unlink(IMAGE);
     const out = _m_fs.open(IMAGE, 'w');
@@ -118,7 +161,7 @@ upload = function(env, issuer) {
             'Upload stopped at %d of %d bytes.', received, len) };
     }
 
-    const image = inspect();
+    const image = inspect(IMAGE);
     if (image.error) {
         _m_fs.unlink(IMAGE);
         return { status: 400, error: image.error };
@@ -185,6 +228,7 @@ upload = function(env, issuer) {
     // sysupgrade stops uhttpd. Settings kept.
     _m_util.run(sprintf('(sleep 3; sysupgrade %s) >/dev/null 2>&1 &', IMAGE));
     return { status: 202, ok: true, bytes: received, signed,
+             stagedOnCard: stage.onCard,
              target: image.target, openwrt: image.openwrt };
 };
 
