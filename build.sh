@@ -385,6 +385,55 @@ install_fleet_key() {
   log "Fleet recovery anchor installed"
 }
 
+install_firmware_key() {
+  # The firmware signing *public* key, baked into the image.
+  #
+  # What makes a gateway able to answer "did Parkeze build this image" before
+  # it writes one over itself. The private half lives in Actions secrets and
+  # signs a manifest beside each released image — tools/sign-firmware.sh —
+  # and parkeze-firmware verifies it on the device.
+  #
+  # A separate key from the recovery anchor above, on purpose: that one's
+  # whole value is that its private half never leaves recovery-service, and
+  # firmware signing needs a key CI can reach. See
+  # tools/generate-firmware-key.sh for the reasoning.
+  #
+  # Warns rather than failing, same as the recovery anchor and for the same
+  # reason: a lab image built without it is a legitimate thing to want. What
+  # it cannot do is silently produce images that *look* verifiable — a
+  # gateway with no key refuses to verify rather than waving images through.
+  local dest="${ROOT_DIR}/boards/common/files/etc/parkeze"
+  local key="${PARKEZE_FIRMWARE_PUBKEY:-${ROOT_DIR}/firmware_ed25519.pub}"
+
+  # Same reconstruction rule as the recovery anchor: `--stage image` runs in a
+  # fresh job whose overlay arrived as an artifact that already has this.
+  if [ ! -f "${key}" ] && [ -f "${dest}/firmware.pub" ]; then
+    log "Firmware signing key already in the overlay"
+    return 0
+  fi
+
+  rm -f "${dest}/firmware.pub"
+
+  if [ ! -f "${key}" ]; then
+    warn "No firmware signing public key found at ${key}."
+    warn "  Gateways from this build CANNOT check whether an image is ours,"
+    warn "  and will refuse to verify rather than trust one."
+    warn "  Generate one with tools/generate-firmware-key.sh and point"
+    warn "  PARKEZE_FIRMWARE_PUBKEY at the .pub half."
+    return 0
+  fi
+
+  if command -v openssl >/dev/null 2>&1; then
+    openssl pkey -pubin -in "${key}" -noout 2>/dev/null \
+      || die "${key} is not a valid public key"
+  fi
+
+  mkdir -p "${dest}"
+  cp "${key}" "${dest}/firmware.pub"
+  chmod 0644 "${dest}/firmware.pub"
+  log "Firmware signing key installed"
+}
+
 install_ops_keys() {
   # The fleet SSH public key, baked into the image.
   #
@@ -753,6 +802,7 @@ main() {
       # costs nothing and keeps `--stage feed` a complete "everything that is
       # not assembly" step for a CI job that has the secret.
       install_fleet_key
+      install_firmware_key
       install_ops_keys
       build_feed
       log "Done. Feed only."
@@ -761,10 +811,12 @@ main() {
       # Re-run in a fresh CI job, so the overlay has to be reconstructed even
       # though the console and packages arrived as artifacts.
       install_fleet_key
+      install_firmware_key
       install_ops_keys ;;
     all)
       build_console
       install_fleet_key
+      install_firmware_key
       install_ops_keys
       build_feed ;;
   esac

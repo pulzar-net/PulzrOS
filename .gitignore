@@ -23,6 +23,11 @@ boards/common/files/root/.ssh/authorized_keys
 boards/common/files/etc/parkeze/recovery.pub
 recovery_ed25519.pub
 
+# The firmware signing PUBLIC key, same reasoning: build.sh copies it in, and
+# which key an image trusts is a property of the deployment that built it.
+boards/common/files/etc/parkeze/firmware.pub
+firmware_ed25519.pub
+
 console/node_modules/
 console/dist/
 # TypeScript's incremental build cache: machine-local and regenerated on
@@ -47,6 +52,7 @@ ucode/
 # not one frozen in git. The rule above would otherwise re-include it and
 # undo the explicit ignore further up, which is exactly what it was doing.
 recovery_ed25519.pub
+firmware_ed25519.pub
 
 # ── editors and OS ────────────────────────────────────────────────────────
 .vscode/

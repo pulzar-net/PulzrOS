@@ -168,6 +168,69 @@ confirm)
     log "upgrade to ${PARKEZE_VERSION:-unknown} confirmed healthy"
     ;;
 
+# ── is this image ours ──────────────────────────────────────────────────────
+#
+#   parkeze-firmware verify <image> <manifest>
+#
+# Exit 0 if the manifest is signed by the key this image was built with and
+# its digest matches the image. Exit non-zero, with a reason on stderr, for
+# anything else — including "this build carries no key", which is a real
+# state: a lab image built without PARKEZE_FIRMWARE_PUBKEY cannot verify
+# anything and must say so rather than wave images through.
+#
+# The openssl invocation is copied from parkeze-adopt's bundle check, down to
+# the -A flags, because that is the one signature check in this image that has
+# been exercised in the field. Notably `openssl base64 -d -A` and not
+# `base64 -d`: BusyBox here has no base64 applet, which made every offline
+# adoption fail as "Malformed signature" until somebody worked out why.
+verify)
+    image="${2:?usage: parkeze-firmware verify <image> <manifest>}"
+    manifest_file="${3:?usage: parkeze-firmware verify <image> <manifest>}"
+    pubkey=/etc/parkeze/firmware.pub
+
+    [ -s "${image}" ] || { echo "no such image: ${image}" >&2; exit 1; }
+    [ -s "${manifest_file}" ] || { echo "That image came with no signature." >&2; exit 1; }
+    [ -f "${pubkey}" ] || { echo "This build carries no firmware signing key, so it \
+cannot check whether an image is ours." >&2; exit 1; }
+
+    body="$(jsonfilter -i "${manifest_file}" -e '@.manifest')"
+    signature="$(jsonfilter -i "${manifest_file}" -e '@.signature')"
+    [ -n "${body}" ] && [ -n "${signature}" ] \
+        || { echo "That signature file is not one of ours." >&2; exit 1; }
+
+    tmp_body=/tmp/.fw-body
+    tmp_sig=/tmp/.fw-sig
+    printf '%s' "${body}" > "${tmp_body}"
+    printf '%s' "${signature}" | openssl base64 -d -A > "${tmp_sig}" 2>/dev/null \
+        || { rm -f "${tmp_body}" "${tmp_sig}"; echo "Malformed signature." >&2; exit 1; }
+    [ -s "${tmp_sig}" ] \
+        || { rm -f "${tmp_body}" "${tmp_sig}"; echo "Malformed signature." >&2; exit 1; }
+
+    if ! openssl pkeyutl -verify -pubin -inkey "${pubkey}" -rawin \
+             -in "${tmp_body}" -sigfile "${tmp_sig}" >/dev/null 2>&1; then
+        rm -f "${tmp_body}" "${tmp_sig}"
+        echo "That image is not signed by Parkeze." >&2
+        exit 1
+    fi
+    rm -f "${tmp_body}" "${tmp_sig}"
+
+    # Signed, so the manifest can be trusted — but it describes *an* image,
+    # and this has to be that image. Without this the signature proves only
+    # that somebody once signed something, and any image could ride in behind
+    # a valid manifest for a different one.
+    claimed="$(printf '%s' "${body}" | openssl base64 -d -A 2>/dev/null \
+               | jsonfilter -e '@.sha256' 2>/dev/null)"
+    actual="$(digest "${image}")"
+    [ -n "${claimed}" ] && [ -n "${actual}" ] \
+        || { echo "Could not compare the image against its signature." >&2; exit 1; }
+    if [ "${claimed}" != "${actual}" ]; then
+        echo "That image does not match its signature — it is damaged, or it is \
+not the image that was signed." >&2
+        exit 1
+    fi
+    exit 0
+    ;;
+
 # What to flash to undo the pending upgrade, or nothing if we cannot.
 rollback-target)
     target="$(get from_image)"
