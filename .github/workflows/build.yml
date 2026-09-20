@@ -244,6 +244,22 @@ jobs:
             echo "::warning::No PARKEZE_RECOVERY_PUBKEY secret — images cannot be adopted offline."
           fi
 
+      # The firmware signing PUBLIC key, which is what lets a gateway tell
+      # whether Parkeze built an image before it writes it over itself. Same
+      # shape and same warn-rather-than-fail reasoning as the anchor above.
+      # Only needed here: the image stage receives the overlay as an artifact
+      # with this already in it.
+      - name: Install the firmware signing key
+        env:
+          FIRMWARE_PUBKEY: ${{ secrets.PARKEZE_FIRMWARE_PUBKEY }}
+        run: |
+          if [ -n "${FIRMWARE_PUBKEY}" ]; then
+            printf '%s\n' "${FIRMWARE_PUBKEY}" > "${RUNNER_TEMP}/firmware.pub"
+            echo "PARKEZE_FIRMWARE_PUBKEY=${RUNNER_TEMP}/firmware.pub" >> "$GITHUB_ENV"
+          else
+            echo "::warning::No PARKEZE_FIRMWARE_PUBKEY secret — gateways from this build cannot check whether an image is ours."
+          fi
+
       # unsquashfs: the MIPS ChirpStack binaries are extracted from
       # ChirpStack Gateway OS; see feed/chirpstack-gateway/fetch.
       - name: Build the package feed
@@ -406,10 +422,6 @@ jobs:
     permissions:
       contents: write
     steps:
-      # This job otherwise only moves artifacts around, but the signing step
-      # below runs tools/sign-firmware.sh, which has to exist.
-      - uses: actions/checkout@v4
-
       - uses: actions/download-artifact@v4
         with:
           pattern: parkezeos-*
@@ -440,9 +452,50 @@ jobs:
             echo "::warning::FIRMWARE_SIGNING_KEY is not set — this release is UNSIGNED"
             exit 0
           fi
+
+          umask 077
+          key="$(mktemp)"
+          printf '%s\n' "${FIRMWARE_SIGNING_KEY}" > "${key}"
+          trap 'rm -f "${key}"' EXIT
+
           for image in release/*.img.gz release/*.img.xz release/*.bin; do
             [ -f "${image}" ] || continue
-            tools/sign-firmware.sh "${image}" "" "${GITHUB_REF_NAME}"
+
+            digest="$(sha256sum "${image}" | awk '{ print $1 }')"
+
+            # -A on every base64: openssl wraps at 64 columns by default, and a
+            # wrapped value inside a JSON string is a different string from the
+            # one that was signed. parkeze-adopt hit exactly this.
+            manifest="$(printf '{"sha256":"%s","board":"","version":"%s","built":"%s"}' \
+                          "${digest}" "${GITHUB_REF_NAME}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+                        | openssl base64 -A)"
+
+            # Through a file, not a pipe. Ed25519 signing is one-shot: openssl
+            # needs the whole input size up front and a pipe cannot give it
+            # one, failing with "unable to determine file size for oneshot
+            # operation". The gateway's verifier writes a file for the same
+            # reason.
+            body="$(mktemp)"; printf '%s' "${manifest}" > "${body}"
+            signature="$(openssl pkeyutl -sign -inkey "${key}" -rawin -in "${body}" \
+                         | openssl base64 -A)"
+
+            # Verified here, against the public half, before anyone relies on
+            # it. A manifest that does not verify on the machine that just made
+            # it will not verify on a gateway either, and this is a far better
+            # place to find that out than a fleet that refuses every image.
+            pub="$(mktemp)"; sig="$(mktemp)"
+            openssl pkey -in "${key}" -pubout -out "${pub}" 2>/dev/null
+            printf '%s' "${signature}" | openssl base64 -d -A > "${sig}"
+            if ! openssl pkeyutl -verify -pubin -inkey "${pub}" -rawin \
+                   -in "${body}" -sigfile "${sig}" >/dev/null 2>&1; then
+              echo "::error::the signature produced for ${image} does not verify"
+              exit 1
+            fi
+            rm -f "${body}" "${pub}" "${sig}"
+
+            printf '{"manifest":"%s","signature":"%s"}\n' "${manifest}" "${signature}" \
+              > "${image}.parkeze.json"
+            echo "signed ${image} (${digest})"
           done
           ls -la release
 
