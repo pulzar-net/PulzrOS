@@ -25,13 +25,20 @@
 // would have written garbage over the boot card. It still runs, last, for
 // whatever it does catch.
 //
-// It does NOT check who built the image. Any valid OpenWrt image for this board
-// passes. That is acceptable only because of who can reach this endpoint: an
-// adopted gateway has local sign-in off, so a session means either a Parkeze
-// signature or somebody who read the per-unit password off the card — which is
-// somebody who could also pull the card. Signing images and verifying them here
-// is the next step, and until it exists this should not be described as safe
-// against a malicious image.
+// WHO BUILT IT
+//
+// An image may carry a signature, sent in the X-Parkeze-Manifest header and
+// produced by tools/sign-firmware.sh. One that is present and does not verify
+// is refused outright. One that is absent is accepted, and recorded as
+// unsigned.
+//
+// That asymmetry is deliberate and temporary. A bad signature means somebody
+// tampered with an image; no signature means the image predates signing, which
+// is true of every image the fleet currently runs — and requiring one now
+// would mean this release could not be installed by the fleet that has to
+// install it to gain the check. Being unable to ship any image is the one
+// failure a rollback cannot undo. So: verify and record now, require once
+// signed images are confirmed flowing.
 //
 // Settings are kept, which includes the gateway's identity: see
 // /lib/upgrade/keep.d/parkeze for the state that has to survive.
@@ -43,6 +50,7 @@ let upload, meminfoAvailable, inspect;
 
 const IMAGE = '/tmp/parkeze-firmware.img';
 const META = '/tmp/parkeze-firmware.json';
+const MANIFEST = '/tmp/parkeze-firmware.manifest';
 
 // Headroom the rest of the gateway keeps while an image sits in RAM. /tmp is
 // tmpfs, so an image is memory; running the box out of it mid-upload takes the
@@ -129,6 +137,38 @@ upload = function(env, issuer) {
             : 'Not a valid image for this gateway.' };
     }
 
+    // ── is it ours ──────────────────────────────────────────────────────────
+    //
+    // The signature travels in a header because the body is the image itself
+    // and there is nowhere else in the request for it. See
+    // tools/sign-firmware.sh for what produces it.
+    //
+    // Present-but-invalid is refused; absent is allowed and recorded. Those
+    // are different facts: a signature that does not verify means somebody
+    // tampered with an image or handed over the wrong one, and no upgrade
+    // should proceed through that. No signature at all is what every image
+    // built before signing existed looks like, and refusing those outright
+    // would mean this release could not be installed by the very fleet that
+    // has to install it to gain the check. That is the one failure a rollback
+    // cannot save you from, so it is deliberately staged: verify and record
+    // now, require it once signed images are confirmed flowing.
+    const manifest = env.headers ? env.headers['x-parkeze-manifest'] : null;
+    let signed = false;
+    if (manifest) {
+        const mf = _m_fs.open(MANIFEST, 'w');
+        if (mf) { mf.write(manifest); mf.close(); }
+        const check = _m_fs.popen(sprintf('parkeze-firmware verify %s %s 2>&1', IMAGE, MANIFEST), 'r');
+        const why = check ? trim(check.read('all') ?? '') : '';
+        const ok = check ? check.close() == 0 : false;
+        _m_fs.unlink(MANIFEST);
+        if (!ok) {
+            _m_fs.unlink(IMAGE);
+            return { status: 400, error: length(why) ? why
+                     : 'That image is not signed by Parkeze.' };
+        }
+        signed = true;
+    }
+
     // Record what is about to happen while the system that knows it is still
     // running. After sysupgrade there is no longer anything here that can say
     // what version this was or who asked — see parkeze-firmware. Synchronous
@@ -144,7 +184,7 @@ upload = function(env, issuer) {
     // Detached, after a pause, so this response reaches the browser before
     // sysupgrade stops uhttpd. Settings kept.
     _m_util.run(sprintf('(sleep 3; sysupgrade %s) >/dev/null 2>&1 &', IMAGE));
-    return { status: 202, ok: true, bytes: received,
+    return { status: 202, ok: true, bytes: received, signed,
              target: image.target, openwrt: image.openwrt };
 };
 

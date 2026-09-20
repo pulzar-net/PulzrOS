@@ -406,6 +406,10 @@ jobs:
     permissions:
       contents: write
     steps:
+      # This job otherwise only moves artifacts around, but the signing step
+      # below runs tools/sign-firmware.sh, which has to exist.
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           pattern: parkezeos-*
@@ -417,6 +421,29 @@ jobs:
           find artifacts -type f \( -name '*.img.gz' -o -name '*.img.xz' -o -name '*.bin' \) \
                -exec cp {} release/ \;
           ( cd release && sha256sum ./* > sha256sums.txt )
+          ls -la release
+
+      # Sign each image, so a gateway can tell it is ours before it writes one
+      # over itself. Produces <image>.parkeze.json beside each, which travels
+      # with the image and is what parkeze-firmware verifies.
+      #
+      # Skipped, loudly, when the secret is not set — a fork building a tag has
+      # no access to it, and a release of unsigned images is better than a
+      # release that failed. Gateways accept unsigned images today and record
+      # them as such; see firmware.uc for why that is staged rather than
+      # enforced from the start.
+      - name: Sign images
+        env:
+          FIRMWARE_SIGNING_KEY: ${{ secrets.FIRMWARE_SIGNING_KEY }}
+        run: |
+          if [ -z "${FIRMWARE_SIGNING_KEY}" ]; then
+            echo "::warning::FIRMWARE_SIGNING_KEY is not set — this release is UNSIGNED"
+            exit 0
+          fi
+          for image in release/*.img.gz release/*.img.xz release/*.bin; do
+            [ -f "${image}" ] || continue
+            tools/sign-firmware.sh "${image}" "" "${GITHUB_REF_NAME}"
+          done
           ls -la release
 
       - uses: softprops/action-gh-release@v2

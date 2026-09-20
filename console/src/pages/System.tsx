@@ -122,11 +122,20 @@ function PasswordCard({ adopted }: { adopted: boolean }) {
  */
 function FirmwareUpload() {
   const [file, setFile] = useState<File | null>(null);
+  const [manifest, setManifest] = useState<File | null>(null);
   const [progress, setProgress] = useState(0);
 
   const send = useMutation({
-    mutationFn: (image: File) =>
-      upload<{ target?: string; openwrt?: string }>('/system/firmware', image, setProgress),
+    mutationFn: async (image: File) => {
+      // Read here rather than in the api helper: it is a header, so it has to
+      // be a string before the request starts, and File.text() is a promise.
+      const headers = manifest
+        ? { 'X-Parkeze-Manifest': (await manifest.text()).trim() }
+        : undefined;
+      return upload<{ target?: string; openwrt?: string; signed?: boolean }>(
+        '/system/firmware', image, setProgress, headers,
+      );
+    },
   });
 
   if (send.isSuccess) {
@@ -155,6 +164,21 @@ function FirmwareUpload() {
             }}
           />
         </label>
+        {file && (
+          <label className={styles.fileButton}>
+            <Upload size={14} strokeWidth={2} />
+            {manifest ? manifest.name : 'Signature (optional)'}
+            <input
+              type="file"
+              accept=".json"
+              hidden
+              onChange={(event) => {
+                setManifest(event.target.files?.[0] ?? null);
+                send.reset();
+              }}
+            />
+          </label>
+        )}
         {file && (
           <Button
             variant="danger"

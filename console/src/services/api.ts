@@ -105,6 +105,10 @@ export function upload<T>(
   path: string,
   file: Blob,
   onProgress: (fraction: number) => void,
+  // Extra headers. The firmware upload sends its signature this way: the body
+  // is the raw image, so there is nowhere else in the request to put a few
+  // hundred bytes of manifest.
+  headers?: Record<string, string>,
 ): Promise<T> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -112,6 +116,9 @@ export function upload<T>(
     xhr.withCredentials = true;
     xhr.setRequestHeader('Content-Type', 'application/octet-stream');
     if (csrfToken) xhr.setRequestHeader('X-Parkeze-CSRF', csrfToken);
+    for (const [name, value] of Object.entries(headers ?? {})) {
+      xhr.setRequestHeader(name, value);
+    }
 
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable) onProgress(event.loaded / event.total);
