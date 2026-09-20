@@ -41,6 +41,11 @@ max_brightness() {
     cat "$1/max_brightness" 2>/dev/null || echo 1
 }
 
+# The braces matter: `echo x > f 2>/dev/null` opens f first, so a failed open
+# is reported by the shell before the 2>/dev/null takes effect and the error
+# lands in the log anyway. Silencing has to wrap the whole command.
+put()     { { echo "$1" > "$2"; } 2>/dev/null; }
+
 case "${1:-}" in
     --list)
         printf '%-10s %-24s %s\n' LOGICAL PHYSICAL PRESENT
@@ -61,10 +66,10 @@ case "${1:-}" in
         for logical in power status lora lora2 cloud cellular; do
             path="$(resolve "${logical}" 2>/dev/null)" || continue
             echo "${logical} -> ${path}"
-            echo none > "${path}/trigger" 2>/dev/null
-            echo "$(max_brightness "${path}")" > "${path}/brightness" 2>/dev/null
+            put none "${path}/trigger"
+            put "$(max_brightness "${path}")" "${path}/brightness"
             sleep 1
-            echo 0 > "${path}/brightness" 2>/dev/null
+            put 0 "${path}/brightness"
         done
         exit 0
         ;;
@@ -75,8 +80,8 @@ STATE="${2:?usage: parkeze-led <name> <state>}"
 
 path="$(resolve "${NAME}")" || exit 0   # absent LED: not an error, just nothing
 
-trigger() { echo "$1" > "${path}/trigger" 2>/dev/null; }
-bright()  { echo "$1" > "${path}/brightness" 2>/dev/null; }
+trigger() { put "$1" "${path}/trigger"; }
+bright()  { put "$1" "${path}/brightness"; }
 
 case "${STATE}" in
     on)
@@ -93,16 +98,16 @@ case "${STATE}" in
         # few hundred milliseconds forever, which is a real cost on a board
         # this small.
         trigger timer
-        echo "${3:-500}" > "${path}/delay_on" 2>/dev/null
-        echo "${4:-500}" > "${path}/delay_off" 2>/dev/null
+        put "${3:-500}" "${path}/delay_on"
+        put "${4:-500}" "${path}/delay_off"
         ;;
     flash)
         # A single visible pulse — one uplink, one blink.
         trigger oneshot
-        echo 1 > "${path}/invert" 2>/dev/null
-        echo 60 > "${path}/delay_on" 2>/dev/null
-        echo 60 > "${path}/delay_off" 2>/dev/null
-        echo 1 > "${path}/shot" 2>/dev/null
+        put 1 "${path}/invert"
+        put 60 "${path}/delay_on"
+        put 60 "${path}/delay_off"
+        put 1 "${path}/shot"
         ;;
     heartbeat)
         trigger heartbeat
