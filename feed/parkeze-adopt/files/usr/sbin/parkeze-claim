@@ -206,15 +206,23 @@ register() {
     ensure_identity
     registered && { log "already registered"; return 0; }
 
+    # A cellular-only gateway's SIM is worth carrying here, not just on the
+    # first six-hourly report(): an operator adopting off the announced list
+    # is looking at a gateway they have never touched, over a backhaul that
+    # is itself the SIM, and the adopt should not have to wait on a later
+    # report to know which one it was.
+    local iccid
+    iccid="$(parkeze-modem-detect --status 2>/dev/null | jsonfilter -e '@.iccid' 2>/dev/null)" || true
+
     local response
     response="$(curl -fsS --max-time 20 \
         -X POST "${NET_URL}/api/v1/gateway-ops/claim/register" \
         -H 'Content-Type: application/json' \
-        -d "$(printf '{"claimId":"%s","commitment":"%s","eui":"%s","serial":"%s","board":"%s","version":"%s"}' \
+        -d "$(printf '{"claimId":"%s","commitment":"%s","eui":"%s","serial":"%s","board":"%s","version":"%s","simIccid":"%s"}' \
               "$(claim_id)" "$(commitment)" \
               "$(uci -q get parkeze.identity.gateway_eui)" \
               "$(uci -q get parkeze.identity.serial)" \
-              "${BOARD_ID}" "${PARKEZE_VERSION}")" 2>&1)" || {
+              "${BOARD_ID}" "${PARKEZE_VERSION}" "${iccid:-}")" 2>&1)" || {
         # Not an error worth shouting about: an un-provisioned gateway with no
         # uplink is the normal state five minutes into an install. The QR
         # falls back to the offline form and everything still works.

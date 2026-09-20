@@ -48,30 +48,46 @@
 # with "Resource busy (os error 16)" and crash-loops. So whoever resets for a
 # probe releases afterwards: `--release`, called at the end of detection and
 # again before the forwarder starts.
+#
+# Not from board.conf's own pins, or from whatever PARKEZE_SX130X_RESET_GPIO
+# happens to be set to at release time: which pins were actually exported
+# depends on which profile drove them, which can differ call to call — the
+# auto-detect loop below tries several. So this file is the record: every
+# successful `drive()` appends the BCM number it exported, and `--release`
+# unexports exactly those, whichever HAT they turned out to belong to. Reading
+# board.conf's bare default instead would silently unexport nothing on any
+# gateway not running that exact default profile, and the crash-loop this
+# exists to prevent would come straight back for everyone else.
+EXPORTED_FILE=/var/run/parkeze/sx130x-exported-gpios
 
 RESET_GPIO="${PARKEZE_SX130X_RESET_GPIO}"
 POWER_GPIO="${PARKEZE_SX130X_POWER_EN_GPIO}"
 SX1261_GPIO="${PARKEZE_SX1261_RESET_GPIO}"
 AD5338R_GPIO="${PARKEZE_AD5338R_RESET_GPIO}"
 
-[ -n "${RESET_GPIO}" ] || exit 1
-
 SYSFS_DIR=/sys/class/gpio
 GPIO_BASE="$(cat ${SYSFS_DIR}/gpiochip*/base 2>/dev/null | sort -n | head -n1)"
 : "${GPIO_BASE:=0}"
 
 if [ "$1" = "--release" ]; then
-    for pin in ${RESET_GPIO} ${PARKEZE_SX130X_POWER_EN_GPIO} \
-               ${PARKEZE_SX1261_RESET_GPIO} ${PARKEZE_AD5338R_RESET_GPIO}; do
+    # The state file is the source of truth. Fall back to whatever board.conf
+    # currently says only when there is none to read — a reboot lost tmpfs, or
+    # release is called with nothing ever having been driven — where the
+    # fallback is a harmless best-effort rather than the load-bearing path.
+    pins="$(cat "${EXPORTED_FILE}" 2>/dev/null)"
+    [ -n "${pins}" ] || pins="${RESET_GPIO} ${POWER_GPIO} ${SX1261_GPIO} ${AD5338R_GPIO}"
+    for pin in ${pins}; do
         node="${SYSFS_DIR}/gpio$((GPIO_BASE + pin))"
         [ -d "${node}" ] && echo "$((GPIO_BASE + pin))" > "${SYSFS_DIR}/unexport" 2>/dev/null
     done
+    rm -f "${EXPORTED_FILE}"
     exit 0
 fi
 
-SYSFS=/sys/class/gpio
-BASE="$(cat ${SYSFS}/gpiochip*/base 2>/dev/null | sort -n | head -n1)"
-: "${BASE:=0}"
+[ -n "${RESET_GPIO}" ] || exit 1
+
+SYSFS="${SYSFS_DIR}"
+BASE="${GPIO_BASE}"
 
 settle() { usleep 100000 2>/dev/null || sleep 1; }
 
@@ -84,13 +100,17 @@ drive() {
         [ -d "${node}" ] || return 1
         echo out > "${node}/direction" 2>/dev/null
         echo "${value}" > "${node}/value" 2>/dev/null || return 1
+        mkdir -p "$(dirname "${EXPORTED_FILE}")"
+        grep -qx "${pin}" "${EXPORTED_FILE}" 2>/dev/null || echo "${pin}" >> "${EXPORTED_FILE}"
         return 0
     fi
 
     # No sysfs. Hold the line with a detached gpioset instead, which is the
     # only way the character device will keep it driven. One per line, and they
     # are left running on purpose: the module needs them for as long as it is
-    # powered.
+    # powered. Not tracked in EXPORTED_FILE — that is the sysfs unexport list,
+    # and a gpioset -z line is released by killing the process, not by writing
+    # to sysfs; nothing here currently does that cleanup on this path.
     command -v gpioset >/dev/null 2>&1 || return 1
     gpioset -z -c "${PARKEZE_GPIOCHIP:-gpiochip0}" "${pin}=${value}" 2>/dev/null
 }

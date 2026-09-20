@@ -11,5 +11,7 @@
     "RAK5166",
     "RAK2287 SX1303"
   ],
-  "comment": "SX1302 with fine-timestamping. Driven by the same HAL; the extra capability is not used yet."
+  "comment": "SX1302 with fine-timestamping. Driven by the same HAL; the extra capability is not used yet.",
+  "resetGpio": 17,
+  "powerGpio": 18
 }

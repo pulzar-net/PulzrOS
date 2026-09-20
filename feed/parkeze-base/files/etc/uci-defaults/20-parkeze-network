@@ -167,7 +167,7 @@ set firewall.wan.output='ACCEPT'
 set firewall.wan.forward='DROP'
 set firewall.wan.masq='1'
 set firewall.wan.mtu_fix='1'
-set firewall.wan.network='wan wwan console linklocal'
+set firewall.wan.network='wan console linklocal'
 EOF
 
 # ── Local console access ────────────────────────────────────────────────────
@@ -243,6 +243,40 @@ set firewall.mgmt_console.src='mgmt'
 set firewall.mgmt_console.proto='tcp'
 set firewall.mgmt_console.dest_port='22 80 443'
 set firewall.mgmt_console.target='ACCEPT'
+EOF
+
+# ── Cellular management ─────────────────────────────────────────────────────
+#
+# Its own zone, pulled out of "wan" rather than left there: a wired backhaul's
+# "an inbound port on the uplink is never needed" does not hold for cellular,
+# which has no WireGuard tunnel to originate one — PARKEZE_WIREGUARD_ALLOW_CELLULAR
+# is off by default, on the reasoning that a second tunnel over the same SIM
+# gateway-link already reaches through its own OpenVPN link into the SIM
+# provider's network would be redundant. That link is how gateway-link gets to
+# this gateway's cellular address at all, and until now nothing here admitted
+# it once it arrived: SSH and the console both timed out, because wwan sat in
+# the same zone as the wired uplink and inherited the same DROP.
+#
+# No source-address match, same reasoning as wg0's: the SIM's own private
+# address is only reachable at all from inside the carrier's network, which
+# only 1NCE's infrastructure and gateway-link's own VPN peer can route into —
+# unlike the wired case, where the far end of the cable is a customer network
+# we neither control nor trust.
+uci -q batch <<EOF
+set firewall.cellular=zone
+set firewall.cellular.name='cellular'
+set firewall.cellular.input='DROP'
+set firewall.cellular.output='ACCEPT'
+set firewall.cellular.forward='DROP'
+set firewall.cellular.mtu_fix='1'
+set firewall.cellular.network='wwan'
+
+set firewall.cellular_console=rule
+set firewall.cellular_console.name='Allow-cellular-management'
+set firewall.cellular_console.src='cellular'
+set firewall.cellular_console.proto='tcp'
+set firewall.cellular_console.dest_port='22 80 443'
+set firewall.cellular_console.target='ACCEPT'
 EOF
 
 # DHCP client replies, which the wan DROP would otherwise eat along with

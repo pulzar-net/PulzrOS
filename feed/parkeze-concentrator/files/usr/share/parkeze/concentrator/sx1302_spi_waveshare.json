@@ -1,0 +1,18 @@
+{
+  "name": "Waveshare SX1302 LoRaWAN Gateway HAT",
+  "chip": "sx1302",
+  "interface": "spi",
+  "concentratord": "sx1302",
+  "model": "waveshare_sx1302_lorawan_gateway_hat",
+  "antennas": 2,
+  "channels": 8,
+  "lbt": true,
+  "known_as": [
+    "Waveshare SX1302 LoRaWAN Gateway HAT"
+  ],
+  "comment": "Different pins from every other SX1302 HAT this catalogue knows: reset on GPIO23 rather than GPIO17, and two lines (SX1261, AD5338R) nothing else here has at all. A Pi with this HAT will not answer the generic sx1302_spi profile's probe, and the generic profile will not answer this one's either — pick the one that is actually fitted.",
+  "resetGpio": 23,
+  "powerGpio": 18,
+  "sx1261ResetGpio": 22,
+  "ad5338rResetGpio": 13
+}

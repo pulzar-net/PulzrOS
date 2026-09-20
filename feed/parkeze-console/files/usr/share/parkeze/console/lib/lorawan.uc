@@ -69,8 +69,12 @@ slotView = function(uci, index) {
         index: index,
         bus: get('bus') || '',
         device: get('device') || '',
+        // What was actually probed with last — informational, not editable.
+        // reset_gpio_override is the operator's own choice, if they made one;
+        // see setSlot for why the two cannot be the same field.
         resetGpio: get('reset_gpio') || '',
         powerGpio: get('power_gpio') || '',
+        resetGpioOverride: get('reset_gpio_override') || '',
         status: get('status') || 'unknown',
         detected: detected || null,
         override: override || null,
@@ -164,7 +168,17 @@ setSlot = function(index, req, session) {
     if (req.resetGpio != null) {
         if (req.resetGpio != '' && !match(req.resetGpio, /^[0-9]{1,3}$/))
             return { error: 'A GPIO line is a number.' };
-        uci.set('parkeze', section, 'reset_gpio', req.resetGpio);
+        // A separate field from reset_gpio, which detection overwrites on
+        // every run with whatever it actually probed — writing there directly
+        // meant this box was cosmetic, on every board, from the day it
+        // shipped: the very next detect() call this handler makes below
+        // replaced it with the auto value regardless of what was just typed.
+        // Empty clears it and returns to the profile's own pins, matching how
+        // `override` clears back to automatic.
+        if (req.resetGpio == '')
+            uci.delete('parkeze', section, 'reset_gpio_override');
+        else
+            uci.set('parkeze', section, 'reset_gpio_override', req.resetGpio);
     }
 
     uci.commit('parkeze');

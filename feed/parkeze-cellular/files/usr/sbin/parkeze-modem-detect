@@ -66,9 +66,128 @@ iccid=""
 [ -n "${sim_index}" ] && iccid="$(mmcli -i "${sim_index}" --output-keyvalue 2>/dev/null |
     sed -n 's/^sim.properties.iccid *: *//p' | head -n1 | tr -cd '0-9')"
 
+# Poll ModemManager's own location state for a fix and freeze it into
+# parkeze.location.*, the same reference-coordinate mechanism a board with no
+# receiver at all already reports through (see docs/concentrators.md's GNSS
+# section). Backgrounded and called once, right after the engine is enabled —
+# a cold GPS fix can take minutes, and this must not hold up the rest of
+# modem detection or a boot waiting on it.
+#
+# 30-second spacing matches the engine's own refresh rate (mmcli
+# --location-status reports it), so a poll never lands between two fixes for
+# nothing. Ten tries is five minutes, generous for a cold fix with reasonable
+# sky view and short enough that a modem that never gets one does not poll
+# forever.
+sync_modem_location() {
+    local index="$1" attempt=0 kv lat lon alt
+
+    while [ "${attempt}" -lt 10 ]; do
+        # Something else may have recorded a position while this was waiting
+        # on a fix — a HAT's own receiver, synced by hand. Gateways do not
+        # move, so whichever position landed first is the one that stands.
+        [ -n "$(uci -q get parkeze.location.source)" ] && return 0
+
+        kv="$(mmcli -m "${index}" --location-get --output-keyvalue 2>/dev/null)"
+        lat="$(echo "${kv}" | sed -n 's/^modem\.location\.gps\.latitude *: *//p')"
+        lon="$(echo "${kv}" | sed -n 's/^modem\.location\.gps\.longitude *: *//p')"
+        alt="$(echo "${kv}" | sed -n 's/^modem\.location\.gps\.altitude *: *//p')"
+
+        # "--" is mmcli's own placeholder for a field with no value yet, not a
+        # real reading — the engine can be enabled and answering the query
+        # for several polls before the sky view yields an actual fix.
+        case "${lat}" in
+            ''|--) ;;
+            *)
+                uci -q batch <<EOF
+set parkeze.location=location
+set parkeze.location.latitude='${lat}'
+set parkeze.location.longitude='${lon}'
+set parkeze.location.altitude='${alt:-0}'
+set parkeze.location.source='modem'
+set parkeze.location.fixed_at='$(date -u +%Y-%m-%dT%H:%M:%SZ)'
+EOF
+                uci commit parkeze
+                log "recorded modem GPS position: ${lat}, ${lon}"
+                return 0
+                ;;
+        esac
+
+        attempt=$((attempt + 1))
+        sleep 30
+    done
+    log "modem GPS enabled but never got a fix after $((attempt * 30))s"
+}
+
+# ── the modem's own GNSS ─────────────────────────────────────────────────────
+#
+# A modem with a GPS engine ships with it OFF. Unlike a discrete GNSS receiver
+# on a HAT — which is a u-blox-style chip that starts emitting NMEA the moment
+# it has power, no command required — a cellular module's GPS die stays
+# powered down until something asks for a fix, to save the antenna current
+# when nobody needs it. Nothing here ever asked, so parkeze-gps-detect's
+# generic serial scan found an unpowered engine and correctly reported no
+# receiver, on every gateway with a modem that has one.
+#
+# `--location-enable-gps-nmea` is ModemManager's own call for this — it sends
+# whatever vendor AT command the modem actually wants (Quectel's is
+# `AT+QGPS=1`; others differ) so this stays modem-agnostic rather than
+# hardcoding one vendor's command set.
+#
+# Once enabled, whether parkeze-gps-detect's serial scan can see the result at
+# all depends on how ModemManager is talking to this modem, and the two ways
+# it does that disagree completely on where NMEA ends up:
+#
+#   the `option` driver     exposes a plain USB-serial AT port, and the modem
+#                           streams NMEA on a real tty once asked — a genuine
+#                           serial device, which is exactly what
+#                           parkeze-gps-detect's scan is built to find.
+#   qmi_wwan (this modem)   speaks QMI over a cdc-wdm control channel with no
+#                           NMEA-emitting tty anywhere in the picture. The fix
+#                           only ever exists inside ModemManager's own D-Bus
+#                           state, read with `--location-get` — checked live
+#                           on a Quectel EG25: `--location-get` returns a
+#                           current, valid fix while there is no
+#                           /dev/ttyUSB*/ttyACM* answering NMEA at all.
+#                           parkeze-gps-detect's scan cannot see this under
+#                           any timing or retry — there is nothing there to
+#                           find, not a receiver that has not spoken up yet.
+#
+# So both are run: the scan, for a modem whose driver genuinely puts NMEA on a
+# tty, and sync_modem_location below, for one that does not. Neither claims
+# the other's ground — a QMI modem's fix is never claimed as parkeze.gps.*
+# (that would tell concentratord it can open a device path for PPS timing that
+# does not exist), so it goes into parkeze.location.* instead: the same
+# reference-coordinate mechanism a receiver-less board already uses to give
+# concentratord *a* position without pretending to give it GPS time too.
+#
+# Not conditioned on "is it enabled already" — mmcli's status output does not
+# distinguish Capabilities from Enabled reliably enough to parse without a
+# real modem to check the exact wording against, and asking again costs
+# nothing: enabling an already-enabled source is a no-op on ModemManager's
+# side, matching how the rest of this script is written to be safe to re-run
+# on every boot and every hotplug event rather than only once.
+gps_capable="false"
+if mmcli -m "${modem_index}" --location-status 2>/dev/null | grep -q 'gps-nmea'; then
+    gps_capable="true"
+    if mmcli -m "${modem_index}" --location-enable-gps-nmea --location-enable-gps-raw >/dev/null 2>&1; then
+        log "modem GPS engine enabled"
+        # gps-detect writes parkeze.gps.* via `uci commit parkeze`, which the
+        # packet forwarder already restarts on (its own config.change
+        # trigger) — so calling it here is enough to get a tty-based GNSS into
+        # concentratord without a second, bespoke restart path. First boot's
+        # own gps-detect call, in 40-parkeze-concentrator, can run before the
+        # modem has even enumerated; this is what catches it once the modem —
+        # and now its GPS engine — actually exist.
+        ( /usr/sbin/parkeze-gps-detect >/dev/null 2>&1 & )
+        ( sync_modem_location "${modem_index}" & )
+    else
+        log "modem claims gps-nmea but would not enable it"
+    fi
+fi
+
 if [ "$1" = "--status" ]; then
-    printf '{"present":true,"index":%s,"device":"%s","manufacturer":"%s","model":"%s","imei":"%s","iccid":"%s"}\n' \
-        "${modem_index}" "${device_path}" "${manufacturer}" "${model}" "${imei}" "${iccid}"
+    printf '{"present":true,"index":%s,"device":"%s","manufacturer":"%s","model":"%s","imei":"%s","iccid":"%s","gpsCapable":%s}\n' \
+        "${modem_index}" "${device_path}" "${manufacturer}" "${model}" "${imei}" "${iccid}" "${gps_capable}"
     exit 0
 fi
 
@@ -88,6 +207,7 @@ set parkeze.cellular.modem_present='1'
 set parkeze.cellular.model='${manufacturer} ${model}'
 set parkeze.cellular.imei='${imei}'
 set parkeze.cellular.iccid='${iccid}'
+set parkeze.cellular.gps_capable='$([ "${gps_capable}" = "true" ] && echo 1 || echo 0)'
 EOF
 uci commit parkeze
 exit 0

@@ -4,11 +4,14 @@ One JSON file per supported part. The filename minus `.json` is the model id
 that `parkeze-concentrator-detect` writes into UCI, and the id the console
 shows in the hardware menu.
 
-A profile describes **the part**, not the board and not the region. Board facts
-(which GPIO the reset line is on, which spidev node) come from
-`/etc/parkeze/board.conf`; regional facts (which channels, which datarates)
-come from the region directory under `region/`. Keeping the three apart is what lets
-a Pi 3 + WM1302 in the US and a RAK7268 in the EU share every line of code.
+A profile describes **the part**, including how to reset it on the bus it
+answers on — that used to live in `/etc/parkeze/board.conf` instead, one value
+per board, which is wrong on a Pi: any of several HATs with different reset
+pins can be fitted to the same board, and a value that describes the board
+cannot also describe whichever of them somebody bolted on. Regional facts
+(which channels, which datarates) still come from the region directory under
+`region/` — that split is real, a Pi 3 + WM1302 in the US and a RAK7268 in the
+EU do share every line of code for it.
 
 Fields:
 
@@ -33,6 +36,42 @@ Fields:
                  Required in some regions and not others; a region that
                  mandates it on a part that lacks it is a configuration error
                  the console surfaces rather than a silent non-compliance.
+- `resetGpio`, `powerGpio`  BCM numbers, `spi` parts only. What
+                 `parkeze-concentrator-detect` pulses to bring the part out of
+                 reset and read its version register — the only way to tell an
+                 SX130x is there at all, since SPI has no discovery.
+- `sx1261ResetGpio`, `ad5338rResetGpio`  BCM numbers, optional, `spi` parts
+                 only. The two extra lines a CoreCell-style module's reference
+                 design also drives (Semtech's `reset_lgw.sh`, which
+                 Waveshare's SX1302 HAT follows) — absent on the RAK/Seeed
+                 convention, which has neither.
+
+## Telling two SX1302 HATs apart, which the bus alone cannot do
+
+`sx1302_spi` is an SX1302 behind SPI — a RAK2287, a RAK5146, a WM1302 — and
+reading its version register cannot distinguish any of those from a Waveshare
+SX1302 HAT: they are the same chip, answering the same way, once reset. What
+*is* different is the reset line each one is wired to, and that is the actual
+discriminator: `parkeze-concentrator-detect` probes with one profile's pins at
+a time, and a HAT only answers the profile whose pins match how it is wired.
+
+A Pi tries the board's default profile — the most common fitment,
+`PARKEZE_CONCENTRATOR_DEFAULT_PROFILE` in board.conf — and reports absent if
+that is not what is actually fitted. It does not go on to try every other
+profile's pins in turn: a HAT that shares no lines with the wrong guess is
+unaffected either way, but one that reuses a pin for something else — a GNSS
+standby line, on the Waveshare HAT — is not something to pulse on a guess. Pick
+the right one from the console's hardware menu instead, which re-probes with
+that profile's own pins:
+
+    uci set parkeze.slot0.override='waveshare_sx1302_lorawan_gateway_hat'
+    uci commit parkeze
+    /etc/init.d/parkeze-packet-forwarder restart
+
+Adding support for a HAT this catalogue does not know is a new profile file
+with its pins, model and known_as — no script change, and it appears in the
+console's menu the moment the package ships it. The same file is also the
+authority "the model" the paragraph below is about.
 
 ## The vendor model, and why the profile's is only a default
 
@@ -41,19 +80,12 @@ concentratord uses it to pick a **radio calibration**: the RSSI offset it
 reports signal strength against, and the transmit gain table it keys power
 against. Get it wrong and the gateway still runs — it receives, it forwards,
 the LNS shows it online — while reporting signal strengths that are off and
-transmitting at powers that are not the ones asked for.
+transmitting at powers that are not the ones asked for. Picking the right
+profile in the hardware menu sets this too, for the same reason it sets the
+reset pins: `active`, not `detected`, is what `parkeze-lora-config` reads.
 
-The profile cannot know which board it is on. `sx1302_spi` is an SX1302 behind
-SPI, which is a RAK2287, a RAK5146, a WM1302 and a Waveshare SX1302 HAT alike,
-and none of them can be told apart over the bus. So the profile carries the
-most common one as a default and the unit names its own:
-
-    uci set parkeze.slot0.model='waveshare_sx1302_lorawan_gateway_hat'
-    uci commit parkeze
-    /etc/init.d/parkeze-packet-forwarder restart
-
-`PARKEZE_CONCENTRATOR_MODEL` in board.conf does the same for a board where the
-part is soldered down and there is nothing to guess.
+`PARKEZE_CONCENTRATOR_MODEL` in board.conf sets a model directly, for a board
+where the part is soldered down and there is nothing to guess.
 
 The names are concentratord's, not ours — `rak_2287`, `rak_5146`,
 `seeed_wm1302`, `waveshare_sx1302_lorawan_gateway_hat`, the `semtech_*` and

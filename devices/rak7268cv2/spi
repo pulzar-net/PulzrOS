@@ -1,4 +1,0 @@
-crw-------    1 root     root      153,   0 Jan 23  2026 [1;35m/dev/spidev32766.1[m
-[1;36mspi32766[m
-/sys/bus/spi/devices/spi32766.0 spi:spi-nor
-/sys/bus/spi/devices/spi32766.1 spi:spidev

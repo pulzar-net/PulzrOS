@@ -95,7 +95,13 @@ flags=""
 case "${bus}" in
     spi) ;;
     usb) flags="\"USB\","
-         device="$(ls /dev/ttyACM* 2>/dev/null | head -n1)" ;;
+         # ttyACM for the RAK5146 USB module's own STM32, which presents as
+         # CDC-ACM — see probe_usb() in parkeze-concentrator-detect. ttyUSB
+         # for the CP210x/FT2232H bridge chip the other USB variants (RAK2287
+         # USB, WM1302 USB) use instead, which is a different kernel driver
+         # and a different device node. Both are "sx1302_usb" to detection;
+         # only the actual /dev node tells them apart.
+         device="$(ls /dev/ttyACM* /dev/ttyUSB* 2>/dev/null | head -n1)" ;;
     *)   die "bus '${bus}' is not supported by concentratord" ;;
 esac
 

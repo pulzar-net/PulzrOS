@@ -13,5 +13,7 @@
     "WM1302 SPI",
     "Seeed WM1302"
   ],
-  "comment": "The common Pi HAT build, and what the RAK7268C has soldered down. A RAK7289CV2 has two of these, one per slot."
+  "comment": "The common Pi HAT build, and what the RAK7268C has soldered down. A RAK7289CV2 has two of these, one per slot.",
+  "resetGpio": 17,
+  "powerGpio": 18
 }

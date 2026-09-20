@@ -2,7 +2,7 @@
 #
 # A USB concentrator plugged in after boot should just work.
 #
-# Narrowed to the two bridge chips our concentrators use, because this fires
+# Narrowed to the USB identities our concentrators use, because this fires
 # for every USB event on the box — including the cellular modem re-attaching,
 # and restarting the packet forwarder every time the SIM bounces would be both
 # pointless and disruptive.
@@ -10,7 +10,9 @@
 case "${ACTION}" in add|remove) ;; *) exit 0 ;; esac
 
 case "${PRODUCT}" in
-    10c4/ea60/*|403/6010/*) ;;
+    # CP210x, FT2232H, and the RAK5146 USB module's own STM32 CDC-ACM —
+    # see probe_usb() in parkeze-concentrator-detect for what each one is.
+    10c4/ea60/*|403/6010/*|483/5740/*) ;;
     *) exit 0 ;;
 esac
 

@@ -1,8 +1,0 @@
-DISTRIB_ID='WisGateOS'
-DISTRIB_RELEASE='2.2.16_RAK'
-DISTRIB_REVISION='b331'
-DISTRIB_TARGET='ramips'
-DISTRIB_ARCH='mipsel_24kc'
-DISTRIB_DESCRIPTION='WisGateOS 2.2.16 WisGateOS'
-DISTRIB_TAINTS='no-all busybox override'
-DISTRIB_OPENWRTREPO='https://downloads.openwrt.org/releases/21.02.1'

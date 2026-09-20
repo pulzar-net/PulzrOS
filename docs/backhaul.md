@@ -120,15 +120,19 @@ inner source is in the sending peer's allowed IPs, and the one peer is the hub.
 There is no forwarding, so the tunnel reaches the gateway and nothing behind
 it: a customer's site network is not ours to expose.
 
-## The tunnel never runs over cellular
+## The tunnel does not run over cellular by default
 
-This is a hard constraint, not a preference.
+`PARKEZE_WIREGUARD_ALLOW_CELLULAR` is `"0"` on every board today, and turning
+it on is a real option, not a hard constraint — but off is the right default.
 
-**Why.** A tunnel left alone keeps itself alive over whatever route it can
-find — here, a keepalive every 25 seconds, forever. On a SIM billed by the
-megabyte that is a bill, not a backhaul. The SIM is the cheap path of last
-resort, with its own VPN; filling it with tunnel chatter defeats the point of
-having it.
+**Why.** Not primarily cost, though a tunnel left alone would keep itself
+alive over whatever route it finds — a keepalive every 25 seconds, forever,
+which is negligible against a SIM's allowance either way. The real reason is
+that a cellular gateway is already reachable: gateway-link holds an OpenVPN
+tunnel open into the SIM provider's CGNAT'd network, and every SIM answers on
+a fixed address inside it (see "The management paths" above). WireGuard over
+the same SIM to reach the same box would be a second management path doing the
+first one's job.
 
 **How.**
 
