@@ -1,0 +1,251 @@
+#!/bin/sh
+#
+# Manage this gateway over MQTT, so that reading its state does not mean
+# loading its web console.
+#
+#   parkeze-mqtt-agent          listen for requests until killed
+#   parkeze-mqtt-agent --once   answer nothing; print what `status` would say
+#
+# ── WHY ────────────────────────────────────────────────────────────────────
+#
+# The console is a React app: a document, a stylesheet, and a JS bundle that
+# is a quarter of a megabyte before its route chunks. Opening it to read one
+# number costs that every time, and on a metered SIM behind a 250ms link it is
+# both slow and billed. Most of what anybody opens it for is a handful of
+# facts the gateway already knows and could simply have said.
+#
+# So: one request, one JSON answer, on a connection the gateway is holding
+# anyway. A few hundred bytes instead of a few hundred kilobytes.
+#
+# ── THE TOPICS ─────────────────────────────────────────────────────────────
+#
+#   parkeze/gateway/<eui>/mgmt/request    parkeze.net asks; we subscribe
+#   parkeze/gateway/<eui>/mgmt/response   we answer; parkeze.net subscribes
+#   parkeze/gateway/<eui>/mgmt/state      retained, published once at start
+#
+# Deliberately outside the region prefix. `us915_0/gateway/<eui>/...` belongs
+# to ChirpStack and the packet forwarder holds a subscription across it;
+# putting management traffic in there would mean two things reading one
+# namespace and a downlink topic that sometimes is not one.
+#
+# The grant is asymmetric, and mqtt-authorizer enforces it: this gateway may
+# subscribe to its own request topic and publish to its own response and state
+# topics. It may not publish requests, and it may not read another gateway's
+# anything.
+#
+# ── WHAT IT WILL DO, AND WHAT IT WILL NEVER DO ─────────────────────────────
+#
+# Every operation is named in the case below and every one of them runs a
+# fixed command. There is deliberately no "run this" — a remote channel that
+# executes what it is handed is a root shell with no audit trail and no way to
+# reason about what a compromised broker could do. Adding an operation here is
+# a firmware change, which is the point: the set of things that can be done to
+# a gateway remotely should be reviewable in one place.
+#
+# Arguments are validated before use and never interpolated into a command
+# line. The only one that exists today is a boolean.
+#
+# ── COST ───────────────────────────────────────────────────────────────────
+#
+# This holds a second TLS session to the broker, alongside the packet
+# forwarder's. That is not free on a SIM, so the keepalive is long: the agent
+# has nothing to say most of the time and an idle minute costs nothing worth
+# saving. Responses are capped, because "tail the log" over cellular is how a
+# convenience becomes a bill.
+
+. /etc/parkeze/board.conf
+
+TOPIC_ROOT="parkeze/gateway"
+STATE_DIR=/var/run/parkeze/mqtt
+# Long, because this is idle almost always and every ping is billed.
+KEEPALIVE="${PARKEZE_MQTT_KEEPALIVE:-300}"
+# A response is meant to be a handful of facts. Anything larger is either a
+# mistake or a log somebody should be pulling over the tunnel instead.
+MAX_RESPONSE=8192
+
+log() { logger -t mqtt-agent -p daemon.info "$*"; }
+
+eui()      { uci -q get parkeze.identity.gateway_eui; }
+host()     { uci -q get parkeze.mqtt.host; }
+username() { uci -q get parkeze.mqtt.username; }
+password() { uci -q get parkeze.mqtt.password; }
+
+# `mosquitto_pub -m` would put the payload on a command line, where a quote in
+# it is a syntax error and a backtick is worse. -f reads a file, which has no
+# such problem and no length limit either.
+publish() {
+    local topic="$1" file="$2" retain="$3"
+    mosquitto_pub -h "$(host)" -p 8883 --capath /etc/ssl/certs \
+        -u "$(username)" -P "$(password)" \
+        -t "${topic}" -f "${file}" -q 1 ${retain:+-r} >/dev/null 2>&1
+}
+
+# ── the operations ──────────────────────────────────────────────────────────
+#
+# Each prints JSON on stdout. Anything that is not valid JSON is wrapped by
+# the caller, so a script that fails prints an error rather than corrupting
+# the response.
+
+op_status() {
+    printf '{"eui":"%s","version":"%s","build":"%s","uptime":%s,"adopted":"%s"}' \
+        "$(eui)" "${PARKEZE_VERSION:-unknown}" "${PARKEZE_BUILD:-unknown}" \
+        "$(cut -d. -f1 /proc/uptime 2>/dev/null || echo 0)" \
+        "$(uci -q get parkeze.adoption.state || echo unknown)"
+}
+
+op_lorawan() {
+    printf '{"status":"%s","slots":%s,"present":%s,"channels":%s,"region":"%s","forwarder":"%s"}' \
+        "$(uci -q get parkeze.concentrator.status || echo unknown)" \
+        "$(uci -q get parkeze.concentrator.slots || echo 0)" \
+        "$(uci -q get parkeze.concentrator.present || echo 0)" \
+        "$(uci -q get parkeze.concentrator.channels || echo 0)" \
+        "$(uci -q get parkeze.lorawan.region || echo unknown)" \
+        "$(/etc/init.d/parkeze-packet-forwarder running >/dev/null 2>&1 && echo running || echo stopped)"
+}
+
+op_backhaul()  { /usr/sbin/parkeze-lora-route status 2>/dev/null || echo '{}'; }
+op_storage()   { printf '{"present":"%s","device":"%s","freeMb":"%s","writable":"%s"}' \
+                     "$(uci -q get parkeze.storage.present || echo 0)" \
+                     "$(uci -q get parkeze.storage.device)" \
+                     "$(uci -q get parkeze.storage.free_mb || echo 0)" \
+                     "$(uci -q get parkeze.storage.writable || echo 0)"; }
+op_firmware()  { /usr/sbin/parkeze-firmware status 2>/dev/null || echo '{}'; }
+op_cellular()  { /usr/sbin/parkeze-modem-detect --status 2>/dev/null || echo '{}'; }
+op_gps()       { /usr/sbin/parkeze-gps status 2>/dev/null || echo '{}'; }
+
+# ── dispatch ────────────────────────────────────────────────────────────────
+
+# Runs one operation and prints its JSON result, or an error object. Nothing
+# from the request reaches a command line: `op` selects a branch, it is never
+# executed.
+dispatch() {
+    local op="$1" arg="$2" out
+
+    case "${op}" in
+        status)    out="$(op_status)" ;;
+        lorawan)   out="$(op_lorawan)" ;;
+        backhaul)  out="$(op_backhaul)" ;;
+        storage)   out="$(op_storage)" ;;
+        firmware)  out="$(op_firmware)" ;;
+        cellular)  out="$(op_cellular)" ;;
+        gps)       out="$(op_gps)" ;;
+
+        # Everything at once, for the case this exists to serve: somebody
+        # wanting to know how a gateway is without opening anything.
+        all)
+            out="$(printf '{"system":%s,"lorawan":%s,"backhaul":%s,"storage":%s,"firmware":%s,"cellular":%s}' \
+                   "$(op_status)" "$(op_lorawan)" "$(op_backhaul)" \
+                   "$(op_storage)" "$(op_firmware)" "$(op_cellular)")" ;;
+
+        restart-forwarder)
+            /etc/init.d/parkeze-packet-forwarder restart >/dev/null 2>&1
+            out='{"restarted":true}' ;;
+
+        detect-concentrator)
+            /usr/sbin/parkeze-concentrator-detect >/dev/null 2>&1
+            out="$(op_lorawan)" ;;
+
+        detect-gps)
+            /usr/sbin/parkeze-gps-detect >/dev/null 2>&1
+            out="$(op_gps)" ;;
+
+        # The only operation that takes an argument, and it is a boolean.
+        # Validated to exactly 0 or 1 before it goes anywhere near uci.
+        set-lora-cellular)
+            case "${arg}" in
+                true|1)  value=1 ;;
+                false|0) value=0 ;;
+                *) echo '{"error":"allow must be true or false"}'; return 1 ;;
+            esac
+            uci -q set parkeze.lorawan.allow_cellular="${value}"
+            uci commit parkeze
+            /usr/sbin/parkeze-lora-route apply >/dev/null 2>&1
+            out="$(op_backhaul)" ;;
+
+        # Last, and deliberately plain. A reboot takes the gateway away for a
+        # couple of minutes; it is here because the alternative is a truck.
+        reboot)
+            log "reboot requested over MQTT"
+            ( sleep 2; reboot ) >/dev/null 2>&1 &
+            out='{"rebooting":true}' ;;
+
+        *)
+            echo "{\"error\":\"no such operation\"}"
+            return 1 ;;
+    esac
+
+    # A script that printed nothing, or printed something that is not JSON,
+    # must not become a malformed response — the envelope has to stay
+    # parseable whatever happened inside it.
+    #
+    # And it must not be reported as a success. The platform decides whether a
+    # command worked from `ok`, so an unreadable answer returning 0 would be
+    # handed back to a caller as though the gateway had agreed to something.
+    [ -n "${out}" ] || out='{}'
+    if ! echo "${out}" | jsonfilter -e '@' >/dev/null 2>&1; then
+        echo '{"error":"the gateway produced an unreadable answer"}'
+        return 1
+    fi
+    echo "${out}"
+}
+
+# ── the loop ────────────────────────────────────────────────────────────────
+
+if [ "$1" = "--once" ]; then
+    dispatch all ""
+    exit 0
+fi
+
+[ -n "$(eui)" ] && [ -n "$(host)" ] && [ -n "$(username)" ] || {
+    log "not adopted, or no broker credentials — nothing to listen on"
+    exit 1
+}
+
+mkdir -p "${STATE_DIR}"
+REQUEST="${TOPIC_ROOT}/$(eui)/mgmt/request"
+RESPONSE="${TOPIC_ROOT}/$(eui)/mgmt/response"
+
+# Retained, so a platform that subscribes later gets the gateway's state
+# without having to ask. Published once at startup rather than on a timer:
+# the forwarder already sends stats every thirty seconds, and a second
+# periodic publisher on the same SIM is chatter nobody asked for.
+dispatch all "" > "${STATE_DIR}/state.json"
+publish "${TOPIC_ROOT}/$(eui)/mgmt/state" "${STATE_DIR}/state.json" retain
+
+log "listening on ${REQUEST}"
+
+# One JSON document per message, one message per line. -N suppresses the
+# topic prefix mosquitto_sub would otherwise print, which would have to be
+# stripped back off before parsing.
+mosquitto_sub -h "$(host)" -p 8883 --capath /etc/ssl/certs \
+    -u "$(username)" -P "$(password)" \
+    -t "${REQUEST}" -q 1 -k "${KEEPALIVE}" -N 2>/dev/null |
+while IFS= read -r line; do
+    [ -n "${line}" ] || continue
+
+    printf '%s' "${line}" > "${STATE_DIR}/request.json"
+    id="$(jsonfilter -i "${STATE_DIR}/request.json" -e '@.id' 2>/dev/null)"
+    op="$(jsonfilter -i "${STATE_DIR}/request.json" -e '@.op' 2>/dev/null)"
+    arg="$(jsonfilter -i "${STATE_DIR}/request.json" -e '@.allow' 2>/dev/null)"
+
+    # An id that is not ours to choose still ends up in a document we
+    # generate, so it is reduced to something that cannot break it.
+    id="$(printf '%s' "${id}" | tr -cd 'A-Za-z0-9._-' | cut -c1-64)"
+    [ -n "${id}" ] || id="unknown"
+
+    if result="$(dispatch "${op}" "${arg}")"; then ok=true; else ok=false; fi
+
+    # Capped. A response is a handful of facts; anything larger is a mistake
+    # this should not put on a metered link.
+    if [ "${#result}" -gt "${MAX_RESPONSE}" ]; then
+        result='{"error":"the answer was too large to send"}'
+        ok=false
+    fi
+
+    printf '{"id":"%s","ok":%s,"result":%s}' "${id}" "${ok}" "${result}" \
+        > "${STATE_DIR}/response.json"
+    publish "${RESPONSE}" "${STATE_DIR}/response.json"
+    log "${op:-?} -> ${ok}"
+done
+
+log "subscription ended"
