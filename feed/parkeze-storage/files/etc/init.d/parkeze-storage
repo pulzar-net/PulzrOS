@@ -1,0 +1,22 @@
+#!/bin/sh /etc/rc.common
+#
+# Mount removable storage at boot, before anything that might want it.
+#
+# START=12 puts this after OpenWrt's own fstab (11) and before
+# parkeze-bootprov (14), which is the earliest thing of ours that runs. The
+# firmware rollback in particular has to know whether there is a card before
+# it decides what it can promise — see parkeze-storage-detect.
+#
+# Failing is normal and not an error: most gateways have no removable storage
+# at all, and every consumer treats it as an optimisation. So this never
+# returns non-zero to procd over an empty slot.
+
+START=12
+
+start() {
+    /usr/sbin/parkeze-storage-detect >/dev/null 2>&1 || true
+}
+
+stop() {
+    /usr/sbin/parkeze-storage-detect --umount >/dev/null 2>&1 || true
+}
