@@ -130,24 +130,69 @@ op_gps()       { /usr/sbin/parkeze-gps status 2>/dev/null || echo '{}'; }
 # Runs one operation and prints its JSON result, or an error object. Nothing
 # from the request reaches a command line: `op` selects a branch, it is never
 # executed.
+# Run one operation with a ceiling on how long it may take.
+#
+# There is no `timeout` applet in this build — parkeze-gps-detect learned the
+# same thing and grew its own bounded_read for it.
+#
+# Without a ceiling, one slow probe takes the whole management channel with
+# it. The read loop is sequential, so a call that never returns means every
+# later request goes unanswered forever. Measured on a RAK: op_cellular's
+# mmcli call hung, and from that moment the agent answered nothing — not even
+# a plain status — while the gateway itself stayed perfectly healthy and kept
+# forwarding. The channel you would reach for to find out why is the one that
+# is gone.
+#
+# A timeout returns a JSON error rather than nothing, so that `all` — which
+# composes six of these into one document — stays valid JSON when one probe
+# is wedged, instead of collapsing into "the gateway produced an unreadable
+# answer" and telling you nothing about which part failed.
+bounded() {
+    local seconds="$1"; shift
+    local out="${STATE_DIR}/op.$$"
+    ( "$@" > "${out}" 2>/dev/null ) &
+    local pid=$! waited=0 killed=0
+    while kill -0 "${pid}" 2>/dev/null; do
+        if [ "${waited}" -ge "${seconds}" ]; then
+            kill -TERM "${pid}" 2>/dev/null
+            sleep 1
+            kill -KILL "${pid}" 2>/dev/null
+            killed=1
+            break
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+    wait "${pid}" 2>/dev/null
+    if [ "${killed}" = 1 ] || [ ! -s "${out}" ]; then
+        rm -f "${out}"
+        printf '{"error":"%s timed out"}' "$1"
+        return 0
+    fi
+    cat "${out}"
+    rm -f "${out}"
+}
+
 dispatch() {
     local op="$1" arg="$2" out
 
     case "${op}" in
-        status)    out="$(op_status)" ;;
-        lorawan)   out="$(op_lorawan)" ;;
-        backhaul)  out="$(op_backhaul)" ;;
-        storage)   out="$(op_storage)" ;;
-        firmware)  out="$(op_firmware)" ;;
-        cellular)  out="$(op_cellular)" ;;
-        gps)       out="$(op_gps)" ;;
+        status)    out="$(bounded 10 op_status)" ;;
+        lorawan)   out="$(bounded 15 op_lorawan)" ;;
+        backhaul)  out="$(bounded 15 op_backhaul)" ;;
+        storage)   out="$(bounded 15 op_storage)" ;;
+        firmware)  out="$(bounded 15 op_firmware)" ;;
+        # 20s: this one shells out to mmcli, which is the call that hung.
+        cellular)  out="$(bounded 20 op_cellular)" ;;
+        gps)       out="$(bounded 20 op_gps)" ;;
 
         # Everything at once, for the case this exists to serve: somebody
         # wanting to know how a gateway is without opening anything.
         all)
             out="$(printf '{"system":%s,"lorawan":%s,"backhaul":%s,"storage":%s,"firmware":%s,"cellular":%s}' \
-                   "$(op_status)" "$(op_lorawan)" "$(op_backhaul)" \
-                   "$(op_storage)" "$(op_firmware)" "$(op_cellular)")" ;;
+                   "$(bounded 10 op_status)" "$(bounded 15 op_lorawan)" \
+                   "$(bounded 15 op_backhaul)" "$(bounded 15 op_storage)" \
+                   "$(bounded 15 op_firmware)" "$(bounded 20 op_cellular)")" ;;
 
         restart-forwarder)
             /etc/init.d/parkeze-packet-forwarder restart >/dev/null 2>&1
