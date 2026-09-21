@@ -1,0 +1,34 @@
+#!/bin/sh
+#
+# Turn off the mosquitto package's own service.
+#
+# mosquitto-ssl is installed for one reason: parkeze-lora-buffer runs a broker
+# that holds uplinks when they cannot be sent. That broker is started by
+# parkeze-packet-forwarder, as a procd instance, with a config this gateway
+# generates — see parkeze-lora-buffer.
+#
+# The package also ships /etc/init.d/mosquitto, enabled, at START=80. It binds
+# 1883 on every interface with a config of its own, well before our service
+# starts at 97. Two consequences, both bad:
+#
+#   An unauthenticated MQTT broker is listening on whatever network the
+#   gateway is plugged into, on every gateway, whether or not buffering is on.
+#
+#   Our broker cannot bind, so the forwarder — which was pointed at 1883 —
+#   connected to the stock one instead. That broker has no bridge to
+#   parkeze.net, so it accepted every uplink and dropped it. Observed on a
+#   Pi 3: the gateway's own status said buffering was enabled and the bridge
+#   was connected, while the uplinks went nowhere at all.
+#
+# Our broker now listens on a private port, which is the actual fix. This is
+# the other half: nothing should be running a broker here that we did not ask
+# for.
+
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+
+[ -x /etc/init.d/mosquitto ] || exit 0
+
+/etc/init.d/mosquitto disable 2>/dev/null
+/etc/init.d/mosquitto stop 2>/dev/null
+
+exit 0

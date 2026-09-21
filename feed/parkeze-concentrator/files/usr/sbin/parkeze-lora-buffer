@@ -27,10 +27,13 @@
 # chirpstack-mqtt-forwarder is a thin bridge between concentratord and MQTT,
 # with no store of its own, and no amount of configuration gives it one.
 #
-# It is also what the hardware vendor did. A stock WisGateOS unit runs
-# `mosquitto -c /tmp/mosquitto.generated.conf` alongside its packet forwarder,
-# with a Lua data-broker and SQLite on top for their own integrations. We do
-# not need their application layer; the shape underneath it is the same.
+# A stock WisGateOS unit does run `mosquitto -c /tmp/mosquitto.generated.conf`
+# beside its packet forwarder, which is where this idea came from — but that
+# is not a RAK design decision. It is the OpenWrt mosquitto package's own init
+# script, which generates exactly that path and is enabled on install. RAK
+# built a Lua data-broker and SQLite on top of it for their integrations; the
+# broker underneath is stock. Worth stating plainly, because "the vendor does
+# this too" was doing more work as an argument than it had earned.
 #
 # ── THE DETAIL THAT DECIDES WHETHER IT WORKS ───────────────────────────────
 #
@@ -55,6 +58,18 @@
 . /etc/parkeze/board.conf
 
 CONF=/var/run/parkeze/lora/mosquitto.conf
+
+# Not 1883. The mosquitto package ships its own /etc/init.d/mosquitto at
+# START=80, enabled, which binds 1883 before this service starts at 97 — so
+# our broker could not bind and the forwarder, pointed at 1883, connected to
+# the stock one instead. That broker has no bridge, so it accepted every
+# uplink and dropped it, while every status this gateway reports looked fine.
+#
+# A port nobody else uses removes the whole class of collision: if our broker
+# is not running, the forwarder fails to connect loudly instead of handing its
+# uplinks to a stranger. 35-parkeze-mosquitto disables the stock service too,
+# but that is defence in depth, not the fix — a port is the fix.
+PORT="${PARKEZE_LORA_BUFFER_PORT:-18831}"
 
 log() { logger -t lora-buffer -p daemon.info "$*"; }
 
@@ -101,7 +116,7 @@ render() {
 # Loopback only. This broker exists for one process on this machine; exposing
 # it on any other address would be an unauthenticated MQTT broker on whatever
 # network the gateway is plugged into.
-listener 1883 127.0.0.1
+listener ${PORT} 127.0.0.1
 allow_anonymous true
 
 autosave_interval 30
@@ -177,10 +192,10 @@ status)
     if persist="$(persistence_dir)" && [ -f "${persist}/mosquitto.db" ]; then
         queued_bytes="$(wc -c < "${persist}/mosquitto.db" 2>/dev/null || echo 0)"
     fi
-    printf '{"enabled":%s,"running":%s,"persistent":%s,"queuedBytes":%s}\n' \
+    printf '{"enabled":%s,"running":%s,"persistent":%s,"port":%s,"queuedBytes":%s}\n' \
         "${on}" "${running}" \
         "$(persistence_dir >/dev/null 2>&1 && echo true || echo false)" \
-        "${queued_bytes}"
+        "${PORT}" "${queued_bytes}"
     ;;
 
 *)

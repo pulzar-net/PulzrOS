@@ -237,6 +237,9 @@ export interface LorawanStatus {
     running: boolean;
     /** Whether the queue survives a reboot, which needs an SD card. */
     persistent: boolean;
+    /** The loopback port the broker listens on. Not 1883: the mosquitto
+        package's own service owns that one. */
+    port: number;
     queuedBytes: number;
   } | null;
 }

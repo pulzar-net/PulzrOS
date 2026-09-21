@@ -208,6 +208,10 @@ state="${STATE_DIR}/${section}.mqtt"
 # bridge carries it to ${host} — see parkeze-lora-buffer. The forwarder cannot
 # tell the difference and does not need to.
 #
+# On a private port, not 1883, because the mosquitto package's own init owns
+# 1883 and would otherwise take these uplinks and drop them. See the note in
+# parkeze-lora-buffer.
+#
 # QoS 1 in that mode, and it is load-bearing rather than tidy: a mosquitto
 # bridge does not queue QoS 0 messages, because QoS 0 obliges it to deliver
 # nothing. Left at 0, an outage would buffer exactly nothing while every part
@@ -227,7 +231,7 @@ buffer="$(get parkeze.lorawan.buffer)"
 buffer="${buffer:-${PARKEZE_LORA_BUFFER:-0}}"
 [ -s "${STATE_DIR}/mosquitto.conf" ] || buffer=0
 if [ "${buffer}" = "1" ]; then
-    mqtt_server="tcp://127.0.0.1:1883"
+    mqtt_server="tcp://127.0.0.1:${PARKEZE_LORA_BUFFER_PORT:-18831}"
     mqtt_user=""
     mqtt_pass=""
     mqtt_qos=1

@@ -73,6 +73,12 @@ export default function Lorawan() {
   const held = confined && (buffer?.enabled ?? false);
   const dropping = confined && !(buffer?.enabled ?? false);
 
+  // Holding is switched on and no broker is running. The forwarder is then
+  // publishing at a loopback port with nothing behind it, so every uplink is
+  // lost — and nothing else on this page looks wrong, which is exactly how it
+  // got missed on a live gateway. It is its own alarm.
+  const brokerMissing = (buffer?.enabled ?? false) && !(buffer?.running ?? false);
+
   return (
     <div className="fade-in">
       <PageHeader
@@ -162,7 +168,16 @@ export default function Lorawan() {
 
       {backhaul && (
         <Card title="Uplink backhaul" icon={Route}>
-          {held && (
+          {brokerMissing && (
+            <Notice tone="error">
+              Holding is switched on but the local broker is not running, so
+              uplinks are being published to a port with nothing behind it and
+              are being lost. Turn holding off until this is resolved. The log
+              will name the reason.
+            </Notice>
+          )}
+
+          {held && !brokerMissing && (
             <Notice tone="warning">
               Wired is down and uplinks are not allowed onto cellular, so they
               are being held on the gateway. They go out when ethernet returns.
@@ -196,6 +211,12 @@ export default function Lorawan() {
               <Fact
                 label="Queued"
                 value={buffer.persistent ? bytes(buffer.queuedBytes) : 'In memory'}
+              />
+            )}
+            {buffer?.enabled && (
+              <Fact
+                label="Local broker"
+                value={<StatusBadge ok={buffer.running} okLabel={`Running on ${buffer.port}`} badLabel="Not running" />}
               />
             )}
           </FactList>
