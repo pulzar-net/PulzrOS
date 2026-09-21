@@ -1,0 +1,79 @@
+#!/bin/sh
+# Copyright (C) 2016 Velocloud Inc
+# Copyright (C) 2016 Aleksander Morgado <aleksander@aleksander.es>
+#
+# ── THIS FILE REPLACES THE ONE IN THE modemmanager PACKAGE ─────────────────
+#
+# Same path, same name, same behaviour, with one device class filtered out.
+# The image's files overlay is copied over the rootfs after packages install,
+# so this is the copy that ships. Keep it in step with upstream: it is twelve
+# lines of theirs plus the block below.
+#
+# ── WHY ────────────────────────────────────────────────────────────────────
+#
+# A USB concentrator enumerates as a serial device, and ModemManager probes
+# every tty it is told about with AT commands. Two processes then own one
+# port, and the concentrator's binary protocol is interleaved with AT strings.
+#
+# On a Pi 4 with a RAK5146 USB and a Quectel EG25, measured:
+#
+#   concentrator: ttyACM0 is a concentrator (0483:5740)      <- our hotplug script
+#   ModemManager: hotplug: add serial interface ttyACM0      <- ran anyway
+#   concentratord: Configuring radio / channels ...          <- all succeed
+#   concentratord: Starting the concentrator                 <- and then nothing
+#
+# The single register writes get through; lgw_start needs a sustained
+# bidirectional exchange and never completes. That gateway had a concentrator
+# detected, eight channels configured and a forwarder running, and had never
+# carried one uplink. Proven by stopping ModemManager and restarting the LoRa
+# stack: concentratord came straight up and began publishing stats.
+#
+# ── WHY NOT A SCRIPT ORDERED BEFORE THIS ONE ───────────────────────────────
+#
+# Tried first, and it does not work. /sbin/hotplug-call runs every script in
+# its own subshell — `do ( . $script ); done` — so an earlier script cannot
+# exit the chain, cannot unset DEVNAME for this one, and cannot influence it
+# at all. Filtering has to happen in the script that does the reporting.
+#
+# ModemManager has no udev on OpenWrt (it is not in its dependencies), so
+# ID_MM_DEVICE_IGNORE is not available either, and its init script exposes no
+# filter-policy option.
+
+# Load hotplug common utilities
+. /usr/share/ModemManager/modemmanager.common
+
+# We require a device name
+[ -n "$DEVNAME" ] || exit
+
+# ── the concentrator is not a modem ────────────────────────────────────────
+#
+# Matched on the USB ids probe_usb() recognises in parkeze-concentrator-detect:
+# CP2102N (RAK5146/RAK2287 USB), FT2232H (WM1302 USB), and the STM32 CDC-ACM
+# that is the RAK5146 module's own MCU. Keep the two lists together — a
+# concentrator this file does not know about is one ModemManager will take.
+case "${DEVNAME}" in
+    ttyACM*|ttyUSB*)
+        __pkz_node="/sys${DEVPATH}"
+        while [ -n "${__pkz_node}" ] && [ "${__pkz_node}" != "/sys" ] && [ "${__pkz_node}" != "/" ]; do
+            if [ -f "${__pkz_node}/idVendor" ] && [ -f "${__pkz_node}/idProduct" ]; then
+                __pkz_ids="$(cat "${__pkz_node}/idVendor" 2>/dev/null):$(cat "${__pkz_node}/idProduct" 2>/dev/null)"
+                case "${__pkz_ids}" in
+                    10c4:ea60|0403:6010|0483:5740)
+                        logger -t concentrator -p daemon.info \
+                            "${DEVNAME} is a concentrator (${__pkz_ids}); not reporting it to ModemManager"
+                        exit 0
+                        ;;
+                esac
+                break
+            fi
+            __pkz_node="$(dirname "${__pkz_node}")"
+        done
+        ;;
+esac
+
+# Always make sure the rundir exists
+mkdir -m 0755 -p "${MODEMMANAGER_RUNDIR}"
+
+# Report TTY
+mm_log "info" "${ACTION} serial interface ${DEVNAME}: event processed"
+mm_report_event "${ACTION}" "${DEVNAME}" "tty" "/sys${DEVPATH}"
