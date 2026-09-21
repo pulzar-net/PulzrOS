@@ -93,13 +93,31 @@ persistence_dir() {
 }
 
 render() {
-    local host port user pass prefix eui queue persist
+    local host port user pass prefix eui queue persist region plan
     host="$(get parkeze.mqtt.host)"; [ -n "${host}" ] || host="${PARKEZE_MQTT_HOST}"
     port="$(get parkeze.mqtt.port)"; port="${port:-${PARKEZE_MQTT_PORT:-8883}}"
     user="$(get parkeze.mqtt.username)"
     pass="$(get parkeze.mqtt.password)"
-    prefix="$(get parkeze.mqtt.topic_prefix)"
     eui="$(get parkeze.identity.gateway_eui)"
+
+    # The topic prefix has to be the one the forwarder actually publishes
+    # under, and that is not always in UCI: parkeze-lora-config falls back to
+    # the region plan's TOPIC_PREFIX, so this has to fall back the same way.
+    #
+    # Getting this wrong would not fail, which is why it is worth closing:
+    # the bridge would connect, authenticate, and sit there mapping topics
+    # nothing publishes to. Defensive rather than diagnosed — adoption does
+    # normally write this key, so on an adopted gateway the fallback should
+    # never be reached.
+    prefix="$(get parkeze.mqtt.topic_prefix)"
+    if [ -z "${prefix}" ]; then
+        region="$(get parkeze.lorawan.region)"; region="${region:-US915}"
+        plan="/usr/share/parkeze/region/${region}/region.conf"
+        # shellcheck disable=SC1090
+        [ -f "${plan}" ] && . "${plan}"
+        prefix="${TOPIC_PREFIX}"
+    fi
+    [ -n "${prefix}" ] || { log "no topic prefix for region ${region:-?}; refusing to bridge nothing"; return 1; }
 
     [ -n "${host}" ] && [ -n "${eui}" ] || { log "not adopted; nothing to bridge to"; return 1; }
 
@@ -120,6 +138,21 @@ listener ${PORT} 127.0.0.1
 allow_anonymous true
 
 autosave_interval 30
+
+# To syslog, so the gateway log has it. Without this mosquitto writes to
+# stderr, procd is not capturing stderr for this instance, and the broker is
+# the one process in the LoRa stack that cannot say what is wrong with it —
+# which is precisely the position this was debugged from.
+#
+# The bridge subtypes are the point. A bridge that connects and then forwards
+# nothing looks identical from outside to one that is working, and these lines
+# are the only place the difference shows up.
+log_dest syslog
+log_type error
+log_type warning
+log_type notice
+log_type information
+connection_messages true
 EOF
 
         if persist="$(persistence_dir)"; then
