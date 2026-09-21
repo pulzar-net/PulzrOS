@@ -57,8 +57,20 @@
 
 TOPIC_ROOT="parkeze/gateway"
 STATE_DIR=/var/run/parkeze/mqtt
-# Long, because this is idle almost always and every ping is billed.
-KEEPALIVE="${PARKEZE_MQTT_KEEPALIVE:-300}"
+# 60s, not 300s. Every ping is billed and this channel is idle almost always,
+# which argued for a long interval — but the interval is also how long the
+# gateway stays unmanageable after its backhaul changes underneath it, and
+# that is the moment you most want to reach it.
+#
+# Measured by pulling the ethernet on a RAK on a bench. The packet forwarder,
+# which keeps a 30s keepalive, was back on the SIM in twelve seconds. This
+# agent held a dead TCP session until the broker reaped it and did not
+# reconnect for six minutes.
+#
+# A ping is a two-byte packet. At 60s that is roughly 1440 a day, which
+# against a 1NCE plan is noise, and it buys back five minutes of blindness
+# every time a gateway fails over.
+KEEPALIVE="${PARKEZE_MQTT_KEEPALIVE:-60}"
 # A response is meant to be a handful of facts. Anything larger is either a
 # mistake or a log somebody should be pulling over the tunnel instead.
 MAX_RESPONSE=8192
@@ -252,12 +264,25 @@ fi
 log "listening on ${REQUEST}"
 STARTED="$(date +%s)"
 
-# One JSON document per message, one message per line. -N suppresses the
-# topic prefix mosquitto_sub would otherwise print, which would have to be
-# stripped back off before parsing.
+# One JSON document per message, one message per line.
+#
+# No -N. It does not mean what its name suggests and what this comment used
+# to claim: `mosquitto_sub --help` says "do not add an end of line character
+# when printing the payload". With it, nothing this subscription received ever
+# ended in a newline, so `read` below blocked forever and the agent processed
+# exactly zero commands — while connecting, subscribing and acknowledging
+# every one of them, so it looked healthy from the broker and from the fleet
+# view alike.
+#
+# Measured: EMQX reported send_msg=1 inflight=0 for the agent's client — the
+# request delivered and acked — with recv_msg=0 and not one dispatch line in
+# the gateway's log.
+#
+# The topic prefix it was supposed to be suppressing is only printed when -v
+# is passed, which it is not.
 mosquitto_sub -h "$(host)" -p 8883 --capath /etc/ssl/certs \
     -u "$(username)" -P "$(password)" \
-    -t "${REQUEST}" -q 1 -k "${KEEPALIVE}" -N 2>/dev/null |
+    -t "${REQUEST}" -q 1 -k "${KEEPALIVE}" 2>/dev/null |
 while IFS= read -r line; do
     [ -n "${line}" ] || continue
 
