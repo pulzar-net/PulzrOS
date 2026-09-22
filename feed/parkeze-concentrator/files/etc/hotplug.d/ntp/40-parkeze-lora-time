@@ -1,0 +1,44 @@
+#!/bin/sh
+#
+# Turn on the gateway's own uplink timestamps once NTP has set the clock. Why
+# they wait for this is in parkeze-lora-config, at time_fallback.
+#
+# Once per boot: the flag is on tmpfs, and every render after it exists already
+# has the right answer, so later sync events have nothing to do.
+
+case "${ACTION}" in step|stratum|periodic) ;; *) exit 0 ;; esac
+# Stratum 16 is busybox ntpd's "not synchronised".
+[ -n "${stratum}" ] && [ "${stratum}" -lt 16 ] 2>/dev/null || exit 0
+
+FLAG=/var/run/parkeze/clock-synced
+[ -f "${FLAG}" ] && exit 0
+mkdir -p /var/run/parkeze && touch "${FLAG}"
+logger -t lora -p daemon.info "clock set by NTP (stratum ${stratum}); uplinks now carry the gateway's receive time"
+
+# Concentratord alone, not the service. A reload re-runs hardware detection
+# against a concentrator that is running, and could restart the buffer broker,
+# whose queue may only be in RAM — this can fire the moment the network comes
+# back, which is exactly when that queue is full.
+#
+# Rendered aside and copied over, so a render that fails leaves the running
+# config intact rather than a truncated file for the respawn to choke on.
+slots="$(uci -q get parkeze.concentrator.slots || echo 0)"
+tmp="$(mktemp -d)"
+i=0
+while [ "${i}" -lt "${slots}" ]; do
+    dir="/var/run/parkeze/lora/slot${i}"
+    if [ -s "${dir}/concentratord.toml" ] \
+        && /usr/sbin/parkeze-lora-config "${i}" "${tmp}" >/dev/null 2>&1 \
+        && [ -s "${tmp}/concentratord.toml" ]; then
+        cp "${tmp}/concentratord.toml" "${dir}/concentratord.toml"
+    fi
+    i=$((i + 1))
+done
+rm -rf "${tmp}"
+
+# It reads its config only at start. procd respawns it with the new file after
+# its respawn delay (parkeze-packet-forwarder): ~10s deaf, once per boot.
+for pid in $(pgrep -f '^/usr/bin/chirpstack-concentratord-'); do
+    kill "${pid}" 2>/dev/null
+done
+exit 0

@@ -92,6 +92,22 @@ persistence_dir() {
     echo "${mount}/parkeze/queue"
 }
 
+# Whether broker <pid> holds an established TCP connection to remote port
+# <port>, which is the bridge and nothing else: with buffering on, the
+# forwarder talks to loopback. Read from the kernel because the image has no
+# MQTT client to ask the broker with, and adding one to 32MB of flash for this
+# is not worth it. Lags a real drop by up to ~1.5x the bridge keepalive (60s),
+# until TCP gives up on a peer that has gone quiet.
+bridge_up() {
+    local pid="$1" port inodes
+    port="$(printf ':%04X' "$2")"
+    inodes=" $(ls -l "/proc/${pid}/fd" 2>/dev/null \
+        | sed -n 's/.*socket:\[\([0-9]*\)\].*/\1/p' | tr '\n' ' ')"
+    awk -v port="${port}" -v inodes="${inodes}" '
+        $4 == "01" && substr($3, length($3) - 4) == port && index(inodes, " " $10 " ") { up = 1 }
+        END { exit !up }' /proc/net/tcp /proc/net/tcp6 2>/dev/null
+}
+
 render() {
     local host port user pass prefix eui queue persist region plan
     host="$(get parkeze.mqtt.host)"; [ -n "${host}" ] || host="${PARKEZE_MQTT_HOST}"
@@ -137,8 +153,6 @@ render() {
 listener ${PORT} 127.0.0.1
 allow_anonymous true
 
-autosave_interval 30
-
 # To syslog, so the gateway log has it. Without this mosquitto writes to
 # stderr, procd is not capturing stderr for this instance, and the broker is
 # the one process in the LoRa stack that cannot say what is wrong with it —
@@ -157,9 +171,15 @@ EOF
 
         if persist="$(persistence_dir)"; then
             mkdir -p "${persist}" 2>/dev/null
+            # Never on a timer. It used to autosave every 30s, which rewrote
+            # the whole database to the card twice a minute for the life of
+            # the gateway, almost always to record an empty queue. The queue
+            # lives in RAM; `watch` writes it out only while the uplink is
+            # down, which is the only time a power cut could cost anything.
             cat <<EOF
 persistence true
 persistence_location ${persist}/
+autosave_interval 0
 EOF
         else
             echo "persistence false"
@@ -218,9 +238,11 @@ status)
     on=false; enabled && on=true
     running=false
     pgrep -f "mosquitto -c ${CONF}" >/dev/null 2>&1 && running=true
-    # What is actually waiting. mosquitto keeps this in its persistence file,
-    # and its size is the only honest answer available without an admin
-    # interface the package does not build.
+    # What is waiting, as of the broker's last write to the card. That is
+    # current during an outage, which is when anybody asks, and stale-but-small
+    # otherwise: `watch` writes only while the uplink is down. Its size is the
+    # only answer available without an admin interface the package does not
+    # build.
     queued_bytes=0
     if persist="$(persistence_dir)" && [ -f "${persist}/mosquitto.db" ]; then
         queued_bytes="$(wc -c < "${persist}/mosquitto.db" 2>/dev/null || echo 0)"
@@ -231,8 +253,35 @@ status)
         "${PORT}" "${queued_bytes}"
     ;;
 
+watch)
+    # The card is a last resort, not the queue. While the uplink is up the
+    # queue drains as fast as it fills and there is nothing worth keeping, so
+    # nothing is written. While it is down, SIGUSR1 has the broker write its
+    # database every <interval>, so a power cut mid-outage costs at most that
+    # much. Once it is back, one more write, a cycle later so the queue has
+    # drained: otherwise the card keeps the outage's queue, and the next boot
+    # replays it (the LNS drops the repeats by frame counter, but it is noise).
+    persistence_dir >/dev/null || exit 0
+    interval="$(get parkeze.lorawan.buffer_save_seconds)"; interval="${interval:-60}"
+    port="$(get parkeze.mqtt.port)"; port="${port:-${PARKEZE_MQTT_PORT:-8883}}"
+    was_up=1
+    while sleep "${interval}"; do
+        pid="$(pgrep -f "mosquitto -c ${CONF}" | head -n1)"
+        [ -n "${pid}" ] || continue
+        if bridge_up "${pid}" "${port}"; then
+            [ "${was_up}" = 1 ] && continue
+            log "uplink back; writing the drained queue to the card once"
+            was_up=1
+        else
+            [ "${was_up}" = 1 ] && log "uplink down; writing the queue to the card every ${interval}s"
+            was_up=0
+        fi
+        kill -USR1 "${pid}" 2>/dev/null
+    done
+    ;;
+
 *)
-    echo "usage: parkeze-lora-buffer {render|status}" >&2
+    echo "usage: parkeze-lora-buffer {render|status|watch}" >&2
     exit 2
     ;;
 esac

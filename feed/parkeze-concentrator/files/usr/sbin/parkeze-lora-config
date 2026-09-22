@@ -122,6 +122,16 @@ gateway_id=""
 
 chip="/dev/${PARKEZE_GPIOCHIP:-gpiochip0}"
 
+# Stamp each uplink with the gateway's own clock, so one the buffer holds
+# through an outage reaches the LNS with when it was heard rather than when it
+# was finally sent. But only once NTP has set that clock: there is no RTC, so
+# after a power cut the clock restarts from whatever sysfixtime found, and a
+# timestamp hours wrong that the LNS accepts is worse than none — without one
+# it falls back to its own receive time, which is at least honest.
+# /etc/hotplug.d/ntp/40-parkeze-lora-time turns this on at first sync.
+time_fallback=false
+[ -f /var/run/parkeze/clock-synced ] && time_fallback=true
+
 {
     cat <<EOF
 [concentratord]
@@ -140,6 +150,7 @@ model="${model}"
 region="${CONCENTRATORD_REGION}"
 model_flags=[${flags}]
 antenna_gain=0
+time_fallback_enabled=${time_fallback}
 ${gateway_id}
 com_dev_path="${device}"
 ${gps}

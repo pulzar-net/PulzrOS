@@ -61,6 +61,15 @@ start_service() {
         procd_set_param command /usr/sbin/mosquitto -c /var/run/parkeze/lora/mosquitto.conf
         procd_set_param respawn 60 10 0
         procd_close_instance
+
+        # Writes the queue to the card during an outage, and only then. Only
+        # when the render actually gave the broker a card to write to.
+        if grep -q '^persistence true' /var/run/parkeze/lora/mosquitto.conf; then
+            procd_open_instance "buffer-save"
+            procd_set_param command /usr/sbin/parkeze-lora-buffer watch
+            procd_set_param respawn 60 10 0
+            procd_close_instance
+        fi
     fi
 
     slots="$(uci -q get parkeze.concentrator.slots || echo 0)"
