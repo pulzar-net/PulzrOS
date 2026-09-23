@@ -388,7 +388,7 @@ jobs:
       - name: Package for humans
         run: ./scripts/package-images.sh "${{ matrix.board }}" "$(cat VERSION)"
 
-      - name: Summarise
+      - name: Summarize
         run: |
           {
             echo "### ${{ matrix.board }} · ${{ matrix.target }}/${{ matrix.subtarget }}"

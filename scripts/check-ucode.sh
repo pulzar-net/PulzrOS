@@ -13,7 +13,7 @@
 # scripts/ucode-stubs/, which declare the real modules' exports. So this checks
 # syntax, module structure, *and* that every imported name actually exists —
 # provided the stubs are kept honest. It does not check argument counts or
-# runtime behaviour.
+# runtime behavior.
 
 set -uo pipefail
 

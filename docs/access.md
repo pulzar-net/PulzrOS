@@ -21,7 +21,7 @@ The setup AP still exists for the case the port cannot be reached, and it is
 off until somebody turns it on.
 
 So the design does not pick a point between them. It makes the recovery path
-useless to anyone who is not already authorised.
+useless to anyone who is not already authorized.
 
 ## The rule
 

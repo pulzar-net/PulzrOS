@@ -11,7 +11,7 @@ Sixteen channels is not one concentrator with twice the channels — it is two
 eight-channel parts on separate SPI buses. Concentratord drives one part per
 process, so a two-slot board runs two of it.
 
-Modelling every board as a list of slots, rather than treating one concentrator
+Modeling every board as a list of slots, rather than treating one concentrator
 as the general case and 16-channel as a special case, is what keeps the
 RAK7289CV2 from being a fork. `parkeze-concentrator-detect` and the packet
 forwarder init both just loop.

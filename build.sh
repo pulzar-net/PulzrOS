@@ -299,7 +299,7 @@ build_console() {
   rm -rf "${CONSOLE_PAYLOAD}"
   mkdir -p "${CONSOLE_PAYLOAD}"
 
-  # `npm ci` when there is a lockfile to honour, `npm install` on a fresh tree.
+  # `npm ci` when there is a lockfile to honor, `npm install` on a fresh tree.
   # ci is the right default: a gateway image should not pick up a different
   # dependency tree than the one that was tested because somebody built it on a
   # Tuesday.

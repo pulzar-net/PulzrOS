@@ -20,7 +20,7 @@ gh run download --repo parkezesolutions/ParkezeOS -n parkezeos-rpi4
 
 or grab the artifact from the Actions run in the browser.
 
-Leave Imager's OS customisation alone — the gear icon that offers to preset a
+Leave Imager's OS customization alone — the gear icon that offers to preset a
 hostname, WiFi and SSH keys. It writes a Raspberry Pi OS-shaped config that
 OpenWrt does not read, so nothing you set there applies and the image looks
 broken. ParkezeOS configures itself on first boot instead.
@@ -106,7 +106,7 @@ below are for when that has not happened.
 | **Serial** | 115200 8N1 on the GPIO header. The banner prints the console address and the initial password. |
 
 All three show the same claim code. Scan it or enter it at
-`https://parkeze.net/adopt`, pick the organisation, and the gateway finishes
+`https://parkeze.net/adopt`, pick the organization, and the gateway finishes
 adopting itself — see [`provisioning.md`](provisioning.md).
 
 The console will not let you past the initial password without changing it.

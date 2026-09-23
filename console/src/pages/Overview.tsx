@@ -57,7 +57,7 @@ export default function Overview() {
       {system.identity.serialSource === 'random' && (
         <Notice tone="warning">
           This gateway could not read a hardware serial and generated a random
-          one. It will not recognise itself after a reflash — raise this with
+          one. It will not recognize itself after a reflash — raise this with
           support before deploying it.
         </Notice>
       )}

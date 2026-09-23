@@ -8,7 +8,7 @@
 .mark {
   flex: 0 0 auto;
   display: block;
-  /* The logo is a transparent PNG with its own colour. No plate behind it and
+  /* The logo is a transparent PNG with its own color. No plate behind it and
      no tint over it: it is the only piece of Parkeze identity on the device,
      and a brand mark that changes shade per surface stops reading as one. */
   object-fit: contain;

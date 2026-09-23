@@ -61,7 +61,7 @@
 
   /* ---- network signal scale ----
      RSSI / SNR quality, weak → strong. Net-specific: the dashboard has no
-     equivalent, but these are derived from the shared status colours so a
+     equivalent, but these are derived from the shared status colors so a
      coverage map still reads as Parkeze. */
   --signal-none:   #cbd5e1;
   --signal-weak:   #ef4444;

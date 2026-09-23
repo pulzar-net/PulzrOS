@@ -14,7 +14,7 @@ const ICONS = {
 /**
  * An inline message.
  *
- * Carries an icon as well as a colour for the same reason Badge carries a
+ * Carries an icon as well as a color for the same reason Badge carries a
  * word: the difference between "applied" and "failed" must not rest on hue
  * alone.
  */

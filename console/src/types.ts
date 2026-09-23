@@ -51,7 +51,7 @@ export interface SystemSummary {
     gatewayEui: string | null;
     serial: string | null;
     /** 'cpuinfo' | 'eth0' | 'random'. A random serial means this gateway will
-        not recognise itself after a reflash, which the UI surfaces. */
+        not recognize itself after a reflash, which the UI surfaces. */
     serialSource: string | null;
     board: string | null;
     boardName: string | null;
