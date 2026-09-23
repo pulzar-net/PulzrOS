@@ -11,7 +11,7 @@ export default function Metric({
   label: string;
   value: ReactNode;
   meta?: ReactNode;
-  /** Colours the number for the states worth noticing across a room. */
+  /** Colors the number for the states worth noticing across a room. */
   tone?: 'default' | 'warning' | 'error';
 }) {
   return (

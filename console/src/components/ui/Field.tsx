@@ -3,7 +3,7 @@ import { useId } from 'react';
 import styles from './Field.module.css';
 
 /**
- * A labelled form control.
+ * A labeled form control.
  *
  * The label is wired to the control with a generated id rather than by
  * wrapping, so a screen reader announces it and a tap on the label focuses the

@@ -68,7 +68,7 @@ that profile's own pins:
     uci commit parkeze
     /etc/init.d/parkeze-packet-forwarder restart
 
-Adding support for a HAT this catalogue does not know is a new profile file
+Adding support for a HAT this catalog does not know is a new profile file
 with its pins, model and known_as — no script change, and it appears in the
 console's menu the moment the package ships it. The same file is also the
 authority "the model" the paragraph below is about.

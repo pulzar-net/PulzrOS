@@ -31,7 +31,7 @@ import styles from './Onboarding.module.css';
  *
  *   1. Power the gateway on, join its LAN, open the console.
  *   2. Scan the code with a phone. That opens parkeze.net.
- *   3. Sign in there, pick the organisation.
+ *   3. Sign in there, pick the organization.
  *   4. This page notices, on its own, and turns green.
  *
  * Nobody types a credential into the gateway and nobody goes back to it.

@@ -9,7 +9,7 @@
 # if it is checked against the original, so this diffs the two over inputs that
 # exercise every smushing rule the slant font asks for.
 #
-# `-w 9999` disables figlet's line wrapping, which is the one behaviour
+# `-w 9999` disables figlet's line wrapping, which is the one behavior
 # parkeze-figlet deliberately does not implement.
 #
 # Skips itself if figlet is not installed, so it can live in CI without making

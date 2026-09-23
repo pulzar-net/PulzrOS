@@ -39,7 +39,7 @@ export function count(value: number | null | undefined): string {
  * RSSI to a five-step quality band, matching the --signal-* tokens.
  *
  * The thresholds are the conventional LTE ones. They are here rather than
- * inline so the coverage colours mean the same thing everywhere they appear.
+ * inline so the coverage colors mean the same thing everywhere they appear.
  */
 export function signalBand(
   rssi: number | null | undefined,

@@ -100,7 +100,7 @@ export default function Layout({ unadopted }: { unadopted?: boolean } = {}) {
  *
  * Persistent and not dismissible, because the thing it is warning about is
  * persistent: nothing here is backed up, nobody is watching it, and the
- * settings being changed will be overwritten by the organisation's on
+ * settings being changed will be overwritten by the organization's on
  * adoption. A banner you can close is a banner that is closed on the one
  * screen where it mattered.
  */
@@ -110,7 +110,7 @@ function UnadoptedBanner() {
       <ShieldAlert size={15} strokeWidth={1.9} />
       <span>
         <strong>Not adopted.</strong> This gateway is not managed by any
-        organisation. Its configuration is local only, and adoption will
+        organization. Its configuration is local only, and adoption will
         replace it.
       </span>
       <Link className={styles.unadoptedAction} to="/adopt">

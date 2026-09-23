@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import styles from './Fact.module.css';
 
 /**
- * One labelled fact.
+ * One labeled fact.
  *
  * Every page here is mostly a list of these, so they share one component and
  * therefore one label column width — without it the same field sits at a

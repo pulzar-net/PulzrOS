@@ -17,12 +17,12 @@ types a credential into the device and nobody goes back to it.
   register  ──────────────────────────────────────────────▶ pending claim
   show QR   ─────────▶ scan
                        └ open /adopt#<claim_id> ──────────▶ sign in
-                                                            pick organisation
+                                                            pick organization
                                                             ▼
                                                             adopted
   poll (with secret) ────────────────────────────────────▶ verify commitment
        ◀──────────────────────────────────── bundle: MQTT, anchor
-   └ adopt itself, disable local login, enrol its WireGuard key
+   └ adopt itself, disable local login, enroll its WireGuard key
 ```
 
 Steps 1–3 take about fifteen seconds. The gateway polls every 5s for the first
@@ -38,8 +38,8 @@ the phone.
 
 This split is the whole security argument. A QR on a screen in a rack is
 visible to anyone walking past. Seeing it lets them add the gateway to an
-organisation they can already administer — which is not an attack — but not
-fetch its broker credentials or enrol a tunnel key, because both need the
+organization they can already administer — which is not an attack — but not
+fetch its broker credentials or enroll a tunnel key, because both need the
 preimage of the commitment and
 the commitment is all parkeze.net ever stores.
 

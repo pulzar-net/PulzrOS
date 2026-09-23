@@ -3,7 +3,7 @@ import styles from './Brand.module.css';
 /**
  * The Parkeze mark, in one place.
  *
- * It was previously a letter "P" on a coloured square, duplicated in three
+ * It was previously a letter "P" on a colored square, duplicated in three
  * files with three slightly different sizes. This is the real logo, shipped
  * with the firmware rather than fetched: a gateway console has to render with
  * no internet at all, which is most of the point of it existing.

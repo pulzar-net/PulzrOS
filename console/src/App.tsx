@@ -59,7 +59,7 @@ export default function App() {
 
   // Claiming is what an unadopted gateway is usually here to do, so it is what
   // opens — but it is no longer a wall. The console is reachable before
-  // adoption, because "look at it before committing it to an organisation" is
+  // adoption, because "look at it before committing it to an organization" is
   // a reasonable thing to want and there was no way to do it: the claim screen
   // was the only thing an unadopted gateway would render.
   //

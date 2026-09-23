@@ -85,7 +85,7 @@ against a key the gateway only ever holds the **public** half of.
 
 - The gateway stores **no secret that grants access to it**. Dump the flash of
   a stolen gateway and you get a public key, which is worth nothing.
-- Every recovery is authorised and audited centrally, even though the gateway
+- Every recovery is authorized and audited centrally, even though the gateway
   was never online.
 - The nonce makes each signature good exactly once, for one device. A recovery
   code left in a chat window is not a standing key.

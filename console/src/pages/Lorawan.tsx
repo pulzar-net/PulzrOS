@@ -21,7 +21,7 @@ import { bytes, count } from '@/lib/format';
  *
  * Received and forwarded are shown separately and never summed. They answer
  * different questions with different fixes — nothing heard means antenna,
- * region plan, or a concentrator that never initialised; heard but not
+ * region plan, or a concentrator that never initialized; heard but not
  * forwarded means backhaul, bridge credentials, or the multiplexer. A single
  * "packets" number gets those diagnosed as each other.
  *

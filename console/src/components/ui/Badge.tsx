@@ -6,7 +6,7 @@ export type Tone = 'success' | 'warning' | 'error' | 'neutral' | 'info';
 /**
  * A status pill.
  *
- * Always colour *plus a word*, never colour alone — roughly one man in twelve
+ * Always color *plus a word*, never color alone — roughly one man in twelve
  * cannot separate the green from the red, and "is this gateway up" is exactly
  * the question you do not want answered ambiguously.
  */

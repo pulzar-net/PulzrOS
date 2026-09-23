@@ -99,7 +99,7 @@ not carry it: `tailscaled` is a 26MB Go binary that left about 13MB of RAM free
 at boot and stalled startup for minutes. WireGuard is in the kernel; the
 package is about 60KB and there is no daemon.
 
-**Enrolment.** The gateway generates its keypair on first start
+**Enrollment.** The gateway generates its keypair on first start
 (`/etc/parkeze/wireguard/`, private half 0600) and only the public half ever
 leaves it. Once adopted, `parkeze-wireguard-enroll` posts that key to
 `/api/v1/gateway-ops/wireguard/enroll`, proving which gateway it is with the
@@ -152,7 +152,7 @@ first one's job.
 The service refuses to bring the tunnel up if the rules did not install.
 
 **What it means operationally.** When ethernet drops, the hub stops hearing
-the gateway and its handshake goes stale. That is the designed behaviour, not a
+the gateway and its handshake goes stale. That is the designed behavior, not a
 fault: parkeze.net sees it and manages the gateway over the SIM instead. A
 cellular-only gateway simply never completes a handshake, at no cost — its
 packets have no route. The one thing that can escape is the DNS lookup for the

@@ -69,7 +69,7 @@ grab kernel          'uname -a'
 
 # ── the device tree ─────────────────────────────────────────────────────────
 #
-# The single most valuable artefact. `dtc -I fs` walks the live
+# The single most valuable artifact. `dtc -I fs` walks the live
 # /sys/firmware/devicetree and reconstructs source from it, so this is the
 # hardware's own description rather than anybody's reading of a datasheet.
 say "Device tree"
