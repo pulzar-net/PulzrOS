@@ -120,7 +120,7 @@ docs/             the design decisions worth writing down
   two concentrators, and kit versus product boards.
 - [`docs/boards.md`](docs/boards.md) — adding a board, and adding a
   concentrator.
-- [`devices/README.md`](devices/README.md) — porting a board OpenWrt does not
+- [`openwrt-device-template`](https://github.com/parkeze/openwrt-device-template) — porting a board OpenWrt does not
   support, and why the flash layout has to come off the hardware rather than a
   datasheet.
 

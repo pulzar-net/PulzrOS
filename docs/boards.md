@@ -83,7 +83,7 @@ why detection disagrees.
 | `rpi4` | bcm27xx/bcm2711 | 1 slot, `auto` | Kit. Any bus. |
 | `rpi5` | bcm27xx/bcm2712 | 1 slot, `auto` | Kit. GPIO is behind the RP1 — see `PARKEZE_GPIOCHIP`. |
 | `rak7268c` | ramips/mt76x8 | 1 slot, fixed SPI | **Unverified.** 8 channels. |
-| `rak7268cv2` | ramips/mt76x8 | 1 slot, fixed SPI | Harvested. ImageBuilder from parkeze/openwrt-devices. 8 channels. |
+| `rak7268cv2` | ramips/mt76x8 | 1 slot, fixed SPI | Harvested. ImageBuilder from parkeze/openwrt-rak7268cv2. 8 channels. |
 | `rak7289cv2` | ramips/mt76x8 | 2 slots, fixed SPI | **Unverified.** 16 channels. |
 
 The Pi boards share `boards/common/raspberrypi.conf` and the RAK boards share
@@ -91,12 +91,12 @@ The Pi boards share `boards/common/raspberrypi.conf` and the RAK boards share
 lines of genuine difference.
 
 `rak7268cv2` was harvested from a stock unit. Its OpenWrt device support
-lives in the public [parkeze/openwrt-devices](https://github.com/parkeze/openwrt-devices)
+lives in the public [parkeze/openwrt-rak7268cv2](https://github.com/parkeze/openwrt-rak7268cv2)
 repo, whose releases publish an ImageBuilder with it added; the board points
 `OPENWRT_IMAGEBUILDER_URL` at one, and `build.sh` downloads and verifies it
 like a stock one. The other two RAK
 boards are still written from published specifications; see
-[`../devices/README.md`](../devices/README.md) for taking one through the same
+[openwrt-device-template](https://github.com/parkeze/openwrt-device-template) for taking one through the same
 process.
 
 ## A Compute Module carrier

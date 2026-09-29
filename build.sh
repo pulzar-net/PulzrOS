@@ -93,7 +93,7 @@ list_boards_json() {
 # ── ImageBuilder ────────────────────────────────────────────────────────────
 
 # Where the ImageBuilder and its sha256sums come from. downloads.openwrt.org
-# unless the board names a release of parkeze/openwrt-devices, which publishes
+# unless the board names a release of a parkeze/openwrt-<model> repo, which publishes
 # the same files for devices upstream does not support yet.
 imagebuilder_base() {
   echo "${OPENWRT_IMAGEBUILDER_URL:-https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/targets/${OPENWRT_TARGET}/${OPENWRT_SUBTARGET}}"
