@@ -84,7 +84,7 @@ why detection disagrees.
 | `rpi5` | bcm27xx/bcm2712 | 1 slot, `auto` | Kit. GPIO is behind the RP1 — see `PARKEZE_GPIOCHIP`. |
 | `rak7268c` | ramips/mt76x8 | 1 slot, fixed SPI | **Unverified.** 8 channels. |
 | `rak7268cv2` | ramips/mt76x8 | 1 slot, fixed SPI | Harvested. ImageBuilder from parkeze/openwrt-rak7268cv2. 8 channels. |
-| `rak7289cv2` | ramips/mt76x8 | 2 slots, fixed SPI | **Unverified.** 16 channels. |
+| `rak7289cv2` | ramips/mt76x8 | 2 slots, fixed USB | **Unverified.** 16 channels. ImageBuilder from parkeze/openwrt-rak7289cv2. |
 
 The Pi boards share `boards/common/raspberrypi.conf` and the RAK boards share
 `boards/common/rakwireless.conf`, so each individual board file is a dozen
@@ -94,10 +94,17 @@ lines of genuine difference.
 lives in the public [parkeze/openwrt-rak7268cv2](https://github.com/parkeze/openwrt-rak7268cv2)
 repo, whose releases publish an ImageBuilder with it added; the board points
 `OPENWRT_IMAGEBUILDER_URL` at one, and `build.sh` downloads and verifies it
-like a stock one. The other two RAK
-boards are still written from published specifications; see
-[openwrt-device-template](https://github.com/parkeze/openwrt-device-template) for taking one through the same
-process.
+like a stock one.
+
+`rak7289cv2` shares the RAK636 board, so its device support was written from
+that same shipping firmware rather than a fresh harvest — [parkeze/openwrt-rak7289cv2](https://github.com/parkeze/openwrt-rak7289cv2),
+built from [openwrt-device-template](https://github.com/parkeze/openwrt-device-template).
+Its two radios are RAK5146 (SX1303) cards on **USB** (`/dev/ttyACM0`,
+`/dev/ttyACM1`), not SPI — the one hardware difference from the Lite. It stays
+`needs-device-support` until that repo publishes its `24.10.0-1` release and a
+unit confirms which ttyACM is which radio and that GNSS answers on `/dev/ttyS1`.
+`rak7268c` is still written from published specifications; see the template's
+README for taking a board through the same process.
 
 ## A Compute Module carrier
 

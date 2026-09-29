@@ -243,7 +243,19 @@ detect_slot() {
         # not start, and the console shows the forwarder not running.
         case "${bus}" in
             spi)  detected="${PARKEZE_CONCENTRATOR_PART:-sx1302_spi}" ;;
-            usb)  detected="$(probe_usb)" ;;
+            usb)
+                # A product names the exact ttyACM/ttyUSB each concentrator is
+                # on. Key presence to that specific node existing, not to
+                # probe_usb's "is any concentrator on USB at all" — on the
+                # two-slot RAK7289CV2 the generic probe answers yes for both
+                # slots off one module, reporting 16 channels when only 8
+                # answered. Keyed to the node, a missing second module reads
+                # absent and the gateway lands in the loud `partial` state.
+                # A kit's USB slot is "auto" and never reaches this branch.
+                if [ -c "${device}" ]; then
+                    detected="${PARKEZE_CONCENTRATOR_PART:-sx1302_usb}"
+                fi
+                ;;
             uart) detected="sx1302_uart" ;;   # cannot be probed; the board says so
         esac
         if [ -z "${detected}" ]; then
