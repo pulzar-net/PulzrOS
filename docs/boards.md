@@ -84,7 +84,7 @@ why detection disagrees.
 | `rpi5` | bcm27xx/bcm2712 | 1 slot, `auto` | Kit. GPIO is behind the RP1 — see `PARKEZE_GPIOCHIP`. |
 | `rak7268c` | ramips/mt76x8 | 1 slot, fixed SPI | **Unverified.** 8 channels. |
 | `rak7268cv2` | ramips/mt76x8 | 1 slot, fixed SPI | Harvested. ImageBuilder from parkeze/openwrt-rak7268cv2. 8 channels. |
-| `rak7289cv2` | ramips/mt76x8 | 2 slots, fixed USB | **Unverified.** 16 channels. ImageBuilder from parkeze/openwrt-rak7289cv2. |
+| `rak7289cv2` | ramips/mt76x8 | 2 slots, fixed USB | **Supported.** Full ParkezeOS bench-confirmed on a single-radio unit (concentratord, 8 ch, GPS, adoption); two-slot structure ready, LoRa1/LoRa2 order to be confirmed on a dual-card Pro. 16 channels. ImageBuilder from parkeze/openwrt-rak7289cv2. |
 
 The Pi boards share `boards/common/raspberrypi.conf` and the RAK boards share
 `boards/common/rakwireless.conf`, so each individual board file is a dozen
@@ -100,9 +100,13 @@ like a stock one.
 that same shipping firmware rather than a fresh harvest — [parkeze/openwrt-rak7289cv2](https://github.com/parkeze/openwrt-rak7289cv2),
 built from [openwrt-device-template](https://github.com/parkeze/openwrt-device-template).
 Its two radios are RAK5146 (SX1303) cards on **USB** (`/dev/ttyACM0`,
-`/dev/ttyACM1`), not SPI — the one hardware difference from the Lite. It stays
-`needs-device-support` until that repo publishes its `24.10.0-1` release and a
-unit confirms which ttyACM is which radio and that GNSS answers on `/dev/ttyS1`.
+`/dev/ttyACM1`), not SPI — the one hardware difference from the Lite. A bench
+run of the full `24.10.0-1` ParkezeOS image confirmed it boots as
+`rakwireless,rak7289cv2` with concentratord driving the SX1303 on
+`/dev/ttyACM0` (8 channels, gateway ID read off the hardware) and GNSS on
+`/dev/ttyS1`; the absent second card was reported as the partial state. It is
+`supported` on that basis — the two-slot structure is ready — with only the
+silkscreen LoRa1/LoRa2 order left to confirm on a Pro with both cards.
 `rak7268c` is still written from published specifications; see the template's
 README for taking a board through the same process.
 
