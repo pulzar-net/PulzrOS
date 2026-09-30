@@ -30,13 +30,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
         git \
         python3 \
+        python3-distutils \
+        gawk \
         rsync \
         binutils \
         openssl \
         perl \
     && rm -rf /var/lib/apt/lists/*
 
-# ImageBuilder resolves a handful of tools by unqualified name and expects a
-# GNU userland; bookworm-slim has one, so nothing else is needed here.
+# ImageBuilder's prereq check specifically wants GNU awk (bookworm-slim ships
+# mawk) and the Python3 distutils module, so both are installed explicitly. The
+# remaining prereq — a case-sensitive filesystem — cannot hold on a macOS bind
+# mount, so build.sh passes FORCE=1 to make; ImageBuilder assembly tolerates it.
 
 WORKDIR /src

@@ -13,9 +13,11 @@ feed/parkeze-console/files/www/
 
 # Operator authorized_keys, assembled by build.sh from keys/*.pub. Generated
 # on every build from the sources in keys/ — committing it would let a stale
-# copy ship after somebody's key is removed.
+# copy ship after somebody's key is removed. Same for the fleet-keys bundle
+# build.sh writes alongside them.
 boards/common/files/etc/dropbear/authorized_keys
 boards/common/files/root/.ssh/authorized_keys
+boards/common/files/usr/share/parkeze/fleet-keys
 
 # The fleet recovery PUBLIC key, copied in by build.sh. Public, but it belongs
 # to a deployment rather than to this repo — an image built from a checkout
