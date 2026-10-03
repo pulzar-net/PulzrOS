@@ -1,5 +1,6 @@
-import type { InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from 'react';
+import type { InputHTMLAttributes, ReactNode } from 'react';
 import { useId } from 'react';
+import Select, { type SelectOption } from './Select';
 import styles from './Field.module.css';
 
 /**
@@ -56,18 +57,25 @@ export function TextField({
   );
 }
 
-export function SelectField({
+export function SelectField<V extends string = string>({
   label,
   hint,
-  children,
-  ...rest
-}: SelectHTMLAttributes<HTMLSelectElement> & { label: string; hint?: ReactNode }) {
+  value,
+  onChange,
+  options,
+  disabled,
+}: {
+  label: string;
+  hint?: ReactNode;
+  value: V;
+  onChange: (value: V) => void;
+  options: SelectOption<V>[];
+  disabled?: boolean;
+}) {
   const id = useId();
   return (
     <Wrapper label={label} hint={hint} htmlFor={id}>
-      <select id={id} {...rest} className={styles.input}>
-        {children}
-      </select>
+      <Select id={id} value={value} onChange={onChange} options={options} disabled={disabled} />
     </Wrapper>
   );
 }

@@ -9,12 +9,20 @@ import Fact, { FactList } from '@/components/Fact';
 import Notice from '@/components/ui/Notice';
 import Button from '@/components/ui/Button';
 import { SelectField, TextField } from '@/components/ui/Field';
+import type { SelectOption } from '@/components/ui/Select';
 import PageHeader from '@/components/PageHeader';
 import Spinner from '@/components/ui/Spinner';
 import ErrorState from '@/components/ErrorState';
 import styles from './Pages.module.css';
 
 const REGIONS = ['US915', 'EU868', 'AU915', 'AS923', 'IN865', 'KR920', 'RU864'];
+
+const BUSES: SelectOption<Slot['bus']>[] = [
+  { value: '', label: 'Automatic' },
+  { value: 'spi', label: 'SPI' },
+  { value: 'usb', label: 'USB' },
+  { value: 'uart', label: 'UART' },
+];
 
 /**
  * Concentrator hardware, one card per slot.
@@ -113,15 +121,10 @@ function RegionCard({ region, onSaved }: { region: string; onSaved: () => void }
       <SelectField
         label="Region"
         value={value}
-        onChange={(event) => setValue(event.target.value)}
+        onChange={setValue}
+        options={REGIONS.map((option) => ({ value: option, label: option }))}
         hint="Must match the regulatory region this gateway is installed in. Applies to every slot."
-      >
-        {REGIONS.map((option) => (
-          <option key={option} value={option}>
-            {option}
-          </option>
-        ))}
-      </SelectField>
+      />
 
       {save.isError && <Notice tone="error">{(save.error as Error).message}</Notice>}
       {save.isSuccess && (
@@ -210,28 +213,23 @@ function SlotCard({
           <SelectField
             label="Part"
             value={override}
-            onChange={(event) => setOverride(event.target.value)}
+            onChange={setOverride}
+            options={[
+              { value: '', label: 'Automatic — use what is detected' },
+              ...view.supported.map((part) => ({
+                value: part.id,
+                label: part.detectable ? part.name : `${part.name} — manual only`,
+              })),
+            ]}
             hint="Automatic uses whatever the probe finds. Choose a part explicitly only if the probe gets it wrong, or for a UART concentrator, which cannot be detected."
-          >
-            <option value="">Automatic — use what is detected</option>
-            {view.supported.map((part) => (
-              <option key={part.id} value={part.id}>
-                {part.name}
-                {part.detectable ? '' : ' — manual only'}
-              </option>
-            ))}
-          </SelectField>
+          />
 
           <SelectField
             label="Bus"
             value={bus}
-            onChange={(event) => setBus(event.target.value as Slot['bus'])}
-          >
-            <option value="">Automatic</option>
-            <option value="spi">SPI</option>
-            <option value="usb">USB</option>
-            <option value="uart">UART</option>
-          </SelectField>
+            onChange={setBus}
+            options={BUSES}
+          />
 
           <TextField
             label="Device"

@@ -3,7 +3,8 @@ import { useQuery } from '@tanstack/react-query';
 import { ScrollText } from 'lucide-react';
 import { api } from '@/services/api';
 import Card from '@/components/ui/Card';
-import { CheckboxField, SelectField } from '@/components/ui/Field';
+import { CheckboxField } from '@/components/ui/Field';
+import Select from '@/components/ui/Select';
 import PageHeader from '@/components/PageHeader';
 import Spinner from '@/components/ui/Spinner';
 import ErrorState from '@/components/ErrorState';
@@ -47,17 +48,13 @@ export default function Logs() {
         note={`${visible.length} lines`}
         actions={
           <>
-            <SelectField
-              label=""
+            <Select
+              inline
+              aria-label="Lines"
               value={String(lines)}
-              onChange={(event) => setLines(Number(event.target.value))}
-            >
-              {SIZES.map((size) => (
-                <option key={size} value={size}>
-                  Last {size}
-                </option>
-              ))}
-            </SelectField>
+              onChange={(value) => setLines(Number(value))}
+              options={SIZES.map((size) => ({ value: String(size), label: `Last ${size}` }))}
+            />
             <CheckboxField
               label="Follow"
               checked={follow}
