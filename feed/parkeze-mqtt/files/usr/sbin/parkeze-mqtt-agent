@@ -354,7 +354,18 @@ while IFS= read -r line; do
         > "${STATE_DIR}/response.json"
     publish "${RESPONSE}" "${STATE_DIR}/response.json"
     log "${op:-?} -> ${ok}"
-done
+done &
+
+# Backgrounded and waited on, with the pipeline killed on the way out.
+#
+# procd stops this by signalling its one pid, the shell. Run in the foreground,
+# the pipeline survived that: ash does not run a trap while it waits on a
+# foreground pipeline, and nothing else signals mosquitto_sub or the read loop.
+# Every restart left the previous subscription connected, so a gateway that
+# had been restarted once answered every management request twice. `wait` is
+# interruptible, so the trap runs, and both halves are this shell's children.
+trap 'kill $(pgrep -P $$) 2>/dev/null; exit 0' TERM INT
+wait $!
 
 # How long it lasted is the only signal available for why it ended:
 # mosquitto_sub's stderr is discarded (it would otherwise log a line per

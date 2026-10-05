@@ -52,6 +52,7 @@ EOF
     uci commit parkeze
     rm -f "${STATE}/recovery.pub" "${STATE}/wireguard/tunnel.json"
     /etc/init.d/parkeze-wireguard stop >/dev/null 2>&1
+    /etc/init.d/parkeze-mqtt-agent stop >/dev/null 2>&1
     echo "Released. Local sign-in is enabled again."
 }
 
@@ -219,6 +220,10 @@ EOF
     # Starts the MQTT forwarder alongside concentratord: it only runs once
     # adopted and holding broker credentials, which is this moment.
     /etc/init.d/parkeze-packet-forwarder restart >/dev/null 2>&1
+    # The management agent is not running before this: it is only started once
+    # there are broker credentials, and `uci commit` from a shell does not fire
+    # the config trigger that would otherwise notice.
+    /etc/init.d/parkeze-mqtt-agent restart >/dev/null 2>&1
     /etc/init.d/parkeze-claim stop >/dev/null 2>&1
 
     # The other half of the pair: claiming stops, reporting starts. Enabled as
