@@ -7,7 +7,7 @@
  * commit — `npm run typecheck` in CI is what catches it when it does not.
  */
 
-export type SessionKind = 'local' | 'sso' | 'recovery';
+export type SessionKind = 'local' | 'sso' | 'recovery' | 'lan';
 
 export interface Session {
   subject: string;
@@ -259,8 +259,9 @@ export interface GpsStatus {
   altitude?: number;
   device?: string;
   /** 'direct' when read from the receiver, 'forwarder' when the packet
-      forwarder holds the serial port and this came from its last report. */
-  source?: 'direct' | 'forwarder';
+      forwarder holds the serial port and this came from its last report,
+      'modem' when the cellular modem is the source. */
+  source?: 'direct' | 'forwarder' | 'modem';
   /** What the gateway actually announces to the network server. */
   reference?: {
     latitude: string | null;
@@ -269,6 +270,61 @@ export interface GpsStatus {
     source: string | null;
     fixedAt: string | null;
   };
+  /** Where the position comes from. See parkeze-gps for each source. */
+  config: {
+    source: GnssSource;
+    /** The concentrator the receiver is given to, for 'concentrator'. */
+    slot: number;
+    /** The receiver, for 'device'. */
+    device: string;
+    baud: number;
+  };
+  options: {
+    modem: boolean;
+    slots: { index: number; status: string }[];
+  };
+}
+
+export type GnssSource = 'auto' | 'modem' | 'concentrator' | 'device';
+
+// ── forwarders ──────────────────────────────────────────────────────────────
+
+/** One concentrator slot's concentratord and MQTT forwarder. */
+export interface Forwarder {
+  index: number;
+  slot: Slot;
+  running: boolean;
+  forwarding: boolean;
+  gatewayId: string | null;
+  /** The forwarder's own report: 'connected', 'error', or null before it has
+      said anything. */
+  mqtt: string | null;
+  stats: {
+    received: number;
+    forwarded: number;
+    transmitted: number;
+    crcOkPercent: number;
+    lastUplink: string | null;
+  } | null;
+  gnss: { attached: boolean; device: string | null };
+}
+
+export interface ForwardersView {
+  region: string | null;
+  mqtt: {
+    host: string | null;
+    port: number;
+    topicPrefix: string | null;
+    username: string | null;
+    buffered: boolean;
+  };
+  location: {
+    latitude: string | null;
+    longitude: string | null;
+    altitude: string | null;
+    source: string | null;
+  };
+  forwarders: Forwarder[];
 }
 
 // ── io ──────────────────────────────────────────────────────────────────────
@@ -355,6 +411,15 @@ export interface AccessStatus {
   portal: { up: boolean; address?: string };
   port: EthernetPort;
   adopted: boolean;
+  wifi:
+    | { configured: false }
+    | {
+        configured: true;
+        ssid: string;
+        up: boolean;
+        address: string | null;
+        signal: number | null;
+      };
 }
 
 export interface WifiNetwork {
@@ -362,4 +427,81 @@ export interface WifiNetwork {
   signal: number;
   quality: number;
   encryption: 'psk' | 'open';
+}
+
+// ── resources ───────────────────────────────────────────────────────────────
+
+export interface SystemStats {
+  uptime: number;
+  cpu: {
+    model: string | null;
+    core: string | null;
+    cores: number;
+    bogomips: number | null;
+    /** Jiffies since boot, all states and idle. Usage is the change between
+        two polls; one reading alone says nothing about now. */
+    total: number;
+    idle: number;
+    load: [number, number, number];
+    running: number;
+    processes: number;
+  };
+  memory: {
+    total: number;
+    available: number;
+    free: number;
+    cached: number;
+    buffers: number;
+    shared: number;
+    swapTotal: number;
+    swapFree: number;
+  };
+  storage: {
+    mount: string;
+    label: string;
+    device: string;
+    total: number;
+    used: number;
+    available: number;
+  }[];
+  /** Empty on a board with no sensor Linux can see. */
+  temperatures: { name: string; celsius: number }[];
+  power: {
+    name: string;
+    type: string;
+    online: number | null;
+    capacity: number | null;
+    volts: number | null;
+  }[];
+  interfaces: { name: string; state: string; rx: number | null; tx: number | null }[];
+  processes: { pid: number; name: string; rss: number }[];
+}
+
+/** parkeze-stats' ring, averaged into at most 360 points. */
+export interface SystemHistory {
+  interval: number;
+  points: {
+    t: number;
+    /** Percent, 0 to 100. */
+    cpu: number;
+    mem: number;
+    memTotal: number;
+    load: number;
+    /** Bytes per second, [down, up], per interface. */
+    net: Record<string, [number, number]>;
+  }[];
+}
+
+export interface ProcessList {
+  /** The machine's CPU ticks since boot, to turn two polls into percentages. */
+  total: number;
+  processes: {
+    pid: number;
+    name: string;
+    command: string;
+    state: string;
+    ticks: number;
+    threads: number;
+    rss: number;
+  }[];
 }

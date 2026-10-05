@@ -6,6 +6,10 @@
   border-radius: 999px;
   font-size: 11px;
   font-weight: 600;
+  /* Its own, so a badge is the same size wherever it sits rather than growing
+     with the line height of the row around it. */
+  line-height: 16px;
+  vertical-align: middle;
   white-space: nowrap;
 }
 

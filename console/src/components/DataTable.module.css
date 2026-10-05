@@ -1,0 +1,54 @@
+.scroller {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 12px;
+}
+
+.table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-primary);
+  padding: 7px 10px;
+  text-align: left;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.table th svg { margin-left: 4px; vertical-align: -1px; }
+.sortable { cursor: pointer; }
+.sortable:hover { color: var(--text-primary); }
+
+.table td {
+  padding: 5px 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border-primary) 60%, transparent);
+  vertical-align: top;
+  color: var(--text-primary);
+}
+
+.table tbody tr:hover td { background: var(--bg-secondary); }
+
+/* Numbers right-aligned in tabular figures, so a column of them reads down. */
+.table .numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.empty {
+  padding: 24px 10px !important;
+  text-align: center;
+  color: var(--text-tertiary) !important;
+}

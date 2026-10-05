@@ -68,6 +68,16 @@
   --signal-fair:   #f59e0b;
   --signal-good:   #84cc16;
   --signal-strong: #10b981;
+
+  /* ---- charts ----
+     Run through the dataviz palette validator against this surface, light and
+     dark. The accent itself is too light to draw with on white (2.5:1), so a
+     single series uses its darker step. Down and up are the reference palette's
+     first two categorical slots. */
+  --chart-1:     #059669;
+  --chart-down:  #2a78d6;
+  --chart-up:    #eb6834;
+  --chart-grid:  #edf1f5;
 }
 
 html.dark {
@@ -105,4 +115,9 @@ html.dark {
   --signal-fair:   #fbbf24;
   --signal-good:   #a3e635;
   --signal-strong: #34d399;
+
+  --chart-1:     #12a676;
+  --chart-down:  #3987e5;
+  --chart-up:    #d95926;
+  --chart-grid:  #1f2738;
 }

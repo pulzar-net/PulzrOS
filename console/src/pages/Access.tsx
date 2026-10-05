@@ -1,18 +1,16 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Cable, Eye, EyeOff, Radio, ShieldAlert } from 'lucide-react';
+import { Eye, EyeOff, Radio } from 'lucide-react';
 import { api } from '@/services/api';
-import type { AccessStatus } from '@/types';
-import Card from '@/components/ui/Card';
-import Badge from '@/components/ui/Badge';
+import type { AccessStatus, BackhaulStatus } from '@/types';
+import Section from '@/components/ui/Section';
+import Badge, { StatusBadge } from '@/components/ui/Badge';
 import Fact, { FactList } from '@/components/Fact';
 import Notice from '@/components/ui/Notice';
 import Button from '@/components/ui/Button';
 import { CheckboxField } from '@/components/ui/Field';
-import PageHeader from '@/components/PageHeader';
 import Spinner from '@/components/ui/Spinner';
 import ErrorState from '@/components/ErrorState';
-import WifiJoin from '@/components/WifiJoin';
 import { duration } from '@/lib/format';
 import styles from './Pages.module.css';
 
@@ -47,10 +45,8 @@ export default function Access() {
 
   return (
     <div className="fade-in">
-      <PageHeader title="Access" />
-
       <ApCard state={state} onChange={refresh} />
-      <WifiJoin />
+      <Tunnel />
       <PortCard state={state} />
     </div>
   );
@@ -81,16 +77,15 @@ function ApCard({ state, onChange }: { state: AccessStatus; onChange: () => void
 
   if (!ap.capable) {
     return (
-      <Card title="Setup access point" icon={Radio}>
+      <Section title="Setup access point">
         <Notice tone="info">{ap.reason ?? 'This board has no WiFi radio.'}</Notice>
-      </Card>
+      </Section>
     );
   }
 
   return (
-    <Card
+    <Section
       title="Setup access point"
-      icon={Radio}
       note={
         ap.up ? (
           <Badge tone="warning">Broadcasting</Badge>
@@ -101,24 +96,6 @@ function ApCard({ state, onChange }: { state: AccessStatus; onChange: () => void
         )
       }
     >
-      {/* The single most important thing on this page: an open radio, and
-          why it is acceptable right now. */}
-      {ap.up && !ap.secured && (
-        <Notice tone="warning">
-          This access point is <strong>open</strong>. That is deliberate while
-          the gateway is unadopted — it holds no credentials yet, and the only
-          thing anyone can do through it is claim the gateway, which needs a
-          Parkeze login. It becomes password-protected the moment it is adopted.
-        </Notice>
-      )}
-
-      {ap.up && ap.secured && (
-        <Notice tone="info">
-          Broadcasting with WPA2. Anyone joining also needs a signature from
-          Parkeze before they can change anything — see Console access.
-        </Notice>
-      )}
-
       <FactList>
         <Fact label="Network" value={ap.ssid} mono />
         <Fact
@@ -156,13 +133,9 @@ function ApCard({ state, onChange }: { state: AccessStatus; onChange: () => void
       </FactList>
 
       {showKey && (
-        <p className={styles.note}>
-          Read this to whoever is standing at the gateway. It is unique to this
-          unit — it opens nothing else in the fleet.{' '}
-          <button className={styles.linkButton} onClick={() => setShowKey(false)}>
-            <EyeOff size={12} strokeWidth={2} /> Hide
-          </button>
-        </p>
+        <button className={styles.linkButton} onClick={() => setShowKey(false)}>
+          <EyeOff size={12} strokeWidth={2} /> Hide
+        </button>
       )}
 
       <div className={styles.divider} />
@@ -171,7 +144,6 @@ function ApCard({ state, onChange }: { state: AccessStatus; onChange: () => void
         label="Allow the setup access point"
         checked={ap.enabled ?? false}
         onChange={(event) => configure.mutate({ enabled: event.target.checked })}
-        hint="The master switch. Off means this gateway will never raise a radio, including when it loses its uplink — which also means a site visit is the only way back into one that drops off."
       />
 
       <CheckboxField
@@ -179,7 +151,6 @@ function ApCard({ state, onChange }: { state: AccessStatus; onChange: () => void
         checked={ap.fallback ?? false}
         disabled={!ap.enabled}
         onChange={(event) => configure.mutate({ fallback: event.target.checked })}
-        hint={`After ${duration(ap.fallbackAfter)} unreachable, for 30 minutes at a time. Somebody who cuts this gateway's uplink can force the radio up — and gains nothing by it, because they still need the passphrase and a signature from Parkeze.`}
       />
 
       <div className={styles.actions}>
@@ -198,7 +169,63 @@ function ApCard({ state, onChange }: { state: AccessStatus; onChange: () => void
           </Button>
         )}
       </div>
-    </Card>
+    </Section>
+  );
+}
+
+/**
+ * How parkeze.net reaches this gateway: a WireGuard tunnel the gateway opens
+ * outwards, so nothing at the site has to accept an inbound connection.
+ */
+function Tunnel() {
+  const paths = useQuery({
+    queryKey: ['backhaul'],
+    queryFn: () => api.get<BackhaulStatus>('/network/backhaul'),
+    refetchInterval: 15_000,
+  });
+  const tunnel = paths.data?.tunnel;
+
+  return (
+    <Section title="Management tunnel">
+      <FactList>
+        <Fact
+          label="State"
+          value={
+            tunnel ? (
+              <StatusBadge
+                ok={tunnel.state === 'up'}
+                okLabel="Connected"
+                badLabel={
+                  tunnel.state === 'none'
+                    ? 'Not enrolled'
+                    : tunnel.state === 'waiting'
+                      ? 'No recent handshake'
+                      : 'Unknown'
+                }
+              />
+            ) : null
+          }
+        />
+        <Fact label="Address" value={tunnel?.address} mono />
+        <Fact label="Hub" value={tunnel?.endpoint} mono />
+        <Fact
+          label="Last handshake"
+          value={tunnel?.lastHandshake != null ? `${tunnel.lastHandshake}s ago` : null}
+        />
+        <Fact
+          label="Egress"
+          value={
+            paths.data?.wired.device ? (
+              <span className="mono">
+                {paths.data.wired.device} → {paths.data.wired.gateway}
+              </span>
+            ) : paths.data ? (
+              <Badge tone="warning">No wired route</Badge>
+            ) : null
+          }
+        />
+      </FactList>
+    </Section>
   );
 }
 
@@ -206,9 +233,8 @@ function PortCard({ state }: { state: AccessStatus }) {
   const port = state.port;
 
   return (
-    <Card
+    <Section
       title="Ethernet port"
-      icon={Cable}
       note={
         port.uplink ? (
           <Badge tone="success">Uplink up</Badge>
@@ -217,19 +243,13 @@ function PortCard({ state }: { state: AccessStatus }) {
         )
       }
     >
-      <p className={styles.note}>
-        There is one socket and it does not have a role. It is the backhaul and
-        the console port at the same time, so there is nothing to choose and
-        nothing that can be set wrong.
-      </p>
-
       <FactList>
         <Fact
-          label="Plug a laptop in"
+          label="Local name"
           value={<span className="mono">https://{port.hostname}.local</span>}
         />
         <Fact
-          label="Or, by address"
+          label="Console address"
           value={<span className="mono">https://{port.console}</span>}
         />
         <Fact
@@ -238,29 +258,12 @@ function PortCard({ state }: { state: AccessStatus }) {
             port.uplink ? (
               <span className="mono">{port.uplink}</span>
             ) : (
-              'No lease — nothing on this cable is offering one'
+              'No lease'
             )
           }
         />
       </FactList>
 
-      {/* The one thing about this design that surprises people, so it is
-          stated rather than left to be discovered with a laptop in hand. */}
-      <Notice tone="info">
-        This gateway never hands out addresses. A laptop plugged straight in
-        will say it has no internet connection and give itself a
-        <code> 169.254.x.x </code> address — that is expected, and the console
-        is reachable at the <code>.local</code> name above as soon as it does.
-      </Notice>
-
-      {port.uplink && (
-        <Notice tone="info">
-          <ShieldAlert size={13} strokeWidth={2} style={{ verticalAlign: '-2px' }} />{' '}
-          Nothing on this network can reach the gateway. Only a directly
-          connected laptop gets to the console; management from Parkeze
-          arrives over the tunnel this gateway opens outwards.
-        </Notice>
-      )}
-    </Card>
+    </Section>
   );
 }

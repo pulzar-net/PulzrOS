@@ -1,19 +1,18 @@
 import { useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { KeyRound, Power, Settings2, Upload } from 'lucide-react';
+import { Power, Upload } from 'lucide-react';
 import { api, upload } from '@/services/api';
 import type { SystemSummary } from '@/types';
-import Card from '@/components/ui/Card';
+import Section from '@/components/ui/Section';
 import Fact, { FactList } from '@/components/Fact';
 import Notice from '@/components/ui/Notice';
 import Button from '@/components/ui/Button';
 import { TextField } from '@/components/ui/Field';
-import PageHeader from '@/components/PageHeader';
 import Spinner from '@/components/ui/Spinner';
 import ErrorState from '@/components/ErrorState';
-import styles from './Pages.module.css';
+import styles from '../Pages.module.css';
 
-export default function System() {
+export default function Maintenance() {
   const summary = useQuery({
     queryKey: ['system-summary'],
     queryFn: () => api.get<SystemSummary>('/system/summary'),
@@ -23,15 +22,12 @@ export default function System() {
   if (summary.isError) return <ErrorState error={summary.error} onRetry={summary.refetch} />;
 
   const system = summary.data!;
-  const adopted = system.adoption.state === 'adopted';
 
   return (
     <div className="fade-in">
-      <PageHeader title="System" />
+      <PasswordCard />
 
-      <PasswordCard adopted={adopted} />
-
-      <Card title="Firmware" icon={Settings2}>
+      <Section title="Firmware">
         <FactList>
           <Fact
             label="ParkezeOS"
@@ -47,14 +43,14 @@ export default function System() {
           <Fact label="Board" value={system.identity.boardName} />
         </FactList>
         <FirmwareUpload />
-      </Card>
+      </Section>
 
       <RebootCard />
     </div>
   );
 }
 
-function PasswordCard({ adopted }: { adopted: boolean }) {
+function PasswordCard() {
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
 
@@ -70,22 +66,13 @@ function PasswordCard({ adopted }: { adopted: boolean }) {
   });
 
   return (
-    <Card title="Local password" icon={KeyRound}>
-      {adopted && (
-        <Notice tone="info">
-          This gateway is adopted, so local sign-in is normally disabled and
-          this password is unused. It still matters: it is what applies if the
-          gateway is ever released back to local management.
-        </Notice>
-      )}
-
+    <Section title="Local password">
       <TextField
         label="New password"
         type="password"
         autoComplete="new-password"
         value={password}
         onChange={(event) => setPassword(event.target.value)}
-        hint="At least 12 characters."
       />
       <TextField
         label="Confirm"
@@ -109,7 +96,7 @@ function PasswordCard({ adopted }: { adopted: boolean }) {
           Change password
         </Button>
       </div>
-    </Card>
+    </Section>
   );
 }
 
@@ -141,8 +128,7 @@ function FirmwareUpload() {
   if (send.isSuccess) {
     return (
       <Notice tone="info">
-        Upgrading. The gateway writes the image and restarts, which takes a few
-        minutes. Reload this page after that.
+        Upgrading. Reload in a few minutes.
       </Notice>
     );
   }
@@ -207,22 +193,16 @@ function RebootCard() {
 
   if (reboot.isSuccess) {
     return (
-      <Card title="Power" icon={Power}>
+      <Section title="Power">
         <Notice tone="info">
-          Rebooting. This page will not reconnect on its own — reload it in a
-          minute.
+          Rebooting. Reload in a minute.
         </Notice>
-      </Card>
+      </Section>
     );
   }
 
   return (
-    <Card title="Power" icon={Power}>
-      <p className={styles.note}>
-        A reboot drops every session and takes about a minute. The packet
-        forwarder stops for that time and uplinks in flight are lost.
-      </p>
-
+    <Section title="Power">
       {reboot.isError && <Notice tone="error">{(reboot.error as Error).message}</Notice>}
 
       <div className={styles.row}>
@@ -242,6 +222,6 @@ function RebootCard() {
           </Button>
         )}
       </div>
-    </Card>
+    </Section>
   );
 }

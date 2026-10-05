@@ -1,13 +1,12 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Lightbulb, SquareMousePointer } from 'lucide-react';
+import { Lightbulb } from 'lucide-react';
 import { api } from '@/services/api';
 import type { IoStatus } from '@/types';
-import Card from '@/components/ui/Card';
+import Section from '@/components/ui/Section';
 import Badge from '@/components/ui/Badge';
 import Fact, { FactList } from '@/components/Fact';
 import Notice from '@/components/ui/Notice';
 import Button from '@/components/ui/Button';
-import PageHeader from '@/components/PageHeader';
 import Spinner from '@/components/ui/Spinner';
 import ErrorState from '@/components/ErrorState';
 import styles from './Pages.module.css';
@@ -54,16 +53,6 @@ export default function Panel() {
 
   return (
     <div className="fade-in">
-      <PageHeader
-        title="LEDs and buttons"
-        actions={
-          <Button loading={test.isPending} onClick={() => test.mutate()}>
-            <Lightbulb size={14} strokeWidth={2} />
-            Lamp test
-          </Button>
-        }
-      />
-
       {test.isSuccess && (
         <Notice tone="success">
           Walking every mapped LED in turn. Watch the panel — anything that does
@@ -71,13 +60,15 @@ export default function Panel() {
         </Notice>
       )}
 
-      <Card title="Mapping" icon={Lightbulb}>
-        <p className={styles.note}>
-          Logical names are what the rest of the system uses. A board that lacks
-          one simply leaves it unmapped, and its state is folded into another
-          light rather than being lost — a Pi has two LEDs and reports
-          everything through them.
-        </p>
+      <Section
+        title="LEDs"
+        actions={
+          <Button loading={test.isPending} onClick={() => test.mutate()}>
+            <Lightbulb size={14} strokeWidth={2} />
+            Lamp test
+          </Button>
+        }
+      >
         <FactList>
           {state.leds.map((led) => (
             <Fact
@@ -97,17 +88,14 @@ export default function Panel() {
         {unmapped.length > 0 && state.available.length > 0 && (
           <>
             <div className={styles.divider} />
-            <p className={styles.note}>
-              LEDs this kernel exposes but nothing is mapped to. If one of these
-              looks like it should be driving an unmapped name above, the board
-              file has it wrong.
-            </p>
-            <p className="mono">{state.available.join(', ')}</p>
+            <FactList>
+              <Fact label="Unmapped" value={state.available.join(', ')} mono />
+            </FactList>
           </>
         )}
-      </Card>
+      </Section>
 
-      <Card title="Blink codes" icon={Lightbulb}>
+      <Section title="Blink codes">
         <FactList>
           {BLINK_CODES.map((code) => (
             <Fact
@@ -117,9 +105,9 @@ export default function Panel() {
             />
           ))}
         </FactList>
-      </Card>
+      </Section>
 
-      <Card title="Reset button" icon={SquareMousePointer}>
+      <Section title="Reset button">
         {state.button.reset ? (
           <FactList>
             <Fact label="Short press" value="Reports whether the gateway is manageable, on the cloud LED. Harmless." />
@@ -134,7 +122,7 @@ export default function Panel() {
             done from the System page or over SSH.
           </Notice>
         )}
-      </Card>
+      </Section>
     </div>
   );
 }

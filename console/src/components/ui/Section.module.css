@@ -1,35 +1,35 @@
-.card {
-  background: var(--card-bg);
-  border: 1px solid var(--card-border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--card-shadow);
-  overflow: hidden;
+.section {
+  min-width: 0;
+  /* The rule is above the section, not under its heading: it separates one
+     part of the page from the next, which is the job a box used to do. */
+  border-top: 1px solid var(--border-primary);
+  padding-top: 16px;
 }
 
-/* Consecutive cards had nothing between them, so a page of three read as one
-   box with rules through it. Adjacent-sibling rather than a bottom margin: a
-   card inside a grid gets its spacing from the grid, and a trailing margin
-   under the last one is dead space at the foot of every page. */
-.card + .card {
-  margin-top: 14px;
+/* Adjacent-sibling rather than a bottom margin: a section inside a grid gets
+   its spacing from the grid, and a trailing margin under the last one is dead
+   space at the foot of every page. */
+.section + .section {
+  margin-top: 28px;
+}
+
+/* The first section on a page needs no rule above it: what is above it is the
+   top bar, a tab row or a notice, each of which already ends the space above.
+   first-of-type, not first-child, so a notice in front does not count. */
+.section:first-of-type {
+  border-top: none;
+  padding-top: 0;
 }
 
 .header {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--border-primary);
+  min-height: 28px;
 }
 
 .title {
-  /* Inline-flex, not inline: these lead with an icon, and as inline content
-     the icon and its title wrap onto separate lines the moment the flex header
-     gives the heading its min-content width. */
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 13px;
+  font-size: 14.5px;
   font-weight: 600;
   color: var(--text-primary);
 }
@@ -47,5 +47,5 @@
 }
 
 .body {
-  padding: 14px;
+  padding-top: 10px;
 }

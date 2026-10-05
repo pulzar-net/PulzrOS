@@ -45,10 +45,6 @@ export default class ErrorBoundary extends Component<
         <AlertTriangle size={22} strokeWidth={1.7} className={styles.icon} />
         <h2 className={styles.title}>This page could not be displayed</h2>
         <p className={styles.detail}>{this.state.error.message}</p>
-        <p className={styles.hint}>
-          The rest of the console still works. If this page is the one you
-          need, the gateway is reachable over SSH.
-        </p>
         <Button
           onClick={() => {
             this.setState({ error: null });

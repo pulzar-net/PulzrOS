@@ -1,4 +1,7 @@
 .shell {
+  /* The logo block and the top bar are one height, so the rule under each
+     reads as a single line across the window. */
+  --bar-height: 48px;
   display: flex;
   min-height: 100vh;
 }
@@ -19,11 +22,11 @@
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 15px 15px 13px;
+  height: var(--bar-height);
+  flex: 0 0 auto;
+  padding: 0 15px;
   border-bottom: 1px solid var(--border-primary);
 }
-
-
 
 .nav { padding: 9px 8px; display: flex; flex-direction: column; gap: 2px; }
 
@@ -42,6 +45,28 @@
 .navItem:hover { background: var(--bg-tertiary); color: var(--text-primary); }
 .active, .active:hover { background: var(--accent-subtle); color: var(--accent); }
 
+/* A section's pages, under it while you are inside it. A rule down the left
+   ties them to their parent without another level of icons. */
+.subnav {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 2px 0 6px 17px;
+  padding-left: 10px;
+  border-left: 1px solid var(--border-primary);
+}
+
+.subItem {
+  padding: 5px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+
+.subItem:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+.subActive, .subActive:hover { color: var(--text-primary); font-weight: 600; background: var(--bg-tertiary); }
+
 .foot {
   margin-top: auto;
   padding: 11px 14px;
@@ -53,10 +78,38 @@
 
 .footMeta { color: var(--text-tertiary); font-size: 11px; }
 
+.lan {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 9px;
+  padding: 4px 8px;
+  border-radius: var(--radius-md);
+  background: var(--accent-subtle);
+  color: var(--accent);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.lanClock {
+  margin-left: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 500;
+}
+
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 
+.top {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  /* The banners in here are tinted with transparency; without a ground under
+     them the page scrolls through visibly. */
+  background: var(--bg-primary);
+}
+
 .topbar {
-  height: 48px;
+  height: var(--bar-height);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -64,15 +117,29 @@
   padding: 0 20px;
   border-bottom: 1px solid var(--border-primary);
   background: var(--bg-primary);
-  position: sticky;
-  top: 0;
-  z-index: 10;
 }
 
-.topbarTitle { font-size: 12.5px; color: var(--text-tertiary); }
+.topbarTitle {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
 .topbarActions { display: flex; gap: 8px; }
 
-.content { padding: 20px; flex: 1; }
+/* A column, not the full window: label/value rows and form fields stretched
+   across a wide screen leave the value a long way from its label. */
+.content {
+  flex: 1;
+  width: 100%;
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 32px 40px 64px;
+}
+
+.wide {
+  max-width: none;
+  padding: 20px 24px;
+}
 
 /* Phone: the sidebar becomes a scrolling tab strip across the top. A 210px
    rail on a 375px screen leaves no room for the content it is navigating. */
@@ -96,7 +163,7 @@
   .content { padding: 14px; }
 }
 
-/* Same shape as the recovery banner: a strip above the topbar rather than a
+/* Same shape as the recovery banner: a strip under the topbar rather than a
    card in the content, so it does not move the page around and does not get
    scrolled away from. */
 .unadopted {
@@ -123,4 +190,12 @@
   color: inherit;
   text-decoration: underline;
   text-underline-offset: 2px;
+}
+
+/* Phone: the section's pages join the scrolling strip beside their parent
+   rather than stacking under it, which the strip has no room for. */
+@media (max-width: 760px) {
+  .nav > div { display: contents; }
+  .subnav { flex-direction: row; margin: 0; padding-left: 6px; }
+  .subItem { white-space: nowrap; }
 }

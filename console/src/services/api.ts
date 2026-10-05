@@ -148,6 +148,11 @@ export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) => request<T>(path, { method: 'POST', body }),
 
+  /** Presenting a credential. A 401 here is the gateway refusing it, with a
+      reason worth showing — not a session that ended, which nobody had. */
+  signIn: <T>(path: string, body: unknown) =>
+    request<T>(path, { method: 'POST', body, anonymous: true }),
+
   /** The session probe at boot. A 401 here means "not signed in", not "error". */
   session: () => request<Session>('/auth/session', { anonymous: true }),
 };

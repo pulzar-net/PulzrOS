@@ -95,12 +95,6 @@
 
 .link:hover { color: var(--text-secondary); }
 
-.escapeNote {
-  margin: 0 0 12px;
-  font-size: 12.5px;
-  line-height: 1.55;
-  color: var(--text-secondary);
-}
 
 /* The finished state. Centered and quiet — the job is done and there is
    nothing here to act on. */

@@ -3,17 +3,34 @@
   /* The label column sizes to the longest label and then stops, so values
      start at the same x on every card without a hardcoded width that breaks
      the first time somebody adds a longer label. */
-  grid-template-columns: minmax(120px, max-content) 1fr;
-  gap: 7px 18px;
-  align-items: baseline;
+  grid-template-columns: minmax(150px, max-content) 1fr;
+  /* Stretch, not baseline: baseline alignment offsets cells of different
+     font sizes by fractions of a pixel, so the label's rule and the value's
+     rule landed at different heights and blurred into nothing. Both cells now
+     fill the row and share a line height, so the text still lines up. */
+  align-items: stretch;
   margin: 0;
 }
 
 .fact { display: contents; }
 
+/* Each row gets a hairline under it, drawn on both cells — the row itself is
+   display: contents and cannot carry a border. No column gap, so the line runs
+   unbroken; the label's right padding does the spacing instead. */
+.label,
+.value,
+.mono {
+  padding: 8px 0;
+  line-height: 20px;
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.fact:last-child > * { border-bottom: none; }
+
 .label {
-  font-size: 12px;
-  color: var(--text-tertiary);
+  padding-right: 24px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
 }
 
 .value {
@@ -36,7 +53,8 @@
 /* One column on a phone. Two columns of a 12px label and a value is unreadable
    below about 380px, and this console is used on a phone more than anywhere. */
 @media (max-width: 420px) {
-  .list { grid-template-columns: 1fr; gap: 2px 0; }
-  .fact { display: block; margin-bottom: 9px; }
-  .label { display: block; margin-bottom: 1px; }
+  .list { grid-template-columns: 1fr; }
+  .fact { display: block; }
+  .label { display: block; padding-bottom: 0; border-bottom: none; }
+  .value, .mono { display: block; padding-top: 2px; }
 }

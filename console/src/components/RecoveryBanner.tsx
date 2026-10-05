@@ -1,7 +1,6 @@
-import { useEffect, useState } from 'react';
 import { ShieldAlert } from 'lucide-react';
-import { useSession } from '@/contexts/SessionContext';
 import { countdown } from '@/lib/format';
+import { useSessionCountdown } from '@/hooks/useSessionCountdown';
 import styles from './RecoveryBanner.module.css';
 
 /**
@@ -14,25 +13,7 @@ import styles from './RecoveryBanner.module.css';
  * mid-edit otherwise, and nothing on screen warned it was about to.
  */
 export default function RecoveryBanner() {
-  const { session, clear } = useSession();
-  const [remaining, setRemaining] = useState(session?.expiresIn ?? 1800);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setRemaining((seconds) => {
-        if (seconds <= 1) {
-          clearInterval(timer);
-          // The gateway will refuse the next request anyway; dropping to the
-          // login screen here means the operator sees why rather than a
-          // sudden wall of 401s.
-          clear();
-          return 0;
-        }
-        return seconds - 1;
-      });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [clear]);
+  const remaining = useSessionCountdown();
 
   return (
     <div className={styles.bar} role="status">

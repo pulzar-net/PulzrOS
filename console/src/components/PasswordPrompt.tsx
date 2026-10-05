@@ -44,10 +44,6 @@ export default function PasswordPrompt() {
         </div>
 
         <h1 className={styles.title}>Choose a password</h1>
-        <p className={styles.sub}>
-          Still on the password from first boot. It is written to the card&rsquo;s
-          boot partition, so anyone who has handled the hardware has it.
-        </p>
 
         <TextField
           label="New password"
@@ -56,7 +52,6 @@ export default function PasswordPrompt() {
           autoFocus
           value={password}
           onChange={(event) => setPassword(event.target.value)}
-          hint="At least 12 characters."
         />
         <TextField
           label="Confirm"

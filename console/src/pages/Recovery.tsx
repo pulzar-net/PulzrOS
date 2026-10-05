@@ -100,11 +100,6 @@ export default function Recovery({
   return (
     <>
       <h1 className={styles.title}>Recovery access</h1>
-      <p className={styles.sub}>
-        For an adopted gateway that cannot reach Parkeze. You will need a
-        second device with internet and a Parkeze network-admin account.
-      </p>
-
       {challenge.isLoading && <Spinner label="Preparing a challenge" />}
 
       {challenge.isError && (
@@ -118,7 +113,7 @@ export default function Recovery({
             <code className={styles.code}>{challenge.data.challenge.code}</code>
             <p className={styles.hint}>
               Expires in {Math.max(0, Math.round(challenge.data.challenge.expiresIn / 60))}{' '}
-              minutes. In Parkeze: Fleet, this gateway, Console access.
+              minutes.
             </p>
           </div>
 

@@ -1,0 +1,77 @@
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+  text-decoration: none;
+  color: var(--text-secondary);
+}
+
+.tab:hover { color: var(--text-primary); }
+
+.actions {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+/* ── primary: underlined, across the page ─────────────────────────────── */
+
+.primary {
+  border-bottom: 1px solid var(--border-primary);
+  margin-bottom: 16px;
+}
+
+.primary .tabs { gap: 20px; }
+
+.primary .tab {
+  padding: 10px 0 11px;
+  font-size: 13.5px;
+  font-weight: 500;
+}
+
+/* An inset shadow, not a border pulled down over the row's rule with a
+   negative margin: that pokes a pixel outside the scrolling tab strip, which
+   then grows a scrollbar beside the last tab. */
+.primary .active,
+.primary .active:hover {
+  color: var(--text-primary);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+/* ── secondary: a quiet segmented row under it ────────────────────────── */
+
+.secondary {
+  margin-bottom: 22px;
+}
+
+.secondary .tab {
+  padding: 5px 11px;
+  font-size: 12.5px;
+  border-radius: var(--radius-sm);
+}
+
+.secondary .tab:hover { background: var(--bg-tertiary); }
+
+.secondary .active,
+.secondary .active:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-weight: 600;
+}

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { LogIn, ShieldCheck } from 'lucide-react';
 import { api } from '@/services/api';
@@ -25,37 +25,66 @@ import styles from './Login.module.css';
  * state and there is no version of it that belongs in the frontend.
  */
 /**
- * A handoff token in the fragment, taken out of the address bar at once.
+ * A handoff token in the fragment.
  *
- * parkeze.net returns the browser here with `#sso=<token>`. It is removed from
- * the URL before anything else happens, success or not: a fragment is never
- * sent to a server, but it does stay in history, and the back button on a
- * shared laptop should not be a way back into somebody's session. The gateway
- * also refuses a token the second time, so this is the second of two locks.
+ * parkeze.net returns the browser here with `#sso=<token>`, and
+ * `parkeze-local-access open` prints a link ending `#ticket=<hex>`. Either is
+ * removed from the URL as soon as it is presented, success or not: a fragment
+ * is never sent to a server, but it does stay in history, and the back button
+ * on a shared laptop should not be a way back into somebody's session. The
+ * gateway also refuses a token the second time, so this is the second of two
+ * locks.
+ *
+ * Reading is kept pure and clearing happens in the effect that presents it.
+ * This used to clear the fragment inside the useState initializer, which
+ * StrictMode calls twice in development: the first call took the token, the
+ * second found nothing, React kept the second, and no link ever signed anybody
+ * in from `npm run dev`.
  */
-function takeHandoffToken(): string | null {
+type Handoff = { kind: 'sso' | 'ticket'; token: string };
+
+function readHandoff(): Handoff | null {
   const params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
-  const token = params.get('sso');
-  if (token) {
-    window.history.replaceState(null, '', window.location.pathname + window.location.search);
-  }
-  return token;
+  const sso = params.get('sso');
+  const ticket = params.get('ticket');
+  if (sso) return { kind: 'sso', token: sso };
+  if (ticket) return { kind: 'ticket', token: ticket };
+  return null;
 }
 
 export default function Login() {
   const [mode, setMode] = useState<'password' | 'recovery' | 'parkeze' | null>(null);
-  const [handoffToken] = useState(takeHandoffToken);
+  const [handoffToken, setHandoffToken] = useState(readHandoff);
+  const presented = useRef<string | null>(null);
   const { signIn } = useSession();
 
+  // A link opened in a tab already showing this screen changes only the
+  // fragment, which does not reload the page and so is never read above.
+  useEffect(() => {
+    const onHashChange = () => {
+      const next = readHandoff();
+      if (next) setHandoffToken(next);
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+
   const handoff = useMutation({
-    mutationFn: (token: string) => api.post<Session>('/auth/sso', { token }),
+    mutationFn: (handoff: Handoff) =>
+      handoff.kind === 'sso'
+        ? api.signIn<Session>('/auth/sso', { token: handoff.token })
+        : api.signIn<Session>('/auth/ticket', { ticket: handoff.token }),
     onSuccess: signIn,
   });
 
   useEffect(() => {
-    if (handoffToken) handoff.mutate(handoffToken);
-    // Once, on arrival. The mutation object is stable enough for this and
-    // re-running it would present a spent token.
+    // Once per token. StrictMode runs this effect twice in development, and a
+    // second presentation of a spent token is a refusal the gateway counts
+    // toward locking this address out.
+    if (!handoffToken || presented.current === handoffToken.token) return;
+    presented.current = handoffToken.token;
+    window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    handoff.mutate(handoffToken);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [handoffToken]);
 
@@ -105,12 +134,20 @@ export default function Login() {
   const effective =
     mode ?? (available.local ? 'password' : available.sso ? 'parkeze' : 'recovery');
 
+  // A refused LAN link is shown above whichever form follows, since none of
+  // them is the way back in: that is a fresh link from the gateway's shell.
+  const handoffError = handoff.isError ? (handoff.error as Error).message : null;
+  const ssoError = handoffToken?.kind === 'sso' ? handoffError : null;
+  const ticketError = handoffToken?.kind === 'ticket' ? handoffError : null;
+
   return (
     <div className={styles.wrap}>
       <div className={`${styles.card} fade-in`}>
         <div className={styles.brand}>
           <Brand size="md" sub="Gateway console" />
         </div>
+
+        {ticketError && <Notice tone="error">{ticketError}</Notice>}
 
         {effective === 'recovery' ? (
           <Recovery
@@ -120,7 +157,7 @@ export default function Login() {
         ) : effective === 'parkeze' ? (
           <ParkezeSignIn
             methods={available}
-            error={handoff.isError ? (handoff.error as Error).message : null}
+            error={ssoError}
             onRecovery={() => setMode('recovery')}
           />
         ) : (

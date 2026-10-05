@@ -9,6 +9,13 @@ cards below already show with a label.
 
 `PageHeader` has no `subtitle` prop for this reason. Do not add one back.
 
+The same goes for every other kind of explanation: no hint text under fields,
+no paragraph introducing a section, no info notice describing how a feature
+works, no description line under an option. Pages have no titles at all — the
+sidebar says where you are. A notice is only for the gateway's actual state
+right now ("Wired is down. Uplinks are being held."), in one sentence. The
+reasoning belongs in code comments and `docs/`, not on the screen.
+
 **Write for a technician.** Whoever is reading this is standing at a gateway
 with a job to finish. The claim screen used to explain scanning a QR code in
 three numbered steps. Say the thing; do not warm up to it.

@@ -12,9 +12,13 @@ export function duration(seconds: number | null | undefined): string {
   return `${seconds}s`;
 }
 
-/** mm:ss, for a countdown somebody is watching. */
+/** mm:ss, for a countdown somebody is watching. Hours once there are any: a
+    LAN window runs up to a day, and "1440m 00s" is not a time anyone reads. */
 export function countdown(seconds: number): string {
   const safe = Math.max(0, seconds);
+  if (safe >= 3600) {
+    return `${Math.floor(safe / 3600)}h ${String(Math.floor((safe % 3600) / 60)).padStart(2, '0')}m`;
+  }
   return `${Math.floor(safe / 60)}m ${String(safe % 60).padStart(2, '0')}s`;
 }
 

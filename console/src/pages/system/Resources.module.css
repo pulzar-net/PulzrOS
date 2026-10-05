@@ -1,0 +1,84 @@
+/* The range scopes every chart below it, so it sits once, above them all. */
+.toolbar {
+  display: flex;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.segmented {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: var(--radius-md);
+  background: var(--bg-tertiary);
+}
+
+.segmented button {
+  border: none;
+  background: none;
+  padding: 5px 12px;
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.segmented button:hover { color: var(--text-primary); }
+
+.segmented .on,
+.segmented .on:hover {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+  gap: 22px 28px;
+  margin-bottom: 26px;
+}
+
+.panel { min-width: 0; }
+
+.panelHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.panelTitle {
+  font-family: Outfit, Inter, -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* The latest value, beside its chart: the one number a glance is for. */
+.panelValue {
+  margin-left: auto;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 0 28px;
+  margin-top: 26px;
+  padding-top: 16px;
+  /* One rule over both columns. Each section sits in its own wrapper, so
+     neither draws its own and the two headings line up. */
+  border-top: 1px solid var(--border-primary);
+}
+
+.donuts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 20px;
+  padding: 4px 0;
+}

@@ -16,13 +16,17 @@ import PasswordPrompt from '@/components/PasswordPrompt';
  * is usually opened to answer one question, and on a Pi 3 over a slow link the
  * difference between parsing one page and parsing seven is visible.
  */
-const Backhaul = lazy(() => import('@/pages/Backhaul'));
-const Lorawan = lazy(() => import('@/pages/Lorawan'));
-const Hardware = lazy(() => import('@/pages/Hardware'));
+const Ethernet = lazy(() => import('@/pages/backhaul/Ethernet'));
+const Cellular = lazy(() => import('@/pages/backhaul/Cellular'));
+const Wifi = lazy(() => import('@/pages/backhaul/Wifi'));
+const Forwarders = lazy(() => import('@/pages/lorawan/Forwarders'));
+const LorawanSettings = lazy(() => import('@/pages/lorawan/Settings'));
+const Gnss = lazy(() => import('@/pages/Gnss'));
 const Panel = lazy(() => import('@/pages/Panel'));
 const Access = lazy(() => import('@/pages/Access'));
 const Logs = lazy(() => import('@/pages/Logs'));
-const System = lazy(() => import('@/pages/System'));
+const Resources = lazy(() => import('@/pages/system/Resources'));
+const Maintenance = lazy(() => import('@/pages/system/Maintenance'));
 const Overview = lazy(() => import('@/pages/Overview'));
 // Not lazy: on an unadopted gateway this is the *only* thing anyone sees, and
 // a spinner before the first screen of a brand-new device reads as a fault.
@@ -85,13 +89,23 @@ export default function App() {
       <Route element={<Layout unadopted={unadopted} />}>
         <Route path="adopt" element={<Onboarding />} />
         <Route index element={<Overview />} />
-        <Route path="backhaul" element={<Backhaul />} />
-        <Route path="lorawan" element={<Lorawan />} />
-        <Route path="hardware" element={<Hardware />} />
+        <Route path="backhaul" element={<Navigate to="/backhaul/ethernet" replace />} />
+        <Route path="backhaul/ethernet" element={<Ethernet />} />
+        <Route path="backhaul/cellular" element={<Cellular />} />
+        <Route path="backhaul/wifi" element={<Wifi />} />
+        <Route path="lorawan" element={<Navigate to="/lorawan/forwarders/1/status" replace />} />
+        <Route path="lorawan/forwarders" element={<Navigate to="/lorawan/forwarders/1/status" replace />} />
+        <Route path="lorawan/forwarders/:forwarder/:tab" element={<Forwarders />} />
+        <Route path="lorawan/settings" element={<LorawanSettings />} />
+        <Route path="gnss" element={<Gnss />} />
+        {/* Where concentrator hardware used to be; it is a forwarder's tab now. */}
+        <Route path="hardware" element={<Navigate to="/lorawan/forwarders/1/concentrator" replace />} />
         <Route path="access" element={<Access />} />
         <Route path="io" element={<Panel />} />
         <Route path="logs" element={<Logs />} />
-        <Route path="system" element={<System />} />
+        <Route path="system" element={<Navigate to="/system/resources" replace />} />
+        <Route path="system/resources" element={<Resources />} />
+        <Route path="system/maintenance" element={<Maintenance />} />
         {/* A deep link to a page this build does not have goes home rather
             than rendering nothing. */}
         <Route path="*" element={<Navigate to="/" replace />} />

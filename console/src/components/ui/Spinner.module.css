@@ -1,7 +1,12 @@
+/* Centred in whatever it is waiting to fill, not parked in its top-left
+   corner, which read as a stray label rather than as loading. */
 .wrap {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 9px;
+  width: 100%;
+  min-height: 120px;
   padding: 20px 0;
   color: var(--text-tertiary);
   font-size: 13px;
@@ -19,3 +24,15 @@
 .label { color: var(--text-tertiary); }
 
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* A whole page loading: the spinner is the page, so it takes the page's
+   middle rather than a strip at the top of it. */
+:global(main) > .wrap {
+  min-height: 60vh;
+}
+
+/* Before there is any layout — the first session check — the spinner is
+   the whole window. */
+:global(#root) > .wrap {
+  min-height: 100vh;
+}

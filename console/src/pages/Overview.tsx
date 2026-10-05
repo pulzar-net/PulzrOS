@@ -1,16 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
-import { Cpu, Fingerprint, Network, Radio } from 'lucide-react';
 import { api } from '@/services/api';
 import type { BackhaulStatus, LorawanStatus, SystemSummary } from '@/types';
-import Card from '@/components/ui/Card';
+import Section from '@/components/ui/Section';
 import Badge, { StatusBadge } from '@/components/ui/Badge';
 import Fact, { FactList } from '@/components/Fact';
-import Metric, { MetricGrid } from '@/components/Metric';
 import Notice from '@/components/ui/Notice';
-import PageHeader from '@/components/PageHeader';
 import Spinner from '@/components/ui/Spinner';
 import ErrorState from '@/components/ErrorState';
-import { count, duration } from '@/lib/format';
+import { duration } from '@/lib/format';
 import styles from './Pages.module.css';
 
 /**
@@ -44,113 +41,75 @@ export default function Overview() {
   const paths = backhaul.data;
   const lora = lorawan.data;
 
-  const manageable = Boolean(
-    paths && (paths.tunnel.state === 'up' || paths.cellular.up),
-  );
   const concentrator = lora?.concentrator;
   const partial = concentrator?.status === 'partial';
 
   return (
     <div className="fade-in">
-      <PageHeader title={system.identity.hostname ?? 'Gateway'} />
-
       {system.identity.serialSource === 'random' && (
         <Notice tone="warning">
-          This gateway could not read a hardware serial and generated a random
-          one. It will not recognize itself after a reflash — raise this with
-          support before deploying it.
+          No hardware serial. Using a random one, which changes on reflash.
         </Notice>
       )}
 
       {partial && (
         <Notice tone="warning">
-          Only {concentrator!.present} of {concentrator!.slots} concentrators
-          responded, so this gateway is running at {concentrator!.channels}{' '}
-          channels instead of {concentrator!.slots * 8}. It works — but it is
-          hearing less than it should, and nothing about the uplink counts makes
-          that obvious.
+          {concentrator!.present} of {concentrator!.slots} concentrators
+          responded. Running at {concentrator!.channels} of{' '}
+          {concentrator!.slots * 8} channels.
         </Notice>
       )}
-
-      <MetricGrid>
-        <Metric
-          label="Manageable"
-          value={manageable ? 'Yes' : 'No'}
-          tone={manageable ? 'default' : 'error'}
-          meta={manageable ? 'At least one control path is up' : 'No control path is reachable'}
-        />
-        <Metric
-          label="Channels"
-          value={concentrator?.channels ?? '—'}
-          tone={partial ? 'warning' : concentrator?.channels ? 'default' : 'error'}
-          meta={
-            concentrator
-              ? `${concentrator.present} of ${concentrator.slots} concentrators`
-              : 'No concentrator detected'
-          }
-        />
-        <Metric
-          label="Uplinks forwarded"
-          value={count(lora?.forwarder.forwarded)}
-          meta={lora?.forwarder.running ? 'Packet forwarder running' : 'Packet forwarder stopped'}
-        />
-        <Metric
-          label="Uptime"
-          value={duration(system.health.uptime)}
-          meta={
-            system.health.temperature != null
-              ? `${system.health.temperature.toFixed(1)} °C`
-              : undefined
-          }
-        />
-      </MetricGrid>
 
       {/* The two control paths, side by side and never merged into one light.
           They fail independently, and one of them costs money. */}
       <div className={styles.grid2}>
-        <Card title="Wired · Management tunnel" icon={Network}>
-          <FactList>
-            <Fact label="Ethernet" value={<StatusBadge ok={Boolean(paths?.wired.up)} />} />
-            <Fact
-              label="Tunnel"
-              value={
-                <StatusBadge
-                  ok={paths?.tunnel.state === 'up'}
-                  okLabel="Connected"
-                  badLabel={paths?.tunnel.state === 'none' ? 'Not enrolled' : 'Offline'}
-                />
-              }
-            />
-            <Fact label="Address" value={paths?.tunnel.address} mono />
-          </FactList>
-        </Card>
+        <div>
+          <Section title="Wired · Management tunnel">
+            <FactList>
+              <Fact label="Ethernet" value={<StatusBadge ok={Boolean(paths?.wired.up)} />} />
+              <Fact
+                label="Tunnel"
+                value={
+                  <StatusBadge
+                    ok={paths?.tunnel.state === 'up'}
+                    okLabel="Connected"
+                    badLabel={paths?.tunnel.state === 'none' ? 'Not enrolled' : 'Offline'}
+                  />
+                }
+              />
+              <Fact label="Address" value={paths?.tunnel.address} mono />
+            </FactList>
+          </Section>
+        </div>
 
-        <Card title="Cellular · 1NCE" icon={Radio}>
-          <FactList>
-            <Fact
-              label="Modem"
-              value={
-                <StatusBadge
-                  ok={Boolean(paths?.cellular.modem)}
-                  okLabel="Present"
-                  badLabel="Absent"
-                />
-              }
-            />
-            <Fact label="Data" value={<StatusBadge ok={Boolean(paths?.cellular.up)} />} />
-            <Fact
-              label="Signal"
-              value={
-                paths?.cellular.modem?.rssi != null
-                  ? `${paths.cellular.modem.rssi} dBm`
-                  : null
-              }
-            />
-          </FactList>
-        </Card>
+        <div>
+          <Section title="Cellular · 1NCE">
+            <FactList>
+              <Fact
+                label="Modem"
+                value={
+                  <StatusBadge
+                    ok={Boolean(paths?.cellular.modem)}
+                    okLabel="Present"
+                    badLabel="Absent"
+                  />
+                }
+              />
+              <Fact label="Data" value={<StatusBadge ok={Boolean(paths?.cellular.up)} />} />
+              <Fact
+                label="Signal"
+                value={
+                  paths?.cellular.modem?.rssi != null
+                    ? `${paths.cellular.modem.rssi} dBm`
+                    : null
+                }
+              />
+            </FactList>
+          </Section>
+        </div>
       </div>
 
-      <Card title="Identity" icon={Fingerprint}>
+      <Section title="Identity">
         <FactList>
           <Fact label="Gateway EUI" value={system.identity.gatewayEui} mono />
           <Fact label="Serial" value={system.identity.serial} mono />
@@ -175,9 +134,9 @@ export default function Overview() {
             }
           />
         </FactList>
-      </Card>
+      </Section>
 
-      <Card title="Firmware" icon={Cpu}>
+      <Section title="Firmware">
         <FactList>
           <Fact
             label="ParkezeOS"
@@ -189,8 +148,12 @@ export default function Overview() {
           />
           <Fact label="OpenWrt" value={system.firmware.openwrt} />
           <Fact label="Kernel" value={system.firmware.kernel} mono />
+          <Fact label="Uptime" value={duration(system.health.uptime)} />
+          {system.health.temperature != null && (
+            <Fact label="Temperature" value={`${system.health.temperature.toFixed(1)} °C`} />
+          )}
         </FactList>
-      </Card>
+      </Section>
     </div>
   );
 }

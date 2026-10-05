@@ -1,39 +1,34 @@
-import type { LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
-import styles from './Card.module.css';
+import styles from './Section.module.css';
 
 /**
- * A titled box.
+ * A titled part of a page: a heading with a rule under it, then its content.
  *
- * The gateway console uses boxes where parkeze.net's `Section` uses a bare
- * heading, and that is a considered difference rather than drift: this console
- * is mostly read on a phone, in a car park, by somebody comparing two panels
- * that mean different things (the two backhaul paths, two concentrator slots).
- * A border is what keeps those apart on a 375px screen.
+ * Not a box. These were bordered cards with shadows, which made every page a
+ * stack of tiles and a configuration screen read like a dashboard. A rule and
+ * whitespace separate sections well enough, including the side-by-side pairs
+ * that the boxes were originally kept for.
  */
-export default function Card({
+export default function Section({
   title,
-  icon: Icon,
   actions,
   note,
   children,
 }: {
   title?: string;
-  icon?: LucideIcon;
-  /** Controls for this card, at the end of the header row. */
+  /** Controls for this section, at the end of the heading row. */
   actions?: ReactNode;
-  /** Small print at the end of the header row — a count, a state. */
+  /** Small print at the end of the heading row — a count, a state. */
   note?: ReactNode;
   children: ReactNode;
 }) {
   return (
-    <section className={styles.card}>
-      {title && (
+    <section className={styles.section}>
+      {(title || actions || note) && (
         <header className={styles.header}>
-          <h2 className={styles.title}>
-            {Icon && <Icon size={14} strokeWidth={2} />}
-            {title}
-          </h2>
+          {title && (
+            <h2 className={styles.title}>{title}</h2>
+          )}
           {note && <span className={styles.note}>{note}</span>}
           {actions && <div className={styles.actions}>{actions}</div>}
         </header>

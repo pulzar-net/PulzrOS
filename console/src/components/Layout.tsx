@@ -1,10 +1,14 @@
 import { Suspense } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
-import { LogOut, RefreshCw, ShieldAlert } from 'lucide-react';
-import { useQueryClient } from '@tanstack/react-query';
+import { LogOut, Network, RefreshCw, ShieldAlert } from 'lucide-react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { api } from '@/services/api';
+import type { SystemSummary } from '@/types';
 import { useSession } from '@/contexts/SessionContext';
 import { NAV } from '@/nav';
 import RecoveryBanner from './RecoveryBanner';
+import { useSessionCountdown } from '@/hooks/useSessionCountdown';
+import { countdown } from '@/lib/format';
 import ErrorBoundary from './ErrorBoundary';
 import Spinner from './ui/Spinner';
 import Button from './ui/Button';
@@ -16,65 +20,104 @@ export default function Layout({ unadopted }: { unadopted?: boolean } = {}) {
   const location = useLocation();
   const queryClient = useQueryClient();
 
-  const current = NAV.find((entry) => entry.path === location.pathname);
+  // Which gateway this is, on every page. The page's own name is already its
+  // heading; repeating it up here said the same thing twice per screen.
+  const summary = useQuery({
+    queryKey: ['system-summary'],
+    queryFn: () => api.get<SystemSummary>('/system/summary'),
+  });
 
   return (
     <div className={styles.shell}>
       <aside className={styles.sidebar}>
         <div className={styles.brand}>
-          <Brand size="sm" sub="Gateway" />
+          <Brand size="sm" />
         </div>
 
         <nav className={styles.nav}>
-          {NAV.map(({ path, label, icon: Icon }) => (
-            <NavLink
-              key={path}
-              to={path}
-              end={path === '/'}
-              className={({ isActive }) =>
-                `${styles.navItem} ${isActive ? styles.active : ''}`
-              }
-            >
-              <Icon size={15} strokeWidth={2} />
-              {label}
-            </NavLink>
-          ))}
+          {NAV.map(({ path, label, icon: Icon, children }) => {
+            const inside = path !== '/' && location.pathname.startsWith(path);
+            return (
+              <div key={path}>
+                <NavLink
+                  to={children ? children[0].path : path}
+                  end={path === '/'}
+                  className={({ isActive }) =>
+                    `${styles.navItem} ${isActive || inside ? styles.active : ''}`
+                  }
+                >
+                  <Icon size={15} strokeWidth={2} />
+                  {label}
+                </NavLink>
+                {children && inside && (
+                  <div className={styles.subnav}>
+                    {children.map((child) => (
+                      <NavLink
+                        key={child.path}
+                        to={child.path}
+                        className={({ isActive }) =>
+                          `${styles.subItem} ${isActive ? styles.subActive : ''}`
+                        }
+                      >
+                        {child.label}
+                      </NavLink>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </nav>
 
         <div className={styles.foot}>
+          {session?.kind === 'lan' && <LanAccess />}
           <div>{session?.subject}</div>
-          <div className={styles.footMeta}>
-            {session?.kind === 'sso'
-              ? 'via Parkeze'
-              : session?.kind === 'recovery'
-                ? 'recovery session'
-                : 'local sign-in'}
-          </div>
+          {session?.kind !== 'lan' && (
+            <div className={styles.footMeta}>
+              {session?.kind === 'sso'
+                ? 'via Parkeze'
+                : session?.kind === 'recovery'
+                  ? 'recovery session'
+                  : 'local sign-in'}
+            </div>
+          )}
         </div>
       </aside>
 
       <div className={styles.main}>
-        {session?.kind === 'recovery' && <RecoveryBanner />}
-        {unadopted && <UnadoptedBanner />}
+        <div className={styles.top}>
+          <header className={styles.topbar}>
+            <span className={styles.topbarTitle}>{summary.data?.identity.hostname ?? ''}</span>
+            <div className={styles.topbarActions}>
+              <Button
+                onClick={() => queryClient.invalidateQueries()}
+                title="Re-read everything from the gateway"
+              >
+                <RefreshCw size={14} strokeWidth={2} />
+                Refresh
+              </Button>
+              <Button onClick={signOut}>
+                <LogOut size={14} strokeWidth={2} />
+                Sign out
+              </Button>
+            </div>
+          </header>
 
-        <header className={styles.topbar}>
-          <span className={styles.topbarTitle}>{current?.title ?? ''}</span>
-          <div className={styles.topbarActions}>
-            <Button
-              onClick={() => queryClient.invalidateQueries()}
-              title="Re-read everything from the gateway"
-            >
-              <RefreshCw size={14} strokeWidth={2} />
-              Refresh
-            </Button>
-            <Button onClick={signOut}>
-              <LogOut size={14} strokeWidth={2} />
-              Sign out
-            </Button>
-          </div>
-        </header>
+          {/* Under the top bar, not over it: above, they pushed the bar down
+              and its rule stopped lining up with the one under the logo. */}
+          {session?.kind === 'recovery' && <RecoveryBanner />}
+          {unadopted && <UnadoptedBanner />}
+        </div>
 
-        <main className={styles.content}>
+        <main
+          className={`${styles.content} ${
+            NAV.flatMap((entry) => [entry, ...(entry.children ?? [])]).some(
+              (entry) => entry.wide && location.pathname.startsWith(entry.path),
+            )
+              ? styles.wide
+              : ''
+          }`}
+        >
           {/* Keyed on pathname so a route change remounts rather than
               reusing the previous page's Suspense boundary, which showed the
               old page's content under the new page's spinner. */}
@@ -91,6 +134,24 @@ export default function Layout({ unadopted }: { unadopted?: boolean } = {}) {
           </ErrorBoundary>
         </main>
       </div>
+    </div>
+  );
+}
+
+/**
+ * A LAN window's countdown, in the sidebar.
+ *
+ * Not a banner across the page like recovery: a LAN window is something
+ * somebody at the bench opened on purpose and is working inside, so the clock
+ * only needs to be findable, not in the way.
+ */
+function LanAccess() {
+  const remaining = useSessionCountdown();
+  return (
+    <div className={styles.lan} title="Closes on its own, or with parkeze-local-access close">
+      <Network size={12} strokeWidth={2} />
+      LAN access
+      <span className={styles.lanClock}>{countdown(remaining)}</span>
     </div>
   );
 }

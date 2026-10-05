@@ -199,11 +199,6 @@ function OfflineBundle({ onDone }: { onDone: () => void }) {
 
   return (
     <>
-      <p className={styles.escapeNote}>
-        Claim the gateway in Parkeze using the code above, then choose{' '}
-        <strong>Offline adoption</strong> there. It will give you a bundle to
-        paste here.
-      </p>
       <TextAreaField
         label="Adoption bundle"
         placeholder="Paste the signed bundle from Parkeze"
