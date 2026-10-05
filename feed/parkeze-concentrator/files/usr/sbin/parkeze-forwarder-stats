@@ -5,6 +5,7 @@
 #   parkeze-forwarder-stats            print JSON
 #   parkeze-forwarder-stats --record   also update the uplink total the LED
 #                                      daemon differences
+#   parkeze-forwarder-stats --slot N   print JSON for one slot's pair only
 #
 # Read from the log, where both ChirpStack processes report:
 #
@@ -33,6 +34,23 @@ COUNTER="${STATE_DIR}/uplinks"
 # `logread -l` bounds the read: on a gateway that has been up for a month the
 # log is large, and the console calls this on every page load.
 log="$(logread -l 400 2>/dev/null)"
+
+# One slot's counters. Both processes log under the same names whichever slot
+# they serve, so on a two-concentrator gateway the unfiltered read takes
+# whichever pair logged last. procd knows each instance's pid; the log tags
+# every line with it.
+if [ "$1" = "--slot" ]; then
+    case "$2" in ''|*[!0-9]*) echo "usage: $0 --slot N" >&2; exit 2 ;; esac
+    instances="$(ubus call service list '{"name":"parkeze-packet-forwarder"}' 2>/dev/null)"
+    pid_of() {
+        echo "${instances}" | jsonfilter -e "@['parkeze-packet-forwarder'].instances['$1'].pid" 2>/dev/null
+    }
+    cpid="$(pid_of "concentratord$2")"
+    fpid="$(pid_of "forwarder$2")"
+    # A wider window than the default: two slots share it, and the filter
+    # throws most of it away.
+    log="$(logread -l 1200 2>/dev/null | grep -aE "\[(${cpid:-x}|${fpid:-x})\]:")"
+fi
 
 stats="$(echo "${log}" | grep -a 'Publishing stats event' | tail -n1)"
 field() { echo "${stats}" | sed -n "s/.* $1: *\([0-9]*\).*/\1/p"; }

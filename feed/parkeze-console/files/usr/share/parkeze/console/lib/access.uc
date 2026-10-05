@@ -78,11 +78,22 @@ status = function() {
             if (!ssid) return { configured: false };
             const link = runJson('ubus call network.interface.wwifi status') || {};
             const addresses = link['ipv4-address'] || [];
+            // Signal, from the station interface the radio actually created
+            // for this section; its name is the driver's choice, not ours.
+            let signal = null;
+            const radios = runJson('ubus call network.wireless status') || {};
+            for (let name in radios)
+                for (let iface in (radios[name].interfaces || []))
+                    if (iface.section == 'parkeze_sta' && iface.ifname) {
+                        const info = runJson(sprintf('ubus call iwinfo info \'{"device":"%s"}\'', iface.ifname)) || {};
+                        signal = info.signal ?? null;
+                    }
             return {
                 configured: true,
                 ssid: ssid,
                 up: link.up == true,
                 address: length(addresses) ? addresses[0].address : null,
+                signal: signal,
             };
         })(),
     };
@@ -172,11 +183,15 @@ scan = function() {
     const radio = run("uci -q show wireless | sed -n 's/^wireless\\.\\([^.]*\\)=wifi-device$/\\1/p' | head -n1");
     if (!radio) return { capable: false, networks: [] };
 
-    const raw = runJson(sprintf('ubus call iwinfo scan \'{"device":"%s"}\'',
-                                run(sprintf('uci -q get wireless.%s.ifname', radio)) || 'wlan0'));
+    // The phy, not an interface on it. A radio with no interface up — which is
+    // every radio until the AP is raised or a network joined, since OpenWrt
+    // ships them disabled — has no wlan0 to scan from, and this used to report
+    // that as the radio being busy with an AP that was not even on. iwinfo
+    // scans a bare phy by bringing up a temporary interface of its own.
+    const phy = run('ls /sys/class/ieee80211 2>/dev/null | head -n1');
+    const raw = phy ? runJson(sprintf('ubus call iwinfo scan \'{"device":"%s"}\'', phy)) : null;
     if (!raw) return { capable: true, networks: [],
-                       error: 'The radio is busy hosting the setup network. '
-                            + 'Scanning will work once it is not.' };
+                       error: 'The scan returned nothing.' };
 
     const seen = {};
     const networks = [];
@@ -221,6 +236,11 @@ joinWifi = function(req) {
     uci.set('wireless', 'parkeze_sta', 'encryption', req.key ? 'psk2' : 'none');
     if (req.key) uci.set('wireless', 'parkeze_sta', 'key', req.key);
     uci.set('wireless', 'parkeze_sta', 'disabled', '0');
+    // The radio as well as the interface. Stock OpenWrt ships the radio
+    // disabled and only the setup AP ever turned it on, so a join on a gateway
+    // whose AP had never been raised configured a network on a radio that was
+    // off, and never came up.
+    uci.set('wireless', radio, 'disabled', '0');
 
     // Its own interface in the wan zone, with a metric between wired and
     // cellular: better than paying for data, worse than a cable.

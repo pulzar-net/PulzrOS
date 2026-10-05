@@ -86,6 +86,13 @@ iccid=""
 sync_modem_location() {
     local index="$1" attempt=0 kv lat lon alt
 
+    # Only when the modem may be the source. With a concentrator's receiver or
+    # a separate one chosen on the GNSS page, the position is theirs to record.
+    case "$(uci -q get parkeze.gps.source || echo auto)" in
+        auto|modem) ;;
+        *) return 0 ;;
+    esac
+
     while [ "${attempt}" -lt 10 ]; do
         # Something else may have recorded a position while this was waiting
         # on a fix — a HAT's own receiver, synced by hand. Gateways do not
@@ -171,10 +178,19 @@ EOF
 # nothing: enabling an already-enabled source is a no-op on ModemManager's
 # side, matching how the rest of this script is written to be safe to re-run
 # on every boot and every hotplug event rather than only once.
+#
+# Never under --status. That mode is documented as changing nothing, and the
+# console calls it on every Overview and Backhaul refresh: it was re-enabling
+# the engine, logging that it had, starting a GNSS probe of every serial port
+# and a five-minute position poll, every fifteen seconds for as long as a page
+# was open — a tenth of the log, and a probe that retunes the receiver's port
+# underneath the forwarder holding it.
 gps_capable="false"
 if mmcli -m "${modem_index}" --location-status 2>/dev/null | grep -q 'gps-nmea'; then
     gps_capable="true"
-    if mmcli -m "${modem_index}" --location-enable-gps-nmea --location-enable-gps-raw >/dev/null 2>&1; then
+    if [ "$1" = "--status" ]; then
+        :
+    elif mmcli -m "${modem_index}" --location-enable-gps-nmea --location-enable-gps-raw >/dev/null 2>&1; then
         log "modem GPS engine enabled"
         # gps-detect writes parkeze.gps.* via `uci commit parkeze`, which the
         # packet forwarder already restarts on (its own config.change

@@ -54,6 +54,7 @@ const SESSION_COOKIE = 'parkeze_session';
 const PUBLIC = {
     'POST /api/auth/login': true,
     'POST /api/auth/sso': true,
+    'POST /api/auth/ticket': true,
     'GET  /api/auth/methods': true,
     'POST /api/auth/recovery/challenge': true,
     'POST /api/auth/recovery/verify': true,
@@ -218,6 +219,18 @@ const ROUTES = {
         }, { 'Set-Cookie': sessionCookie(result.session.token, 3600) });
     },
 
+    'POST /api/auth/ticket': (env, req) => {
+        const result = auth.loginTicket(req.ticket, clientAddr(env));
+        if (result.error) return error(result.status, result.error);
+        const ttl = result.session.expires - time();
+        return respond(200, {
+            subject: result.session.subject,
+            kind: result.session.kind,
+            csrf: result.session.csrf,
+            expiresIn: ttl,
+        }, { 'Set-Cookie': sessionCookie(result.session.token, ttl) });
+    },
+
     'POST /api/auth/recovery/challenge': () => {
         const result = auth.recoveryChallenge();
         if (result.error) return error(result.status, result.error);
@@ -262,6 +275,9 @@ const ROUTES = {
 
     // ── system ──────────────────────────────────────────────────────────────
     'GET  /api/system/summary':   () => respond(200, system.summary()),
+    'GET  /api/system/stats':     () => respond(200, system.stats()),
+    'GET  /api/system/history':   (env) => respond(200, system.history(env.QUERY_STRING)),
+    'GET  /api/system/processes': () => respond(200, system.processes()),
     'GET  /api/system/logs':      (env, req) => respond(200, system.logs(env.QUERY_STRING)),
     'POST /api/system/reboot':    (env, req, s) => { auth.audit('system.reboot', { by: s.subject }); return respond(200, system.reboot()); },
     'GET  /api/system/uart':      () => respond(200, system.uart()),
@@ -335,10 +351,18 @@ const ROUTES = {
     'POST /api/lorawan/concentrator': (env, req, s) => respond(200, lorawan.setConcentrator(req, s)),
     'POST /api/lorawan/detect':       (env, req, s) => { auth.audit('lorawan.detect', { by: s.subject }); return respond(200, lorawan.detect()); },
 
+    'GET  /api/lorawan/forwarders': () => respond(200, lorawan.forwarders()),
+
     // ── gnss ────────────────────────────────────────────────────────────────
-    'GET  /api/lorawan/gps':        () => respond(200, lorawan.gps()),
-    'POST /api/lorawan/gps/detect': (env, req, s) => { auth.audit('gps.detect', { by: s.subject }); return respond(200, lorawan.detectGps()); },
-    'POST /api/lorawan/gps/sync':   (env, req, s) => {
+    'GET  /api/gnss':        () => respond(200, lorawan.gps()),
+    'POST /api/gnss/source': (env, req, s) => {
+        const result = lorawan.setGpsSource(req);
+        if (result.error) return error(400, result.error);
+        auth.audit('gps.source', { by: s.subject, source: req.source, slot: req.slot, device: req.device });
+        return respond(200, result);
+    },
+    'POST /api/gnss/detect': (env, req, s) => { auth.audit('gps.detect', { by: s.subject }); return respond(200, lorawan.detectGps()); },
+    'POST /api/gnss/sync':   (env, req, s) => {
         const result = lorawan.syncGps();
         if (result.error) return error(409, result.error);
         auth.audit('gps.sync', { by: s.subject });

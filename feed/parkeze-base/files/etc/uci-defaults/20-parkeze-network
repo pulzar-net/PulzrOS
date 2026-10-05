@@ -216,6 +216,23 @@ set firewall.console_mdns.dest_port='5353'
 set firewall.console_mdns.target='ACCEPT'
 EOF
 
+# ── Temporary LAN access ────────────────────────────────────────────────────
+#
+# `parkeze-local-access open` admits the subnet of the port's DHCP lease, for a
+# bounded time, so a bench gateway can be reached from the LAN it sits on. The
+# rule itself is written to tmpfs; this only says where to look for it.
+#
+# fw4 skips an include whose file does not exist, which is the normal state:
+# absent after every boot, absent once the window closes. A window cannot
+# survive a reboot because nothing about it is on flash except this pointer.
+uci -q batch <<EOF
+set firewall.local_access=include
+set firewall.local_access.type='nftables'
+set firewall.local_access.path='/var/run/parkeze/local-access/rules.nft'
+set firewall.local_access.position='chain-pre'
+set firewall.local_access.chain='input_wan'
+EOF
+
 # ── The management tunnel ───────────────────────────────────────────────────
 #
 # wg0 is its own zone, and it admits exactly what gateway-link needs: the

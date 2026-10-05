@@ -117,11 +117,19 @@ case "${bus}" in
     *)   die "bus '${bus}' is not supported by concentratord" ;;
 esac
 
-# Only slot 0 has the receiver: one gateway, one position, and two processes
-# opening the same tty is a fault that looks like intermittent GPS.
+# One slot has the receiver: one gateway, one position, and two processes
+# opening the same tty is a fault that looks like intermittent GPS. Which slot
+# is the GNSS source setting's call (parkeze-gps has the options); slot 0 unless
+# it says otherwise. A modem or a separate receiver as the source means no
+# concentrator gets it, and each reports the recorded position instead.
 gps_device="$(get parkeze.gps.device)"
+gps_source="$(get parkeze.gps.source)"
+gps_slot=""
+case "${gps_source:-auto}" in
+    auto|concentrator) gps_slot="$(get parkeze.gps.slot)"; gps_slot="${gps_slot:-0}" ;;
+esac
 gps=""
-if [ "${SLOT}" = "0" ] && [ "$(get parkeze.gps.status)" = "present" ] && [ -c "${gps_device}" ]; then
+if [ "${SLOT}" = "${gps_slot}" ] && [ "$(get parkeze.gps.status)" = "present" ] && [ -c "${gps_device}" ]; then
     flags="${flags}\"GNSS\","
     gps="gnss_dev_path=\"${gps_device}\""
 fi

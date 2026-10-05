@@ -25,6 +25,20 @@
 #
 # A cached position going stale is not a problem worth solving: gateways do not
 # move, and one that has moved has bigger problems than a stale coordinate.
+#
+# ── WHERE THE POSITION COMES FROM ──────────────────────────────────────────
+#
+# parkeze.gps.source, set from the console's GNSS page:
+#
+#   auto           the receiver goes to slot 0's concentrator, and the first
+#                  position recorded — receiver or modem — stands. What every
+#                  gateway did before there was a choice.
+#   concentrator   the receiver goes to the concentrator in parkeze.gps.slot.
+#   modem          the cellular modem's GNSS. No concentrator gets a receiver;
+#                  each reports the recorded position.
+#   device         a separate serial or USB receiver (parkeze.gps.device, set
+#                  by detection from source_device). No concentrator opens it,
+#                  so it can always be read directly.
 
 . /etc/parkeze/board.conf
 
@@ -32,6 +46,22 @@ CACHE=/var/run/parkeze/gps.json
 
 device() { uci -q get parkeze.gps.device; }
 baud()   { uci -q get parkeze.gps.baud || echo 9600; }
+
+gps_source() { uci -q get parkeze.gps.source || echo auto; }
+
+# The modem's GNSS, as the same five fields parse_nmea prints. mmcli shows "--"
+# for a field it has no value for yet; that is no fix, not a position.
+read_modem() {
+    local index kv lat lon alt
+    index="$(mmcli -L 2>/dev/null | sed -n 's|.*/Modem/\([0-9]*\).*|\1|p' | head -n1)"
+    [ -n "${index}" ] || return 1
+    kv="$(mmcli -m "${index}" --location-get --output-keyvalue 2>/dev/null)"
+    lat="$(echo "${kv}" | sed -n 's/^modem\.location\.gps\.latitude *: *//p')"
+    lon="$(echo "${kv}" | sed -n 's/^modem\.location\.gps\.longitude *: *//p')"
+    alt="$(echo "${kv}" | sed -n 's/^modem\.location\.gps\.altitude *: *//p')"
+    case "${lat}" in ''|--) echo "0 0 0 0 0"; return 0 ;; esac
+    echo "1 0 ${lat} ${lon} ${alt:-0}"
+}
 
 forwarder_running() {
     /etc/init.d/parkeze-packet-forwarder running >/dev/null 2>&1
@@ -64,7 +94,9 @@ parse_nmea() {
 read_receiver() {
     local port; port="$(device)"
     [ -c "${port}" ] || return 1
-    forwarder_running && return 1
+    # A separate receiver is never given to a concentrator, so nothing else
+    # holds its port.
+    [ "$(gps_source)" != "device" ] && forwarder_running && return 1
 
     stty -F "${port}" "$(baud)" raw -echo 2>/dev/null || return 1
     # Long enough to catch a GGA and an RMC even at 1Hz with a slow start.
@@ -75,12 +107,26 @@ emit() {
     local fix="$1" sats="$2" lat="$3" lon="$4" alt="$5" source="$6"
     local status; status="$(uci -q get parkeze.gps.status || echo absent)"
 
+    if [ "${source}" = "modem" ]; then
+        if [ "$(uci -q get parkeze.cellular.gps_capable)" != "1" ]; then
+            printf '{"present":false,"fix":false,"source":"modem","reason":"The modem has no GNSS."}\n'
+            return
+        fi
+        if [ "${fix:-0}" = "0" ]; then
+            printf '{"present":true,"fix":false,"source":"modem","reason":"The modem has no fix yet."}\n'
+            return
+        fi
+        printf '{"present":true,"fix":true,"latitude":%s,"longitude":%s,"altitude":%s,"source":"modem"}\n' \
+            "${lat}" "${lon}" "${alt}"
+        return
+    fi
+
     if [ "${status}" != "present" ]; then
         printf '{"present":false,"fix":false,"reason":"No GNSS receiver detected."}\n'
         return
     fi
     if [ "${fix:-0}" = "0" ]; then
-        printf '{"present":true,"fix":false,"device":"%s","source":"%s","reason":"Receiver is present but has no fix. Check the antenna has sky view."}\n' \
+        printf '{"present":true,"fix":false,"device":"%s","source":"%s","reason":"The receiver has no fix yet."}\n' \
             "$(device)" "${source}"
         return
     fi
@@ -90,12 +136,15 @@ emit() {
 
 case "${1:-status}" in
 status)
-    if forwarder_running; then
+    if [ "$(gps_source)" = "modem" ]; then
+        set -- $(read_modem 2>/dev/null || echo "0 0 0 0 0")
+        emit "$1" "$2" "$3" "$4" "$5" modem
+    elif [ "$(gps_source)" != "device" ] && forwarder_running; then
         # The forwarder has the port. Use whatever it last reported.
         if [ -s "${CACHE}" ]; then
             cat "${CACHE}"
         else
-            printf '{"present":true,"fix":false,"device":"%s","source":"forwarder","reason":"Concentratord holds the receiver and reports its position to the network server. Stop the LoRa service to read it here."}\n' \
+            printf '{"present":true,"fix":false,"device":"%s","source":"forwarder","reason":"The forwarder holds the receiver, so it cannot be read here."}\n' \
                 "$(device)"
         fi
     else
@@ -128,12 +177,15 @@ sync)
     [ -n "${lat}" ] && [ -n "${lon}" ] || {
         echo "No fix — nothing to record." >&2; exit 1; }
 
+    recorded_from=gnss
+    [ "$(gps_source)" = "modem" ] && recorded_from=modem
+
     uci -q batch <<EOF
 set parkeze.location=location
 set parkeze.location.latitude='${lat}'
 set parkeze.location.longitude='${lon}'
 set parkeze.location.altitude='${alt:-0}'
-set parkeze.location.source='gnss'
+set parkeze.location.source='${recorded_from}'
 set parkeze.location.fixed_at='$(date -u +%Y-%m-%dT%H:%M:%SZ)'
 EOF
     uci commit parkeze

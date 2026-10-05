@@ -230,7 +230,21 @@ candidates() {
 found=""
 found_baud=""
 
-if [ "${PARKEZE_GPS}" = "none" ]; then
+if [ "$(uci -q get parkeze.gps.source)" = "device" ]; then
+    # A receiver somebody chose on the GNSS page. Checked, never searched for:
+    # probing other ports would replace their choice with whatever answered
+    # first, which on a board with its own receiver is that one.
+    found="$(uci -q get parkeze.gps.source_device)"
+    found_baud="$(uci -q get parkeze.gps.source_baud)"
+    found_baud="${found_baud:-9600}"
+    if [ -z "${found}" ] || is_claimed "${found}"; then
+        log "chosen GNSS device '${found}' is unset or belongs to a concentrator"
+        found=""
+    elif ! probe_nmea "${found}" "${found_baud}"; then
+        log "chosen GNSS device ${found} emitted no NMEA at ${found_baud}"
+        found=""
+    fi
+elif [ "${PARKEZE_GPS}" = "none" ]; then
     log "GPS disabled for this board"
 elif [ -n "${PARKEZE_GPS}" ] && [ "${PARKEZE_GPS}" != "auto" ]; then
     # Fixed hardware. Trust the board, but still confirm the receiver answers —

@@ -16,7 +16,7 @@ let _m_util = loadfile('/usr/share/parkeze/console/lib/util.uc', { raw_mode: tru
 // Declaring the names first makes every one of them a known local before any
 // body is compiled, so closures capture the binding rather than a missing
 // global and definition order stops mattering. auth.uc alone had six of these.
-let profile, supported, slotView, concentrator, setConcentrator, setSlot, detect, gps, syncGps, detectGps, status, restart, setBackhaul;
+let profile, supported, slotView, concentrator, setConcentrator, setSlot, detect, gps, syncGps, detectGps, setGpsSource, forwarders, status, restart, setBackhaul;
 
 let run = _m_util.run;; let runJson = _m_util.runJson;
 
@@ -215,7 +215,76 @@ gps = function() {
         source: uci.get('parkeze', 'location', 'source'),
         fixedAt: uci.get('parkeze', 'location', 'fixed_at'),
     };
+
+    // Where the position comes from, and what there is to choose between.
+    // parkeze-gps's header describes each source.
+    state.config = {
+        source: uci.get('parkeze', 'gps', 'source') || 'auto',
+        slot: int(uci.get('parkeze', 'gps', 'slot') || '0'),
+        device: uci.get('parkeze', 'gps', 'source_device') || '',
+        baud: int(uci.get('parkeze', 'gps', 'source_baud') || '9600'),
+    };
+    const count = int(uci.get('parkeze', 'concentrator', 'slots') || '1');
+    const slots = [];
+    for (let i = 0; i < count; i++)
+        slots[length(slots)] = {
+            index: i,
+            status: uci.get('parkeze', sprintf('slot%d', i), 'status') || 'unknown',
+        };
+    state.options = {
+        modem: uci.get('parkeze', 'cellular', 'gps_capable') == '1',
+        slots: slots,
+    };
     return state;
+};
+
+const GPS_SOURCES = /^(auto|modem|concentrator|device)$/;
+const GPS_BAUDS = [4800, 9600, 19200, 38400, 57600, 115200];
+
+// Choose where the gateway's position comes from.
+//
+// Detection runs straight away so the answer reflects the new choice, and the
+// LoRa stack restarts because which concentrator holds the receiver is fixed
+// when its config is rendered. The recorded position is refreshed from the new
+// source when it has a fix; when it has none the old one stands, because a
+// gateway reporting no position at all is worse than one reporting yesterday's.
+setGpsSource = function(req) {
+    if (!match(req.source ?? '', GPS_SOURCES))
+        return { error: 'Unknown GNSS source.' };
+
+    const uci = cursor();
+    const count = int(uci.get('parkeze', 'concentrator', 'slots') || '1');
+
+    if (req.source == 'concentrator') {
+        const slot = int(req.slot ?? -1);
+        if (slot < 0 || slot >= count)
+            return { error: sprintf('This gateway has concentrators 1 to %d.', count) };
+        uci.set('parkeze', 'gps', 'slot', sprintf('%d', slot));
+    }
+
+    if (req.source == 'device') {
+        if (!match(req.device ?? '', /^\/dev\/tty[A-Za-z0-9._-]{1,24}$/))
+            return { error: 'Give the receiver as a serial device, like /dev/ttyUSB0.' };
+        for (let i = 0; i < count; i++)
+            if (uci.get('parkeze', sprintf('slot%d', i), 'device') == req.device)
+                return { error: sprintf('%s is concentrator %d.', req.device, i + 1) };
+        const baud = int(req.baud ?? 9600);
+        if (index(GPS_BAUDS, baud) < 0)
+            return { error: 'Unsupported baud rate.' };
+        uci.set('parkeze', 'gps', 'source_device', req.device);
+        uci.set('parkeze', 'gps', 'source_baud', sprintf('%d', baud));
+    }
+
+    if (req.source == 'modem' && uci.get('parkeze', 'cellular', 'gps_capable') != '1')
+        return { error: 'The modem has no GNSS.' };
+
+    uci.set('parkeze', 'gps', 'gps');
+    uci.set('parkeze', 'gps', 'source', req.source);
+    uci.commit('parkeze');
+
+    run('/usr/sbin/parkeze-gps-detect >/dev/null 2>&1');
+    run('(/usr/sbin/parkeze-gps sync; /etc/init.d/parkeze-packet-forwarder restart) >/dev/null 2>&1 &');
+    return { ok: true, gps: gps() };
 };
 
 // Freeze the current fix as the gateway's reference coordinates.
@@ -234,6 +303,72 @@ syncGps = function() {
 detectGps = function() {
     run('/usr/sbin/parkeze-gps-detect >/dev/null 2>&1');
     return { ok: true, gps: gps() };
+};
+
+// Each concentrator slot's pair — concentratord and its MQTT forwarder — as one
+// forwarder. They start, stop and fail together, and a second slot is a second
+// gateway as far as the network server is concerned.
+forwarders = function() {
+    const uci = cursor();
+    const count = int(uci.get('parkeze', 'concentrator', 'slots') || '1');
+    const service = runJson('ubus call service list \'{"name":"parkeze-packet-forwarder"}\'') || {};
+    const instances = (service['parkeze-packet-forwarder'] || {}).instances || {};
+
+    const gpsSource = uci.get('parkeze', 'gps', 'source') || 'auto';
+    const gpsSlot = (gpsSource == 'auto' || gpsSource == 'concentrator')
+        ? int(uci.get('parkeze', 'gps', 'slot') || '0') : -1;
+    const gpsPresent = uci.get('parkeze', 'gps', 'status') == 'present';
+
+    const list = [];
+    for (let i = 0; i < count; i++) {
+        const radio = instances[sprintf('concentratord%d', i)];
+        const bridge = instances[sprintf('forwarder%d', i)];
+        const running = !!(radio && radio.running);
+        const stats = running
+            ? runJson(sprintf('/usr/sbin/parkeze-forwarder-stats --slot %d 2>/dev/null', i))
+            : null;
+        const attached = i == gpsSlot && gpsPresent;
+
+        list[length(list)] = {
+            index: i,
+            slot: slotView(uci, i),
+            running: running,
+            forwarding: !!(bridge && bridge.running),
+            // Slot 0 carries the gateway's EUI; another slot uses its chip's
+            // own, which only concentratord can read.
+            gatewayId: i == 0 ? uci.get('parkeze', 'identity', 'gateway_eui') : null,
+            mqtt: trim(readfile(sprintf('/var/run/parkeze/lora/slot%d.mqtt', i)) || '') || null,
+            stats: stats ? {
+                received: stats.rx_received,
+                forwarded: stats.rx_forwarded,
+                transmitted: stats.tx_emitted,
+                crcOkPercent: stats.crc_ok_percent,
+                lastUplink: stats.last_uplink || null,
+            } : null,
+            gnss: {
+                attached: attached,
+                device: attached ? uci.get('parkeze', 'gps', 'device') : null,
+            },
+        };
+    }
+
+    return {
+        region: uci.get('parkeze', 'lorawan', 'region'),
+        mqtt: {
+            host: uci.get('parkeze', 'mqtt', 'host'),
+            port: int(uci.get('parkeze', 'mqtt', 'port') || '8883'),
+            topicPrefix: uci.get('parkeze', 'mqtt', 'topic_prefix'),
+            username: uci.get('parkeze', 'mqtt', 'username'),
+            buffered: uci.get('parkeze', 'lorawan', 'buffer') == '1',
+        },
+        location: {
+            latitude: uci.get('parkeze', 'location', 'latitude'),
+            longitude: uci.get('parkeze', 'location', 'longitude'),
+            altitude: uci.get('parkeze', 'location', 'altitude'),
+            source: uci.get('parkeze', 'location', 'source'),
+        },
+        forwarders: list,
+    };
 };
 
 status = function() {
@@ -320,4 +455,4 @@ restart = function() {
 // its handler in TEMPLATE mode and loads anything else through loadfile(),
 // neither of which is module mode — `export` is a syntax error there. See the
 // header of api/index.uc for the full contract.
-return { concentrator, detect, detectGps, gps, restart, setBackhaul, setConcentrator, setSlot, status, supported, syncGps };
+return { concentrator, detect, detectGps, forwarders, gps, restart, setBackhaul, setConcentrator, setGpsSource, setSlot, status, supported, syncGps };

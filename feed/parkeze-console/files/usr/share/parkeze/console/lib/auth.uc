@@ -76,7 +76,7 @@ let digest = require('digest');
 // Declaring the names first makes every one of them a known local before any
 // body is compiled, so closures capture the binding rather than a missing
 // global and definition order stops mattering. auth.uc alone had six of these.
-let now, randomHex, constantTimeEqual, readJson, writeJson, crypt, hashPassword, verifyPassword, shellQuote, lockoutState, isLockedOut, recordFailure, clearFailures, sessionPath, createSession, readSession, destroySession, config, backhaulUp, loginMethods, loginLocal, setPassword, recoveryChallenge, recoveryVerify, verifySignature, loginSso, audit, platformUrl;
+let now, randomHex, constantTimeEqual, readJson, writeJson, crypt, hashPassword, verifyPassword, shellQuote, lockoutState, isLockedOut, recordFailure, clearFailures, sessionPath, createSession, readSession, destroySession, config, backhaulUp, loginMethods, loginLocal, setPassword, recoveryChallenge, recoveryVerify, verifySignature, loginSso, audit, platformUrl, lanWindow, loginTicket;
 
 
 const STATE_DIR      = '/etc/parkeze/console';
@@ -85,6 +85,9 @@ const RECOVERY_PUBKEY = '/etc/parkeze/recovery.pub';
 const CHALLENGE_FILE = '/var/run/parkeze/recovery-challenge.json';
 const SSO_SPENT_FILE = '/var/run/parkeze/sso-spent.json';
 const LOCKOUT_FILE   = '/var/run/parkeze/lockout.json';
+// Written by /usr/sbin/parkeze-local-access, which only a root shell can run.
+const LAN_STATE      = '/var/run/parkeze/local-access/state.json';
+const LAN_TICKET     = '/var/run/parkeze/local-access/ticket';
 
 // Sessions are short because a gateway console is a place you go to do one
 // thing. A tab left open in a van overnight should not still be authenticated.
@@ -278,12 +281,12 @@ sessionPath = function(token) {
     return SESSION_DIR + '/' + digest.sha256(token);
 };
 
-createSession = function(subject, kind, ttl) {
+createSession = function(subject, kind, ttl, extra) {
     system(['/bin/mkdir', '-p', SESSION_DIR]);
     const token = randomHex(32);
     const session = {
         subject,
-        kind,                       // 'local' | 'sso' | 'recovery'
+        kind,                       // 'local' | 'sso' | 'recovery' | 'lan'
         created: now(),
         expires: now() + (ttl ? ttl : SESSION_TTL),
         // A CSRF token bound to the session. The session cookie is
@@ -293,6 +296,7 @@ createSession = function(subject, kind, ttl) {
         // belt-and-braces rather than redundant.
         csrf: randomHex(16),
     };
+    for (let k in (extra ?? {})) session[k] = extra[k];
     writeJson(sessionPath(token), session);
     // Built field by field rather than with a spread: ucode's object spread
     // support varies by version and this runs on whatever ucode the pinned
@@ -306,6 +310,21 @@ readSession = function(token) {
     if (!token || !match(token, /^[0-9a-f]{64}$/)) return null;
     const session = readJson(sessionPath(token));
     if (!session) return null;
+    // A LAN session lives exactly as long as the window it came through:
+    // closing the window, or the reboot that clears it, ends the session too,
+    // and extending the window extends the session without signing in again.
+    //
+    // The window it came through, not any window. Matching on "a window is
+    // open" let a session from a window closed yesterday come back to life
+    // the moment somebody opened a new one.
+    if (session.kind == 'lan') {
+        const window = lanWindow();
+        if (!window || window.id != session.window) {
+            unlink(sessionPath(token));
+            return null;
+        }
+        session.expires = window.expires;
+    }
     if (session.expires <= now()) {
         unlink(sessionPath(token));
         return null;
@@ -635,6 +654,49 @@ loginSso = function(token, addr) {
     return { session };
 };
 
+// ── LAN access ──────────────────────────────────────────────────────────────
+//
+// The one-time link parkeze-local-access prints. That script's header says why
+// it exists and why only a root shell can open a window; this only redeems the
+// link. Valid while the window is open, good once.
+
+lanWindow = function() {
+    const window = readJson(LAN_STATE);
+    return (window && window.expires > now()) ? window : null;
+};
+
+loginTicket = function(ticket, addr) {
+    const remaining = isLockedOut(addr);
+    if (remaining)
+        return { error: sprintf('Too many attempts. Try again in %d minutes.',
+                                (remaining + 59) / 60), status: 429 };
+
+    const window = lanWindow();
+    if (!window)
+        return { error: 'LAN access is closed. Open it again from the '
+                      + "gateway's shell with parkeze-local-access open.",
+                 status: 410 };
+
+    const stored = trim(readfile(LAN_TICKET) ?? '');
+    const valid = type(ticket) == 'string' && match(ticket, /^[0-9a-f]{64}$/)
+                  && length(stored)
+                  && constantTimeEqual(digest.sha256(ticket), stored);
+    if (!valid) {
+        recordFailure(addr);
+        audit('login.failed', { addr, method: 'lan' });
+        return { error: 'That link has been used or replaced. Run '
+                      + 'parkeze-local-access open for a new one.',
+                 status: 401 };
+    }
+
+    unlink(LAN_TICKET);
+    clearFailures(addr);
+    const session = createSession('root', 'lan', window.expires - now(),
+                                  { window: window.id });
+    audit('login.ok', { addr, method: 'lan', subnet: window.subnet });
+    return { session };
+};
+
 // ── audit ───────────────────────────────────────────────────────────────────
 //
 // Written locally and uploaded when the backhaul returns. A recovery that
@@ -658,4 +720,4 @@ audit = function(action, detail) {
 // its handler in TEMPLATE mode and loads anything else through loadfile(),
 // neither of which is module mode — `export` is a syntax error there. See the
 // header of api/index.uc for the full contract.
-return { audit, constantTimeEqual, createSession, destroySession, hashPassword, loginLocal, loginMethods, loginSso, readSession, recoveryChallenge, recoveryVerify, setPassword, verifyPassword };
+return { audit, constantTimeEqual, createSession, destroySession, hashPassword, loginLocal, loginMethods, loginSso, loginTicket, readSession, recoveryChallenge, recoveryVerify, setPassword, verifyPassword };

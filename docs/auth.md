@@ -58,6 +58,27 @@ The interesting case. Local login stays refused, because the credential a thief
 could extract must not be a way in. Instead: an Ed25519 challenge-response
 against a key the gateway only ever holds the **public** half of.
 
+### On the bench: a LAN window
+
+The ethernet port's firewall admits only `169.254.0.0/16` and the console
+subnet, so a gateway on a bench LAN is reachable only through parkeze.net.
+From a root shell (the serial console, or SSH from somewhere already allowed):
+
+```
+parkeze-local-access open [minutes]   # default 60, at most 1440
+parkeze-local-access close
+parkeze-local-access status
+```
+
+`open` admits the subnet of the port's DHCP lease on 22, 80 and 443, and prints
+a one-time sign-in link. Running it again extends the window and prints a new
+link. The session the link opens ends when that window closes, and does not come
+back if another window is opened later.
+
+None of this is a way past the rules above. Opening a window takes root, and
+root can already read everything on the box. There is no API for it. The rule,
+the window and the link live in `/var/run`, so a reboot closes all of it.
+
 ## Offline recovery, step by step
 
 1. The gateway prints a challenge — its EUI, a fresh 12-byte random nonce, and
