@@ -228,6 +228,8 @@ export interface LorawanStatus {
   backhaul: {
     allowCellular: boolean;
     wiredUp: boolean;
+    /** Absent on firmware from before WiFi counted as a free link. */
+    wifiUp?: boolean;
     sending: boolean;
     brokerPort: number;
   } | null;

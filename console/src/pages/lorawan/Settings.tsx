@@ -97,8 +97,9 @@ function Delivery({ lora }: { lora: LorawanStatus }) {
       setTimeout(() => queryClient.invalidateQueries({ queryKey: ['lorawan-status'] }), 3000),
   });
 
-  // Confined to wired, with wired down. Whether that is a pause or a loss is the
-  // whole reason holding is a separate setting.
+  // Confined to the free links — wired and WiFi — with both down. Whether
+  // that is a pause or a loss is the whole reason holding is a separate
+  // setting.
   const confined = !backhaul.sending;
   const holding = buffer?.enabled ?? false;
   // Holding on with no broker running: the forwarders publish to a port with
@@ -114,12 +115,12 @@ function Delivery({ lora }: { lora: LorawanStatus }) {
       )}
       {confined && holding && !brokerMissing && (
         <Notice tone="warning">
-          Wired is down. Uplinks are being held.
+          Wired and WiFi are down. Uplinks are being held.
         </Notice>
       )}
       {confined && !holding && (
         <Notice tone="error">
-          Wired is down. Uplinks are being dropped.
+          Wired and WiFi are down. Uplinks are being dropped.
         </Notice>
       )}
 
@@ -129,6 +130,9 @@ function Delivery({ lora }: { lora: LorawanStatus }) {
           value={<StatusBadge ok={backhaul.sending} okLabel="Yes" badLabel={holding ? 'Held' : 'No'} />}
         />
         <Fact label="Wired" value={<StatusBadge ok={backhaul.wiredUp} />} />
+        {backhaul.wifiUp !== undefined && (
+          <Fact label="WiFi" value={<StatusBadge ok={backhaul.wifiUp} />} />
+        )}
         {holding && (
           <Fact label="Queued" value={buffer?.persistent ? bytes(buffer.queuedBytes) : 'In memory'} />
         )}

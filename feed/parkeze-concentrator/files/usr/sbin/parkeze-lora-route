@@ -54,6 +54,7 @@ MARK="${PARKEZE_LORA_MARK:-0x9800}"
 MASK="0xff00"
 TABLE="${PARKEZE_LORA_TABLE:-98}"
 WIRED_IFACE="${PARKEZE_WAN_ETH_IFACE:-wan}"
+WIFI_IFACE="${PARKEZE_WAN_WIFI_IFACE:-wwifi}"
 
 log() { logger -t lora-route -p daemon.info "$*"; }
 
@@ -143,15 +144,22 @@ EOF
     ip rule del fwmark "${MARK}/${MASK}" table "${TABLE}" 2>/dev/null
     ip rule add fwmark "${MARK}/${MASK}" table "${TABLE}" priority 32100 2>/dev/null
 
+    # "Not cellular" means any link that is not billed: wired, then WiFi.
+    # This used to mean wired only, so a gateway whose uplink was somebody's
+    # WiFi dropped every uplink with this setting off — the setting exists to
+    # avoid a data bill, and WiFi has none.
     ip route flush table "${TABLE}" 2>/dev/null
     if set -- $(iface_gateway "${WIRED_IFACE}"); [ -n "${1:-}" ]; then
         ip route replace default via "$1" dev "$2" table "${TABLE}"
         log "uplinks confined to wired (${2}), port ${port}"
+    elif set -- $(iface_gateway "${WIFI_IFACE}"); [ -n "${1:-}" ]; then
+        ip route replace default via "$1" dev "$2" table "${TABLE}"
+        log "uplinks confined to WiFi (${2}), port ${port}"
     else
-        # Wired is down. The table stays empty and the unreachable rule below
+        # Neither is up. The table stays empty and the unreachable rule below
         # it drops uplinks, which is the whole point of the setting: they wait
-        # for ethernet rather than being billed to the SIM.
-        log "uplinks confined to wired, which is down — they will not be sent"
+        # for a free link rather than being billed to the SIM.
+        log "uplinks confined to wired or WiFi, both down — they will not be sent"
     fi
     ;;
 
@@ -162,13 +170,17 @@ flush)
 
 status)
     allowed=false; allow_cellular && allowed=true
-    wired=false
+    wired=false; wifi=false
     iface_gateway "${WIRED_IFACE}" >/dev/null 2>&1 && wired=true
-    # Sending right now means: allowed anywhere, or confined with wired up.
+    iface_gateway "${WIFI_IFACE}" >/dev/null 2>&1 && wifi=true
+    # Sending right now means: allowed anywhere, or confined with a free
+    # link up.
     sending=false
-    if [ "${allowed}" = "true" ] || [ "${wired}" = "true" ]; then sending=true; fi
-    printf '{"allowCellular":%s,"wiredUp":%s,"sending":%s,"brokerPort":%s}\n' \
-        "${allowed}" "${wired}" "${sending}" "$(broker_port)"
+    if [ "${allowed}" = "true" ] || [ "${wired}" = "true" ] || [ "${wifi}" = "true" ]; then
+        sending=true
+    fi
+    printf '{"allowCellular":%s,"wiredUp":%s,"wifiUp":%s,"sending":%s,"brokerPort":%s}\n' \
+        "${allowed}" "${wired}" "${wifi}" "${sending}" "$(broker_port)"
     ;;
 
 *)
