@@ -47,6 +47,14 @@
 
 .fingerprint { word-break: break-all; }
 
+.savedRow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 8px 6px 11px;
+  font-size: 13px;
+}
+
 /* An open network is the one worth spotting in a list at a glance. */
 .open { color: var(--status-warning); }
 

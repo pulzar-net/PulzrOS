@@ -333,7 +333,10 @@ const ROUTES = {
     },
     'POST /api/access/ap/up':     (env, req, s) => { auth.audit('ap.raise', { by: s.subject }); return respond(200, access.raiseAp(req)); },
     'POST /api/access/ap/down':   (env, req, s) => { auth.audit('ap.lower', { by: s.subject }); return respond(200, access.lowerAp()); },
-    'POST /api/access/wifi/forget': (env, req, s) => { auth.audit('wifi.forget', { by: s.subject }); return respond(200, access.forgetWifi()); },
+    'POST /api/access/wifi/forget': (env, req, s) => {
+        auth.audit('wifi.forget', { by: s.subject, ssid: req.ssid });
+        return respond(200, access.forgetWifi(req));
+    },
     'POST /api/access/wifi':      (env, req, s) => {
         const result = access.joinWifi(req);
         if (result.error) return error(400, result.error);

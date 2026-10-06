@@ -91,6 +91,20 @@ set firewall.setup_console.proto='tcp'
 set firewall.setup_console.target='ACCEPT'
 EOF
 
+# ── OpenWrt's own AP ────────────────────────────────────────────────────────
+# `wifi config` writes one AP per radio before these scripts run: SSID
+# "OpenWrt", no encryption, on the LAN. It ships harmless only because the
+# radio ships disabled — and the first WiFi join enables the radio. On
+# Downey that put an open AP onto the console's LAN, and on the Pi 3's
+# single-radio chip it also knocked the WiFi uplink off every second, so the
+# join looked like it had failed. Ours are the parkeze_ sections; anything
+# else on a radio is deleted. Runs again after every sysupgrade, which is
+# what cleans the gateways already carrying it.
+for iface in $(uci -q show wireless | sed -n 's/^wireless\.\([^.=]*\)=wifi-iface$/\1/p'); do
+    case "${iface}" in parkeze_*) ;; *) uci -q delete "wireless.${iface}" ;; esac
+done
+uci -q commit wireless
+
 # ── AP policy ───────────────────────────────────────────────────────────────
 uci -q batch <<EOF
 set parkeze.ap=ap

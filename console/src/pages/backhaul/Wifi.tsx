@@ -23,6 +23,25 @@ import styles from './Wifi.module.css';
  * scan is a normal state with a normal explanation, not an error, and the SSID
  * can always be typed instead.
  */
+interface SavedNetwork {
+  ssid: string;
+  security: 'psk' | 'open' | 'eap';
+  identity?: string;
+  certSubject?: string;
+  certHash?: string;
+  lastJoined: number | null;
+  active: boolean;
+}
+
+interface WifiDetail {
+  configured: boolean;
+  identity?: string;
+  method?: string;
+  certSubject?: string;
+  certHash?: string;
+  saved: SavedNetwork[];
+}
+
 export default function Wifi() {
   const queryClient = useQueryClient();
   const access = useQuery({
@@ -30,24 +49,47 @@ export default function Wifi() {
     queryFn: () => api.get<AccessStatus>('/access/status'),
     refetchInterval: 15_000,
   });
+  // Behind sign-in, unlike /access/status: the username, the pinned
+  // certificate and the saved networks.
+  const detail = useQuery({
+    queryKey: ['wifi-detail'],
+    queryFn: () => api.get<WifiDetail>('/access/wifi'),
+    refetchInterval: 15_000,
+  });
+
+  const refresh = (delay: number) =>
+    setTimeout(() => {
+      queryClient.invalidateQueries({ queryKey: ['access'] });
+      queryClient.invalidateQueries({ queryKey: ['wifi-detail'] });
+    }, delay);
 
   const forget = useMutation({
-    mutationFn: () => api.post<{ message: string }>('/access/wifi/forget'),
-    onSuccess: () =>
-      setTimeout(() => queryClient.invalidateQueries({ queryKey: ['access'] }), 3000),
+    mutationFn: (ssid: string) => api.post<{ message: string }>('/access/wifi/forget', { ssid }),
+    onSuccess: () => refresh(3000),
+  });
+
+  const rejoin = useMutation({
+    mutationFn: (ssid: string) =>
+      api.post<{ message: string }>('/access/wifi', { ssid, saved: true }),
+    onSuccess: () => refresh(4000),
   });
 
   if (access.isLoading) return <Spinner label="Reading WiFi state" />;
   if (access.isError) return <ErrorState error={access.error} onRetry={access.refetch} />;
 
   const wifi = access.data!.wifi;
+  const info = detail.data;
+  const others = (info?.saved ?? []).filter((network) => !network.active);
 
   return (
     <div className="fade-in">
       {wifi.configured && (
         <Section
           actions={
-            <Button loading={forget.isPending} onClick={() => forget.mutate()}>
+            <Button
+              loading={forget.isPending && forget.variables === wifi.ssid}
+              onClick={() => forget.mutate(wifi.ssid)}
+            >
               Forget network
             </Button>
           }
@@ -60,16 +102,57 @@ export default function Wifi() {
             />
             <Fact label="Address" value={wifi.address} mono />
             <Fact label="Signal" value={wifi.signal != null ? `${wifi.signal} dBm` : null} />
+            {info?.identity && <Fact label="Username" value={info.identity} />}
+            {info?.certSubject && (
+              <Fact label="Certificate" value={commonName(info.certSubject)} mono />
+            )}
+            {info?.certHash && (
+              <Fact
+                label="SHA-256"
+                value={<span className={styles.fingerprint}>{fingerprint(info.certHash)}</span>}
+                mono
+              />
+            )}
           </FactList>
           {forget.isError && <Notice tone="error">{(forget.error as Error).message}</Notice>}
         </Section>
       )}
 
+      {others.length > 0 && (
+        <Section title="Saved networks">
+          <ul className={styles.list}>
+            {others.map((network) => (
+              <li key={network.ssid} className={styles.savedRow}>
+                {network.security === 'open' ? (
+                  <Unlock size={13} strokeWidth={2} className={styles.open} />
+                ) : (
+                  <Lock size={13} strokeWidth={2} />
+                )}
+                <span className={styles.ssid}>{network.ssid}</span>
+                {network.security === 'eap' && <span className={styles.signal}>802.1X</span>}
+                <Button
+                  loading={rejoin.isPending && rejoin.variables === network.ssid}
+                  onClick={() => rejoin.mutate(network.ssid)}
+                >
+                  Join
+                </Button>
+                <Button
+                  loading={forget.isPending && forget.variables === network.ssid}
+                  onClick={() => forget.mutate(network.ssid)}
+                >
+                  Forget
+                </Button>
+              </li>
+            ))}
+          </ul>
+          {rejoin.isError && <Notice tone="error">{(rejoin.error as Error).message}</Notice>}
+          {rejoin.isSuccess && <Notice tone="success">{rejoin.data.message}</Notice>}
+        </Section>
+      )}
+
       <Join
         title={wifi.configured ? 'Join a different network' : undefined}
-        onJoined={() =>
-          setTimeout(() => queryClient.invalidateQueries({ queryKey: ['access'] }), 4000)
-        }
+        onJoined={() => refresh(4000)}
       />
     </div>
   );

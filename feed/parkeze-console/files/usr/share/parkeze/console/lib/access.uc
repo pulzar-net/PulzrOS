@@ -32,7 +32,9 @@ let _m_util = loadfile('/usr/share/parkeze/console/lib/util.uc', { raw_mode: tru
 // body is compiled, so closures capture the binding rather than a missing
 // global and definition order stops mattering. auth.uc alone had six of these.
 let status, key, setAp, raiseAp, lowerAp, scan, joinWifi, forgetWifi;
-let security, probeWifi, probeResult, wifiDetail;
+let security, probeWifi, probeResult, wifiDetail, roam;
+let savedNetworks, findSaved, networkFromRequest, saveNetwork, applyNetwork,
+    radioName, commitAndReload;
 
 let run = _m_util.run;; let runJson = _m_util.runJson;
 let writefile = _m_fs.writefile;; let unlink = _m_fs.unlink;
@@ -230,7 +232,38 @@ scan = function() {
     return { capable: true, networks: networks };
 };
 
-joinWifi = function(req) {
+// ── saved networks ──────────────────────────────────────────────────────────
+//
+// Every network joined is remembered, the way a phone does: a `wifi_network`
+// section in /etc/config/parkeze per SSID, holding what it takes to join
+// again — the kind, the passphrase or the EAP credentials, and the pinned
+// RADIUS certificate. /etc/config survives sysupgrade, so they do too.
+//
+// Two things use them. A technician can rejoin one from the list without
+// typing a password they may not have with them. And roam() moves a gateway
+// whose network has gone away onto another remembered network in range —
+// a unit carried from one building to another comes back up on its own.
+
+const SAVED = 'wifi_network';
+const ROAM_AFTER = 180;     // seconds of a dead uplink before looking elsewhere
+const ROAM_BACKOFF = 300;   // and not again for this long after a switch
+const ROAM_STATE = '/var/run/parkeze-wifi-roam.json';
+
+savedNetworks = function(uci) {
+    const found = [];
+    uci.foreach('parkeze', SAVED, (s) => { push(found, s); });
+    return found;
+};
+
+findSaved = function(uci, ssid) {
+    for (let s in savedNetworks(uci))
+        if (s.ssid == ssid) return s;
+    return null;
+};
+
+// The request, as a network: {ssid, security, key | eap}. An error string
+// when it cannot be joined as given.
+networkFromRequest = function(req) {
     const ssid = req.ssid;
     if (!ssid || !length(ssid) || length(ssid) > 32)
         return { error: 'Give the network a name.' };
@@ -253,63 +286,81 @@ joinWifi = function(req) {
         // calling itself by this name — see parkeze-wifi-probe.
         if (type(eap.certHash) != 'string' || !match(eap.certHash, /^[0-9a-f]{64}$/))
             return { error: "Check the network's certificate first." };
+        return { ssid, security: 'eap', eap_type: eap.method, auth: phase2,
+                 identity: eap.identity, anonymous_identity: eap.anonymousIdentity || null,
+                 password: eap.password, cert_hash: eap.certHash,
+                 cert_subject: substr(eap.certSubject || '', 0, 256) };
     }
 
     // An open network as a gateway's uplink carries our MQTT traffic and our
-    // management plane over something anybody can read and inject into. Allowed
-    // only when explicitly acknowledged, so it cannot happen by accident.
-    if (!eap && !req.key && !req.allowOpen)
+    // management plane over something anybody can read and inject into.
+    // Allowed only when explicitly acknowledged, so it cannot happen by
+    // accident.
+    if (!req.key && !req.allowOpen)
         return { error: 'That network has no password. If it is genuinely open, '
                       + 'confirm it explicitly — an open uplink carries this '
                       + "gateway's traffic in the clear." };
-
-    if (!eap && req.key && (length(req.key) < 8 || length(req.key) > 63))
+    if (req.key && (length(req.key) < 8 || length(req.key) > 63))
         return { error: 'A WPA passphrase is 8 to 63 characters.' };
+    return { ssid, security: req.key ? 'psk' : 'open', key: req.key || null };
+};
 
-    const uci = cursor();
-    const radio = run("uci -q show wireless | sed -n 's/^wireless\\.\\([^.]*\\)=wifi-device$/\\1/p' | head -n1");
-    if (!radio) return { error: 'This board has no WiFi radio.' };
+saveNetwork = function(uci, net) {
+    const existing = findSaved(uci, net.ssid);
+    const name = existing ? existing['.name'] : uci.add('parkeze', SAVED);
+    for (let option in ['security', 'key', 'eap_type', 'auth', 'identity',
+                        'anonymous_identity', 'password', 'cert_hash', 'cert_subject'])
+        uci.delete('parkeze', name, option);
+    for (let option in keys(net))
+        if (net[option] != null) uci.set('parkeze', name, option, '' + net[option]);
+    uci.set('parkeze', name, 'last_joined', '' + time());
+};
+
+// Point the station at `net`. Writes, does not commit or reload.
+applyNetwork = function(uci, radio, net) {
+    // Enabling the radio below also enables anything else on it, and OpenWrt
+    // ships an open AP named "OpenWrt" on the LAN there. On a single-radio
+    // chip it also drops this station every second. See 60-parkeze-ap.
+    const foreign = [];
+    uci.foreach('wireless', 'wifi-iface', (s) => {
+        if (!match(s['.name'], /^parkeze_/)) push(foreign, s['.name']);
+    });
+    for (let name in foreign) uci.delete('wireless', name);
 
     uci.set('wireless', 'parkeze_sta', 'wifi-iface');
     uci.set('wireless', 'parkeze_sta', 'device', radio);
     uci.set('wireless', 'parkeze_sta', 'mode', 'sta');
     uci.set('wireless', 'parkeze_sta', 'network', 'wwifi');
-    uci.set('wireless', 'parkeze_sta', 'ssid', ssid);
+    uci.set('wireless', 'parkeze_sta', 'ssid', net.ssid);
     // One section, reused for whichever kind of network this is, so the
     // options of the other kind are cleared rather than left to confuse it.
     for (let option in ['key', 'eap_type', 'auth', 'identity',
                         'anonymous_identity', 'password', 'ca_cert'])
         uci.delete('wireless', 'parkeze_sta', option);
-    if (eap) {
+    if (net.security == 'eap') {
         // 'wpa2' is WPA2-Enterprise to netifd; it also joins the WPA3
         // networks that still accept WPA2 clients, which is all of eduroam.
         uci.set('wireless', 'parkeze_sta', 'encryption', 'wpa2');
-        uci.set('wireless', 'parkeze_sta', 'eap_type', eap.method);
-        uci.set('wireless', 'parkeze_sta', 'auth', eap.phase2 || 'MSCHAPV2');
-        uci.set('wireless', 'parkeze_sta', 'identity', eap.identity);
-        if (eap.anonymousIdentity)
-            uci.set('wireless', 'parkeze_sta', 'anonymous_identity', eap.anonymousIdentity);
-        uci.set('wireless', 'parkeze_sta', 'password', eap.password);
+        uci.set('wireless', 'parkeze_sta', 'eap_type', net.eap_type);
+        uci.set('wireless', 'parkeze_sta', 'auth', net.auth || 'MSCHAPV2');
+        uci.set('wireless', 'parkeze_sta', 'identity', net.identity);
+        if (net.anonymous_identity)
+            uci.set('wireless', 'parkeze_sta', 'anonymous_identity', net.anonymous_identity);
+        uci.set('wireless', 'parkeze_sta', 'password', net.password);
         // The server certificate itself, by hash: only that server gets the
         // password. When it is renewed the gateway stops connecting, and the
         // console shows the new certificate to be checked — the same thing a
         // phone asks, with somebody to look at it.
-        uci.set('wireless', 'parkeze_sta', 'ca_cert', 'hash://server/sha256/' + eap.certHash);
-        uci.set('parkeze', 'wifi', 'wifi');
-        uci.set('parkeze', 'wifi', 'cert_hash', eap.certHash);
-        uci.set('parkeze', 'wifi', 'cert_subject', substr(eap.certSubject || '', 0, 256));
-        uci.commit('parkeze');
+        uci.set('wireless', 'parkeze_sta', 'ca_cert', 'hash://server/sha256/' + net.cert_hash);
     } else {
-        uci.set('wireless', 'parkeze_sta', 'encryption', req.key ? 'psk2' : 'none');
-        if (req.key) uci.set('wireless', 'parkeze_sta', 'key', req.key);
-        uci.delete('parkeze', 'wifi');
-        uci.commit('parkeze');
+        uci.set('wireless', 'parkeze_sta', 'encryption', net.key ? 'psk2' : 'none');
+        if (net.key) uci.set('wireless', 'parkeze_sta', 'key', net.key);
     }
     uci.set('wireless', 'parkeze_sta', 'disabled', '0');
     // The radio as well as the interface. Stock OpenWrt ships the radio
-    // disabled and only the setup AP ever turned it on, so a join on a gateway
-    // whose AP had never been raised configured a network on a radio that was
-    // off, and never came up.
+    // disabled and only the setup AP ever turned it on, so a join on a
+    // gateway whose AP had never been raised configured a network on a radio
+    // that was off, and never came up.
     uci.set('wireless', radio, 'disabled', '0');
 
     // Its own interface in the wan zone, with a metric between wired and
@@ -318,48 +369,80 @@ joinWifi = function(req) {
     uci.set('network', 'wwifi', 'proto', 'dhcp');
     uci.set('network', 'wwifi', 'metric', '15');
 
-    // Into the wan zone with the wired uplink, which it was not before.
-    // An interface in no zone falls to fw4's default chains — safe, because
-    // 20-parkeze-network sets those to DROP, but it also means none of the
-    // zone's rules apply to it and nothing says why. The far side is somebody
-    // else's network exactly as the ethernet case is, so it belongs in the
-    // same zone and gets the same answer: nothing reachable inbound.
+    // Into the wan zone with the wired uplink. An interface in no zone falls
+    // to fw4's default chains — safe, because 20-parkeze-network sets those to
+    // DROP, but none of the zone's rules apply to it and nothing says why. The
+    // far side is somebody else's network exactly as the ethernet case is, so
+    // it gets the same answer: nothing reachable inbound.
     const zone = uci.get('firewall', 'wan', 'network') || '';
     if (index(zone, 'wwifi') < 0)
         uci.set('firewall', 'wan', 'network', trim(zone + ' wwifi'));
+};
 
+radioName = function() {
+    return run("uci -q show wireless | sed -n 's/^wireless\\.\\([^.]*\\)=wifi-device$/\\1/p' | head -n1");
+};
+
+// Commit and bring the station up in the background: bringing the radio down
+// takes the caller's own connection with it if they are on the setup AP, and
+// the reply has to get out first. The tunnel is re-homed too — WiFi is an
+// egress it may use, and nothing else would tell it so until the next ifup.
+commitAndReload = function(uci) {
     uci.commit('wireless');
     uci.commit('network');
     uci.commit('firewall');
-
-    // Applied in the background: bringing the radio down takes the caller's own
-    // connection with it if they are on the setup AP, and the reply has to get
-    // out first.
-    // The tunnel is re-homed too. WiFi is an egress it may use — the reason
-    // it stays off cellular is the bill, and there is none here — but nothing
-    // would have told it that until the next ifup of something else.
+    uci.commit('parkeze');
     run('(sleep 2; wifi reload; /sbin/ifup wwifi; /etc/init.d/firewall reload; '
         + '/usr/sbin/parkeze-wireguard-route apply) >/dev/null 2>&1 &');
+};
+
+joinWifi = function(req) {
+    const uci = cursor();
+    let net;
+    if (req.saved) {
+        // Rejoin from the list: everything but the name comes from what was
+        // saved, so nobody has to know the password to put a gateway back.
+        const saved = findSaved(uci, req.ssid);
+        if (!saved) return { error: 'That network is not saved on this gateway.' };
+        net = {};
+        for (let k in keys(saved))
+            if (substr(k, 0, 1) != '.' && k != 'last_joined') net[k] = saved[k];
+    } else {
+        net = networkFromRequest(req);
+        if (net.error) return net;
+    }
+
+    const radio = radioName();
+    if (!radio) return { error: 'This board has no WiFi radio.' };
+
+    applyNetwork(uci, radio, net);
+    saveNetwork(uci, net);
+    commitAndReload(uci);
 
     return { ok: true,
-             message: 'Joining ' + ssid + '. If you are connected to the setup '
+             message: 'Joining ' + net.ssid + '. If you are connected to the setup '
                     + 'network, it will drop while the radio switches over.' };
 };
 
-// Leave the network, and take the configuration with it.
+// Leave the network, and stop remembering it.
 //
 // The way back from a joined network that does not work. Without it the only
 // way off a WiFi uplink whose password has changed is a serial cable, which
 // on a roof is the same as a truck.
-forgetWifi = function() {
+forgetWifi = function(req) {
     const uci = cursor();
-    const ssid = uci.get('wireless', 'parkeze_sta', 'ssid');
+    const active = uci.get('wireless', 'parkeze_sta', 'ssid');
+    const ssid = (req && req.ssid) || active;
     if (!ssid) return { ok: true, message: 'No WiFi network is configured.' };
+
+    const saved = findSaved(uci, ssid);
+    if (saved) uci.delete('parkeze', saved['.name']);
+    uci.commit('parkeze');
+
+    if (ssid != active) return { ok: true, message: 'Forgot ' + ssid + '.' };
 
     uci.delete('wireless', 'parkeze_sta');
     uci.delete('network', 'wwifi');
-    uci.delete('parkeze', 'wifi');
-    uci.commit('parkeze');
     const zone = uci.get('firewall', 'wan', 'network') || '';
     uci.set('firewall', 'wan', 'network',
             trim(replace(zone, /\s*wwifi\s*/, ' ')));
@@ -367,13 +450,67 @@ forgetWifi = function() {
     uci.commit('network');
     uci.commit('firewall');
 
-    // Backgrounded for the same reason as joining: if the caller is on the
-    // setup AP, reloading the radio takes their connection with it, and the
-    // reply has to leave first.
+    // Backgrounded for the same reason as joining.
     run('(sleep 2; wifi reload; /etc/init.d/firewall reload; '
         + '/usr/sbin/parkeze-wireguard-route apply) >/dev/null 2>&1 &');
 
     return { ok: true, message: 'Left ' + ssid + '.' };
+};
+
+// Move to another remembered network when this one has been gone a while.
+//
+// Called once a minute by parkeze-wifi-roam. Deliberately slow and
+// conservative: three minutes of a dead uplink before scanning, a remembered
+// network only (never a new one), the strongest of those in range, and not
+// again for five minutes after a switch, so two weak networks at the edge of
+// range do not get traded back and forth all afternoon. Never while the
+// setup AP is up: a scan on a single radio takes it off the air, and the
+// person on it is presumably fixing things already.
+roam = function() {
+    const uci = cursor();
+    const active = uci.get('wireless', 'parkeze_sta', 'ssid');
+    if (!active) return { action: 'none', reason: 'no wifi uplink' };
+    if (uci.get('wireless', 'parkeze_ap')) return { action: 'none', reason: 'setup AP is up' };
+
+    let state = {};
+    try { state = json(readfile(ROAM_STATE) || '{}') || {}; } catch (e) { state = {}; }
+    const now = time();
+    const link = runJson('ubus call network.interface.wwifi status') || {};
+    if (link.up) {
+        writefile(ROAM_STATE, sprintf('%J', { roamedAt: state.roamedAt }));
+        return { action: 'none', reason: 'up' };
+    }
+    if (!state.downSince) {
+        state.downSince = now;
+        writefile(ROAM_STATE, sprintf('%J', state));
+        return { action: 'none', reason: 'just went down' };
+    }
+    if (now - state.downSince < ROAM_AFTER) return { action: 'none', reason: 'waiting' };
+    if (state.roamedAt && now - state.roamedAt < ROAM_BACKOFF)
+        return { action: 'none', reason: 'backing off' };
+
+    const others = {};
+    for (let s in savedNetworks(uci))
+        if (s.ssid != active) others[s.ssid] = s;
+    if (!length(keys(others))) return { action: 'none', reason: 'nothing else saved' };
+
+    const heard = scan().networks || [];
+    let best = null;
+    for (let n in heard)
+        if (others[n.ssid] && (!best || n.quality > best.quality)) best = n;
+    if (!best) return { action: 'none', reason: 'no saved network in range' };
+
+    const saved = others[best.ssid];
+    const net = {};
+    for (let k in keys(saved))
+        if (substr(k, 0, 1) != '.' && k != 'last_joined') net[k] = saved[k];
+    const radio = radioName();
+    if (!radio) return { action: 'none', reason: 'no radio' };
+    applyNetwork(uci, radio, net);
+    saveNetwork(uci, net);
+    commitAndReload(uci);
+    writefile(ROAM_STATE, sprintf('%J', { roamedAt: now }));
+    return { action: 'switched', from: active, to: best.ssid };
 };
 
 // Which certificate an enterprise network's RADIUS server presents.
@@ -409,7 +546,17 @@ probeResult = function() {
 wifiDetail = function() {
     const uci = cursor();
     const ssid = uci.get('wireless', 'parkeze_sta', 'ssid');
-    if (!ssid) return { configured: false };
+    const saved = map(savedNetworks(uci), (n) => ({
+        ssid: n.ssid,
+        security: n.security,
+        identity: n.identity,
+        certSubject: n.cert_subject,
+        certHash: n.cert_hash,
+        lastJoined: n.last_joined ? int(n.last_joined) : null,
+        active: n.ssid == ssid,
+    }));
+    if (!ssid) return { configured: false, saved };
+    const current = findSaved(uci, ssid) || {};
     return {
         configured: true,
         ssid: ssid,
@@ -418,8 +565,9 @@ wifiDetail = function() {
         phase2: uci.get('wireless', 'parkeze_sta', 'auth'),
         identity: uci.get('wireless', 'parkeze_sta', 'identity'),
         anonymousIdentity: uci.get('wireless', 'parkeze_sta', 'anonymous_identity'),
-        certSubject: uci.get('parkeze', 'wifi', 'cert_subject'),
-        certHash: uci.get('parkeze', 'wifi', 'cert_hash'),
+        certSubject: current.cert_subject,
+        certHash: current.cert_hash,
+        saved,
     };
 };
 
@@ -429,5 +577,5 @@ wifiDetail = function() {
 // its handler in TEMPLATE mode and loads anything else through loadfile(),
 // neither of which is module mode — `export` is a syntax error there. See the
 // header of api/index.uc for the full contract.
-return { forgetWifi, joinWifi, key, lowerAp, probeResult, probeWifi, raiseAp, scan,
-         setAp, status, wifiDetail };
+return { forgetWifi, joinWifi, key, lowerAp, probeResult, probeWifi, raiseAp, roam,
+         scan, setAp, status, wifiDetail };
