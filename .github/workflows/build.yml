@@ -58,6 +58,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # parkeze.net offers a release to a gateway when the release's version
+      # is newer than the one the gateway reports, and a gateway reports
+      # VERSION — not the tag. Tag v0.3.0 on a tree whose VERSION still says
+      # 0.2.0 and every gateway that installs it goes on reporting 0.2.0 and
+      # is offered the same update forever. Refused here, before an hour of
+      # image builds.
+      - name: Tag matches VERSION
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          want="v$(cat VERSION)"
+          if [ "${GITHUB_REF_NAME}" != "${want}" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match VERSION (${want#v}). Bump VERSION and tag ${want}, or retag."
+            exit 1
+          fi
+
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
