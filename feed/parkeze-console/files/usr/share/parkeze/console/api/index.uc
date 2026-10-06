@@ -337,9 +337,18 @@ const ROUTES = {
     'POST /api/access/wifi':      (env, req, s) => {
         const result = access.joinWifi(req);
         if (result.error) return error(400, result.error);
-        auth.audit('wifi.join', { by: s.subject, ssid: req.ssid });
+        auth.audit('wifi.join', { by: s.subject, ssid: req.ssid,
+                                  security: req.eap ? 'eap' : (req.key ? 'psk' : 'open') });
         return respond(200, result);
     },
+    'GET  /api/access/wifi':      (env, req, s) => respond(200, access.wifiDetail()),
+    'POST /api/access/wifi/probe': (env, req, s) => {
+        const result = access.probeWifi(req);
+        if (result.error) return error(400, result.error);
+        auth.audit('wifi.probe', { by: s.subject, ssid: req.ssid });
+        return respond(202, result);
+    },
+    'GET  /api/access/wifi/probe': (env, req, s) => respond(200, access.probeResult()),
 
     // ── io ──────────────────────────────────────────────────────────────────
     'GET  /api/io/status': () => respond(200, io.status()),

@@ -416,6 +416,7 @@ export interface AccessStatus {
     | {
         configured: true;
         ssid: string;
+        security: 'psk' | 'open' | 'eap';
         up: boolean;
         address: string | null;
         signal: number | null;
@@ -426,7 +427,8 @@ export interface WifiNetwork {
   ssid: string;
   signal: number;
   quality: number;
-  encryption: 'psk' | 'open';
+  /** eap is WPA-Enterprise: a username and password, eduroam among them. */
+  encryption: 'psk' | 'open' | 'eap';
 }
 
 // ── resources ───────────────────────────────────────────────────────────────

@@ -40,6 +40,13 @@
   white-space: nowrap;
 }
 
+/* The previous scan, kept on screen while a new one runs, so the list does
+   not collapse into a spinner and jump back. The Scan button says it is
+   working. */
+.stale { opacity: 0.5; pointer-events: none; }
+
+.fingerprint { word-break: break-all; }
+
 /* An open network is the one worth spotting in a list at a glance. */
 .open { color: var(--status-warning); }
 

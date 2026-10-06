@@ -1,6 +1,6 @@
 Package: parkeze-ap
 Version: @VERSION@-@BUILD@
-Depends: ucode, ucode-mod-uci, wpad-basic-mbedtls, iw, dnsmasq-full, jsonfilter
+Depends: ucode, ucode-mod-uci, wpad-mbedtls, iw, dnsmasq-full, jsonfilter
 Source: parkeze
 Section: net
 Priority: optional
@@ -17,3 +17,9 @@ Description: Setup access point and captive portal.
  hostapd-basic-mbedtls alongside the wpad the boards already pull in is an
  unsatisfiable package set. This package needs AP mode and station mode, which
  is exactly what wpad provides.
+ .
+ The full wpad, not wpad-basic: basic has no 802.1X, so a gateway could not
+ join WPA2-Enterprise (eduroam, most campus and corporate WiFi). mbedtls
+ rather than openssl because it is the same size and needs no second TLS
+ library, and its backend supports the probe:// and hash:// certificate
+ handling parkeze-wifi-probe relies on.

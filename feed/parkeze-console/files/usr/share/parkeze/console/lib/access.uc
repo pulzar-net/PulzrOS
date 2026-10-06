@@ -32,8 +32,26 @@ let _m_util = loadfile('/usr/share/parkeze/console/lib/util.uc', { raw_mode: tru
 // body is compiled, so closures capture the binding rather than a missing
 // global and definition order stops mattering. auth.uc alone had six of these.
 let status, key, setAp, raiseAp, lowerAp, scan, joinWifi, forgetWifi;
+let security, probeWifi, probeResult, wifiDetail;
 
 let run = _m_util.run;; let runJson = _m_util.runJson;
+let writefile = _m_fs.writefile;; let unlink = _m_fs.unlink;
+
+const PROBE_REQ = '/tmp/parkeze-wifi-probe.req';
+const PROBE_OUT = '/tmp/parkeze-wifi-probe.json';
+
+// What a network asks for, from iwinfo's scan entry or our own section.
+// 'eap' is WPA-Enterprise — a username and password checked by a RADIUS
+// server, eduroam being the one everybody meets.
+security = function(encryption) {
+    if (type(encryption) == 'string')
+        return match(encryption, /^wpa[23]?([+-]|$)/) ? 'eap'
+             : (encryption == 'none' || !length(encryption)) ? 'open' : 'psk';
+    if (!encryption || !encryption.enabled) return 'open';
+    for (let a in (encryption.authentication || []))
+        if (a == '802.1x') return 'eap';
+    return 'psk';
+};
 
 status = function() {
     const uci = cursor();
@@ -91,6 +109,10 @@ status = function() {
             return {
                 configured: true,
                 ssid: ssid,
+                // The kind, and nothing more: this endpoint is public, and
+                // the username and pinned certificate are behind sign-in in
+                // wifiDetail().
+                security: security(uci.get('wireless', 'parkeze_sta', 'encryption')),
                 up: link.up == true,
                 address: length(addresses) ? addresses[0].address : null,
                 signal: signal,
@@ -202,7 +224,7 @@ scan = function() {
             ssid: entry.ssid,
             signal: entry.signal,
             quality: entry.quality,
-            encryption: entry.encryption && entry.encryption.enabled ? 'psk' : 'open',
+            encryption: security(entry.encryption),
         };
     }
     return { capable: true, networks: networks };
@@ -213,15 +235,35 @@ joinWifi = function(req) {
     if (!ssid || !length(ssid) || length(ssid) > 32)
         return { error: 'Give the network a name.' };
 
+    const eap = type(req.eap) == 'object' ? req.eap : null;
+    if (eap) {
+        if (eap.method != 'peap' && eap.method != 'ttls')
+            return { error: 'Choose PEAP or TTLS.' };
+        const phase2 = eap.phase2 || 'MSCHAPV2';
+        if (phase2 != 'MSCHAPV2' && !(eap.method == 'ttls' && phase2 == 'PAP'))
+            return { error: 'That inner method is not supported.' };
+        if (!eap.identity || length(eap.identity) > 128)
+            return { error: 'Give the username.' };
+        if (eap.anonymousIdentity && length(eap.anonymousIdentity) > 128)
+            return { error: 'That outer identity is too long.' };
+        if (!eap.password || length(eap.password) > 128)
+            return { error: 'Give the password.' };
+        // A pinned certificate is required, not offered. Without one the
+        // gateway would hand this account's password to any access point
+        // calling itself by this name — see parkeze-wifi-probe.
+        if (type(eap.certHash) != 'string' || !match(eap.certHash, /^[0-9a-f]{64}$/))
+            return { error: "Check the network's certificate first." };
+    }
+
     // An open network as a gateway's uplink carries our MQTT traffic and our
     // management plane over something anybody can read and inject into. Allowed
     // only when explicitly acknowledged, so it cannot happen by accident.
-    if (!req.key && !req.allowOpen)
+    if (!eap && !req.key && !req.allowOpen)
         return { error: 'That network has no password. If it is genuinely open, '
                       + 'confirm it explicitly — an open uplink carries this '
                       + "gateway's traffic in the clear." };
 
-    if (req.key && (length(req.key) < 8 || length(req.key) > 63))
+    if (!eap && req.key && (length(req.key) < 8 || length(req.key) > 63))
         return { error: 'A WPA passphrase is 8 to 63 characters.' };
 
     const uci = cursor();
@@ -233,8 +275,36 @@ joinWifi = function(req) {
     uci.set('wireless', 'parkeze_sta', 'mode', 'sta');
     uci.set('wireless', 'parkeze_sta', 'network', 'wwifi');
     uci.set('wireless', 'parkeze_sta', 'ssid', ssid);
-    uci.set('wireless', 'parkeze_sta', 'encryption', req.key ? 'psk2' : 'none');
-    if (req.key) uci.set('wireless', 'parkeze_sta', 'key', req.key);
+    // One section, reused for whichever kind of network this is, so the
+    // options of the other kind are cleared rather than left to confuse it.
+    for (let option in ['key', 'eap_type', 'auth', 'identity',
+                        'anonymous_identity', 'password', 'ca_cert'])
+        uci.delete('wireless', 'parkeze_sta', option);
+    if (eap) {
+        // 'wpa2' is WPA2-Enterprise to netifd; it also joins the WPA3
+        // networks that still accept WPA2 clients, which is all of eduroam.
+        uci.set('wireless', 'parkeze_sta', 'encryption', 'wpa2');
+        uci.set('wireless', 'parkeze_sta', 'eap_type', eap.method);
+        uci.set('wireless', 'parkeze_sta', 'auth', eap.phase2 || 'MSCHAPV2');
+        uci.set('wireless', 'parkeze_sta', 'identity', eap.identity);
+        if (eap.anonymousIdentity)
+            uci.set('wireless', 'parkeze_sta', 'anonymous_identity', eap.anonymousIdentity);
+        uci.set('wireless', 'parkeze_sta', 'password', eap.password);
+        // The server certificate itself, by hash: only that server gets the
+        // password. When it is renewed the gateway stops connecting, and the
+        // console shows the new certificate to be checked — the same thing a
+        // phone asks, with somebody to look at it.
+        uci.set('wireless', 'parkeze_sta', 'ca_cert', 'hash://server/sha256/' + eap.certHash);
+        uci.set('parkeze', 'wifi', 'wifi');
+        uci.set('parkeze', 'wifi', 'cert_hash', eap.certHash);
+        uci.set('parkeze', 'wifi', 'cert_subject', substr(eap.certSubject || '', 0, 256));
+        uci.commit('parkeze');
+    } else {
+        uci.set('wireless', 'parkeze_sta', 'encryption', req.key ? 'psk2' : 'none');
+        if (req.key) uci.set('wireless', 'parkeze_sta', 'key', req.key);
+        uci.delete('parkeze', 'wifi');
+        uci.commit('parkeze');
+    }
     uci.set('wireless', 'parkeze_sta', 'disabled', '0');
     // The radio as well as the interface. Stock OpenWrt ships the radio
     // disabled and only the setup AP ever turned it on, so a join on a gateway
@@ -288,6 +358,8 @@ forgetWifi = function() {
 
     uci.delete('wireless', 'parkeze_sta');
     uci.delete('network', 'wwifi');
+    uci.delete('parkeze', 'wifi');
+    uci.commit('parkeze');
     const zone = uci.get('firewall', 'wan', 'network') || '';
     uci.set('firewall', 'wan', 'network',
             trim(replace(zone, /\s*wwifi\s*/, ' ')));
@@ -304,10 +376,58 @@ forgetWifi = function() {
     return { ok: true, message: 'Left ' + ssid + '.' };
 };
 
+// Which certificate an enterprise network's RADIUS server presents.
+//
+// Started here, run by parkeze-wifi-probe in the background, read back with
+// probeResult(). The request goes through a file rather than the command
+// line: an SSID and a username are anybody's text, and a file has nothing to
+// quote. Only the outer identity is sent — the probe stops before phase 2, so
+// there is no password to send.
+probeWifi = function(req) {
+    const ssid = req.ssid;
+    if (!ssid || !length(ssid) || length(ssid) > 32)
+        return { error: 'Give the network a name.' };
+    const method = req.method == 'ttls' ? 'ttls' : 'peap';
+    const outer = req.anonymousIdentity || req.identity;
+    if (!outer || length(outer) > 128)
+        return { error: 'Give the username.' };
+
+    writefile(PROBE_OUT, sprintf('%J', { state: 'probing', ssid: ssid, chain: [] }));
+    writefile(PROBE_REQ, sprintf('%J', { ssid: ssid, method: method, identity: outer }));
+    run('/usr/sbin/parkeze-wifi-probe >/dev/null 2>&1 &');
+    return { ok: true, state: 'probing' };
+};
+
+probeResult = function() {
+    const raw = readfile(PROBE_OUT);
+    if (!raw) return { state: 'none', chain: [] };
+    try { return json(raw); } catch (e) { return { state: 'none', chain: [] }; }
+};
+
+// The joined network's credentials and pinned certificate — never the
+// password. Behind sign-in, unlike status().
+wifiDetail = function() {
+    const uci = cursor();
+    const ssid = uci.get('wireless', 'parkeze_sta', 'ssid');
+    if (!ssid) return { configured: false };
+    return {
+        configured: true,
+        ssid: ssid,
+        security: security(uci.get('wireless', 'parkeze_sta', 'encryption')),
+        method: uci.get('wireless', 'parkeze_sta', 'eap_type'),
+        phase2: uci.get('wireless', 'parkeze_sta', 'auth'),
+        identity: uci.get('wireless', 'parkeze_sta', 'identity'),
+        anonymousIdentity: uci.get('wireless', 'parkeze_sta', 'anonymous_identity'),
+        certSubject: uci.get('parkeze', 'wifi', 'cert_subject'),
+        certHash: uci.get('parkeze', 'wifi', 'cert_hash'),
+    };
+};
+
 // ── module exports ──────────────────────────────────────────────────────────
 //
 // A returned object, not `export` statements. uhttpd's ucode plugin compiles
 // its handler in TEMPLATE mode and loads anything else through loadfile(),
 // neither of which is module mode — `export` is a syntax error there. See the
 // header of api/index.uc for the full contract.
-return { forgetWifi, joinWifi, key, lowerAp, raiseAp, scan, setAp, status };
+return { forgetWifi, joinWifi, key, lowerAp, probeResult, probeWifi, raiseAp, scan,
+         setAp, status, wifiDetail };
