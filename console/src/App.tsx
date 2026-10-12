@@ -22,6 +22,7 @@ const Wifi = lazy(() => import('@/pages/backhaul/Wifi'));
 const Forwarders = lazy(() => import('@/pages/lorawan/Forwarders'));
 const LorawanSettings = lazy(() => import('@/pages/lorawan/Settings'));
 const Gnss = lazy(() => import('@/pages/Gnss'));
+const Bluetooth = lazy(() => import('@/pages/Bluetooth'));
 const Panel = lazy(() => import('@/pages/Panel'));
 const Access = lazy(() => import('@/pages/Access'));
 const Logs = lazy(() => import('@/pages/Logs'));
@@ -98,6 +99,7 @@ export default function App() {
         <Route path="lorawan/forwarders/:forwarder/:tab" element={<Forwarders />} />
         <Route path="lorawan/settings" element={<LorawanSettings />} />
         <Route path="gnss" element={<Gnss />} />
+        <Route path="bluetooth" element={<Bluetooth />} />
         {/* Where concentrator hardware used to be; it is a forwarder's tab now. */}
         <Route path="hardware" element={<Navigate to="/lorawan/forwarders/1/concentrator" replace />} />
         <Route path="access" element={<Access />} />

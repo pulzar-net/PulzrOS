@@ -46,6 +46,7 @@ let claim = loadfile('/usr/share/parkeze/console/lib/claim.uc', { raw_mode: true
 let io = loadfile('/usr/share/parkeze/console/lib/io.uc', { raw_mode: true })();
 let access = loadfile('/usr/share/parkeze/console/lib/access.uc', { raw_mode: true })();
 let firmware = loadfile('/usr/share/parkeze/console/lib/firmware.uc', { raw_mode: true })();
+let bluetooth = loadfile('/usr/share/parkeze/console/lib/bluetooth.uc', { raw_mode: true })();
 
 const SESSION_COOKIE = 'parkeze_session';
 
@@ -296,6 +297,13 @@ const ROUTES = {
     },
 
     // ── network ─────────────────────────────────────────────────────────────
+    'GET  /api/bluetooth/status': () => respond(200, bluetooth.status()),
+    'POST /api/bluetooth':        (env, req, s) => {
+        const result = bluetooth.set(req);
+        if (result.error) return error(400, result.error);
+        auth.audit('bluetooth.set', { by: s.subject, enabled: req.enabled });
+        return respond(200, result);
+    },
     'GET  /api/network/status':   () => respond(200, network.status()),
     'GET  /api/network/backhaul': () => respond(200, network.backhaul()),
     'POST /api/network/cellular': (env, req, s) => respond(200, network.setCellular(req, s)),

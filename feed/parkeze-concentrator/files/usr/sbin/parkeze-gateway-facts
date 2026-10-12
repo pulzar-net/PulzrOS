@@ -36,4 +36,8 @@ tunnel="$(jsonfilter -i /etc/parkeze/wireguard/tunnel.json -e '@.address' 2>/dev
 [ -n "${tunnel}" ] && echo "tunnel_ip=${tunnel%/*}"
 
 echo "concentrator=$(uci -q get parkeze.concentrator.status || echo unknown)"
+
+# on, off or absent; parkeze.net lists a gateway with Bluetooth as carrying
+# both radios, and shows the switch for it.
+[ -x /usr/sbin/parkeze-ble ] && echo "bluetooth=$(/usr/sbin/parkeze-ble state)"
 exit 0

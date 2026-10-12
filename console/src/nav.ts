@@ -1,4 +1,5 @@
 import {
+  Bluetooth,
   Gauge,
   KeyRound,
   Lightbulb,
@@ -58,6 +59,7 @@ export const NAV: NavEntry[] = [
     ],
   },
   { path: '/gnss', label: 'GNSS', icon: Satellite },
+  { path: '/bluetooth', label: 'Bluetooth', icon: Bluetooth },
   { path: '/access', label: 'Access', icon: KeyRound },
   { path: '/io', label: 'Panel', icon: Lightbulb },
   { path: '/logs', label: 'Logs', icon: ScrollText, wide: true },

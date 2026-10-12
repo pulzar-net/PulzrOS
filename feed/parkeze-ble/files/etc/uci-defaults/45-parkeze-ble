@@ -1,0 +1,21 @@
+#!/bin/sh
+# Bluetooth's settings, off. Seeded so they are visible in UCI rather than
+# implied by their absence; see parkeze-ble for what each one does.
+#
+#   oui       MAC prefixes to send, space-separated. BC5729 is KKM's, whose
+#             beacons are the parking sensors parkeze.net decodes today.
+#   min_rssi  weaker than this is not sent. -100 is the radio's floor.
+#   interval  seconds between messages.
+
+# OpenWrt runs uci-defaults during image assembly too; this is the device's.
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+
+uci -q get parkeze.ble >/dev/null 2>&1 || uci -q batch <<UCI
+set parkeze.ble=ble
+set parkeze.ble.enabled='0'
+set parkeze.ble.oui='BC5729'
+set parkeze.ble.min_rssi='-100'
+set parkeze.ble.interval='10'
+UCI
+uci -q commit parkeze
+exit 0
