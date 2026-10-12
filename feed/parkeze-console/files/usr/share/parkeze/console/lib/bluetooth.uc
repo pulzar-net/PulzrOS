@@ -12,23 +12,27 @@ let status, set;
 
 let run = _m_util.run;; let runJson = _m_util.runJson;
 
+// On tmpfs, so the reboot clears it; see the same constant in system.uc.
+const REBOOT_REQUIRED = '/var/run/parkeze/reboot-required';
+
 status = function() {
     const uci = cursor();
     // on, off or absent: what the facts report says, so the console and
     // parkeze.net cannot read the same gateway two ways.
     const state = run('/usr/sbin/parkeze-ble state') ?? 'absent';
-    const boot = runJson('/usr/sbin/parkeze-boot-config --dry-run') ?? {};
+    const enabled = uci.get('parkeze', 'ble', 'enabled') == '1';
+    const running = run('pgrep -f "parkeze-ble run"') != null;
     let heard = null;
     try { heard = json(readfile('/var/run/parkeze/ble/stats.json') ?? 'null'); } catch (e) {}
     return {
         state,
-        enabled: uci.get('parkeze', 'ble', 'enabled') == '1',
+        enabled,
         // Running is the scanner actually up; enabled and not running after a
         // minute is worth a look at the log.
-        running: run('pgrep -f "parkeze-ble run"') != null,
-        // The boot files do not yet say what the setting does, which only the
-        // next boot can fix.
-        rebootRequired: !!boot.changed,
+        running,
+        // On, not scanning, and a boot is waiting to wire the chip: only the
+        // reboot can fix that.
+        rebootRequired: enabled && !running && !!readfile(REBOOT_REQUIRED),
         oui: uci.get('parkeze', 'ble', 'oui') ?? '',
         minRssi: +(uci.get('parkeze', 'ble', 'min_rssi') ?? -100),
         heard,
@@ -44,15 +48,21 @@ set = function(req) {
     uci.set('parkeze', 'ble', 'enabled', req.enabled ? '1' : '0');
     uci.commit('parkeze');
 
-    // On a Pi the chip's UART is wired at boot, so turning it on the first
-    // time needs one; that is said, not done, the same as the UART role.
+    // The boot files follow the setting either way. They matter only to the
+    // next boot, so whether one is needed now is the chip's to say: if it
+    // attaches, it is already wired -- turned off and on again, say -- and the
+    // changed files are not a reason to reboot. If it does not, on a Pi the
+    // UART it needs is wired only at boot. Said, not done, as for the UART role.
     const boot = runJson('/usr/sbin/parkeze-boot-config') ?? {};
-    if (boot.changed) writefile('/etc/parkeze/boot-config-reboot-pending', '');
-
-    system(req.enabled
-        ? '/etc/init.d/parkeze-ble enable; /etc/init.d/parkeze-ble restart'
-        : '/etc/init.d/parkeze-ble stop; /etc/init.d/parkeze-ble disable');
-    return { ok: true, enabled: req.enabled, rebootRequired: !!boot.changed };
+    if (!req.enabled) {
+        system('/etc/init.d/parkeze-ble stop; /etc/init.d/parkeze-ble disable');
+        return { ok: true, enabled: false, rebootRequired: false };
+    }
+    const attached = system('/usr/sbin/parkeze-ble attach >/dev/null 2>&1') == 0;
+    system('/etc/init.d/parkeze-ble enable; /etc/init.d/parkeze-ble restart');
+    const rebootRequired = !attached && !!boot.changed;
+    if (rebootRequired) { _m_fs.mkdir('/var/run/parkeze'); writefile(REBOOT_REQUIRED, ''); }
+    return { ok: true, enabled: true, rebootRequired };
 };
 
 return { set, status };

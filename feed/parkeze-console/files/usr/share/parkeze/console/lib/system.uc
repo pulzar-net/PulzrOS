@@ -20,6 +20,12 @@ let boardConf, summary, thermal, stats, history, processes, logs, reboot, uart, 
 
 let run = _m_util.run;; let runJson = _m_util.runJson;; let ubus = _m_util.ubus;
 
+// That a setting changed here waits on a reboot. On tmpfs, so the reboot
+// clears it. Not /etc/parkeze/boot-config-reboot-pending: that one is first
+// boot's, and parkeze-boot-config-reboot acts on it at every boot, so writing
+// it from here rebooted the gateway a second time after somebody's own reboot.
+const REBOOT_REQUIRED = '/var/run/parkeze/reboot-required';
+
 boardConf = function() {
     // /etc/parkeze/board.conf is shell, not JSON. Parsed here rather than
     // sourced, because sourcing attacker-controllable shell would be a
@@ -132,7 +138,7 @@ uart = function() {
         applies: applied.applies !== false,
         // Set once the firmware settings on disk match the role, which is only
         // true after the reboot that reads them.
-        pending: !!readfile('/etc/parkeze/boot-config-reboot-pending'),
+        pending: !!readfile(REBOOT_REQUIRED),
     };
 };
 
@@ -147,7 +153,7 @@ setUart = function(role) {
     // Applied to the boot files now, but the Pi firmware only reads them at
     // boot — so this reports whether a reboot is needed rather than doing one.
     const result = runJson('/usr/sbin/parkeze-boot-config') ?? {};
-    if (result.changed) writefile('/etc/parkeze/boot-config-reboot-pending', '');
+    if (result.changed) { _m_fs.mkdir('/var/run/parkeze'); writefile(REBOOT_REQUIRED, ''); }
     return { ok: true, role, rebootRequired: !!result.changed };
 };
 
