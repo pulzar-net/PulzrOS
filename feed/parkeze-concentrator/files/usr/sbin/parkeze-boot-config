@@ -1,7 +1,8 @@
 #!/bin/sh
 #
 # The Pi firmware settings a concentrator HAT needs: SPI, and who owns the UART;
-# and, while Bluetooth is on, the wiring that gives the chip a UART of its own.
+# while Bluetooth is on, the wiring that gives the chip a UART of its own; and
+# what the display and the USB device port need, on a board with either.
 #
 # config.txt and cmdline.txt are read by the Pi firmware before Linux starts, so
 # nothing here takes effect until the next boot. It reports whether it changed
@@ -119,6 +120,17 @@ for line in ${PARKEZE_BT_BOOT}; do
     else
         remove_line "${line}"
     fi
+done
+
+# The terminal-UI features: composite TV-out off for the display, and the
+# device port handed to dwc2 for the USB gadget. Each applies while its package
+# is installed, which is what having the feature means; see the Display and USB
+# device port sections of boards/common/board.conf.
+for line in ${PARKEZE_DISPLAY_BOOT}; do
+    if [ -x /etc/init.d/parkeze-display ]; then add_line "${line}"; else remove_line "${line}"; fi
+done
+for line in ${PARKEZE_USB_GADGET_BOOT}; do
+    if [ -x /usr/sbin/parkeze-usb-gadget ]; then add_line "${line}"; else remove_line "${line}"; fi
 done
 
 [ "${changed}" = 1 ] && [ "${DRY}" = 0 ] && sync

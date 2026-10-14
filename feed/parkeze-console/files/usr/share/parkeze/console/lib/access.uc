@@ -89,6 +89,11 @@ status = function() {
             // wonder why their laptop did not get one.
             servesDhcp: false,
         },
+        // The USB device port, on a board built with one (parkeze-usb-gadget):
+        // whether a laptop is on the other end, and where it reaches the
+        // console. Null on a board without one. As thin as the rest of this:
+        // an address that is the same on every gateway, and nothing else.
+        usb: runJson('[ -x /usr/sbin/parkeze-usb-gadget ] && /usr/sbin/parkeze-usb-gadget status'),
         adopted: uci.get('parkeze', 'adoption', 'state') == 'adopted',
         // The WiFi uplink, if one has been joined. Distinct from `ap` above:
         // that is the radio serving a setup network, this is the radio using

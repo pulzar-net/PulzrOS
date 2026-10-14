@@ -1,0 +1,101 @@
+#!/bin/sh
+#
+# The network on the end of a USB cable.
+#
+# ── WHY THIS PORT SERVES DHCP WHEN THE ETHERNET PORT NEVER DOES ───────────
+#
+# The ethernet port does not serve DHCP because nothing on the gateway can
+# tell a laptop from a customer's network, and the cost of guessing wrong is
+# somebody else's outage (20-parkeze-network, docs/access.md). The USB port has
+# no such question. The only thing that can be on the other end of it is the
+# one computer the cable is plugged into, so there is nobody else's network to
+# break, and handing that computer an address is the whole point.
+#
+# What it hands out is an address and nothing else: no default route and no
+# DNS server, so a laptop that is also on WiFi keeps its own internet and its
+# own resolver, and reaches the gateway at its fixed address or parkeze.local.
+#
+# ── WHAT IT CAN REACH ──────────────────────────────────────────────────────
+#
+# This gateway's console, SSH, DHCP and mDNS. Its own zone, forward DROP and
+# no forwarding to anything — a laptop on the USB port is not a way onto the
+# site, the uplink or the management tunnel.
+
+# OpenWrt's prepare_rootfs runs every uci-defaults script during image
+# assembly, with IPKG_INSTROOT set and absolute paths resolving to the build
+# host. Everything below belongs to the device, so defer it to first boot.
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+
+. /etc/parkeze/board.conf
+
+uci -q batch <<EOF2
+delete network.usb
+set network.usb=interface
+set network.usb.device='usb0'
+set network.usb.proto='static'
+set network.usb.ipaddr='${PARKEZE_USB_IPADDR:-192.168.63.1}'
+set network.usb.netmask='255.255.255.0'
+
+delete dhcp.usb
+set dhcp.usb=dhcp
+set dhcp.usb.interface='usb'
+set dhcp.usb.start='10'
+set dhcp.usb.limit='10'
+set dhcp.usb.leasetime='1h'
+add_list dhcp.usb.dhcp_option='3'
+add_list dhcp.usb.dhcp_option='6'
+
+delete firewall.usb
+set firewall.usb=zone
+set firewall.usb.name='usb'
+set firewall.usb.network='usb'
+set firewall.usb.input='DROP'
+set firewall.usb.output='ACCEPT'
+set firewall.usb.forward='DROP'
+
+delete firewall.usb_console
+set firewall.usb_console=rule
+set firewall.usb_console.name='Allow-USB-console'
+set firewall.usb_console.src='usb'
+set firewall.usb_console.proto='tcp'
+set firewall.usb_console.dest_port='22 80 443'
+set firewall.usb_console.target='ACCEPT'
+
+delete firewall.usb_dhcp
+set firewall.usb_dhcp=rule
+set firewall.usb_dhcp.name='Allow-USB-DHCP'
+set firewall.usb_dhcp.src='usb'
+set firewall.usb_dhcp.proto='udp'
+set firewall.usb_dhcp.dest_port='67'
+set firewall.usb_dhcp.target='ACCEPT'
+
+delete firewall.usb_mdns
+set firewall.usb_mdns=rule
+set firewall.usb_mdns.name='Allow-USB-mDNS'
+set firewall.usb_mdns.src='usb'
+set firewall.usb_mdns.proto='udp'
+set firewall.usb_mdns.dest_port='5353'
+set firewall.usb_mdns.target='ACCEPT'
+EOF2
+
+# dnsmasq is bound to loopback by parkeze-base; this is the one more interface
+# it serves, and only DHCP is let through to it.
+uci -q del_list dhcp.@dnsmasq[0].interface='usb0'
+uci -q add_list dhcp.@dnsmasq[0].interface='usb0'
+
+# mDNS on the cable too, so parkeze-<serial>.local and parkeze.local resolve.
+uci -q del_list umdns.@umdns[0].network='usb'
+uci -q add_list umdns.@umdns[0].network='usb'
+
+uci commit network
+uci commit dhcp
+uci commit firewall
+uci commit umdns
+
+# The terminal UI on the serial half of the port. procd starts it when ttyGS0
+# appears — that is, when the gadget is attached — and not before.
+grep -q '^ttyGS0::' /etc/inittab \
+    || echo 'ttyGS0::respawn:/usr/libexec/parkeze-tui-console /dev/ttyGS0' >> /etc/inittab
+
+/etc/init.d/parkeze-usb-gadget enable
+exit 0

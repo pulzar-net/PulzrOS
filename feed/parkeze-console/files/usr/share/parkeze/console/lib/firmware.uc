@@ -47,7 +47,7 @@ let _m_fs = require('fs');
 let _m_uci = require('uci');
 let _m_util = loadfile('/usr/share/parkeze/console/lib/util.uc', { raw_mode: true })();
 
-let upload, meminfoAvailable, cardRoom, staging, inspect;
+let upload, installFile, apply, meminfoAvailable, cardRoom, staging, inspect, shellQuote;
 
 const META = '/tmp/parkeze-firmware.json';
 const MANIFEST = '/tmp/parkeze-firmware.manifest';
@@ -116,10 +116,15 @@ meminfoAvailable = function() {
     return m ? int(m[1]) * 1024 : 0;
 };
 
+// A path as one shell word. The terminal UI's image path was typed by hand.
+shellQuote = function(s) {
+    return "'" + replace(s, /'/g, "'\\''") + "'";
+};
+
 // The metadata of an uploaded image, and whether it is for this board.
 inspect = function(IMAGE) {
     _m_fs.unlink(META);
-    if (system(sprintf('fwtool -q -i %s %s', META, IMAGE)) != 0)
+    if (system(sprintf('fwtool -q -i %s %s', META, shellQuote(IMAGE))) != 0)
         return { error: 'Not a firmware image.' };
 
     let meta = null;
@@ -173,30 +178,61 @@ upload = function(env, issuer) {
             'Upload stopped at %d of %d bytes.', received, len) };
     }
 
-    const image = inspect(IMAGE);
-    if (image.error) {
-        _m_fs.unlink(IMAGE);
-        return { status: 400, error: image.error };
+    const manifest = env.headers ? env.headers['x-parkeze-manifest'] : null;
+    const result = apply(IMAGE, manifest, issuer, true);
+    if (result.error) return result;
+    result.bytes = received;
+    result.stagedOnCard = stage.onCard;
+    return result;
+};
+
+// An image already on the gateway — copied to the SD card, or to /tmp over
+// SSH — for the terminal UI, which has no HTTP body to stream one in. The
+// same checks and the same journal as an upload; the only difference is that
+// a file somebody pointed at is theirs, and is left in place if it is refused.
+installFile = function(path, manifestPath, issuer) {
+    const info = _m_fs.stat(path ?? '');
+    if (!info || info.type != 'file')
+        return { status: 400, error: sprintf('%s is not a file.', path ?? '') };
+    let manifest = null;
+    if (manifestPath && length(manifestPath)) {
+        manifest = trim(_m_fs.readfile(manifestPath) ?? '');
+        if (!length(manifest))
+            return { status: 400, error: sprintf('Could not read %s.', manifestPath) };
     }
+    const result = apply(path, manifest, issuer, false);
+    if (!result.error) result.bytes = info.size;
+    return result;
+};
+
+// Check a staged image and, if it passes, hand it to sysupgrade. `owned` says
+// whether the file is ours to delete when it is refused.
+apply = function(IMAGE, manifest, issuer, owned) {
+    const refuse = (error) => {
+        if (owned) _m_fs.unlink(IMAGE);
+        return { status: 400, error };
+    };
+
+    const image = inspect(IMAGE);
+    if (image.error) return refuse(image.error);
 
     // Belt and braces after the metadata check. Its exit status cannot be
     // trusted to reject a bad image (see the header), but when it does say no
     // it means it.
-    const proc = _m_fs.popen(sprintf('sysupgrade -T %s 2>&1', IMAGE), 'r');
+    const proc = _m_fs.popen(sprintf('sysupgrade -T %s 2>&1', shellQuote(IMAGE)), 'r');
     const verdict = proc ? trim(proc.read('all') ?? '') : '';
     const rc = proc ? proc.close() : 1;
-    if (rc != 0) {
-        _m_fs.unlink(IMAGE);
-        return { status: 400, error: length(verdict)
+    if (rc != 0)
+        return refuse(length(verdict)
             ? sprintf('Not a valid image for this gateway: %s', verdict)
-            : 'Not a valid image for this gateway.' };
-    }
+            : 'Not a valid image for this gateway.');
 
     // ── is it ours ──────────────────────────────────────────────────────────
     //
-    // The signature travels in a header because the body is the image itself
-    // and there is nowhere else in the request for it. See
-    // tools/sign-firmware.sh for what produces it.
+    // An upload's signature travels in a header because the body is the image
+    // itself and there is nowhere else in the request for it; the terminal UI
+    // reads it from a file beside the image. See tools/sign-firmware.sh for
+    // what produces it.
     //
     // Present-but-invalid is refused; absent is allowed and recorded. Those
     // are different facts: a signature that does not verify means somebody
@@ -207,20 +243,16 @@ upload = function(env, issuer) {
     // has to install it to gain the check. That is the one failure a rollback
     // cannot save you from, so it is deliberately staged: verify and record
     // now, require it once signed images are confirmed flowing.
-    const manifest = env.headers ? env.headers['x-parkeze-manifest'] : null;
     let signed = false;
     if (manifest) {
         const mf = _m_fs.open(MANIFEST, 'w');
         if (mf) { mf.write(manifest); mf.close(); }
-        const check = _m_fs.popen(sprintf('parkeze-firmware verify %s %s 2>&1', IMAGE, MANIFEST), 'r');
+        const check = _m_fs.popen(sprintf('parkeze-firmware verify %s %s 2>&1', shellQuote(IMAGE), MANIFEST), 'r');
         const why = check ? trim(check.read('all') ?? '') : '';
         const ok = check ? check.close() == 0 : false;
         _m_fs.unlink(MANIFEST);
-        if (!ok) {
-            _m_fs.unlink(IMAGE);
-            return { status: 400, error: length(why) ? why
-                     : 'That image is not signed by Parkeze.' };
-        }
+        if (!ok)
+            return refuse(length(why) ? why : 'That image is not signed by Parkeze.');
         signed = true;
     }
 
@@ -232,17 +264,18 @@ upload = function(env, issuer) {
     //
     // The issuer is reduced to a safe character set first. It is a session
     // subject, it is going into a shell command string, and a subject
-    // containing a quote would otherwise be running as one.
+    // containing a quote would otherwise be running as one. The path is
+    // quoted for the same reason: from the terminal UI it was typed.
     const who = replace(issuer ?? 'console', /[^A-Za-z0-9._@-]/g, '') || 'console';
-    _m_util.run(sprintf('parkeze-firmware pending %s %s', IMAGE, who));
+    const quoted = shellQuote(IMAGE);
+    _m_util.run(sprintf('parkeze-firmware pending %s %s', quoted, who));
 
     // Detached, after a pause, so this response reaches the browser before
     // sysupgrade stops uhttpd. Settings kept.
-    _m_util.run(sprintf('(sleep 3; sysupgrade %s) >/dev/null 2>&1 &', IMAGE));
-    return { status: 202, ok: true, bytes: received, signed,
-             stagedOnCard: stage.onCard,
+    _m_util.run(sprintf('(sleep 3; sysupgrade %s) >/dev/null 2>&1 &', quoted));
+    return { status: 202, ok: true, signed,
              target: image.target, openwrt: image.openwrt };
 };
 
 // ── module exports ──────────────────────────────────────────────────────────
-return { inspect, upload };
+return { inspect, installFile, upload };

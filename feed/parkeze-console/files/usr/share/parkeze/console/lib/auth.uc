@@ -76,7 +76,7 @@ let digest = require('digest');
 // Declaring the names first makes every one of them a known local before any
 // body is compiled, so closures capture the binding rather than a missing
 // global and definition order stops mattering. auth.uc alone had six of these.
-let now, randomHex, constantTimeEqual, readJson, writeJson, crypt, hashPassword, verifyPassword, shellQuote, lockoutState, isLockedOut, recordFailure, clearFailures, sessionPath, createSession, readSession, destroySession, config, backhaulUp, loginMethods, loginLocal, setPassword, recoveryChallenge, recoveryVerify, verifySignature, loginSso, audit, platformUrl, lanWindow, loginTicket;
+let now, randomHex, constantTimeEqual, readJson, writeJson, crypt, hashPassword, verifyPassword, shellQuote, lockoutState, isLockedOut, recordFailure, clearFailures, sessionPath, createSession, readSession, destroySession, config, backhaulUp, loginMethods, loginLocal, setPassword, recoveryChallenge, recoveryVerify, verifySignature, loginSso, audit, platformUrl, lanWindow, loginTicket, terminalStart, terminalCollect;
 
 
 const STATE_DIR      = '/etc/parkeze/console';
@@ -593,7 +593,12 @@ verifySignature = function(message, signatureB64) {
 // it is signed with the same fleet key as recovery, so a gateway needs no
 // additional trust anchor.
 
-loginSso = function(token, addr) {
+// `expect`, from terminalCollect only: the terminal sign-in this token must
+// have been minted for, as { aud, req }. Without it — the web console's
+// handoff, and parkeze.net's own calls — a token that names any audience is
+// refused. So a token collected for a terminal cannot be pasted into a
+// browser, and a browser's cannot satisfy a terminal waiting on a code.
+loginSso = function(token, addr, expect) {
     if (!readfile(RECOVERY_PUBKEY))
         return { error: 'This gateway has no Parkeze trust anchor.',
                  status: 501 };
@@ -630,6 +635,12 @@ loginSso = function(token, addr) {
     if ((payload.exp ?? 0) <= now())
         return { error: 'That handoff token has expired.', status: 410 };
 
+    if (expect ? (payload.aud != expect.aud || payload.req != expect.req)
+               : payload.aud != null) {
+        recordFailure(addr);
+        return { error: 'That token was issued for a different sign-in.', status: 403 };
+    }
+
     // Good once. A token arrives in a URL fragment, which is not sent to any
     // server but does stay in the browser's history — so without this, the
     // back button on a shared laptop reopened a staff session for the rest of
@@ -650,8 +661,47 @@ loginSso = function(token, addr) {
     clearFailures(addr);
     const session = createSession(payload.sub ?? 'Parkeze', 'sso',
                                   SESSION_TTL);
-    audit('login.ok', { username: payload.sub, addr, method: 'sso' });
+    audit('login.ok', { username: payload.sub, addr,
+                        method: expect ? 'sso-terminal' : 'sso' });
     return { session };
+};
+
+// ── signing in to the terminal with a Parkeze account ──────────────────────
+//
+// The terminal's "Sign in with Parkeze". There is no browser to land a handoff
+// in, so the terminal shows a code, somebody approves it on parkeze.net —
+// from a phone, usually — and the gateway collects the token itself:
+// parkeze-console-signin does the asking. The token is checked here, by
+// loginSso, and goes no further: the terminal gets a session or a reason.
+//
+// Online only, as the browser handoff is. Offline, recovery is the way in.
+
+terminalStart = function() {
+    const proc = popen('/usr/sbin/parkeze-console-signin start 2>/dev/null', 'r');
+    let reply = null;
+    try { reply = json(proc.read('all')); } catch (e) {}
+    proc.close();
+    if (!reply) return { error: 'Could not reach Parkeze.' };
+    if (reply.error) return { error: reply.error };
+    return { code: reply.code, url: reply.url, expiresIn: reply.expiresIn,
+             interval: reply.interval ?? 3 };
+};
+
+// { pending: true } until somebody answers, then { session } or { error }.
+terminalCollect = function(code, addr) {
+    if (!match(code ?? '', /^[0-9A-Z]{4}-[0-9A-Z]{4}$/))
+        return { error: 'Malformed code.' };
+    const proc = popen(sprintf('/usr/sbin/parkeze-console-signin poll %s 2>/dev/null', code), 'r');
+    let reply = null;
+    try { reply = json(proc.read('all')); } catch (e) {}
+    proc.close();
+    if (!reply) return { pending: true };     // a dropped poll; ask again
+    if (reply.error) return { error: reply.error };
+    if (reply.state == 'pending') return { pending: true };
+    if (reply.state == 'refused') return { error: 'Refused on Parkeze.' };
+    if (reply.state == 'expired') return { error: 'That code has expired.' };
+    if (reply.state != 'approved' || !reply.token) return { error: 'Parkeze did not answer.' };
+    return loginSso(reply.token, addr, { aud: 'terminal', req: code });
 };
 
 // ── LAN access ──────────────────────────────────────────────────────────────
@@ -720,4 +770,4 @@ audit = function(action, detail) {
 // its handler in TEMPLATE mode and loads anything else through loadfile(),
 // neither of which is module mode — `export` is a syntax error there. See the
 // header of api/index.uc for the full contract.
-return { audit, constantTimeEqual, createSession, destroySession, hashPassword, loginLocal, loginMethods, loginSso, loginTicket, readSession, recoveryChallenge, recoveryVerify, setPassword, verifyPassword };
+return { audit, constantTimeEqual, createSession, destroySession, hashPassword, loginLocal, loginMethods, loginSso, loginTicket, readSession, recoveryChallenge, recoveryVerify, setPassword, terminalCollect, terminalStart, verifyPassword };

@@ -408,10 +408,25 @@ export interface EthernetPort {
   servesDhcp: boolean;
 }
 
+/** The USB device port, on a board built with one; see parkeze-usb-gadget. */
+export interface UsbPort {
+  /** The gadget is built and attached to the controller. */
+  present: boolean;
+  /** A host has enumerated it: a laptop is on the other end. */
+  connected: boolean;
+  state: string;
+  /** The mDNS name on the cable, parkeze.local. */
+  name: string;
+  /** The gateway's fixed address on the cable. */
+  address: string;
+}
+
 export interface AccessStatus {
   ap: ApStatus;
   portal: { up: boolean; address?: string };
   port: EthernetPort;
+  /** Null on a board with no USB device port. */
+  usb: UsbPort | null;
   adopted: boolean;
   wifi:
     | { configured: false }

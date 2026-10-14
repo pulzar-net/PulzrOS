@@ -24,8 +24,11 @@ carried over.
 - **GNSS** over UART or USB, auto-detected, feeding real GPS time to the packet
   forwarder — and honest about the difference between a live fix and the
   position the gateway is announcing.
-- **Generated login banner** — the wordmark is rendered by figlet at print
+- **Generated login banner** — the mark and the wordmark are drawn at print
   time, not pasted into a file, and the facts under it are read live.
+- **The console in a terminal** — every page of the web console as a TUI, on
+  the serial console, over SSH, on a Pi's own screen, and over a USB cable that
+  is also a network to the console at `parkeze.local`.
 - **Two management paths** — a WireGuard tunnel over wired, 1NCE over
   cellular — with the tunnel structurally prevented from ever touching the
   metered link.
@@ -98,7 +101,10 @@ feed/             the Parkeze OpenWrt package feed
   parkeze-adopt         one-touch provisioning and adoption
   parkeze-io            front-panel LEDs and buttons
   parkeze-ap            setup AP and captive portal (opt-in, off by default)
-scripts/          build-feed.sh, check-ucode.sh, ucode stubs
+  parkeze-tui           the console in a terminal, on every board
+  parkeze-display       the TUI on a Pi's own screen, when it has one
+  parkeze-usb-gadget    the USB-C port as a network and a serial console
+scripts/          build-feed.sh, check-ucode.sh, ucode stubs, run-tui.sh
 docs/             the design decisions worth writing down
 ```
 
@@ -109,8 +115,11 @@ docs/             the design decisions worth writing down
 - [`docs/auth.md`](docs/auth.md) — how you get into a gateway, including the
   offline Ed25519 recovery flow and why a stored break-glass password would be
   the wrong answer.
-- [`docs/access.md`](docs/access.md) — the ethernet port, the setup AP, and
-  why forcing a gateway offline to raise its radio gains an attacker nothing.
+- [`docs/access.md`](docs/access.md) — the ethernet port, the USB port, the
+  setup AP, and why forcing a gateway offline to raise its radio gains an
+  attacker nothing.
+- [`docs/tui.md`](docs/tui.md) — the terminal UI: where it runs, who it trusts,
+  and how it stays the same console as the web one.
 - [`docs/flashing.md`](docs/flashing.md) — getting an image onto a board, and
   the first-boot experience.
 - [`docs/provisioning.md`](docs/provisioning.md) — one-touch provisioning end
@@ -146,6 +155,12 @@ That resolves `fs`, `uci`, `ubus` and `digest` against the stubs in
 `scripts/ucode-stubs/`, so it catches importing a function that does not exist
 as well as plain syntax errors. Keep the stubs honest when you reach for a new
 one.
+
+The terminal UI runs on the same ucode, against canned gateway state:
+
+```bash
+UCODE=/tmp/ucode/build/ucode scripts/run-tui.sh
+```
 
 ## Status
 
