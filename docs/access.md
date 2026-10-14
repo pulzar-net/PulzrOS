@@ -157,7 +157,9 @@ https://parkeze-<serial>.local
 
 That works with no configuration on either end: the laptop self-assigns a
 link-local address, and `umdns` answers the name on the link-local interface.
-`https://192.168.61.1` is the fallback for when mDNS is blocked.
+`https://parkeze.local` works the same way and does not need the serial off
+the label: on the end of a cable there is only ever one gateway for it to
+mean. `https://192.168.61.1` is the fallback for when mDNS is blocked.
 
 mDNS is deliberately *not* answered on the uplink side. The same socket faces
 whatever site network the gateway is patched into, and advertising there would
@@ -185,6 +187,57 @@ depend on rule order. Source addresses are unambiguous.
 This is not the security boundary — authentication is, and anyone holding the
 cable is inside any perimeter we could draw. The carve-out only stops a routed
 network from reaching the login page at all.
+
+## The USB port
+
+On a Pi 4 or Pi 5 the USB-C socket is also a way in. Plugged into a laptop,
+the gateway shows up as two things at once:
+
+- **A network interface.** The laptop gets an address by DHCP and the console
+  is at `https://parkeze.local`, or `https://192.168.63.1` without mDNS.
+  Windows 11, macOS, Linux and ChromeOS need no driver (CDC-NCM).
+- **A serial port**, with the terminal UI on it behind the console's sign-in —
+  see [`tui.md`](tui.md). Every OS binds it without a driver too.
+
+### Why this port serves DHCP
+
+The ethernet port never does, because nothing can tell a laptop from a
+customer's network and guessing wrong is somebody else's outage. That question
+does not exist here: the only thing on the other end of a USB cable is the one
+computer it is plugged into. So the port hands that computer an address — and
+nothing else. No default route and no DNS server, so a laptop that is also on
+WiFi keeps its own internet and its own resolver.
+
+### What it can reach
+
+Its own firewall zone, `forward DROP`, and only tcp 22, 80 and 443 plus DHCP and
+mDNS in. The USB port is a way to this gateway's console and not a route onto
+the site, the uplink or the management tunnel.
+
+### Power
+
+The USB-C socket on a Pi 4 and Pi 5 is the power input as well as the device
+port. A laptop plugged into it is also the power supply, and a laptop port
+gives a fraction of what a Pi with a concentrator and a modem draws: expect
+brownouts. A gateway on PoE or powered through its header is fine. One powered
+from its USB-C socket needs a splitter that takes data from the laptop and
+power from the supply.
+
+### Which boards
+
+The Pi 4 and Pi 5 only. A Pi 3's USB sockets all hang off its LAN hub, so the
+SoC can only ever be a host. The RAK units' USB-C socket is a USB-to-serial
+bridge on the console UART — the terminal UI is there already, at 57600 — and
+their SoC has no USB device controller at all.
+
+## The screen
+
+A Pi with a screen attached at boot shows the terminal UI on it, behind the
+console's sign-in, in place of OpenWrt's passwordless login on tty1. With no
+screen attached, nothing runs: the firmware leaves HDMI unpowered, there is no
+framebuffer, and nothing draws. A screen plugged into a gateway that is already
+running stays dark until the next boot — see `parkeze-display-attached` for why
+that trade was made.
 
 ## Most installs never touch any of this
 

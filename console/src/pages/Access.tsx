@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Eye, EyeOff, Radio } from 'lucide-react';
 import { api } from '@/services/api';
-import type { AccessStatus, BackhaulStatus } from '@/types';
+import type { AccessStatus, BackhaulStatus, UsbPort } from '@/types';
 import Section from '@/components/ui/Section';
 import Badge, { StatusBadge } from '@/components/ui/Badge';
 import Fact, { FactList } from '@/components/Fact';
@@ -48,6 +48,7 @@ export default function Access() {
       <ApCard state={state} onChange={refresh} />
       <Tunnel />
       <PortCard state={state} />
+      {state.usb?.present && <UsbCard usb={state.usb} />}
     </div>
   );
 }
@@ -264,6 +265,26 @@ function PortCard({ state }: { state: AccessStatus }) {
         />
       </FactList>
 
+    </Section>
+  );
+}
+
+function UsbCard({ usb }: { usb: UsbPort }) {
+  return (
+    <Section
+      title="USB port"
+      note={
+        usb.connected ? (
+          <Badge tone="success">Connected</Badge>
+        ) : (
+          <Badge tone="neutral">Nothing attached</Badge>
+        )
+      }
+    >
+      <FactList>
+        <Fact label="Local name" value={<span className="mono">https://{usb.name}</span>} />
+        <Fact label="Console address" value={<span className="mono">https://{usb.address}</span>} />
+      </FactList>
     </Section>
   );
 }

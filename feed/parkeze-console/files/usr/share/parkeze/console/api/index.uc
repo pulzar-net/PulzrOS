@@ -47,6 +47,8 @@ let io = loadfile('/usr/share/parkeze/console/lib/io.uc', { raw_mode: true })();
 let access = loadfile('/usr/share/parkeze/console/lib/access.uc', { raw_mode: true })();
 let firmware = loadfile('/usr/share/parkeze/console/lib/firmware.uc', { raw_mode: true })();
 let bluetooth = loadfile('/usr/share/parkeze/console/lib/bluetooth.uc', { raw_mode: true })();
+// What changes the gateway, shared with the terminal UI; see actions.uc.
+let actions = loadfile('/usr/share/parkeze/console/lib/actions.uc', { raw_mode: true })();
 
 const SESSION_COOKIE = 'parkeze_session';
 
@@ -269,7 +271,7 @@ const ROUTES = {
         // A recovery session may set a password — that is much of the point of
         // recovering — but must re-state the old one if one is set, so that a
         // recovery code alone is not a silent takeover of the local account.
-        const result = auth.setPassword(req.username, req.password);
+        const result = actions.setPassword(req, session);
         if (result.error) return error(result.status, result.error);
         return respond(200, result);
     },
@@ -280,12 +282,11 @@ const ROUTES = {
     'GET  /api/system/history':   (env) => respond(200, system.history(env.QUERY_STRING)),
     'GET  /api/system/processes': () => respond(200, system.processes()),
     'GET  /api/system/logs':      (env, req) => respond(200, system.logs(env.QUERY_STRING)),
-    'POST /api/system/reboot':    (env, req, s) => { auth.audit('system.reboot', { by: s.subject }); return respond(200, system.reboot()); },
+    'POST /api/system/reboot':    (env, req, s) => respond(200, actions.reboot(req, s)),
     'GET  /api/system/uart':      () => respond(200, system.uart()),
     'POST /api/system/uart':      (env, req, s) => {
-        const result = system.setUart(req.role);
+        const result = actions.setUart(req, s);
         if (result.error) return error(400, result.error);
-        auth.audit('system.uart', { by: s.subject, role: req.role });
         return respond(200, result);
     },
     'POST /api/system/firmware':  (env, req, s) => {
@@ -299,30 +300,27 @@ const ROUTES = {
     // ── network ─────────────────────────────────────────────────────────────
     'GET  /api/bluetooth/status': () => respond(200, bluetooth.status()),
     'POST /api/bluetooth':        (env, req, s) => {
-        const result = bluetooth.set(req);
+        const result = actions.setBluetooth(req, s);
         if (result.error) return error(400, result.error);
-        auth.audit('bluetooth.set', { by: s.subject, enabled: req.enabled });
         return respond(200, result);
     },
     'GET  /api/network/status':   () => respond(200, network.status()),
     'GET  /api/network/backhaul': () => respond(200, network.backhaul()),
-    'POST /api/network/cellular': (env, req, s) => respond(200, network.setCellular(req, s)),
+    'POST /api/network/cellular': (env, req, s) => respond(200, actions.setCellular(req, s)),
     'POST /api/network/ethernet': (env, req, s) => {
-        const result = network.setEthernet(req, s);
+        const result = actions.setEthernet(req, s);
         if (result.error) return error(400, result.error);
-        auth.audit('network.ethernet', { by: s.subject, mode: req.mode,
-                                         address: req.address, gateway: req.gateway });
         return respond(200, result);
     },
 
     // ── provisioning ────────────────────────────────────────────────────────
     'GET  /api/claim/status': () => respond(200, claim.status()),
     'GET  /api/claim/qr':     () => respond(200, claim.qr()),
-    'POST /api/claim/poll':   () => respond(200, claim.poll()),
-    'POST /api/claim/check-adoption': () => respond(200, claim.checkAdoption()),
+    'POST /api/claim/poll':   (env, req) => respond(200, actions.claimPoll(req)),
+    'POST /api/claim/check-adoption': (env, req) => respond(200, actions.checkAdoption(req)),
     'GET  /api/claim/check-adoption': () => respond(200, claim.adoptionCheckResult()),
     'POST /api/claim/apply':  (env, req) => {
-        const result = claim.applyBundle(req);
+        const result = actions.claimApply(req);
         return result.error ? error(400, result.error) : respond(200, result);
     },
 
@@ -336,60 +334,52 @@ const ROUTES = {
     'GET  /api/access/key':       (env, req, s) => respond(200, access.key()),
     'GET  /api/access/scan':      (env, req, s) => respond(200, access.scan()),
     'POST /api/access/ap':        (env, req, s) => {
-        const result = access.setAp(req);
+        const result = actions.setAp(req, s);
         return result.error ? error(400, result.error) : respond(200, result);
     },
-    'POST /api/access/ap/up':     (env, req, s) => { auth.audit('ap.raise', { by: s.subject }); return respond(200, access.raiseAp(req)); },
-    'POST /api/access/ap/down':   (env, req, s) => { auth.audit('ap.lower', { by: s.subject }); return respond(200, access.lowerAp()); },
-    'POST /api/access/wifi/forget': (env, req, s) => {
-        auth.audit('wifi.forget', { by: s.subject, ssid: req.ssid });
-        return respond(200, access.forgetWifi(req));
-    },
+    'POST /api/access/ap/up':     (env, req, s) => respond(200, actions.raiseAp(req, s)),
+    'POST /api/access/ap/down':   (env, req, s) => respond(200, actions.lowerAp(req, s)),
+    'POST /api/access/wifi/forget': (env, req, s) => respond(200, actions.forgetWifi(req, s)),
     'POST /api/access/wifi':      (env, req, s) => {
-        const result = access.joinWifi(req);
+        const result = actions.joinWifi(req, s);
         if (result.error) return error(400, result.error);
-        auth.audit('wifi.join', { by: s.subject, ssid: req.ssid,
-                                  security: req.eap ? 'eap' : (req.key ? 'psk' : 'open') });
         return respond(200, result);
     },
     'GET  /api/access/wifi':      (env, req, s) => respond(200, access.wifiDetail()),
     'POST /api/access/wifi/probe': (env, req, s) => {
-        const result = access.probeWifi(req);
+        const result = actions.probeWifi(req, s);
         if (result.error) return error(400, result.error);
-        auth.audit('wifi.probe', { by: s.subject, ssid: req.ssid });
         return respond(202, result);
     },
     'GET  /api/access/wifi/probe': (env, req, s) => respond(200, access.probeResult()),
 
     // ── io ──────────────────────────────────────────────────────────────────
     'GET  /api/io/status': () => respond(200, io.status()),
-    'POST /api/io/test':   (env, req, s) => { auth.audit('io.test', { by: s.subject }); return respond(200, io.test()); },
+    'POST /api/io/test':   (env, req, s) => respond(200, actions.ioTest(req, s)),
 
     // ── lorawan ─────────────────────────────────────────────────────────────
     'GET  /api/lorawan/status':       () => respond(200, lorawan.status()),
     'GET  /api/lorawan/concentrator': () => respond(200, lorawan.concentrator()),
-    'POST /api/lorawan/concentrator': (env, req, s) => respond(200, lorawan.setConcentrator(req, s)),
-    'POST /api/lorawan/detect':       (env, req, s) => { auth.audit('lorawan.detect', { by: s.subject }); return respond(200, lorawan.detect()); },
+    'POST /api/lorawan/concentrator': (env, req, s) => respond(200, actions.setConcentrator(req, s)),
+    'POST /api/lorawan/detect':       (env, req, s) => respond(200, actions.detect(req, s)),
 
     'GET  /api/lorawan/forwarders': () => respond(200, lorawan.forwarders()),
 
     // ── gnss ────────────────────────────────────────────────────────────────
     'GET  /api/gnss':        () => respond(200, lorawan.gps()),
     'POST /api/gnss/source': (env, req, s) => {
-        const result = lorawan.setGpsSource(req);
+        const result = actions.setGpsSource(req, s);
         if (result.error) return error(400, result.error);
-        auth.audit('gps.source', { by: s.subject, source: req.source, slot: req.slot, device: req.device });
         return respond(200, result);
     },
-    'POST /api/gnss/detect': (env, req, s) => { auth.audit('gps.detect', { by: s.subject }); return respond(200, lorawan.detectGps()); },
+    'POST /api/gnss/detect': (env, req, s) => respond(200, actions.detectGps(req, s)),
     'POST /api/gnss/sync':   (env, req, s) => {
-        const result = lorawan.syncGps();
+        const result = actions.syncGps(req, s);
         if (result.error) return error(409, result.error);
-        auth.audit('gps.sync', { by: s.subject });
         return respond(200, result);
     },
-    'POST /api/lorawan/backhaul':     (env, req, s) => { auth.audit('lorawan.backhaul', { by: s.subject, allowCellular: req.allowCellular, buffer: req.buffer }); return respond(200, lorawan.setBackhaul(req, s)); },
-    'POST /api/lorawan/restart':      (env, req, s) => { auth.audit('lorawan.restart', { by: s.subject }); return respond(200, lorawan.restart()); },
+    'POST /api/lorawan/backhaul':     (env, req, s) => respond(200, actions.setBackhaul(req, s)),
+    'POST /api/lorawan/restart':      (env, req, s) => respond(200, actions.restart(req, s)),
 };
 
 // Routes whose body is not JSON but the payload itself — read by the handler,
@@ -425,7 +415,7 @@ function route(env) {
         const m = match(path, /^\/api\/lorawan\/slots\/([0-9]{1,2})$/);
         if (m) {
             slotIndex = int(m[1]);
-            handler = (e, r, s) => respond(200, lorawan.setSlot(slotIndex, r, s));
+            handler = (e, r, s) => { r.index = slotIndex; return respond(200, actions.setSlot(r, s)); };
         }
     }
 

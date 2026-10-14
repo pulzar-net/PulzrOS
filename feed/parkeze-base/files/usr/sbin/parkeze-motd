@@ -5,7 +5,8 @@
 #   parkeze-motd            print it
 #   parkeze-motd --no-logo  just the facts, for a narrow terminal
 #
-# The wordmark is rendered by figlet at print time rather than being a block of
+# The mark is drawn by parkeze-logo from a pixel grid, and the wordmark beside
+# it is rendered by figlet at print time rather than being a block of
 # ASCII art pasted into this file. Two reasons, and the second is the real one:
 #
 #   * a hardcoded block is a thing to re-paste by hand whenever the wordmark
@@ -39,19 +40,37 @@ say() { printf "$@"; }
 
 # ── the wordmark ────────────────────────────────────────────────────────────
 
-logo() {
+wordmark() {
     # parkeze-figlet, not figlet: OpenWrt packages no figlet for any
     # architecture, so the renderer ships with us. It reads the same slant.flf
     # and produces byte-identical output — see scripts/test-figlet.sh.
     [ -x /usr/sbin/parkeze-figlet ] || return 1
     [ -f "${FONT}" ] || return 1
-
-    # slant is 39 columns for "Parkeze". Below about 46 it would wrap and
-    # become noise, so a narrow terminal gets the plain name instead. The
-    # renderer does not wrap, which is exactly why this check is here.
-    [ "${WIDTH}" -lt 46 ] && return 1
-
     /usr/sbin/parkeze-figlet -f "${FONT}" -- "${WORDMARK}" 2>/dev/null
+}
+
+logo() {
+    # The mark beside the wordmark, then the wordmark alone, then the mark
+    # beside the plain name — whichever is the widest that fits. Nothing here
+    # wraps, which is exactly why the widths are checked: a wrapped logo on a
+    # 40-column serial terminal is unreadable confetti.
+    #
+    # slant is 39 columns for "Parkeze"; the mark is its own width plus the
+    # indent and the gap parkeze-logo puts around it. parkeze-logo reports 0
+    # when this terminal will not draw it, and the wordmark carries on alone.
+    local mark=0
+    [ -x /usr/sbin/parkeze-logo ] && mark="$(/usr/sbin/parkeze-logo --width 2>/dev/null || echo 0)"
+    [ "${mark}" -gt 0 ] && mark=$((mark + 5))
+
+    if [ "${mark}" -gt 0 ] && [ "${WIDTH}" -ge $((mark + 39)) ] && wordmark >/dev/null; then
+        wordmark | /usr/sbin/parkeze-logo --beside
+    elif [ "${WIDTH}" -ge 46 ] && wordmark >/dev/null; then
+        wordmark
+    elif [ "${mark}" -gt 0 ] && [ "${WIDTH}" -ge $((mark + 7)) ]; then
+        printf "${B}Parkeze${OFF}\n" | /usr/sbin/parkeze-logo --beside
+    else
+        return 1
+    fi
 }
 
 # ── state ───────────────────────────────────────────────────────────────────
@@ -123,6 +142,14 @@ say "  ${DIM}Console${OFF}      https://%s.local/\n" \
     "$(uci -q get parkeze.identity.hostname || cat /proc/sys/kernel/hostname)"
 say "  ${DIM}%s${OFF}             https://%s/\n" "" \
     "$(uci -q get network.console.ipaddr || echo 192.168.61.1)"
+# The USB port, on a board built with one: the name to type with a cable in.
+if [ -x /usr/sbin/parkeze-usb-gadget ]; then
+    say "  ${DIM}USB${OFF}          https://parkeze.local/  ${DIM}%s${OFF}\n" \
+        "$(uci -q get network.usb.ipaddr || echo 192.168.63.1)"
+fi
+# The same console, here. Named because somebody at a shell prompt has no
+# other way to learn it exists.
+[ -x /usr/sbin/parkeze-tui ] && say "  ${DIM}Terminal${OFF}     parkeze-tui\n"
 adoption_line
 concentrator_line
 backhaul_line

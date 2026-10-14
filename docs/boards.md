@@ -110,6 +110,24 @@ silkscreen LoRa1/LoRa2 order left to confirm on a Pro with both cards.
 `rak7268c` is still written from published specifications; see the template's
 README for taking a board through the same process.
 
+## Where the terminal UI runs
+
+Every board has the terminal UI on its serial console. Two features add
+somewhere else for it to run, and a board takes one by adding its package
+group to `PACKAGES_BOARD` and setting its variables — see the Display and USB
+device port sections of `boards/common/board.conf`. A board without the
+hardware leaves them alone, and nothing for them is in its image.
+
+| Board | Serial console | Display | USB device port |
+|---|---|---|---|
+| `rpi3` | 115200 | HDMI | no — its USB sockets are behind the LAN hub |
+| `rpi4` | 115200 | HDMI | USB-C, `dwc2` |
+| `rpi5` | 115200 | HDMI | USB-C, `dwc2` |
+| RAK | 57600, on the USB-C socket | no | no — that socket is a CH340 on the UART |
+
+A board's console baud rate is its own business; the TUI asks the terminal for
+its size rather than assume one.
+
 ## A Compute Module carrier
 
 When we build our own board around a CM, it does **not** source

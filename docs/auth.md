@@ -52,6 +52,12 @@ authenticated centrally lands signed in without a second password.
 **Local password login is disabled on adoption** — `parkeze.console.local_login`
 goes to `0` — not merely discouraged.
 
+The terminal UI has no browser to receive that handoff, so it collects the same
+token itself: it shows a code, somebody approves it on parkeze.net from a
+phone, and the gateway picks the token up. The token is marked for the terminal
+and for that one request, and the web console refuses tokens marked for
+anything. See [`tui.md`](tui.md).
+
 ### 3. Adopted and offline
 
 The interesting case. Local login stays refused, because the credential a thief

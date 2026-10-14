@@ -132,6 +132,13 @@ fi
 # there would put the gateway in the service browser of every machine on it —
 # an inventory of our hardware handed to a network we do not control, for no
 # benefit, since management from parkeze.net arrives over the tunnel.
+#
+# It also answers to parkeze.local (/etc/umdns/parkeze-local.json), which is
+# the name to read out to somebody with a cable and no label to hand. That is
+# only safe because of the restriction above: umdns answers an alias on every
+# network it serves, and the networks it serves are a laptop on the end of a
+# cable — this one, and the USB port where a board has one — where there is
+# only ever one gateway to mean.
 uci -q batch <<EOF
 delete umdns.@umdns[0]
 add umdns umdns

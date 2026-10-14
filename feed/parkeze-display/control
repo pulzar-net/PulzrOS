@@ -1,0 +1,13 @@
+Package: parkeze-display
+Version: @VERSION@-@BUILD@
+Depends: parkeze-tui
+Source: parkeze
+Section: utils
+Priority: optional
+Maintainer: Joseph Telaak <joseph@parkeze.com>
+Architecture: all
+Description: The console on a Pi's own screen, when it has one.
+ Runs the terminal UI on the HDMI console of a board with display output, and
+ only when the firmware found a display at boot. With none attached there is
+ no framebuffer, nothing drawing to it, and nothing running. For boards with a
+ display connector; see PACKAGES_DISPLAY in boards/common/board.conf.
