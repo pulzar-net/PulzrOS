@@ -12,8 +12,8 @@ parkeze-tui
 
 | | How you get there | Sign-in |
 |---|---|---|
-| Serial console | `parkeze-tui` at the shell | none: you are root |
-| SSH | `parkeze-tui` at the shell | none: you are root |
+| Serial console | it is already there | the web console's |
+| SSH as root | `parkeze-tui` at the shell | none: you are root |
 | parkeze.net **Console** | a gateway's page, as an organization's admin | parkeze.net's; no shell |
 | HDMI (Pi) | it is already there, when a screen was attached at boot | the web console's |
 | USB serial (Pi 4, Pi 5) | the port that appears beside the USB network | the web console's |
@@ -100,18 +100,18 @@ serial terminal its size again.
 
 ## The shell
 
-Not in a remote session (above). Everywhere else, `!` drops to a login shell
-on the same terminal; `exit` or Ctrl-D comes back
+Only for Parkeze: a TUI started from a root shell, or a session parkeze.net
+signed as staff's ([`auth.md`](auth.md), "Who gets root"). Not for the local
+password, an organization admin's Parkeze or recovery sign-in, or a remote
+session; a development image lets any signed-in session through. There, `!`
+drops to a login shell on the same terminal; `exit` or Ctrl-D comes back
 to the console, redrawn and refreshed. The TUI steps aside rather than running
 beside the shell, so it is the ordinary shell — the banner, job control,
 Ctrl-C — and works the same on a serial line, over SSH, on HDMI and on the USB
 serial port.
 
-On a port it is behind the console's sign-in, like everything else there, and
-each one is journalled as `console.shell`. That opens nothing new: a signed-in
-console can already install firmware, and the local password is root's
-password as well. An idle shell on a port logs itself out after fifteen
-minutes, where the shell supports `TMOUT`.
+On a port each one is journalled as `console.shell`. An idle shell on a port
+logs itself out after fifteen minutes, where the shell supports `TMOUT`.
 
 ## Terminals
 

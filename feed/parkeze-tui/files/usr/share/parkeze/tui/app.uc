@@ -38,7 +38,7 @@ let _m_fs = require('fs');
 // ucode does not hoist function declarations; see console/lib/util.uc.
 let start, loop, draw, drawHeader, drawNav, drawBody, drawFooter, handleKey, handleEdit;
 let handleDialog, activate, moveFocus, openPath, current, navEntries, loadPage, tick;
-let signOut, signedIn, flash, makeCtx, pageFor, bodyBlocks, layoutBody, runAction, quit, banner, shell, qr;
+let signOut, signedIn, flash, makeCtx, pageFor, bodyBlocks, layoutBody, runAction, quit, banner, shell, qr, mayShell;
 
 const LIB = getenv('PARKEZE_TUI_LIB') ?? '/usr/share/parkeze/tui';
 const load = (name) => loadfile(LIB + '/' + name + '.uc', { raw_mode: true })();
@@ -98,6 +98,7 @@ const IDLE_PAUSE = 900;
 const app = {
     console: false,       // --console: sign-in required
     remote: false,        // --remote: no sign-in, no shell
+    dev: false,           // a development build: see mayShell
     tty: null,
     addr: 'tty',          // what lockout counts sign-in failures against
     session: null, token: null,
@@ -121,6 +122,20 @@ flash = function(text, tone) {
 };
 
 signedIn = function() { return app.session != null; };
+
+// Whether `!` drops to a shell for this session.
+//
+// A root shell on ParkezeOS is a copy of ParkezeOS, so it is Parkeze's: started
+// from a root shell already, or signed in as Parkeze staff — parkeze.net's
+// signature says so (auth.uc's `shell`). An organization's admin signs in with
+// the local password, by Parkeze or by recovery too, and gets the console and
+// nothing under it. A remote session never: its sshd runs nothing else. A
+// development build lets any signed-in session through, for the bench.
+mayShell = function() {
+    const s = app.session;
+    if (!s || app.remote) return false;
+    return app.dev || s.kind == 'shell' || s.shell === true;
+};
 
 // ── pages ───────────────────────────────────────────────────────────────────
 
@@ -396,7 +411,7 @@ loop = function() {
 shell = function() {
     // Checked here as well as at the key, so a second way to this function
     // is not a second way to a shell.
-    if (app.remote) return;
+    if (!mayShell()) return;
     if (app.console) runAction('openShell', { tty: app.tty });
 
     term.close();
@@ -447,8 +462,8 @@ handleKey = function(key) {
     if (full) app.focus = 'page';
 
     // `!` for a shell, as less, vi and mutt have it. Not before sign-in, not
-    // before a forced password change, and never in a remote session.
-    if (key == '!' && !full && !app.remote) return shell();
+    // before a forced password change, and only for a session mayShell allows.
+    if (key == '!' && !full && mayShell()) return shell();
 
     if (app.focus == 'nav') {
         const entries = navEntries();
@@ -814,7 +829,7 @@ drawFooter = function(width) {
     if (app.dialog) keys = app.dialog.kind == 'confirm' ? 'Enter Confirm  Esc Cancel' : 'Enter Choose  Esc Cancel';
     else if (app.edit) keys = 'Enter Save  Esc Cancel';
     else {
-        const shellKey = app.remote ? '' : '! Shell  ';
+        const shellKey = mayShell() ? '! Shell  ' : '';
         const quitKey = app.console ? 'q Sign out' : 'q Quit';
         if (app.focus == 'nav') keys = 'Enter Open  r Refresh  ' + shellKey + quitKey;
         else keys = signedIn() && app.path != '/password'
@@ -857,6 +872,9 @@ draw = function() {
 start = function(opts) {
     app.console = !!opts.console;
     app.remote = !app.console && !!opts.remote;
+    // From the image, not from anything a session can change: board.conf is
+    // written by build.sh, and writing it on a gateway takes root already.
+    app.dev = match(_m_fs.readfile('/etc/parkeze/board.conf') ?? '', /(^|\n)PARKEZE_DEV='1'/) != null;
     app.tty = opts.tty;
     app.addr = 'tty:' + replace(opts.tty ?? 'shell', /^\/dev\//, '');
 

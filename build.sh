@@ -12,6 +12,8 @@
 #   ./build.sh --stage feed         # just the packages
 #   ./build.sh --stage image rpi4   # just the image, using what is on disk
 #
+#   PARKEZE_DEV=1 ./build.sh rpi4   # a development image, for the bench
+#
 # The stages exist so CI can build the console and the packages once and share
 # them across every board. Running without --stage does all three, which is
 # what you want locally.
@@ -39,6 +41,21 @@ OUT_DIR="${ROOT_DIR}/out"
 
 # Version stamped into the image so a running gateway can say what it is.
 PARKEZE_VERSION="$(cat "${ROOT_DIR}/VERSION" 2>/dev/null || echo 0.0.0-dev)"
+
+# A development image: what a production image locks away from whoever is
+# standing at the gateway, left open for whoever is building it. The serial
+# console's root shell, failsafe mode, the TUI's `!` for any signed-in
+# session, site keys from the card, and every key in keys/dev/. Its version
+# says -dev everywhere it is shown, parkeze.net included, and CI refuses to
+# build one, so a release can never be one. render_board_files records it in
+# board.conf, which is what the gateway reads.
+if [ "${PARKEZE_DEV:-0}" = 1 ]; then
+  if [ "${GITHUB_ACTIONS:-}" = true ]; then
+    echo "PARKEZE_DEV=1 is a bench build; CI builds releases, and a release is never one." >&2
+    exit 1
+  fi
+  PARKEZE_VERSION="${PARKEZE_VERSION}-dev"
+fi
 PARKEZE_BUILD="$(date -u +%Y%m%d%H%M)"
 PARKEZE_COMMIT="$(git -C "${ROOT_DIR}" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 
@@ -267,6 +284,7 @@ EOF
     -w /src \
     -e PARKEZE_IN_CONTAINER=1 \
     -e PARKEZE_RECOVERY_PUBKEY \
+    -e PARKEZE_DEV \
     "${DOCKER_IMAGE}" \
     ./build.sh --stage image "${boards[@]}" \
     || die "assembly failed inside the container"
@@ -512,8 +530,8 @@ install_ops_keys() {
   if [ "${found}" -eq 0 ]; then
     rm -f "${fleet}"
     warn "No fleet SSH key in ${keydir}."
-    warn "  Gateways from this build are reachable only with the per-unit"
-    warn "  password from the boot partition. Generate the pair with"
+    warn "  Root on gateways from this build takes a parkeze.net certificate:"
+    warn "  root has no password. Generate the pair with"
     warn "  parkeze.net/tools/generate-fleet-ssh-key.sh and put the .pub in"
     warn "  ${keydir} to have them accept it straight from a flash."
     return 0
@@ -521,6 +539,29 @@ install_ops_keys() {
 
   chmod 0600 "${fleet}"
   log "Fleet SSH key installed (${found})"
+}
+
+install_dev_keys() {
+  # A development image's own keys: every keys/dev/*.pub, for the people at
+  # the bench. Added to the fleet keys, so root's authorized_keys takes them
+  # as it takes Parkeze's. Ignored in .gitignore, because they are people's,
+  # and never read for a production image.
+  [ "${PARKEZE_DEV:-0}" = 1 ] || return 0
+  local fleet="${ROOT_DIR}/boards/common/files/usr/share/parkeze/fleet-keys" found=0 pub ca_blob
+  ca_blob="$(awk '{ print $2; exit }' "${PARKEZE_SSH_CA_PUBKEY:-${ROOT_DIR}/keys/ca/parkeze_user_ca.pub}" 2>/dev/null || true)"
+  for pub in "${ROOT_DIR}/keys/dev"/*.pub; do
+    [ -f "${pub}" ] || continue
+    grep -qE '^(ssh-(rsa|ed25519)|ecdsa-sha2-)' "${pub}" || { warn "${pub} holds no public key; skipped"; continue; }
+    # As install_ops_keys refuses it: the CA in authorized_keys is every gateway.
+    if [ -n "${ca_blob}" ] && awk '{ print $2 }' "${pub}" | grep -qxF "${ca_blob}"; then
+      die "${pub} is the SSH CA, not a login key."
+    fi
+    mkdir -p "$(dirname "${fleet}")"
+    cat "${pub}" >> "${fleet}"
+    found=$((found + 1))
+  done
+  [ -f "${fleet}" ] && chmod 0600 "${fleet}"
+  log "Development image: ${found} key(s) from keys/dev"
 }
 
 install_ssh_ca() {
@@ -850,6 +891,7 @@ main() {
       install_fleet_key
       install_firmware_key
       install_ops_keys
+      install_dev_keys
       install_ssh_ca
       build_feed
       log "Done. Feed only."
@@ -860,12 +902,14 @@ main() {
       install_fleet_key
       install_firmware_key
       install_ops_keys
+      install_dev_keys
       install_ssh_ca ;;
     all)
       build_console
       install_fleet_key
       install_firmware_key
       install_ops_keys
+      install_dev_keys
       install_ssh_ca
       build_feed ;;
   esac

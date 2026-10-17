@@ -1,0 +1,41 @@
+#!/bin/sh
+#
+# Root has no password: it signs in with a key or a certificate, never with
+# something typed.
+#
+# Root's password used to be the console's, so that the password on the label
+# opened SSH as well. That made every organization admin who knew the console
+# password root on the gateway, and a root shell on ParkezeOS is a copy of
+# ParkezeOS. A technician now reaches the console over SSH as `parkeze`
+# (parkeze-ssh-setup), behind the same sign-in as everywhere else; root is
+# Parkeze's fleet key and the certificates parkeze.net signs for staff.
+#
+# `*`, not `!`. OpenWrt builds sshd without PAM, and sshd without PAM refuses
+# every login — keys and certificates included — to an account whose password
+# field starts with `!`, which it reads as locked. `*` is a field no password
+# hashes to, so nothing typed opens root, and keys still do.
+#
+# Run at every boot (parkeze-bootprov) and from first boot's console setup,
+# so a gateway upgraded from a release that set root's password loses it on
+# its first boot. Writes only when the field is not already `*`.
+
+SHADOW="${PARKEZE_SHADOW:-/etc/shadow}"
+
+[ -f "${SHADOW}" ] || exit 1
+
+current="$(awk -F: '$1 == "root" { print $2; exit }' "${SHADOW}")"
+[ "${current}" = '*' ] && exit 0
+
+# A temp file plus a check before replacing, so a power cut or a bad edit
+# cannot leave /etc/shadow truncated — which would lock every account out.
+tmp="$(mktemp "${TMPDIR:-/tmp}/.shadow.XXXXXX")" || exit 1
+chmod 0600 "${tmp}"
+sed 's|^root:[^:]*:|root:*:|' "${SHADOW}" > "${tmp}" || { rm -f "${tmp}"; exit 1; }
+grep -q '^root:\*:' "${tmp}" || { rm -f "${tmp}"; exit 1; }
+[ "$(wc -l < "${tmp}")" = "$(wc -l < "${SHADOW}")" ] || { rm -f "${tmp}"; exit 1; }
+
+cat "${tmp}" > "${SHADOW}"
+rm -f "${tmp}"
+chmod 0600 "${SHADOW}"
+logger -t parkeze -p daemon.notice "root signs in by key or certificate only" 2>/dev/null
+exit 0

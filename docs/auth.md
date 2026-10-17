@@ -35,9 +35,11 @@ A local account still exists behind that, for the cases provisioning does not
 cover — a bench unit, a gateway being reconfigured before it is claimed.
 
 The password is **unique per unit**, generated on first boot from
-`/dev/urandom`, and printed on the serial-console banner. It is not
+`/dev/urandom`, and on the label, the boot partition of a Pi
+(`parkeze-initial-password.txt`) and the root login banner. It is not
 `parkeze/parkeze` — which is what the previous ParkezeOS shipped on every
-image, and which means one published README is root on the entire fleet.
+image, and which means one published README is root on the entire fleet. It is
+the console's password and nothing else: root has none (below).
 
 The cleartext copy lives at `/etc/parkeze/console/initial-password`, mode 0600,
 so an installer can read it off the device. The console nags on every page
@@ -68,7 +70,7 @@ against a key the gateway only ever holds the **public** half of.
 
 The ethernet port's firewall admits only `169.254.0.0/16` and the console
 subnet, so a gateway on a bench LAN is reachable only through parkeze.net.
-From a root shell (the serial console, or SSH from somewhere already allowed):
+From a root shell (SSH as root, or the serial console of a development image):
 
 ```
 parkeze-local-access open [minutes]   # default 60, at most 1440
@@ -205,7 +207,7 @@ What sshd trusts is written at every boot by `parkeze-ssh-setup`:
 | `/etc/ssh/parkeze_user_ca.pub` | `keys/ca/parkeze_user_ca.pub` in this repo, via the image |
 | `/etc/ssh/sshd_config.d/parkeze-ca.conf` | `TrustedUserCAKeys` and `AuthorizedPrincipalsFile` |
 | `/etc/ssh/auth_principals/root` | the gateway's EUI, 16 lowercase hex |
-| `/root/.ssh/authorized_keys` | the fleet key and site keys (`parkeze-fleet-keys`) |
+| `/root/.ssh/authorized_keys` | the fleet key; on a development image also `keys/dev/` and site keys (`parkeze-fleet-keys`) |
 
 Rewritten from the image each boot rather than kept, because sysupgrade keeps
 conffiles and `/etc/ssh/sshd_config` is one: a change shipped in a release
@@ -236,3 +238,49 @@ and is reached with the fleet key, as before.
 `keys/ca/`, ship it, and only then switch recovery-service to the new private
 key. A gateway trusts exactly one CA, so a gateway on the old release refuses
 the new CA's certificates until it upgrades.
+
+## Who gets root
+
+A root shell on ParkezeOS is a copy of ParkezeOS, so on a production image it
+is Parkeze's: the fleet key, the certificates parkeze.net signs for staff, and
+a console session parkeze.net has signed as staff's. An organization's admin
+runs their gateway through the console — the web console, the TUI on a port,
+and parkeze.net's **Console** (`parkeze-tui --remote`, see
+[`tui.md`](tui.md)) — and never gets the shell under it. Before 0.3.1 root's
+password was the console's, so anybody with the label was root.
+
+| | Production image | Development image |
+|---|---|---|
+| Root's password | none (`*`, `parkeze-root-keys-only`) | none |
+| SSH as root | fleet key, staff certificate | also `keys/dev/*.pub`, site keys |
+| SSH with a password | refused | refused |
+| Serial console | the TUI, behind the console's sign-in | the stock root shell |
+| HDMI, USB serial | the TUI, behind the console's sign-in | the same |
+| The TUI's `!` | a staff session, or a TUI started from a root shell | any signed-in session |
+| Failsafe mode | off | on |
+| Site keys on the card | ignored, and removed from a gateway that has them | accepted until adopted |
+
+**Staff sessions.** Organization admins sign in to a gateway's console with
+Parkeze and with recovery as well as staff do, so the kind of session cannot
+say who it is. parkeze.net says it, signed with the recovery key the gateway
+already trusts: a terminal sign-in approved by staff carries `shell: true` in
+its token, and staff recovering a gateway are given a signature over
+`<challenge>.shell` instead of over the challenge. `auth.uc` records either as
+the session's `shell`; nothing a client sends can set it. The web console has
+no shell, and a token for it cannot carry the mark.
+
+**Upgrading.** `parkeze-root-keys-only` runs at every boot, so a gateway from
+an older release loses root's password on its first boot of this one. The
+serial console moves to the TUI from the boot after that, because procd reads
+`/etc/inittab` once; on the first boot `system.ttylogin` makes the stock login
+ask for root's password, which no longer exists.
+
+**A development image** is `PARKEZE_DEV=1 ./build.sh <board>`. Its version
+ends in `-dev`, which parkeze.net shows, and CI refuses to build one, so a
+release never is. Put your public key in `keys/dev/` (ignored by git).
+
+**What this does not cover** is the hardware. A Pi's root filesystem is a
+plain squashfs on its SD card, and a RAK's is in flash its U-Boot will hand to
+anybody on the serial header; either can be read by somebody holding the
+gateway. Closing that is secure boot and encrypted storage, which a Pi 4 or 5
+can be made to do and the MT7628 cannot.

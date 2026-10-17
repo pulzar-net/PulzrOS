@@ -1,0 +1,16 @@
+# No failsafe mode on a production build.
+#
+# OpenWrt's failsafe — a key on the serial console, the reset button or
+# `failsafe=` on the kernel command line, early in boot — is a root shell with
+# no password and the overlay left unmounted. A root shell on ParkezeOS is a
+# copy of ParkezeOS, and the serial console and the button are both within
+# reach of anybody standing at a gateway. A broken gateway is reflashed
+# instead; a development build keeps failsafe for the bench.
+#
+# Sourced by /etc/preinit with every other file here, after 00_preinit.conf
+# has set pi_preinit_no_failsafe from the build and before any boot hook reads
+# it. board.conf is read from the image's own root, the only one mounted yet.
+
+if ! grep -q "^PARKEZE_DEV='1'" /etc/parkeze/board.conf 2>/dev/null; then
+	pi_preinit_no_failsafe=y
+fi

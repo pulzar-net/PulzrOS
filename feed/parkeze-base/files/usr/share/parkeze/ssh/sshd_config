@@ -17,12 +17,14 @@ Port 22
 HostKey /etc/ssh/ssh_host_ed25519_key
 HostKey /etc/ssh/ssh_host_rsa_key
 
-# What dropbear allowed, so the switch takes nothing away: root, by key or by
-# the per-unit password on the label (see 30-parkeze-console). Certificates
-# come on top, through the Include above.
-PermitRootLogin yes
+# Root by key or certificate, never by password: root has none
+# (parkeze-root-keys-only), and a root shell on ParkezeOS is a copy of it, so
+# root is Parkeze's fleet key and the certificates parkeze.net signs for staff.
+# A technician uses the console: the web console, or the TUI on a port.
+PermitRootLogin prohibit-password
 PubkeyAuthentication yes
-PasswordAuthentication yes
+PasswordAuthentication no
+PermitEmptyPasswords no
 KbdInteractiveAuthentication no
 AuthorizedKeysFile .ssh/authorized_keys
 

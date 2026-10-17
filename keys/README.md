@@ -8,6 +8,10 @@ It is an RSA key because the dropbear build OpenWrt ships for these targets
 supported RSA alone, and gateways still on a dropbear image refuse anything
 else. sshd, which replaced dropbear, takes either.
 
+`dev/*.pub` are people's keys for a development image (`PARKEZE_DEV=1
+./build.sh`), ignored by git and never read for a production one, where root
+is Parkeze's alone (docs/auth.md, "Who gets root").
+
 `ca/parkeze_user_ca.pub` is not a login key and is deliberately outside the
 `*.pub` glob: it is the SSH certificate authority, trusted through
 `TrustedUserCAKeys` (see docs/auth.md). In `authorized_keys` its private half

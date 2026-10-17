@@ -19,9 +19,13 @@
 #                                   /usr, which sysupgrade replaces whole, so
 #                                   a rotated key arrives with the firmware.
 #   /etc/parkeze/site-keys          keys a technician provisioned on this unit
-#                                   (see parkeze-bootprov). Kept across
-#                                   upgrades, because they belong to the site
-#                                   rather than to the build.
+#                                   (see parkeze-bootprov). Development builds
+#                                   only: anywhere else this file is deleted.
+#
+# Site keys used to work on every build, refused only once a gateway was
+# adopted — and a key planted before adoption stayed afterwards. Root on
+# ParkezeOS is a copy of ParkezeOS, so on a production build root is Parkeze's
+# alone; a technician reaches the console as `parkeze` (parkeze-ssh-setup).
 #
 # A key in neither file is not in authorized_keys after a reboot. That is the
 # point: revoking fleet access has to be possible, and "it is still in a file
@@ -38,6 +42,15 @@ OUT=/etc/dropbear/authorized_keys
 HOME_OUT=/root/.ssh/authorized_keys
 
 valid() { grep -hE '^(ssh-(rsa|ed25519)|ecdsa-sha2-)' "$1" 2>/dev/null || true; }
+
+PARKEZE_DEV=0
+BOARD_CONF="${PARKEZE_BOARD_CONF:-/etc/parkeze/board.conf}"
+# Tested first: `.` of a missing file ends a POSIX shell, `|| true` or not.
+if [ -f "${BOARD_CONF}" ]; then . "${BOARD_CONF}"; fi
+if [ "${PARKEZE_DEV:-0}" != 1 ] && [ -e "${SITE}" ]; then
+    rm -f "${SITE}"
+    logger -t parkeze -p daemon.notice "site SSH keys removed: production builds take Parkeze's only"
+fi
 
 composed="$( { [ -f "${FLEET}" ] && valid "${FLEET}"
                [ -f "${SITE}" ] && valid "${SITE}"; } | sort -u)"

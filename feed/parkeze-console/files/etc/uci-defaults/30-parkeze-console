@@ -191,22 +191,17 @@ if [ ! -f "${STATE}/password" ]; then
             chmod 0600 "${STATE}/password"
             touch "${STATE}/password-is-initial"
 
-            # Root's shell login gets the same credential — SSH is a real door
-            # into this gateway, it is where the claim code is shown, and the
-            # password for it is the one on the label.
-            /usr/libexec/parkeze-set-root-password "${hash}" \
-                || logger -t parkeze -p daemon.err \
-                   "could not set root's password; root login may be open"
             ;;
         *)
             logger -t parkeze -p daemon.err \
                 "FAILED to hash the initial console password: openssl passwd -6 returned nothing. Local sign-in will not work."
-            # Lock root outright rather than leave it open. A gateway nobody
-            # can log into is recoverable with a card reader; a gateway anybody
-            # can log into is not recoverable at all.
-            sed -i 's|^root:[^:]*:|root:!:|' /etc/shadow 2>/dev/null
             ;;
     esac
+
+    # Root has no password either way: the console password is the console's
+    # alone. See parkeze-root-keys-only.
+    /usr/libexec/parkeze-root-keys-only \
+        || logger -t parkeze -p daemon.err "could not take root's password away"
 
     # Not written into a banner file here: parkeze-motd reads
     # initial-password directly and prints it on every login until it is

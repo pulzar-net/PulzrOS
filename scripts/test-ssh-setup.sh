@@ -18,6 +18,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SETUP="${ROOT_DIR}/feed/parkeze-base/files/usr/sbin/parkeze-ssh-setup"
 SHIPPED_CONFIG="${ROOT_DIR}/feed/parkeze-base/files/usr/share/parkeze/ssh/sshd_config"
 SHIPPED_CA="${ROOT_DIR}/keys/ca/parkeze_user_ca.pub"
+KEYS_ONLY="${ROOT_DIR}/feed/parkeze-console/files/usr/libexec/parkeze-root-keys-only"
 
 command -v python3 >/dev/null 2>&1 || { echo "python3 is required" >&2; exit 2; }
 
@@ -208,6 +209,26 @@ setup
 check "an ed25519 host key is made" grep -q "GENERATED ed25519" "${SSH}/ssh_host_ed25519_key"
 check "and reported" [ "$(setup --host-key)" = "ssh-ed25519 AAAAGENERATED" ]
 check "no RSA key is made" [ ! -e "${SSH}/ssh_host_rsa_key" ]
+
+# ── root signs in by key or certificate only ────────────────────────────────
+
+check "root by key or certificate only" grep -qx "PermitRootLogin prohibit-password" "${SHIPPED_CONFIG}"
+check "no password logins" grep -qx "PasswordAuthentication no" "${SHIPPED_CONFIG}"
+check "no empty-password logins" grep -qx "PermitEmptyPasswords no" "${SHIPPED_CONFIG}"
+
+shadow="${SANDBOX}/shadow"
+keys_only() { PARKEZE_SHADOW="${shadow}" TMPDIR="${SANDBOX}" sh "${KEYS_ONLY}"; }
+printf '%s\n' 'root:$6$rounds=100000$salt$hash:19000:0:99999:7:::' 'daemon:*:0:0:99999:7:::' > "${shadow}"
+keys_only
+check "a console password on root is taken away" grep -qx 'root:\*:19000:0:99999:7:::' "${shadow}"
+check "nobody else's entry changes" grep -qx 'daemon:\*:0:0:99999:7:::' "${shadow}"
+check "the file is 0600" [ "$(mode "${shadow}")" = 600 ]
+printf '%s\n' 'root:!:19000:0:99999:7:::' > "${shadow}"
+keys_only
+check "a locked root becomes * so keys still open it" grep -qx 'root:\*:19000:0:99999:7:::' "${shadow}"
+before="$(python3 -c 'import os,sys; print(os.stat(sys.argv[1]).st_mtime_ns)' "${shadow}")"
+keys_only
+check "already * writes nothing" [ "$(python3 -c 'import os,sys; print(os.stat(sys.argv[1]).st_mtime_ns)' "${shadow}")" = "${before}" ]
 
 echo "${pass} passed"
 exit "${fail}"

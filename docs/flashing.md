@@ -163,6 +163,11 @@ would have on a first boot.
 
 ## Upgrading a running gateway
 
+Root over SSH takes the fleet key or a parkeze.net certificate, or on a
+development image a key in `keys/dev/`; root has no password
+([`auth.md`](auth.md), "Who gets root"). Anywhere else, upgrade from the
+console or from parkeze.net.
+
 ```
 scp ParkezeOS-<ver>-<board>-sysupgrade.img.gz root@<gateway>:/tmp/fw.img.gz
 ssh root@<gateway> 'sha256sum /tmp/fw.img.gz'      # check it against the .sha256

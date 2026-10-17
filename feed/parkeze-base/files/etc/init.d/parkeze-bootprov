@@ -20,7 +20,8 @@
 #   parkeze-initial-password.txt we write it. The randomly generated password,
 #                                so it can be read by putting the card back.
 #                                Removed once the password has been changed.
-#   parkeze-authorized-keys      you write it. Installed as root's SSH key.
+#   parkeze-authorized-keys      you write it. Installed as root's SSH key, on a
+#                                development build only (see docs/auth.md).
 #
 # WHY NOT A DEFAULT PASSWORD
 #
@@ -121,9 +122,6 @@ apply_password() {
 	# Still "initial": a password chosen on a card and carried to the device is
 	# exactly the kind the console should insist on replacing.
 	touch "${STATE}/password-is-initial"
-
-	/usr/libexec/parkeze-set-root-password "${hash}" \
-		|| logger -t parkeze -p daemon.err "could not set root's password"
 	return 0
 }
 
@@ -135,6 +133,10 @@ start() {
 	# fleet key reaches a gateway at all — see parkeze-fleet-keys.
 	/usr/sbin/parkeze-fleet-keys || \
 		logger -t parkeze -p daemon.err "could not compose authorized_keys"
+	# And nothing typed opens root, on a gateway upgraded from a release where
+	# root's password was the console's as much as on a new one.
+	/usr/libexec/parkeze-root-keys-only || \
+		logger -t parkeze -p daemon.err "could not take root's password away"
 	# The rest of what sshd trusts, for the same reason and before sshd (50)
 	# starts: its config, the CA and this gateway's principal. See
 	# parkeze-ssh-setup.
@@ -158,7 +160,10 @@ start() {
 		want_write=1                      # a stale published password to remove
 	fi
 
-	if [ -s "${MNT}/${KEYS}" ]; then
+	if [ -s "${MNT}/${KEYS}" ] && [ "${PARKEZE_DEV:-0}" != 1 ]; then
+		logger -t parkeze -p daemon.warn \
+			"${KEYS} ignored: SSH keys from the card are for development builds"
+	elif [ -s "${MNT}/${KEYS}" ]; then
 		# Validated first: a truncated file written into authorized_keys would
 		# not fail, it would silently leave no working key and look like the
 		# feature is broken.
@@ -211,7 +216,7 @@ start() {
 		{
 			echo "ParkezeOS initial credentials"
 			echo
-			echo "  user      parkeze   (console)  /  root  (ssh)"
+			echo "  user      parkeze   (console, and ssh parkeze@ the gateway)"
 			echo "  password  $(cat "${STATE}/initial-password")"
 			echo
 			echo "This file disappears once the password is changed."

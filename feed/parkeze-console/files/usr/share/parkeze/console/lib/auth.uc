@@ -287,6 +287,10 @@ createSession = function(subject, kind, ttl, extra) {
     const session = {
         subject,
         kind,                       // 'local' | 'sso' | 'recovery' | 'lan'
+        // Parkeze staff, proved by parkeze.net's signature: the one session a
+        // terminal's `!` drops to a root shell for (tui/app.uc). Org admins
+        // sign in by SSO and recovery as well, so the kind cannot say it.
+        shell: false,
         created: now(),
         expires: now() + (ttl ? ttl : SESSION_TTL),
         // A CSRF token bound to the session. The session cookie is
@@ -302,8 +306,8 @@ createSession = function(subject, kind, ttl, extra) {
     // support varies by version and this runs on whatever ucode the pinned
     // OpenWrt release ships.
     return { token: token, subject: session.subject, kind: session.kind,
-             created: session.created, expires: session.expires,
-             csrf: session.csrf };
+             shell: session.shell, created: session.created,
+             expires: session.expires, csrf: session.csrf };
 };
 
 readSession = function(token) {
@@ -459,13 +463,8 @@ setPassword = function(username, password) {
     system(['/bin/chmod', '0600', STATE_DIR + '/password']);
     if (username) writefile(STATE_DIR + '/username', username);
     unlink(STATE_DIR + '/password-is-initial');
-
-    // Keep root's shell login on the same credential. SSH is a real way into
-    // this gateway — it is where the claim code is shown — so leaving root on
-    // the factory password after the console password has been changed would
-    // mean the credential on the label still works long after the operator
-    // believes they have rotated it.
-    system(['/usr/libexec/parkeze-set-root-password', hash]);
+    // Root's password is not this one any more: root has none
+    // (parkeze-root-keys-only), so knowing the console's is not root.
 
     audit('password.changed', { username });
     return { ok: true };
@@ -533,7 +532,12 @@ recoveryVerify = function(signature, addr) {
     const signed = sprintf('%s.%s.%d', challenge.device, challenge.nonce,
                            challenge.issued);
 
-    if (!verifySignature(signed, signature)) {
+    // parkeze.net signs `<challenge>.shell` for staff and the bare challenge
+    // for an organization's admin. Either opens the console; only the first
+    // lets the terminal drop to a shell.
+    const plain = verifySignature(signed, signature);
+    const shell = !plain && verifySignature(signed + '.shell', signature);
+    if (!plain && !shell) {
         recordFailure(addr);
         audit('recovery.failed', { addr, device: challenge.device });
         return { error: 'That signature is not valid for this challenge.',
@@ -546,9 +550,9 @@ recoveryVerify = function(signature, addr) {
     unlink(CHALLENGE_FILE);
     clearFailures(addr);
 
-    const session = createSession('recovery', 'recovery', RECOVERY_TTL);
+    const session = createSession('recovery', 'recovery', RECOVERY_TTL, { shell });
     audit('recovery.ok', { addr, device: challenge.device,
-                           nonce: challenge.nonce });
+                           nonce: challenge.nonce, shell });
     return { session };
 };
 
@@ -659,10 +663,13 @@ loginSso = function(token, addr, expect) {
     writeJson(SSO_SPENT_FILE, spent);
 
     clearFailures(addr);
+    // `shell` is staff's, and only on a token minted for a terminal: the web
+    // console has no shell, and recovery-service refuses the claim elsewhere.
+    const shell = !!expect && payload.shell === true;
     const session = createSession(payload.sub ?? 'Parkeze', 'sso',
-                                  SESSION_TTL);
+                                  SESSION_TTL, { shell });
     audit('login.ok', { username: payload.sub, addr,
-                        method: expect ? 'sso-terminal' : 'sso' });
+                        method: expect ? 'sso-terminal' : 'sso', shell });
     return { session };
 };
 

@@ -18,6 +18,8 @@ feed/parkeze-console/files/www/
 boards/common/files/etc/dropbear/authorized_keys
 boards/common/files/root/.ssh/authorized_keys
 boards/common/files/usr/share/parkeze/fleet-keys
+# Developers' own keys for a PARKEZE_DEV=1 image. People's, not the platform's.
+keys/dev/
 # The SSH CA's public line, copied in by build.sh from keys/ca/.
 boards/common/files/usr/share/parkeze/ssh/
 
