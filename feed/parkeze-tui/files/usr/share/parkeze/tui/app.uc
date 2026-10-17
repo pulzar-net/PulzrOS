@@ -24,6 +24,14 @@
 //                            the web console has — the port is physical
 //                            access, and docs/auth.md is plain that physical
 //                            access proves nothing on a gateway in a car park.
+//   parkeze-tui --remote     as an SSH session's only command, opened from
+//                            parkeze.net for an organization's admin. They
+//                            were signed in there and the session is the
+//                            proof, so there is no sign-in here — and no `!`:
+//                            a root shell on ParkezeOS is a copy of it, which
+//                            is what this mode exists to not hand out.
+//                            parkeze.net names it as the certificate's
+//                            force-command, so sshd runs nothing else.
 
 let _m_fs = require('fs');
 
@@ -89,6 +97,7 @@ const IDLE_PAUSE = 900;
 
 const app = {
     console: false,       // --console: sign-in required
+    remote: false,        // --remote: no sign-in, no shell
     tty: null,
     addr: 'tty',          // what lockout counts sign-in failures against
     session: null, token: null,
@@ -385,6 +394,9 @@ loop = function() {
 // name, and the local password is root's password too (parkeze-set-root-
 // password). It is journalled like every other action.
 shell = function() {
+    // Checked here as well as at the key, so a second way to this function
+    // is not a second way to a shell.
+    if (app.remote) return;
     if (app.console) runAction('openShell', { tty: app.tty });
 
     term.close();
@@ -434,9 +446,9 @@ handleKey = function(key) {
     const full = !signedIn() || app.path == '/password';
     if (full) app.focus = 'page';
 
-    // `!` for a shell, as less, vi and mutt have it. Not before sign-in, and
-    // not before a forced password change.
-    if (key == '!' && !full) return shell();
+    // `!` for a shell, as less, vi and mutt have it. Not before sign-in, not
+    // before a forced password change, and never in a remote session.
+    if (key == '!' && !full && !app.remote) return shell();
 
     if (app.focus == 'nav') {
         const entries = navEntries();
@@ -654,6 +666,7 @@ drawHeader = function(width) {
         if (s.kind == 'recovery') right = ui.style('Recovery session ' + fmt.countdown(left_) + ' left', 'warning');
         else if (s.kind == 'lan') right = ui.style('LAN access ' + fmt.countdown(left_), 'warning');
         else if (s.kind == 'shell') right = ui.style(s.subject, 'dim');
+        else if (s.kind == 'remote') right = ui.style('via ' + s.subject, 'dim');
         // The web console's sidebar footer, word for word.
         else right = ui.style(s.subject + ' ' + ui.glyph('dot') + ' '
                               + (s.kind == 'sso' ? 'via Parkeze' : 'local sign-in'), 'dim');
@@ -795,10 +808,14 @@ drawFooter = function(width) {
     let keys;
     if (app.dialog) keys = app.dialog.kind == 'confirm' ? 'Enter Confirm  Esc Cancel' : 'Enter Choose  Esc Cancel';
     else if (app.edit) keys = 'Enter Save  Esc Cancel';
-    else if (app.focus == 'nav') keys = 'Enter Open  r Refresh  ! Shell  ' + (app.console ? 'q Sign out' : 'q Quit');
-    else keys = signedIn() && app.path != '/password'
-        ? 'Enter Select  Esc Menu  r Refresh  ! Shell  ' + (app.console ? 'q Sign out' : 'q Quit')
-        : 'Enter Select';
+    else {
+        const shellKey = app.remote ? '' : '! Shell  ';
+        const quitKey = app.console ? 'q Sign out' : 'q Quit';
+        if (app.focus == 'nav') keys = 'Enter Open  r Refresh  ' + shellKey + quitKey;
+        else keys = signedIn() && app.path != '/password'
+            ? 'Enter Select  Esc Menu  r Refresh  ' + shellKey + quitKey
+            : 'Enter Select';
+    }
     return ' ' + ui.style(term.clip(keys, width - 2), 'dim');
 };
 
@@ -834,6 +851,7 @@ draw = function() {
 
 start = function(opts) {
     app.console = !!opts.console;
+    app.remote = !app.console && !!opts.remote;
     app.tty = opts.tty;
     app.addr = 'tty:' + replace(opts.tty ?? 'shell', /^\/dev\//, '');
 
@@ -846,7 +864,14 @@ start = function(opts) {
 
     signal('SIGWINCH', () => { app.resized = true; });
 
-    if (!app.console) {
+    // Audit records name the session's subject. parkeze.net knows which of
+    // its people opened a remote session and records it there; here it is
+    // the network that did.
+    if (app.remote) {
+        app.session = { subject: 'parkeze.net', kind: 'remote' };
+        app.focus = 'nav';
+    }
+    else if (!app.console) {
         app.session = { subject: 'root', kind: 'shell' };
         app.focus = 'nav';
     }

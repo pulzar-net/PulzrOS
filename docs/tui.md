@@ -14,6 +14,7 @@ parkeze-tui
 |---|---|---|
 | Serial console | `parkeze-tui` at the shell | none: you are root |
 | SSH | `parkeze-tui` at the shell | none: you are root |
+| parkeze.net **Console** | a gateway's page, as an organization's admin | parkeze.net's; no shell |
 | HDMI (Pi) | it is already there, when a screen was attached at boot | the web console's |
 | USB serial (Pi 4, Pi 5) | the port that appears beside the USB network | the web console's |
 
@@ -24,6 +25,23 @@ offline recovery signature on an adopted gateway. A screen and a keyboard on a
 gateway in a car park are physical access, and [`auth.md`](auth.md) is plain
 that physical access proves nothing. A port signs itself out after fifteen
 minutes without a key.
+
+### From parkeze.net
+
+An organization's admin on parkeze.net gets this console on their gateway, not
+a shell: a root shell on ParkezeOS is a copy of ParkezeOS. parkeze.net opens an
+SSH session whose only command is
+
+```
+parkeze-tui --remote
+```
+
+and, on a gateway that trusts its certificate authority, names that command
+as the certificate's `force-command`, so sshd runs nothing else whatever the
+client asks for. In this mode there is no sign-in — the person signed in to
+parkeze.net, which records who opened the session — and no `!`. Changes are
+journalled `by: parkeze.net`; `q` ends the session. Parkeze staff still get a
+shell from parkeze.net.
 
 ### Sign in with Parkeze, without a browser
 
@@ -82,7 +100,8 @@ serial terminal its size again.
 
 ## The shell
 
-`!` drops to a login shell on the same terminal; `exit` or Ctrl-D comes back
+Not in a remote session (above). Everywhere else, `!` drops to a login shell
+on the same terminal; `exit` or Ctrl-D comes back
 to the console, redrawn and refreshed. The TUI steps aside rather than running
 beside the shell, so it is the ordinary shell — the banner, job control,
 Ctrl-C — and works the same on a serial line, over SSH, on HDMI and on the USB
@@ -148,4 +167,5 @@ UCODE=/tmp/ucode/build/ucode scripts/run-tui.sh
 
 Runs the real pages against canned gateway state from
 `scripts/tui-fixture/api.uc`. Add `--console` for the sign-in screens; the
-fixture's password `wrong` fails and `initial` forces a password change.
+fixture's password `wrong` fails and `initial` forces a password change. `--remote`
+is the session parkeze.net opens.
