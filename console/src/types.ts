@@ -354,7 +354,9 @@ export interface ClaimStatus {
   platform?: { url: string; host: string };
   /** The human-readable code in the QR, e.g. "K7M2-QP4X-9RTB". */
   claimId: string;
-  adoption: 'unadopted' | 'adopting' | 'adopted';
+  /** 'reclaiming': adopted, but the claim was revoked (the gateway changed
+      hands or was released) and claimId is the new one waiting to be adopted. */
+  adoption: 'unadopted' | 'adopting' | 'adopted' | 'reclaiming';
   /** Whether parkeze.net already knows about this pending claim. When it does
       the QR is a short URL; when it does not it carries the gateway's identity
       inline so a scan still works with no uplink. */

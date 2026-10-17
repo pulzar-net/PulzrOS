@@ -105,6 +105,16 @@ const PROVISIONING_ONLY = {
     'POST /api/claim/apply': true,
 };
 
+// Open again while a claim waits to replace a revoked one, so the new owner
+// can scan it the way the first owner did. What they show is a code parkeze.net
+// lets only the gateway's owner adopt. Not `apply`: an offline bundle carries
+// no claim, and this gateway is adopted.
+const RECLAIM_OPEN = {
+    'GET  /api/claim/status': true,
+    'GET  /api/claim/qr': true,
+    'POST /api/claim/poll': true,
+};
+
 // ── helpers ─────────────────────────────────────────────────────────────────
 
 function respond(status, body, headers) {
@@ -422,7 +432,8 @@ function route(env) {
     if (!handler) return error(404, 'No such endpoint.');
 
     // Provisioning endpoints exist only until the gateway belongs to somebody.
-    if (PROVISIONING_ONLY[key] && claim.isAdopted())
+    if (PROVISIONING_ONLY[key] && claim.isAdopted()
+            && !(RECLAIM_OPEN[key] && claim.reclaiming()))
         return error(404, 'This gateway is already adopted.');
 
     // Not for a streamed route: its body is the payload, and must not be read

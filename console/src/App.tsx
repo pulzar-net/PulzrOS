@@ -60,7 +60,11 @@ export default function App() {
     return <Spinner label="Connecting to the gateway" />;
   }
 
-  const unadopted = !!claim.data && claim.data.adoption !== 'adopted';
+  // Reclaiming is adopted with a revoked claim: the claim screen opens as it
+  // does on an unadopted gateway, but nothing about the gateway is local-only.
+  const claimable = !!claim.data && claim.data.adoption !== 'adopted';
+  const reclaiming = claim.data?.adoption === 'reclaiming';
+  const unadopted = claimable && !reclaiming;
 
   // Claiming is what an unadopted gateway is usually here to do, so it is what
   // opens — but it is no longer a wall. The console is reachable before
@@ -71,7 +75,7 @@ export default function App() {
   // Signing in is still required to get past it. The claim screen itself is
   // unauthenticated by necessity — a gateway out of the box has a password
   // nobody has read off the card yet — but nothing behind it is.
-  if (unadopted && !session && !browsing) {
+  if (claimable && !session && !browsing) {
     return <Onboarding onBrowse={() => setBrowsing(true)} />;
   }
 
@@ -87,7 +91,7 @@ export default function App() {
 
   return (
     <Routes>
-      <Route element={<Layout unadopted={unadopted} />}>
+      <Route element={<Layout unadopted={unadopted} reclaiming={reclaiming} />}>
         <Route path="adopt" element={<Onboarding />} />
         <Route index element={<Overview />} />
         <Route path="backhaul" element={<Navigate to="/backhaul/ethernet" replace />} />

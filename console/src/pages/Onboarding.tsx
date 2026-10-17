@@ -147,16 +147,20 @@ export default function Onboarding({ onBrowse }: { onBrowse?: () => void } = {})
           </div>
         )}
 
-        <div className={styles.escape}>
-          {showOffline ? (
-            <OfflineBundle onDone={() => status.refetch()} />
-          ) : (
-            <button className={styles.link} onClick={() => setShowOffline(true)}>
-              <WifiOff size={13} strokeWidth={2} />
-              This gateway will never have internet
-            </button>
-          )}
-        </div>
+        {/* An offline bundle carries no claim, so it cannot replace a
+            revoked one, and the gateway refuses it once adopted. */}
+        {claim.adoption !== 'reclaiming' && (
+          <div className={styles.escape}>
+            {showOffline ? (
+              <OfflineBundle onDone={() => status.refetch()} />
+            ) : (
+              <button className={styles.link} onClick={() => setShowOffline(true)}>
+                <WifiOff size={13} strokeWidth={2} />
+                This gateway will never have internet
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

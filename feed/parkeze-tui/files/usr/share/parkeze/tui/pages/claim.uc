@@ -1,7 +1,7 @@
 // The claim screen — console/src/pages/Onboarding.tsx.
 //
-// Shown before sign-in on a gateway nobody has adopted, and at /adopt from the
-// "Not adopted" banner once signed in.
+// Shown before sign-in on a gateway nobody has adopted or whose claim was
+// revoked, and at /adopt from either banner once signed in.
 return function(ctx) {
     const ui = ctx.ui, api = ctx.api;
     const _m_fs = require('fs');
@@ -50,6 +50,9 @@ return function(ctx) {
             if (!ctx.session())
                 push(out, { t: 'buttons', items: [ { label: 'Look at the console without adopting', run: () => ctx.browse() } ] });
 
+            // An offline bundle carries no claim, so it cannot replace a
+            // revoked one, and applyBundle refuses it on an adopted gateway.
+            if (c.adoption == 'reclaiming') return out;
             if (!st.bundleOpen) {
                 push(out, { t: 'buttons', items: [ { label: 'This gateway will never have internet', run: () => { st.bundleOpen = true; } } ] });
                 return out;

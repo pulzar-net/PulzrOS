@@ -148,7 +148,9 @@ return function(ctx) {
         },
         enter: function() { st.mode = null; st.error = null; st.focused = false; },
         load: function() {
-            st.adopted = api.claim.isAdopted();
+            // A revoked claim shows its replacement first, as an unadopted
+            // gateway shows its claim.
+            st.adopted = api.claim.isAdopted() && !api.claim.reclaiming();
             if (!st.adopted && !ctx.browsing()) {
                 if (!st.claim) st.claim = ctx.page('claim');
                 st.claim.load();

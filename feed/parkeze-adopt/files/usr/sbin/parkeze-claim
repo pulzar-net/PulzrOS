@@ -9,6 +9,11 @@
 #   parkeze-claim reset         throw away the claim identity and start over
 #   parkeze-claim apply <blob>  complete an adoption offline, from a signed
 #                               bundle the operator carried back
+#   parkeze-claim report        tell parkeze.net what this gateway is
+#   parkeze-claim reclaiming    exit 0 while a new claim waits to replace a
+#                               revoked one
+#   parkeze-claim backoff       seconds until the waiting claim is polled again
+#   parkeze-claim note-revoked  count an answer saying the claim is revoked
 #
 # ── HOW IT WORKS ───────────────────────────────────────────────────────────
 #
@@ -47,6 +52,31 @@
 # visible to anyone who walks past a rack. With it, seeing the code lets you
 # *claim* the gateway into your organisation (which requires a Parkeze login
 # and is audited) but not *become* it.
+#
+# ── WHEN THE CLAIM IS REVOKED ──────────────────────────────────────────────
+#
+# parkeze.net revokes every claim a gateway was adopted with when it is
+# transferred to another organization or released: the previous owner had root
+# on it, so holds the secret. From then on /report and /wireguard/enroll answer
+# 404 "No such gateway." and /claim/poll 404 "No such claim.", and nothing the
+# old secret can prove will be accepted again.
+#
+# The gateway does not stop working when that happens. Its LoRa identity and
+# its tunnel survive a transfer, so it keeps them, stays adopted, and mints a
+# second claim beside the first (next/) for the new owner to adopt. That claim
+# is shown wherever the first one was — the console, the terminal UI, the login
+# banner, the status LED — and polled on a backoff counted from when it was
+# minted, so a reboot does not restart the fast polling. When it is adopted it
+# replaces the old one and the bundle it brings is installed as at first
+# adoption.
+#
+# One answer is not enough to start that: a deploy that was rolling, or a
+# database that was briefly somewhere else, would otherwise put a claim code
+# on every gateway that reported during it. Two, a minute apart, as
+# `parkeze-adopt --check` asks. And only the exact answer: the API's generic
+# 404 for an unknown route says "Not found", which is a proxy or a deploy, not
+# a revocation. One waiting claim at a time; it is registered once, and again
+# only if parkeze.net says it has never heard of it.
 
 set -e
 # set -e aborts on a failed command substitution in an assignment, and both
@@ -55,19 +85,28 @@ set -e
 # Without it, `report` died on its first run at an unset optional value and
 # still looked successful from parkeze.net's side.
 
-. /etc/parkeze/board.conf
+# Both overridable so scripts/test-claim.sh can run this against a sandbox.
+. "${PARKEZE_BOARD_CONF:-/etc/parkeze/board.conf}"
 
-STATE=/etc/parkeze/claim
+STATE="${PARKEZE_CLAIM_DIR:-/etc/parkeze/claim}"
+# The claim waiting to replace a revoked one. Inside STATE so keep.d carries it
+# across an upgrade with the rest.
+NEXT="${STATE}/next"
 NET_URL="${PARKEZE_NET_URL:-https://net.parkeze.com}"
+
+# How far apart the two revoked answers must be. See the header.
+REVOKED_CONFIRM=60
 
 log() { logger -t claim -p daemon.info "$*"; }
 die() { echo "$*" >&2; exit 1; }
 
 # ── identity ────────────────────────────────────────────────────────────────
 
+# A claim in DIR: the gateway's own (STATE) or the one replacing it (NEXT).
 mint() {
-    mkdir -p "${STATE}"
-    chmod 0700 "${STATE}"
+    local dir="${1:-${STATE}}"
+    mkdir -p "${dir}"
+    chmod 0700 "${dir}"
 
     # Crockford-ish base32 over random bytes, grouped for reading aloud. The
     # alphabet excludes I, L, O and U — the first three because they are
@@ -87,10 +126,11 @@ mint() {
     # 4-4-4, the way a licence key is read out over a phone.
     id="$(echo "${id}" | sed 's/\(....\)\(....\)\(....\)/\1-\2-\3/')"
 
-    head -c 32 /dev/urandom | hexdump -ve '1/1 "%02x"' > "${STATE}/secret"
-    chmod 0600 "${STATE}/secret"
-    echo "${id}" > "${STATE}/id"
-    echo "pending" > "${STATE}/state"
+    head -c 32 /dev/urandom | hexdump -ve '1/1 "%02x"' > "${dir}/secret"
+    chmod 0600 "${dir}/secret"
+    echo "${id}" > "${dir}/id"
+    rm -f "${dir}/registered"
+    [ "${dir}" != "${STATE}" ] || echo "pending" > "${STATE}/state"
 
     log "minted claim ${id}"
 }
@@ -100,19 +140,32 @@ ensure_identity() {
     mint
 }
 
-claim_id()   { cat "${STATE}/id" 2>/dev/null; }
-commitment() { sha256sum "${STATE}/secret" 2>/dev/null | cut -d' ' -f1; }
+id_in()         { cat "$1/id" 2>/dev/null || true; }
+secret_in()     { cat "$1/secret" 2>/dev/null || true; }
+commitment_in() { sha256sum "$1/secret" 2>/dev/null | cut -d' ' -f1; }
+claim_id()   { id_in "${STATE}"; }
+commitment() { commitment_in "${STATE}"; }
 registered() { [ -f "${STATE}/registered" ]; }
+
+adopted()    { [ "$(uci -q get parkeze.adoption.state || true)" = "adopted" ]; }
+reclaiming() { adopted && [ -s "${NEXT}/id" ] && [ -s "${NEXT}/secret" ]; }
+
+# The claim a person should be shown: the one waiting to replace a revoked
+# claim if there is one, this gateway's own otherwise.
+shown() {
+    if reclaiming; then echo "${NEXT}"; else echo "${STATE}"; fi
+}
 
 # ── the QR payload ──────────────────────────────────────────────────────────
 
 payload() {
     ensure_identity
-    local id eui
-    id="$(claim_id)"
+    local dir id eui
+    dir="$(shown)"
+    id="$(id_in "${dir}")"
     eui="$(uci -q get parkeze.identity.gateway_eui)" || true
 
-    if registered; then
+    if [ -f "${dir}/registered" ]; then
         # parkeze.net already knows everything about this claim. Short is
         # better: a smaller QR scans from further away and in worse light,
         # which matters when the code is on a screen inside a cabinet.
@@ -124,7 +177,7 @@ payload() {
         # on a single short-lived claim could use, and it keeps the QR in a
         # version that still scans comfortably.
         printf '%s/adopt#o1.%s.%s.%s.%s\n' \
-            "${NET_URL}" "${id}" "${eui}" "$(commitment | cut -c1-24)" "${BOARD_ID}"
+            "${NET_URL}" "${id}" "${eui}" "$(commitment_in "${dir}" | cut -c1-24)" "${BOARD_ID}"
     fi
 }
 
@@ -202,9 +255,24 @@ reached_recently() {
     [ "$((now - when))" -lt "${REACHED_MAX_AGE}" ]
 }
 
-register() {
-    ensure_identity
-    registered && { log "already registered"; return 0; }
+# What parkeze.net answers when the claim in a request no longer proves this
+# gateway: transferred, released, or decommissioned. Matched on the sentence as
+# well as the status, because a 404 alone is also what a proxy in front of a
+# half-deployed API says ("Not found").
+revoked_answer() {
+    [ "$1" = "404" ] || return 1
+    [ "$(printf '%s' "$2" | jsonfilter -e '@.error' 2>/dev/null || true)" = "$3" ]
+}
+
+# POST a JSON body. Prints the response body, then the status on a line of its
+# own; non-zero only when there was no answer at all.
+call() {
+    curl -sS --max-time 20 -w '\n%{http_code}' -X POST "${NET_URL}$1" \
+        -H 'Content-Type: application/json' -d "$2" 2>&1
+}
+
+register_dir() {
+    local dir="$1"
 
     # A cellular-only gateway's SIM is worth carrying here, not just on the
     # first six-hourly report(): an operator adopting off the announced list
@@ -214,44 +282,67 @@ register() {
     local iccid
     iccid="$(parkeze-modem-detect --status 2>/dev/null | jsonfilter -e '@.iccid' 2>/dev/null)" || true
 
-    local response
-    response="$(curl -fsS --max-time 20 \
-        -X POST "${NET_URL}/api/v1/gateway-ops/claim/register" \
-        -H 'Content-Type: application/json' \
-        -d "$(printf '{"claimId":"%s","commitment":"%s","eui":"%s","serial":"%s","board":"%s","version":"%s","simIccid":"%s"}' \
-              "$(claim_id)" "$(commitment)" \
-              "$(uci -q get parkeze.identity.gateway_eui)" \
-              "$(uci -q get parkeze.identity.serial)" \
-              "${BOARD_ID}" "${PARKEZE_VERSION}" "${iccid:-}")" 2>&1)" || {
+    local raw status response
+    raw="$(call /api/v1/gateway-ops/claim/register \
+        "$(printf '{"claimId":"%s","commitment":"%s","eui":"%s","serial":"%s","board":"%s","version":"%s","simIccid":"%s"}' \
+              "$(id_in "${dir}")" "$(commitment_in "${dir}")" \
+              "$(uci -q get parkeze.identity.gateway_eui || true)" \
+              "$(uci -q get parkeze.identity.serial || true)" \
+              "${BOARD_ID}" "${PARKEZE_VERSION}" "${iccid:-}")")" || {
         # Not an error worth shouting about: an un-provisioned gateway with no
         # uplink is the normal state five minutes into an install. The QR
         # falls back to the offline form and everything still works.
-        log "could not register claim (offline?): ${response}"
+        log "could not register claim (offline?): ${raw}"
         mark_unreached
         return 1
     }
-
     mark_reached
-    touch "${STATE}/registered"
-    log "claim registered with parkeze.net"
-    return 0
+    status="$(echo "${raw}" | tail -n1)"
+    response="$(echo "${raw}" | sed '$d')"
+
+    case "${status}" in
+        2??)
+            touch "${dir}/registered"
+            log "claim $(id_in "${dir}") registered with parkeze.net"
+            return 0
+            ;;
+        409)
+            # This id or this secret was revoked, or the id belongs to somebody
+            # else. Neither will ever register, and asking again is how a
+            # gateway released with its old claim used to sit refused forever.
+            # A new one replaces it; the code on screen changes with it.
+            log "claim $(id_in "${dir}") refused ($(printf '%s' "${response}" | jsonfilter -e '@.error' 2>/dev/null || true)); minting another"
+            mint "${dir}"
+            [ "${dir}" = "${STATE}" ] || date +%s > "${dir}/since"
+            return 1
+            ;;
+    esac
+    log "could not register claim (${status}): ${response}"
+    return 1
 }
 
-poll() {
+register() {
     ensure_identity
-    [ "$(uci -q get parkeze.adoption.state)" = "adopted" ] && return 0
+    if reclaiming; then
+        [ -f "${NEXT}/registered" ] && { log "already registered"; return 0; }
+        register_dir "${NEXT}"
+        return $?
+    fi
+    adopted && { log "adopted; nothing to register"; return 0; }
+    registered && { log "already registered"; return 0; }
+    register_dir "${STATE}"
+}
 
-    registered || register || return 1
+poll_dir() {
+    local dir="$1"
+    [ -f "${dir}/registered" ] || register_dir "${dir}" || return 1
 
     # Status captured rather than thrown away by -f, because 404 means
     # something specific here and is worth acting on. Body and status are
     # separated by a newline that curl appends last.
     local raw status response
-    raw="$(curl -sS --max-time 20 -w '\n%{http_code}' \
-        -X POST "${NET_URL}/api/v1/gateway-ops/claim/poll" \
-        -H 'Content-Type: application/json' \
-        -d "$(printf '{"claimId":"%s","secret":"%s"}' \
-              "$(claim_id)" "$(cat "${STATE}/secret")")" 2>&1)" || {
+    raw="$(call /api/v1/gateway-ops/claim/poll \
+        "$(printf '{"claimId":"%s","secret":"%s"}' "$(id_in "${dir}")" "$(secret_in "${dir}")")")" || {
         log "poll failed: ${raw}"
         mark_unreached
         return 1
@@ -272,10 +363,24 @@ poll() {
         #
         # Dropping the marker makes the next tick register again, under the
         # same claim id — so the code already on the screen and the QR beside
-        # it keep working.
-        rm -f "${STATE}/registered"
-        log "parkeze.net does not know claim $(claim_id); will register again"
+        # it keep working. If the claim was revoked rather than forgotten,
+        # registering it is refused, and register_dir mints a new one.
+        rm -f "${dir}/registered"
+        log "parkeze.net does not know claim $(id_in "${dir}"); will register again"
         return 1
+    fi
+
+    local state
+    state="$(echo "${response}" | jsonfilter -e '@.state' 2>/dev/null)" || true
+
+    if [ "${status}" = "409" ] && [ "${state}" = "collected" ] && [ "${dir}" = "${NEXT}" ]; then
+        # Adopted, and its bundle collected more than ten minutes ago by a
+        # poll whose answer never got here. The broker password in it is gone
+        # with it; the claim is still the one parkeze.net accepts, so it
+        # replaces the revoked one regardless, and reports resume.
+        logger -t claim -p daemon.err "claim $(id_in "${NEXT}") was collected without its bundle arriving; the broker password must be reissued"
+        promote
+        return 0
     fi
 
     if [ "${status}" -ge 400 ] 2>/dev/null; then
@@ -283,13 +388,25 @@ poll() {
         return 1
     fi
 
-    local state
-    state="$(echo "${response}" | jsonfilter -e '@.state' 2>/dev/null)" || true
-
     case "${state}" in
         adopted)
             log "claimed — completing adoption"
             echo "${response}" > "${STATE}/bundle.json"
+            chmod 0600 "${STATE}/bundle.json"
+            if [ "${dir}" = "${NEXT}" ]; then
+                # Before the bundle, not after: installing it restarts the
+                # tunnel, and the enrolment that follows proves itself with
+                # whichever claim is in STATE.
+                promote
+                parkeze-adopt --from-bundle "${STATE}/bundle.json"
+                rm -f "${STATE}/bundle.json"
+                # A transfer moves the tunnel to the new owner's hub at the
+                # gateway's next enrolment, and nothing else would enrol: the
+                # tunnel config it has is still valid where it points. This
+                # keeps the current tunnel until the answer arrives.
+                parkeze-wireguard-enroll --background || true
+                return 0
+            fi
             parkeze-adopt --from-bundle "${STATE}/bundle.json"
             rm -f "${STATE}/bundle.json"
             echo "adopted" > "${STATE}/state"
@@ -303,6 +420,74 @@ poll() {
             ;;
     esac
     return 0
+}
+
+poll() {
+    ensure_identity
+    if adopted; then
+        reclaiming || return 0
+        poll_dir "${NEXT}"
+        return $?
+    fi
+    poll_dir "${STATE}"
+}
+
+# ── a revoked claim ─────────────────────────────────────────────────────────
+
+# The waiting claim takes the revoked one's place. Two renames, because the id
+# and the secret are two files: the window between them is a rename, and a
+# gateway caught in it has a claim parkeze.net refuses — which is the state
+# this whole path recovers from.
+promote() {
+    cp "${NEXT}/secret" "${STATE}/secret.new"
+    chmod 0600 "${STATE}/secret.new"
+    cp "${NEXT}/id" "${STATE}/id.new"
+    mv "${STATE}/secret.new" "${STATE}/secret"
+    mv "${STATE}/id.new" "${STATE}/id"
+    touch "${STATE}/registered"
+    echo "adopted" > "${STATE}/state"
+    rm -rf "${NEXT}" "${STATE}/revoked"
+    log "claim $(claim_id) adopted; it replaces the revoked claim"
+}
+
+# One answer that the claim is revoked. The first is remembered; the second,
+# at least REVOKED_CONFIRM later, starts a new claim.
+note_revoked() {
+    reclaiming && return 0
+    adopted || return 0
+    local first now
+    now="$(date +%s)"
+    first="$(cat "${STATE}/revoked" 2>/dev/null || true)"
+    case "${first}" in
+        ''|*[!0-9]*)
+            echo "${now}" > "${STATE}/revoked"
+            log "parkeze.net no longer accepts claim $(claim_id); asking again before acting on it"
+            return 0
+            ;;
+    esac
+    [ "$((now - first))" -ge "${REVOKED_CONFIRM}" ] || return 0
+
+    mint "${NEXT}"
+    echo "${now}" > "${NEXT}/since"
+    rm -f "${STATE}/revoked"
+    log "claim $(claim_id) was revoked; claim $(id_in "${NEXT}") is waiting to be adopted"
+    register_dir "${NEXT}" || true
+}
+
+# Seconds until the waiting claim is polled again: the first claim's backoff
+# without its first two minutes at 5s, which are for an installer standing in
+# front of a new gateway. Nobody is necessarily in front of this one, and the
+# console's Check now polls at once for whoever is.
+backoff() {
+    local since now elapsed
+    since="$(cat "${NEXT}/since" 2>/dev/null || true)"
+    now="$(date +%s)"
+    case "${since}" in ''|*[!0-9]*) since="${now}" ;; esac
+    elapsed=$((now - since))
+    if   [ "${elapsed}" -lt 900 ];  then echo 30
+    elif [ "${elapsed}" -lt 3600 ]; then echo 300
+    else echo 3600
+    fi
 }
 
 apply_offline() {
@@ -399,36 +584,50 @@ EOF
     printf '{%s}' "${out}"
 }
 
+# Exits 0 when accepted, 3 when parkeze.net says the claim is revoked, 1 for
+# anything else, including no answer.
 report() {
     ensure_identity
-    [ "$(uci -q get parkeze.adoption.state)" = "adopted" ] || {
+    adopted || {
         log "not adopted; nothing to report"
         return 0
     }
 
+    # Always this gateway's own claim, even while another waits to replace
+    # it: a report that is accepted again means the revocation was not one.
     local raw status response
-    raw="$(curl -sS --max-time 20 -w '\n%{http_code}' \
-        -X POST "${NET_URL}/api/v1/gateway-ops/report" \
-        -H 'Content-Type: application/json' \
-        -d "$(printf '{"claimId":"%s","secret":"%s","facts":%s}' \
-              "$(claim_id)" "$(cat "${STATE}/secret")" "$(facts)")" 2>&1)" || {
+    raw="$(call /api/v1/gateway-ops/report \
+        "$(printf '{"claimId":"%s","secret":"%s","facts":%s}' \
+              "$(claim_id)" "$(secret_in "${STATE}")" "$(facts)")")" || {
         log "report failed: ${raw}"
         return 1
     }
     status="$(echo "${raw}" | tail -n1)"
     response="$(echo "${raw}" | sed '$d')"
 
-    # 404 here means parkeze.net has no adopted gateway behind this claim —
-    # it was decommissioned. That is the ONE authenticated signal that may
-    # send this unit back to adoption, and it is deliberately not acted on
-    # here: see `parkeze-adopt --check`, which is the only thing allowed to
-    # unwind adoption, and only on this exact answer.
-    [ "${status}" = "200" ] || {
-        log "report rejected (${status})"
-        return 1
-    }
+    if [ "${status}" = "200" ]; then
+        rm -f "${STATE}/revoked"
+        if reclaiming; then
+            rm -rf "${NEXT}"
+            log "claim $(claim_id) is accepted again; the claim waiting to replace it is dropped"
+        fi
+        log "reported: backhaul=$(echo "${response}" | jsonfilter -e '@.backhaul' 2>/dev/null || true)"
+        return 0
+    fi
 
-    log "reported: backhaul=$(echo "${response}" | jsonfilter -e '@.backhaul' 2>/dev/null)"
+    # 404 "No such gateway." is parkeze.net saying this claim no longer proves
+    # this gateway. It does not unwind adoption — that is `parkeze-adopt
+    # --check`, and only for somebody standing at the gateway — it starts a
+    # claim for the new owner beside the old one. Nobody else can adopt that
+    # claim: parkeze.net refuses an adoption into any organization but the one
+    # that owns the gateway.
+    if revoked_answer "${status}" "${response}" "No such gateway."; then
+        note_revoked
+        return 3
+    fi
+
+    log "report rejected (${status})"
+    return 1
 }
 
 status() {
@@ -446,6 +645,18 @@ status() {
     # polling. Asking backhaul-check here returned false for every gateway
     # that had not been adopted, which is the whole fleet at the exact moment
     # an installer is reading the indicator.
+    #
+    # Reclaiming: the same question as unadopted, because the claim screen is
+    # what is asking, every three seconds, and polls of the waiting claim
+    # already record the answer.
+    #
+    # "reclaiming" is adopted, with a claim to show: everything that shows the
+    # first claim shows this one, and nothing that keys on "adopted" — the
+    # tunnel, the broker, local sign-in — changes.
+    local dir
+    dir="$(shown)"
+    reclaiming && adoption=reclaiming
+
     if [ "${adoption}" = "adopted" ]; then
         online="$(parkeze-backhaul-check >/dev/null 2>&1 && echo true || echo false)"
     else
@@ -453,9 +664,9 @@ status() {
     fi
 
     printf '{"claimId":"%s","state":"%s","registered":%s,"url":"%s","online":%s}\n' \
-        "$(claim_id)" \
+        "$(id_in "${dir}")" \
         "${adoption}" \
-        "$(registered && echo true || echo false)" \
+        "$([ -f "${dir}/registered" ] && echo true || echo false)" \
         "$(payload)" \
         "${online}"
 }
@@ -474,5 +685,8 @@ case "${1:-status}" in
     report)   report ;;
     apply)    apply_offline "$2" ;;
     reset)    reset_claim ;;
-    *)        die "usage: parkeze-claim {status|qr|register|poll|report|apply|reset}" ;;
+    reclaiming)   reclaiming ;;
+    backoff)      backoff ;;
+    note-revoked) note_revoked ;;
+    *)        die "usage: parkeze-claim {status|qr|register|poll|report|apply|reset|reclaiming|backoff|note-revoked}" ;;
 esac

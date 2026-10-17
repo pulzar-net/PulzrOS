@@ -51,8 +51,15 @@ set parkeze.console.local_login='1'
 EOF
     uci commit parkeze
     rm -f "${STATE}/recovery.pub" "${STATE}/wireguard/tunnel.json"
+    # The claim goes too. Its secret is either revoked, which parkeze.net will
+    # never register again, or adopted and collected, which it registers and
+    # then refuses to hand a bundle for: kept, it left a released gateway
+    # showing a code nobody could use. parkeze-claim mints a new one.
+    rm -rf "${STATE}/claim"
     /etc/init.d/parkeze-wireguard stop >/dev/null 2>&1
     /etc/init.d/parkeze-mqtt-agent stop >/dev/null 2>&1
+    /etc/init.d/parkeze-report stop >/dev/null 2>&1
+    /etc/init.d/parkeze-claim restart >/dev/null 2>&1
     echo "Released. Local sign-in is enabled again."
 }
 
@@ -88,6 +95,12 @@ EOF
 # secret is wrong": verifying the secret needs the claim row, and decommission
 # deletes it. Unwinding on both is safe because `release` is local-only — it
 # hands the box back to local management and destroys nothing at Parkeze.
+#
+# A transfer to another organization answers the same 404, because it revokes
+# the claim too. Releasing then costs the tunnel until the new owner adopts the
+# claim `release` mints; left alone, the report loop would have kept the tunnel
+# and shown that claim anyway (see parkeze-claim). Somebody pressing this at
+# the gateway is asking for the first.
 
 probe_adoption() {
     # Prints the HTTP status, or nothing at all if there was no answer.

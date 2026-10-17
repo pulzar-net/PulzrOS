@@ -24,6 +24,11 @@ INTERVAL=21600
 # a minute for the real one.
 sleep 30
 
+# After parkeze.net says the claim is revoked: asked once more this much later
+# before anything is done about it. See parkeze-claim's header.
+CONFIRM=60
+
+last=0
 while :; do
     if [ "$(uci -q get parkeze.adoption.state)" != "adopted" ]; then
         log "not adopted; reporting stops"
@@ -31,6 +36,28 @@ while :; do
         exit 0
     fi
 
-    parkeze-claim report >/dev/null 2>&1 || true
+    now="$(date +%s)"
+
+    # The claim was revoked and a new one waits to be adopted. Polled here
+    # rather than by parkeze-claim's own service, which runs only while
+    # unadopted: this gateway is still adopted, still forwarding and still on
+    # its tunnel. The old claim is still reported with every six hours, in
+    # case parkeze.net accepts it again.
+    if parkeze-claim reclaiming >/dev/null 2>&1; then
+        if [ "$((now - last))" -ge "${INTERVAL}" ]; then
+            last="${now}"
+            parkeze-claim report >/dev/null 2>&1 || true
+        fi
+        parkeze-claim poll >/dev/null 2>&1 || true
+        sleep "$(parkeze-claim backoff 2>/dev/null || echo 3600)"
+        continue
+    fi
+
+    last="${now}"
+    parkeze-claim report >/dev/null 2>&1
+    if [ "$?" = 3 ]; then
+        sleep "${CONFIRM}"
+        continue
+    fi
     sleep "${INTERVAL}"
 done

@@ -82,7 +82,11 @@ adoption_line() {
 
     case "${state}" in
         adopted)
-            say "  ${DIM}Adopted${OFF}      ${GREEN}%s${OFF}\n" "${org:-unknown org}"
+            if parkeze-claim reclaiming >/dev/null 2>&1; then
+                say "  ${DIM}Adopted${OFF}      ${YELLOW}claim revoked — scan the code below${OFF}\n"
+            else
+                say "  ${DIM}Adopted${OFF}      ${GREEN}%s${OFF}\n" "${org:-unknown org}"
+            fi
             ;;
         *)
             say "  ${DIM}Adopted${OFF}      ${YELLOW}not yet — scan the code below${OFF}\n"

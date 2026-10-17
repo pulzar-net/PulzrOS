@@ -37,6 +37,14 @@
 # authenticated report — which exercises DNS, TLS, the clock, and the secret
 # that survived the upgrade — and only a gateway that completes one is kept.
 #
+# One exception: a gateway whose claim was revoked before the upgrade — it
+# changed hands and is waiting for the new owner to claim it again. Its reports
+# were refused before the upgrade and will be after, so the proof it can give
+# is a poll of the claim that waits, which is authenticated the same way. Only
+# if that claim predates this boot: a revocation first noticed after the
+# upgrade looks exactly like a secret the upgrade lost, which is what this gate
+# exists to roll back.
+#
 # And sshd. This release is the one that swapped dropbear for OpenSSH, and an
 # sshd that does not start is a gateway gateway-link cannot reach while every
 # other check here passes.
@@ -67,6 +75,11 @@ log() { logger -t health-gate -p daemon.info "$*"; }
 
 adopted() { [ "$(uci -q get parkeze.adoption.state)" = "adopted" ]; }
 
+# Read before the report loop can start a re-claim of its own: it starts at 97
+# and sleeps half a minute before its first report.
+reclaim_before=0
+parkeze-claim reclaiming >/dev/null 2>&1 && reclaim_before=1
+
 # Reachable, and still ourselves. Exits non-zero with a reason on stdout.
 verdict() {
     if ! pidof sshd >/dev/null 2>&1; then
@@ -83,6 +96,15 @@ verdict() {
     # before anyone has adopted it is as healthy as it can be, and there is no
     # secret to have lost.
     adopted || { echo "reachable, not adopted"; return 0; }
+
+    if [ "${reclaim_before}" = 1 ] && parkeze-claim reclaiming >/dev/null 2>&1; then
+        if parkeze-claim poll >/dev/null 2>&1; then
+            echo "reachable, waiting to be claimed again"
+            return 0
+        fi
+        echo "reachable but parkeze.net will not answer the waiting claim"
+        return 1
+    fi
 
     local try=1
     while [ "${try}" -le "${REPORT_TRIES}" ]; do

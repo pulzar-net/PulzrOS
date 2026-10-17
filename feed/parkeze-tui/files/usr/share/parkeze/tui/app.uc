@@ -150,7 +150,7 @@ loadPage = function(page, quiet) {
     page.loaded = time();
     // Adoption can happen under any page — from a phone, from parkeze.net —
     // and the banner has to follow it.
-    try { app.unadopted = !api.claim.isAdopted(); } catch (e) {}
+    try { app.unadopted = !api.claim.isAdopted(); app.reclaiming = api.claim.reclaiming(); } catch (e) {}
     if (!quiet) flash(null);
     app.dirty = true;
 };
@@ -711,6 +711,11 @@ bodyBlocks = function(width) {
                 text: 'Not adopted. This gateway is not managed by any organization. Its configuration is local only, and adoption will replace it.' });
             push(blocks, { t: 'buttons', items: [ { label: 'Adopt it', key: 'banner:adopt', run: () => makeCtx().go('/adopt') } ] });
         }
+        if (app.reclaiming && app.path != '/adopt') {
+            push(blocks, { t: 'notice', tone: 'warning',
+                text: 'Claim revoked. Parkeze refuses this gateway\'s reports until its new claim is adopted.' });
+            push(blocks, { t: 'buttons', items: [ { label: 'Show the claim', key: 'banner:adopt', run: () => makeCtx().go('/adopt') } ] });
+        }
         if (length(blocks)) push(blocks, { t: 'blank' });
     }
 
@@ -877,7 +882,8 @@ start = function(opts) {
     }
     // Not adopted: the web console shows its claim screen before anything
     // else, and a banner with a way back to it once signed in.
-    try { app.unadopted = !api.claim.isAdopted(); } catch (e) { app.unadopted = false; }
+    try { app.unadopted = !api.claim.isAdopted(); app.reclaiming = api.claim.reclaiming(); }
+    catch (e) { app.unadopted = false; app.reclaiming = false; }
 
     openPath(signedIn() ? '/' : '/signin');
     if (!signedIn()) app.focus = 'page';

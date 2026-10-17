@@ -23,7 +23,7 @@ LOCK=/var/run/parkeze-wireguard-enroll.pid
 log() { logger -t wireguard -p daemon.info "$*"; }
 
 enroll() {
-    local id secret key response address
+    local id secret key raw status response address
     [ "$(uci -q get parkeze.adoption.state)" = "adopted" ] || return 2
     id="$(cat "${CLAIM}/id" 2>/dev/null)"
     secret="$(cat "${CLAIM}/secret" 2>/dev/null)"
@@ -31,11 +31,26 @@ enroll() {
     [ -n "${id}" ] && [ -n "${secret}" ] || { log "no claim identity to enrol with"; return 2; }
     [ -n "${key}" ] || { log "no WireGuard key yet"; return 1; }
 
-    response="$(curl -fsS --max-time 20 \
+    raw="$(curl -sS --max-time 20 -w '\n%{http_code}' \
         -H 'Content-Type: application/json' \
         -X POST "${NET_URL}/api/v1/gateway-ops/wireguard/enroll" \
         -d "$(printf '{"claimId":"%s","secret":"%s","publicKey":"%s"}' "${id}" "${secret}" "${key}")" \
         2>/dev/null)" || return 1
+    status="$(echo "${raw}" | tail -n1)"
+    response="$(echo "${raw}" | sed '$d')"
+
+    # The claim was revoked: this gateway changed hands or was released.
+    # Retrying cannot help, and the tunnel it has keeps working meanwhile.
+    # parkeze-claim counts the answer, and the report loop is restarted so the
+    # second answer it needs arrives in a minute rather than in six hours.
+    if [ "${status}" = "404" ] && \
+       [ "$(echo "${response}" | jsonfilter -e '@.error' 2>/dev/null)" = "No such gateway." ]; then
+        log "claim ${id} is revoked; not enrolling until this gateway is claimed again"
+        parkeze-claim note-revoked >/dev/null 2>&1
+        /etc/init.d/parkeze-report restart >/dev/null 2>&1
+        return 2
+    fi
+    [ "${status}" = "200" ] || { log "enrolment refused (${status}): ${response}"; return 1; }
 
     address="$(echo "${response}" | jsonfilter -e '@.address' 2>/dev/null)"
     [ -n "${address}" ] || { log "enrolment answered without an address"; return 1; }

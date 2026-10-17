@@ -21,7 +21,7 @@ let _m_util = loadfile('/usr/share/parkeze/console/lib/util.uc', { raw_mode: tru
 // Declaring the names first makes every one of them a known local before any
 // body is compiled, so closures capture the binding rather than a missing
 // global and definition order stops mattering. auth.uc alone had six of these.
-let status, qr, poll, applyBundle, writeBundle, isAdopted, platformUrl;
+let status, qr, poll, applyBundle, writeBundle, isAdopted, reclaiming, platformUrl;
 let checkAdoption, adoptionCheckResult;
 
 let run = _m_util.run;; let runJson = _m_util.runJson;
@@ -33,7 +33,8 @@ status = function() {
     const uci = cursor();
     return {
         claimId: state.claimId,
-        // 'unadopted' | 'adopting' | 'adopted'
+        // 'unadopted' | 'adopting' | 'adopted' | 'reclaiming' — the last is
+        // adopted, with a revoked claim and a new one to show.
         adoption: state.state,
         // Whether parkeze.net already knows about this pending claim. When it
         // does the QR is a short URL; when it does not the QR carries the
@@ -116,6 +117,11 @@ applyBundle = function(req) {
     if (!bundle || !length(bundle))
         return { error: 'Paste the adoption bundle from Parkeze.' };
 
+    // The HTTP route is closed once adopted; the terminal UI calls this
+    // directly. A bundle carries no claim, so it cannot replace a revoked one.
+    if (isAdopted())
+        return { error: 'This gateway is already adopted.' };
+
     // Length-bounded before it goes anywhere near the filesystem: this is
     // unauthenticated-adjacent input on an un-adopted gateway, and a bundle is
     // a few hundred bytes, not a few megabytes.
@@ -154,10 +160,19 @@ isAdopted = function() {
     return uci.get('parkeze', 'adoption', 'state') == 'adopted';
 };
 
+// Adopted, with its claim revoked and a new one waiting to be adopted: the
+// claim screen is shown again. Read from the file rather than by running
+// parkeze-claim, because the API gate asks on every provisioning request.
+reclaiming = function() {
+    if (!isAdopted()) return false;
+    const st = _m_fs.stat('/etc/parkeze/claim/next/id');
+    return st != null && st.size > 0;
+};
+
 // ── module exports ──────────────────────────────────────────────────────────
 //
 // A returned object, not `export` statements. uhttpd's ucode plugin compiles
 // its handler in TEMPLATE mode and loads anything else through loadfile(),
 // neither of which is module mode — `export` is a syntax error there. See the
 // header of api/index.uc for the full contract.
-return { adoptionCheckResult, applyBundle, checkAdoption, isAdopted, poll, qr, status };
+return { adoptionCheckResult, applyBundle, checkAdoption, isAdopted, poll, qr, reclaiming, status };

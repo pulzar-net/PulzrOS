@@ -13,8 +13,8 @@
 #   power     solid            up
 #
 #   status    heartbeat        healthy and adopted
-#             blink 1Hz        up but wants attention: not adopted, or running
-#                              at reduced channel count
+#             blink 1Hz        up but wants attention: not adopted, claim
+#                              revoked, or running at reduced channel count
 #             blink 5Hz        fault: no concentrator at all
 #
 #   cloud     solid            reachable over the wired path (management tunnel)
@@ -140,7 +140,9 @@ while :; do
         led status blink 100 100
     elif [ "${concentrator}" = partial ]; then
         led status blink 500 500
-    elif [ "${adopted}" != adopted ]; then
+    elif [ "${adopted}" != adopted ] || [ -s /etc/parkeze/claim/next/id ]; then
+        # Not adopted, or adopted with a revoked claim and a new one waiting:
+        # either way it wants claiming, and the code is on the console.
         led status blink 500 500
     elif ! has_led cloud && [ "${backhaul}" = none ]; then
         # No cloud LED on this board, so status carries the bad news.

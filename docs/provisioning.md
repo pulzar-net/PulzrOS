@@ -71,6 +71,31 @@ LAN could adopt it into their own fleet. See `install_fleet_key` in
 `build.sh`; an image built without it warns loudly and can only be adopted
 online.
 
+## When the claim is revoked
+
+parkeze.net revokes every claim a gateway was adopted with when it is
+transferred to another organization or released: the previous owner had root,
+so has the secret. From then on its reports and tunnel enrolments are answered
+404 `No such gateway.`.
+
+The gateway stays adopted. It keeps forwarding and keeps its tunnel, and after
+two such answers a minute apart it mints a second claim beside the first and
+registers it. That code is shown where the first one was — the claim screen
+before sign-in, a banner after it, the SSH login banner, the status LED at
+1Hz — and polled from the report loop: every 30s for fifteen minutes, 5m to an
+hour, then hourly, counted from when it was minted. Only the organization that
+owns the gateway can adopt it. When it does, the new claim replaces the old
+one, the bundle is installed as at first adoption (a new broker password), and
+the gateway enrols again, which moves the tunnel to the new owner's hub.
+
+One waiting claim at a time. It is registered once; if parkeze.net later says
+it has never heard of it, it is registered again under the same code, and if
+parkeze.net refuses it outright, a new one replaces it. A report that is
+accepted again drops it.
+
+`parkeze-claim reclaiming` says whether one is waiting; `parkeze-claim status`
+shows it, with `state` `reclaiming`.
+
 ## Where the code appears
 
 - **The web console.** An unadopted gateway shows nothing *but* the onboarding

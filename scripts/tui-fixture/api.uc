@@ -67,6 +67,7 @@ return {
     },
     claim: {
         isAdopted: () => adopted,
+        reclaiming: () => false,
         status: () => ({ claimId: 'K7M2-QP4X-9RTB', adoption: adopted ? 'adopted' : 'unadopted', registered: true, online: true, url: 'https://net.parkeze.com/c/K7M2', org: null }),
         adoptionCheckResult: () => ({ checking: false, checked: true, adopted: true }),
     },

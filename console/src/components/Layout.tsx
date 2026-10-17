@@ -15,7 +15,10 @@ import Button from './ui/Button';
 import Brand from './Brand';
 import styles from './Layout.module.css';
 
-export default function Layout({ unadopted }: { unadopted?: boolean } = {}) {
+export default function Layout({
+  unadopted,
+  reclaiming,
+}: { unadopted?: boolean; reclaiming?: boolean } = {}) {
   const { session, signOut } = useSession();
   const location = useLocation();
   const queryClient = useQueryClient();
@@ -107,6 +110,7 @@ export default function Layout({ unadopted }: { unadopted?: boolean } = {}) {
               and its rule stopped lining up with the one under the logo. */}
           {session?.kind === 'recovery' && <RecoveryBanner />}
           {unadopted && <UnadoptedBanner />}
+          {reclaiming && <ReclaimBanner />}
         </div>
 
         <main
@@ -152,6 +156,26 @@ function LanAccess() {
       <Network size={12} strokeWidth={2} />
       LAN access
       <span className={styles.lanClock}>{countdown(remaining)}</span>
+    </div>
+  );
+}
+
+/**
+ * Shown on every page while a revoked claim waits to be replaced: the gateway
+ * changed hands or was released, and parkeze.net refuses its reports until the
+ * new claim is adopted. Not dismissible, for the reason the one below is not.
+ */
+function ReclaimBanner() {
+  return (
+    <div className={styles.unadopted} role="status">
+      <ShieldAlert size={15} strokeWidth={1.9} />
+      <span>
+        <strong>Claim revoked.</strong> Parkeze refuses this gateway&apos;s
+        reports until its new claim is adopted.
+      </span>
+      <Link className={styles.unadoptedAction} to="/adopt">
+        Show the claim
+      </Link>
     </div>
   );
 }
