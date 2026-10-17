@@ -335,7 +335,7 @@ apply_offline() {
 # checked against a hash parkeze.net stored at registration.
 
 facts() {
-    local modem wired board_id version modem_present modem_model wired_usable tunnel iccid host_key tunnel_via
+    local modem wired board_id version modem_present modem_model wired_usable tunnel iccid host_key tunnel_via ssh_ca
 
     modem="$(parkeze-modem-detect --status 2>/dev/null || echo '{"present":false}')"
     wired="$(parkeze-wireguard-route status 2>/dev/null || echo '{"wiredUsable":false}')"
@@ -350,13 +350,13 @@ facts() {
     # newly adopted gateway is never in a file that shipped before it existed.
     # The key travels on this report, which is authenticated by the claim
     # secret — a better introduction than trust-on-first-use over the tunnel.
-    host_key=""
-    for f in /etc/dropbear/dropbear_ed25519_host_key /etc/dropbear/dropbear_rsa_host_key; do
-        [ -f "${f}" ] || continue
-        host_key="$(dropbearkey -y -f "${f}" 2>/dev/null |
-            awk '/^ssh-/ { print $1" "$2; exit }')"
-        [ -n "${host_key}" ] && break
-    done
+    host_key="$(parkeze-ssh-setup --host-key 2>/dev/null)" || true
+    # Whether sshd accepts a Parkeze certificate naming this gateway. Asked of
+    # the running sshd rather than of the files, because a config sshd did not
+    # load is not a gateway gateway-link can reach with a certificate — and
+    # one marked as trusting the CA is never tried with the fleet key.
+    ssh_ca=false
+    parkeze-ssh-setup --trusts-ca >/dev/null 2>&1 && ssh_ca=true
     wired_usable="$(echo "${wired}" | jsonfilter -e '@.wiredUsable' 2>/dev/null)" || true
     # Which path the tunnel's own packets are actually leaving on right now —
     # not inferred from a stale handshake, stated. This is the field that
@@ -374,9 +374,9 @@ facts() {
     board_id="${BOARD_ID:-unknown}"
     version="${PARKEZE_VERSION:-0.0.0}"
 
-    printf '{"board":"%s","osVersion":"%s","modemPresent":%s,"modemModel":"%s","simIccid":"%s","sshHostKey":"%s","wiredUsable":%s,"tunnelVia":"%s","tunnelState":"%s","consolePort":443,"consoleScheme":"https","sshPort":22,"system":%s}' \
+    printf '{"board":"%s","osVersion":"%s","modemPresent":%s,"modemModel":"%s","simIccid":"%s","sshHostKey":"%s","wiredUsable":%s,"tunnelVia":"%s","tunnelState":"%s","consolePort":443,"consoleScheme":"https","sshPort":22,"sshCa":%s,"system":%s}' \
         "${board_id}" "${version}" "${modem_present}" "${modem_model:-}" "${iccid:-}" \
-        "${host_key:-}" "${wired_usable}" "${tunnel_via:-none}" "${tunnel:-none}" "$(system_facts)"
+        "${host_key:-}" "${wired_usable}" "${tunnel_via:-none}" "${tunnel:-none}" "${ssh_ca}" "$(system_facts)"
 }
 
 # The same key=value facts the MQTT forwarder attaches to LoRaWAN stats, as a

@@ -487,7 +487,8 @@ install_ops_keys() {
     return 0
   fi
 
-  local found=0
+  local found=0 ca_blob=""
+  ca_blob="$(awk '{ print $2; exit }' "${PARKEZE_SSH_CA_PUBKEY:-${ROOT_DIR}/keys/ca/parkeze_user_ca.pub}" 2>/dev/null || true)"
   mkdir -p "${sharedir}"
   for pub in "${keydir}"/*.pub; do
     [ -f "${pub}" ] || continue
@@ -497,6 +498,12 @@ install_ops_keys() {
     if ! grep -qE '^(ssh-(rsa|ed25519)|ecdsa-sha2-)' "${pub}"; then
       warn "${pub} holds no recognisable public key; skipped"
       continue
+    fi
+    # The SSH CA is not a login key. In authorized_keys its private half would
+    # open every gateway directly, which is the one thing certificates exist
+    # to stop; parkeze.net's generator once said to copy it here.
+    if [ -n "${ca_blob}" ] && awk '{ print $2 }' "${pub}" | grep -qxF "${ca_blob}"; then
+      die "${pub} is the SSH CA, not a login key. It belongs in ${ROOT_DIR}/keys/ca/."
     fi
     cat "${pub}" >> "${fleet}"
     found=$((found + 1))
@@ -514,6 +521,45 @@ install_ops_keys() {
 
   chmod 0600 "${fleet}"
   log "Fleet SSH key installed (${found})"
+}
+
+install_ssh_ca() {
+  # The SSH certificate authority's *public* line, baked into the image.
+  #
+  # parkeze.net reaches a gateway's shell with a certificate it signs for that
+  # one gateway, for five minutes; a gateway accepts it because it trusts this
+  # line (parkeze-ssh-setup). Public, and committed beside the fleet key for
+  # the same reason the fleet key is: which key opens a gateway is part of
+  # what an image is. Its private half is recovery-service's.
+  #
+  # On /usr, as the fleet key is, so a rotated CA reaches a gateway with the
+  # firmware rather than being kept as a conffile from the image before.
+  #
+  # Warns rather than failing: an image without it is reached with the fleet
+  # key, as every image before it was.
+  local key="${PARKEZE_SSH_CA_PUBKEY:-${ROOT_DIR}/keys/ca/parkeze_user_ca.pub}"
+  local dest="${ROOT_DIR}/boards/common/files/usr/share/parkeze/ssh"
+
+  rm -f "${dest}/parkeze_user_ca.pub"
+
+  if [ ! -f "${key}" ]; then
+    warn "No SSH CA public key at ${key}."
+    warn "  Gateways from this build accept no certificates, only the fleet key."
+    warn "  Copy parkeze.net's secrets/parkeze_ssh_ca.pub there."
+    return 0
+  fi
+
+  # One ssh-ed25519 line: that is all recovery-service signs with, and a
+  # second line would be a second CA every gateway trusts.
+  if [ "$(grep -c . "${key}")" != 1 ] \
+     || ! grep -qE '^ssh-ed25519 [A-Za-z0-9+/]+=* ?' "${key}"; then
+    die "${key} is not one ssh-ed25519 public key line"
+  fi
+
+  mkdir -p "${dest}"
+  cp "${key}" "${dest}/parkeze_user_ca.pub"
+  chmod 0644 "${dest}/parkeze_user_ca.pub"
+  log "SSH CA installed"
 }
 
 # ── Our own packages ────────────────────────────────────────────────────────
@@ -804,6 +850,7 @@ main() {
       install_fleet_key
       install_firmware_key
       install_ops_keys
+      install_ssh_ca
       build_feed
       log "Done. Feed only."
       return 0 ;;
@@ -812,12 +859,14 @@ main() {
       # though the console and packages arrived as artifacts.
       install_fleet_key
       install_firmware_key
-      install_ops_keys ;;
+      install_ops_keys
+      install_ssh_ca ;;
     all)
       build_console
       install_fleet_key
       install_firmware_key
       install_ops_keys
+      install_ssh_ca
       build_feed ;;
   esac
 

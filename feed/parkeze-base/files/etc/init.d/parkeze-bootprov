@@ -135,6 +135,10 @@ start() {
 	# fleet key reaches a gateway at all — see parkeze-fleet-keys.
 	/usr/sbin/parkeze-fleet-keys || \
 		logger -t parkeze -p daemon.err "could not compose authorized_keys"
+	# The rest of what sshd trusts, for the same reason and before sshd (50)
+	# starts: its config, the CA and this gateway's principal. See
+	# parkeze-ssh-setup.
+	/usr/sbin/parkeze-ssh-setup
 
 	[ "${PARKEZE_BOOTPART_KEYS:-1}" = "1" ] || return 0
 

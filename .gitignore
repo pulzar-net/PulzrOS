@@ -18,6 +18,8 @@ feed/parkeze-console/files/www/
 boards/common/files/etc/dropbear/authorized_keys
 boards/common/files/root/.ssh/authorized_keys
 boards/common/files/usr/share/parkeze/fleet-keys
+# The SSH CA's public line, copied in by build.sh from keys/ca/.
+boards/common/files/usr/share/parkeze/ssh/
 
 # The fleet recovery PUBLIC key, copied in by build.sh. Public, but it belongs
 # to a deployment rather than to this repo — an image built from a checkout

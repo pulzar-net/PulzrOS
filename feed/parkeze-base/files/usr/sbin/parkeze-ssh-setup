@@ -1,0 +1,194 @@
+#!/bin/sh
+#
+# What sshd trusts, composed at boot from the image and this gateway.
+#
+#   parkeze-ssh-setup              write /etc/ssh: config, host keys, CA, principal
+#   parkeze-ssh-setup --host-key   the host key to report, "ssh-ed25519 AAAA..."
+#   parkeze-ssh-setup --trusts-ca  exit 0 if the running sshd accepts a Parkeze
+#                                  certificate naming this gateway
+#
+# ── WHY OPENSSH, AND ONLY OPENSSH ─────────────────────────────────────────
+#
+# parkeze.net reaches a gateway's shell with an SSH certificate made for that
+# one gateway, good for five minutes, rather than with one fleet key that opens
+# every gateway. dropbear cannot check a certificate, so sshd replaces it.
+#
+# Replaces, rather than runs beside it on the management addresses. Those are
+# the tunnel's, allocated at enrolment and up only while it handshakes, and the
+# SIM's; the ethernet port alone holds a lease, the console address and a
+# link-local address at once. Two daemons on 22 split by address would be a
+# binding to keep right on every one of those changes, a second host key for
+# parkeze.net to pin, and two daemons' RAM on a 128MB gateway instead of one.
+#
+# ── HOST KEYS ──────────────────────────────────────────────────────────────
+#
+# parkeze.net pins the host key a gateway reports. dropbear's keys are
+# converted once, on the first boot without dropbear, so sshd presents the key
+# already pinned. dropbear's files are left where they are: a rollback to a
+# dropbear image presents the same key again. keep.d carries both sets.
+#
+# ── THE CERTIFICATE AUTHORITY AND THE PRINCIPAL ───────────────────────────
+#
+# The CA's public line ships on /usr, which sysupgrade replaces whole, so a
+# rotated CA arrives with the firmware; it is copied to the path parkeze.net's
+# docs name. A certificate is accepted for root only if it names this
+# gateway's EUI — 16 lowercase hex, one line — so a certificate leaked from one
+# session opens one gateway for five minutes. An image built without a CA, or
+# a gateway that does not know its EUI, gets no CA configuration at all, and
+# the fleet key in authorized_keys is the way in, as before.
+#
+# Everything is written only when it differs, so a boot that changes nothing
+# writes nothing to flash.
+
+SSH="${PARKEZE_SSH_DIR:-/etc/ssh}"
+SHARE="${PARKEZE_SSH_SHARE:-/usr/share/parkeze/ssh}"
+DROPBEAR="${PARKEZE_DROPBEAR_DIR:-/etc/dropbear}"
+
+CA="${SSH}/parkeze_user_ca.pub"
+PRINCIPALS="${SSH}/auth_principals"
+CA_CONF="${SSH}/sshd_config.d/parkeze-ca.conf"
+
+log() { logger -t parkeze-ssh -p daemon.info "$*"; }
+err() { logger -t parkeze-ssh -p daemon.err "$*"; }
+
+changed=""
+
+# put <path> <mode> <content>
+put() {
+    if [ ! -f "$1" ] || [ "$(cat "$1")" != "$3" ]; then
+        printf '%s\n' "$3" > "$1.tmp" && chmod "$2" "$1.tmp" && mv "$1.tmp" "$1" \
+            || { rm -f "$1.tmp"; err "could not write $1"; return 1; }
+        changed=1
+    fi
+    chmod "$2" "$1"
+}
+
+drop() {
+    [ -e "$1" ] || return 0
+    rm -f "$1"
+    changed=1
+}
+
+# The certificate principal: this gateway's EUI, exactly as parkeze.net names
+# it, or nothing.
+principal() {
+    local eui
+    eui="$(uci -q get parkeze.identity.gateway_eui 2>/dev/null | tr 'A-F' 'a-f')"
+    printf '%s' "${eui}" | grep -qE '^[0-9a-f]{16}$' || return 1
+    echo "${eui}"
+}
+
+# The CA line, if the image carries a usable one.
+ca_line() {
+    local line
+    [ -s "${SHARE}/parkeze_user_ca.pub" ] || return 1
+    [ "$(grep -c . "${SHARE}/parkeze_user_ca.pub")" = 1 ] || return 1
+    line="$(grep . "${SHARE}/parkeze_user_ca.pub")"
+    printf '%s' "${line}" | grep -qE '^ssh-ed25519 [A-Za-z0-9+/]+=* ?' || return 1
+    echo "${line}"
+}
+
+# dropbear_<type>_host_key -> ssh_host_<type>_key, once.
+convert() {
+    local type="$1"
+    local from="${DROPBEAR}/dropbear_${type}_host_key" to="${SSH}/ssh_host_${type}_key"
+    [ -s "${to}" ] && return 0
+    [ -s "${from}" ] || return 0
+    command -v dropbearconvert >/dev/null 2>&1 || {
+        err "no dropbearconvert; sshd will present a new ${type} host key"
+        return 1
+    }
+    rm -f "${to}.tmp"
+    if ( umask 077; dropbearconvert dropbear openssh "${from}" "${to}.tmp" ) >/dev/null 2>&1 \
+       && ssh-keygen -y -f "${to}.tmp" > "${to}.pub.tmp" 2>/dev/null \
+       && [ -s "${to}.pub.tmp" ]; then
+        chmod 0600 "${to}.tmp"
+        chmod 0644 "${to}.pub.tmp"
+        mv "${to}.tmp" "${to}"
+        mv "${to}.pub.tmp" "${to}.pub"
+        log "sshd presents dropbear's ${type} host key"
+        changed=1
+        return 0
+    fi
+    rm -f "${to}.tmp" "${to}.pub.tmp"
+    err "could not convert dropbear's ${type} host key; sshd will present a new one"
+    return 1
+}
+
+setup() {
+    mkdir -p "${SSH}/sshd_config.d"
+    chmod 0755 "${SSH}" "${SSH}/sshd_config.d"
+
+    [ -s "${SHARE}/sshd_config" ] && put "${SSH}/sshd_config" 0644 "$(cat "${SHARE}/sshd_config")"
+
+    convert ed25519
+    convert rsa
+    # A gateway flashed with this image never had dropbear. Made here, before
+    # sshd starts, so the first report has a key to send whatever sshd's own
+    # init goes on to make; sshd_config offers only ed25519 and RSA.
+    if [ ! -s "${SSH}/ssh_host_ed25519_key" ] && [ ! -s "${SSH}/ssh_host_rsa_key" ]; then
+        ssh-keygen -q -t ed25519 -N '' -f "${SSH}/ssh_host_ed25519_key" >/dev/null 2>&1 \
+            && log "made an ed25519 host key" && changed=1
+    fi
+
+    local line eui
+    line="$(ca_line)" || line=""
+    eui="$(principal)" || eui=""
+    if [ -n "${line}" ] && [ -n "${eui}" ]; then
+        put "${CA}" 0644 "${line}"
+        mkdir -p "${PRINCIPALS}"
+        chmod 0755 "${PRINCIPALS}"
+        put "${PRINCIPALS}/root" 0644 "${eui}"
+        put "${CA_CONF}" 0644 "TrustedUserCAKeys ${CA}
+AuthorizedPrincipalsFile ${PRINCIPALS}/%u"
+    else
+        [ -n "${line}" ] || log "this image carries no SSH CA; certificates are not accepted"
+        [ -n "${eui}" ] || err "no valid gateway EUI; certificates are not accepted"
+        drop "${CA_CONF}"
+        drop "${PRINCIPALS}/root"
+        drop "${CA}"
+    fi
+
+    # At boot this runs before sshd starts; anything later that changes what
+    # sshd trusts has to restart it for the change to count.
+    if [ -n "${changed}" ] && pidof sshd >/dev/null 2>&1; then
+        /etc/init.d/sshd restart >/dev/null 2>&1
+    fi
+    return 0
+}
+
+# The key reported to parkeze.net for pinning. ed25519 first, as dropbear's
+# was read before, so a converted gateway reports the key it reported then.
+host_key() {
+    local type f key
+    for type in ed25519 rsa; do
+        f="${SSH}/ssh_host_${type}_key"
+        [ -s "${f}" ] || continue
+        if [ -s "${f}.pub" ]; then
+            key="$(cat "${f}.pub")"
+        else
+            key="$(ssh-keygen -y -f "${f}" 2>/dev/null)"
+        fi
+        key="$(printf '%s\n' "${key}" | awk '/^ssh-/ { print $1" "$2; exit }')"
+        [ -n "${key}" ] && { echo "${key}"; return 0; }
+    done
+    return 1
+}
+
+trusts_ca() {
+    local eui conf
+    eui="$(principal)" || return 1
+    [ -s "${CA}" ] || return 1
+    [ "$(cat "${PRINCIPALS}/root" 2>/dev/null)" = "${eui}" ] || return 1
+    pidof sshd >/dev/null 2>&1 || return 1
+    conf="$(sshd -T -f "${SSH}/sshd_config" 2>/dev/null)" || return 1
+    printf '%s\n' "${conf}" | grep -qx "trustedusercakeys ${CA}" || return 1
+    printf '%s\n' "${conf}" | grep -qx "authorizedprincipalsfile ${PRINCIPALS}/%u"
+}
+
+case "${1:-}" in
+    '')          setup ;;
+    --host-key)  host_key ;;
+    --trusts-ca) trusts_ca ;;
+    *)           echo "usage: parkeze-ssh-setup [--host-key | --trusts-ca]" >&2; exit 2 ;;
+esac

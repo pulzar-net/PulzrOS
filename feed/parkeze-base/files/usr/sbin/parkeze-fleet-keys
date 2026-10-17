@@ -32,8 +32,9 @@ set -eu
 FLEET=/usr/share/parkeze/fleet-keys
 SITE=/etc/parkeze/site-keys
 OUT=/etc/dropbear/authorized_keys
-# OpenWrt's dropbear reads /etc/dropbear/authorized_keys; stock dropbear reads
-# $HOME/.ssh. Both are written so this cannot silently half-work.
+# sshd reads $HOME/.ssh. OpenWrt's dropbear, which images before the switch to
+# OpenSSH ran, reads /etc/dropbear/authorized_keys; still written, so a
+# rollback to one of those images keeps the same keys.
 HOME_OUT=/root/.ssh/authorized_keys
 
 valid() { grep -hE '^(ssh-(rsa|ed25519)|ecdsa-sha2-)' "$1" 2>/dev/null || true; }

@@ -104,7 +104,8 @@ feed/             the Parkeze OpenWrt package feed
   parkeze-tui           the console in a terminal, on every board
   parkeze-display       the TUI on a Pi's own screen, when it has one
   parkeze-usb-gadget    the USB-C port as a network and a serial console
-scripts/          build-feed.sh, check-ucode.sh, ucode stubs, run-tui.sh
+scripts/          build-feed.sh, check-ucode.sh, ucode stubs, run-tui.sh,
+                  test-ssh-setup.sh (device shell, stubbed)
 docs/             the design decisions worth writing down
 ```
 

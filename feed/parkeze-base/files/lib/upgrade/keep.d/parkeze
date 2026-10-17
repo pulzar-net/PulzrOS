@@ -26,3 +26,13 @@
 # it comes from the image, so that rotating it is a firmware upgrade rather
 # than a visit. See parkeze-fleet-keys.
 /etc/parkeze/site-keys
+# SSH host keys. parkeze.net pins the one a gateway reports, so a new key after
+# an upgrade is a gateway nobody can open a shell on until it reports again.
+# dropbear's as well as sshd's: they are the same keys (see parkeze-ssh-setup),
+# and a rollback to a dropbear image should present the one that is pinned.
+/etc/ssh/ssh_host_ed25519_key
+/etc/ssh/ssh_host_ed25519_key.pub
+/etc/ssh/ssh_host_rsa_key
+/etc/ssh/ssh_host_rsa_key.pub
+/etc/dropbear/dropbear_ed25519_host_key
+/etc/dropbear/dropbear_rsa_host_key

@@ -187,3 +187,52 @@ That is deliberate. An attacker can cut a gateway's uplink — that is what
 snipping a cable does. If losing the uplink re-enabled password login, cutting
 the cable would be step one of every attack. Adoption state is something they
 cannot change from outside.
+
+## SSH
+
+OpenSSH's `sshd` on port 22, on every board. dropbear, which every image
+before it ran, cannot check a certificate, and certificates are how
+parkeze.net reaches a gateway's shell: one signed for this gateway's EUI and
+nothing else, valid for five minutes, `permit-pty` only for the browser
+terminal. A certificate leaked from one session opens one gateway for five
+minutes. parkeze.net's `docs/gateway-ssh-certificates.md` is the other half.
+
+What sshd trusts is written at every boot by `parkeze-ssh-setup`:
+
+| File | From |
+|---|---|
+| `/etc/ssh/sshd_config` | `/usr/share/parkeze/ssh/sshd_config` in the image |
+| `/etc/ssh/parkeze_user_ca.pub` | `keys/ca/parkeze_user_ca.pub` in this repo, via the image |
+| `/etc/ssh/sshd_config.d/parkeze-ca.conf` | `TrustedUserCAKeys` and `AuthorizedPrincipalsFile` |
+| `/etc/ssh/auth_principals/root` | the gateway's EUI, 16 lowercase hex |
+| `/root/.ssh/authorized_keys` | the fleet key and site keys (`parkeze-fleet-keys`) |
+
+Rewritten from the image each boot rather than kept, because sysupgrade keeps
+conffiles and `/etc/ssh/sshd_config` is one: a change shipped in a release
+would otherwise never reach a gateway that had been upgraded once. The fleet
+key stays in `authorized_keys` until every gateway trusts the CA. parkeze.net
+uses a certificate only for a gateway marked as trusting the CA, and only with
+`GATEWAY_SSH_CERTIFICATES` set. Staff mark it today; the report carries
+`sshCa: true` once the running sshd trusts the CA, for net-api to mark it
+itself.
+
+**Host keys.** parkeze.net pins the key a gateway reports, so the first boot
+without dropbear converts dropbear's keys (`dropbearconvert`) and sshd presents
+the key already pinned. dropbear's files stay, and keep.d carries both, so a
+rollback to a dropbear image presents the same key again.
+
+**Checking one.** On the gateway:
+
+```
+sshd -T | grep -Ei 'trustedusercakeys|authorizedprincipalsfile'
+cat /etc/ssh/auth_principals/root
+logread | grep parkeze-net          # the key ID of every certificate login
+```
+
+An image built without `keys/ca/parkeze_user_ca.pub` gets no CA configuration
+and is reached with the fleet key, as before.
+
+**Rotating the CA** is a firmware release: put the new public line in
+`keys/ca/`, ship it, and only then switch recovery-service to the new private
+key. A gateway trusts exactly one CA, so a gateway on the old release refuses
+the new CA's certificates until it upgrades.

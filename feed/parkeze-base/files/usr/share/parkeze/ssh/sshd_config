@@ -1,0 +1,46 @@
+# sshd's configuration, as the image ships it. parkeze-ssh-setup copies this
+# to /etc/ssh/sshd_config at every boot: that file is a package conffile, and
+# sysupgrade keeps conffiles, so a change made here would otherwise never reach
+# a gateway that had been upgraded once. Edits to /etc/ssh/sshd_config do not
+# survive a reboot.
+
+# First, because sshd takes the first value it reads for each keyword: the
+# certificate authority and the principals file, written by parkeze-ssh-setup
+# only when the image carries a CA and the gateway knows its EUI.
+Include /etc/ssh/sshd_config.d/*.conf
+
+Port 22
+
+# The two dropbear made. parkeze-ssh-setup converts dropbear's own on the first
+# boot after the switch, so the key parkeze.net pinned is the key presented.
+# No ECDSA key is offered, so nothing presents a key nobody pinned.
+HostKey /etc/ssh/ssh_host_ed25519_key
+HostKey /etc/ssh/ssh_host_rsa_key
+
+# What dropbear allowed, so the switch takes nothing away: root, by key or by
+# the per-unit password on the label (see 30-parkeze-console). Certificates
+# come on top, through the Include above.
+PermitRootLogin yes
+PubkeyAuthentication yes
+PasswordAuthentication yes
+KbdInteractiveAuthentication no
+AuthorizedKeysFile .ssh/authorized_keys
+
+# Every unauthenticated connection is an sshd-session process of a megabyte or
+# two, on a gateway with 128MB. Bounded so a scan of the site network cannot
+# spend the RAM the forwarder needs.
+MaxStartups 4:50:10
+LoginGraceTime 30
+MaxAuthTries 4
+
+# A session over a cellular link that dropped is otherwise a process held
+# until TCP gives up, which can be hours.
+ClientAliveInterval 60
+ClientAliveCountMax 3
+
+# The login banner and the claim QR come from /etc/profile.d, as they did
+# under dropbear. sshd printing its own would be the banner twice.
+PrintMotd no
+
+# OpenSSH 9 scp speaks SFTP, so this is also what `scp` to a gateway uses.
+Subsystem sftp /usr/lib/sftp-server

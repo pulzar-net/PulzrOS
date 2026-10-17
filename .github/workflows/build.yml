@@ -117,6 +117,11 @@ jobs:
       - name: Check printf arguments match their formats
         run: ./scripts/check-printf.sh
 
+      # sshd's trust: shell that otherwise only runs on a gateway, against
+      # stubs for everything it calls.
+      - name: SSH setup logic
+        run: ./scripts/test-ssh-setup.sh
+
       # The upstream indexes are ~10MB and a pinned release never changes them.
       - name: Cache the upstream package indexes
         uses: actions/cache@v4

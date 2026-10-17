@@ -37,6 +37,10 @@
 # authenticated report — which exercises DNS, TLS, the clock, and the secret
 # that survived the upgrade — and only a gateway that completes one is kept.
 #
+# And sshd. This release is the one that swapped dropbear for OpenSSH, and an
+# sshd that does not start is a gateway gateway-link cannot reach while every
+# other check here passes.
+#
 # ── COST ───────────────────────────────────────────────────────────────────
 #
 # The cheap check runs on the loop and the expensive one runs once. Polling
@@ -65,6 +69,11 @@ adopted() { [ "$(uci -q get parkeze.adoption.state)" = "adopted" ]; }
 
 # Reachable, and still ourselves. Exits non-zero with a reason on stdout.
 verdict() {
+    if ! pidof sshd >/dev/null 2>&1; then
+        echo "sshd is not running"
+        return 1
+    fi
+
     if ! parkeze-backhaul-check >/dev/null 2>&1; then
         echo "unreachable"
         return 1
