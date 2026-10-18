@@ -216,7 +216,7 @@ start() {
 		{
 			echo "ParkezeOS initial credentials"
 			echo
-			echo "  user      parkeze   (console, and ssh parkeze@ the gateway)"
+			echo "  user      parkeze   (the console: https:// or ssh parkeze@ the gateway)"
 			echo "  password  $(cat "${STATE}/initial-password")"
 			echo
 			echo "This file disappears once the password is changed."

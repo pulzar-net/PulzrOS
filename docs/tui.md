@@ -14,6 +14,7 @@ parkeze-tui
 |---|---|---|
 | Serial console | it is already there | the web console's |
 | SSH as root | `parkeze-tui` at the shell | none: you are root |
+| SSH as `parkeze` | `ssh parkeze@<gateway>`; Ctrl-C disconnects | the web console's |
 | parkeze.net **Console** | a gateway's page, as an organization's admin | parkeze.net's; no shell |
 | HDMI (Pi) | it is already there, when a screen was attached at boot | the web console's |
 | USB serial (Pi 4, Pi 5) | the port that appears beside the USB network | the web console's |

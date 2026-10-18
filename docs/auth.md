@@ -254,11 +254,22 @@ password was the console's, so anybody with the label was root.
 | Root's password | none (`*`, `parkeze-root-keys-only`) | none |
 | SSH as root | fleet key, staff certificate | also `keys/dev/*.pub`, site keys |
 | SSH with a password | refused | refused |
+| `ssh parkeze@<gateway>` | the TUI, behind the console's sign-in | the same |
 | Serial console | the TUI, behind the console's sign-in | the stock root shell |
 | HDMI, USB serial | the TUI, behind the console's sign-in | the same |
 | The TUI's `!` | a staff session, or a TUI started from a root shell | any signed-in session |
 | Failsafe mode | off | on |
 | Site keys on the card | ignored, and removed from a gateway that has them | accepted until adopted |
+
+**`ssh parkeze@<gateway>`** is how a technician on the site network reaches
+the console, where the label's password used to open a root shell. `parkeze`
+is uid 0 with no password of its own (`parkeze-ssh-setup` writes it after
+root's line every boot), and sshd's `Match User parkeze` block runs
+`parkeze-tui --console` whatever the client asks for — no command, sftp,
+forwarding or `~/.ssh/rc`. So the account is the console's sign-in and nothing
+else: the local password while it is allowed, Parkeze or recovery once adopted,
+and `!` only for staff. Sign-in failures count against the client's address,
+and Ctrl-C ends the session.
 
 **Staff sessions.** Organization admins sign in to a gateway's console with
 Parkeze and with recovery as well as staff do, so the kind of session cannot

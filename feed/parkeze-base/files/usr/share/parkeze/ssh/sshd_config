@@ -20,7 +20,7 @@ HostKey /etc/ssh/ssh_host_rsa_key
 # Root by key or certificate, never by password: root has none
 # (parkeze-root-keys-only), and a root shell on ParkezeOS is a copy of it, so
 # root is Parkeze's fleet key and the certificates parkeze.net signs for staff.
-# A technician uses the console: the web console, or the TUI on a port.
+# A technician signs in as `parkeze`, at the end of this file.
 PermitRootLogin prohibit-password
 PubkeyAuthentication yes
 PasswordAuthentication no
@@ -46,3 +46,29 @@ PrintMotd no
 
 # OpenSSH 9 scp speaks SFTP, so this is also what `scp` to a gateway uses.
 Subsystem sftp /usr/lib/sftp-server
+
+# `ssh parkeze@<gateway>`: the gateway console, behind the same sign-in the
+# web console and the TUI on a port ask for. It is how a technician gets the
+# claim code or changes a setting over the site network, where the label's
+# password used to open a root shell.
+#
+# The account has no password of its own and uid 0, because the console runs
+# as root on every port and has to (parkeze-ssh-setup makes the account). What
+# keeps that safe is that this block runs the TUI and nothing else: whatever
+# the client asks for — a command, sftp, a forward — gets the console, and the
+# console's `!` needs a Parkeze staff sign-in. PermitRootLogin is here because
+# sshd judges uid 0, not the name. Last in the file: everything after a Match
+# belongs to it.
+Match User parkeze
+    PermitRootLogin yes
+    PasswordAuthentication yes
+    PermitEmptyPasswords yes
+    PubkeyAuthentication no
+    ForceCommand /usr/sbin/parkeze-tui --console
+    PermitTTY yes
+    PermitUserRC no
+    AllowTcpForwarding no
+    AllowStreamLocalForwarding no
+    AllowAgentForwarding no
+    X11Forwarding no
+    PermitTunnel no

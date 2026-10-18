@@ -37,12 +37,25 @@
 # a gateway that does not know its EUI, gets no CA configuration at all, and
 # the fleet key in authorized_keys is the way in, as before.
 #
+# ── THE CONSOLE ACCOUNT ───────────────────────────────────────────────────
+#
+# `parkeze`, uid 0, no password: sshd_config runs the TUI's sign-in as its
+# only command, so `ssh parkeze@<gateway>` is the console and nothing else.
+# Made here, every boot, because /etc/passwd and /etc/shadow are conffiles a
+# gateway keeps from whatever image it was first flashed with. After root's
+# line, never in place of anything, so uid 0 still names root.
+#
 # Everything is written only when it differs, so a boot that changes nothing
 # writes nothing to flash.
 
 SSH="${PARKEZE_SSH_DIR:-/etc/ssh}"
 SHARE="${PARKEZE_SSH_SHARE:-/usr/share/parkeze/ssh}"
 DROPBEAR="${PARKEZE_DROPBEAR_DIR:-/etc/dropbear}"
+
+PASSWD="${PARKEZE_PASSWD:-/etc/passwd}"
+SHADOW="${PARKEZE_SHADOW:-/etc/shadow}"
+CONSOLE_PASSWD='parkeze:x:0:0:Parkeze console:/root:/bin/ash'
+CONSOLE_SHADOW='parkeze::0:0:99999:7:::'
 
 CA="${SSH}/parkeze_user_ca.pub"
 PRINCIPALS="${SSH}/auth_principals"
@@ -115,7 +128,21 @@ convert() {
     return 1
 }
 
+# account <file> <line> <mode>: <file> with exactly one `parkeze` line, <line>,
+# after everything else in it.
+account() {
+    local file="$1" line="$2" mode="$3" rest
+    [ -f "${file}" ] || { err "no ${file}; no console account"; return 1; }
+    [ "$(grep '^parkeze:' "${file}")" = "${line}" ] && return 0
+    rest="$(grep -v '^parkeze:' "${file}")"
+    put "${file}" "${mode}" "${rest}
+${line}" && log "console account written to ${file}"
+}
+
 setup() {
+    account "${PASSWD}" "${CONSOLE_PASSWD}" 0644
+    account "${SHADOW}" "${CONSOLE_SHADOW}" 0600
+
     mkdir -p "${SSH}/sshd_config.d"
     chmod 0755 "${SSH}" "${SSH}/sshd_config.d"
 

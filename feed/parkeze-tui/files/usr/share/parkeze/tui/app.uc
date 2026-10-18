@@ -98,6 +98,7 @@ const IDLE_PAUSE = 900;
 const app = {
     console: false,       // --console: sign-in required
     remote: false,        // --remote: no sign-in, no shell
+    ssh: false,           // --console over SSH, as `parkeze`
     dev: false,           // a development build: see mayShell
     tty: null,
     addr: 'tty',          // what lockout counts sign-in failures against
@@ -454,6 +455,10 @@ quit = function() {
 
 handleKey = function(key) {
     if (key == 'ctrl-l') { term.size(); term.invalidate(); return; }
+    // A port's console never exits: it is the port's program. Over SSH it is
+    // a session somebody opened, so Ctrl-C ends it from anywhere — a field
+    // being typed in included — signing out on the way.
+    if (key == 'ctrl-c' && app.ssh) { app.quit = true; return; }
     if (app.dialog) return handleDialog(key);
     if (app.edit) return handleEdit(key);
     if (key == 'ctrl-c' && !app.console) { app.quit = true; return; }
@@ -830,11 +835,11 @@ drawFooter = function(width) {
     else if (app.edit) keys = 'Enter Save  Esc Cancel';
     else {
         const shellKey = mayShell() ? '! Shell  ' : '';
-        const quitKey = app.console ? 'q Sign out' : 'q Quit';
+        const quitKey = (app.console ? 'q Sign out' : 'q Quit') + (app.ssh ? '  Ctrl-C Disconnect' : '');
         if (app.focus == 'nav') keys = 'Enter Open  r Refresh  ' + shellKey + quitKey;
         else keys = signedIn() && app.path != '/password'
             ? 'Enter Select  Esc Menu  r Refresh  ' + shellKey + quitKey
-            : 'Enter Select';
+            : 'Enter Select' + (app.ssh ? '  Ctrl-C Disconnect' : '');
     }
     return ' ' + ui.style(term.clip(keys, width - 2), 'dim');
 };
@@ -877,6 +882,12 @@ start = function(opts) {
     app.dev = match(_m_fs.readfile('/etc/parkeze/board.conf') ?? '', /(^|\n)PARKEZE_DEV='1'/) != null;
     app.tty = opts.tty;
     app.addr = 'tty:' + replace(opts.tty ?? 'shell', /^\/dev\//, '');
+    // Over SSH as `parkeze`, sign-in failures count against the address they
+    // came from. Counted against one name for every SSH session, somebody on
+    // the site network could lock every technician out with a few guesses.
+    const ssh = split(getenv('SSH_CONNECTION') ?? '', ' ');
+    app.ssh = app.console && !opts.tty && length(ssh[0]) > 0;
+    if (app.ssh) app.addr = 'ssh:' + ssh[0];
 
     const env = logo.detect(true);
     app.termOpts = { tty: opts.tty, utf8: env.utf8, color: env.depth > 0,
