@@ -30,12 +30,9 @@
 # for files that never had to leave the disk — and that storage has a quota,
 # which, once spent, failed every build at its first upload. So there they go
 # through $HANDOFF/<run id> instead. Keyed by run id, not attempt, so a rerun
-# of a failed job finds what the jobs before it left. The check job prunes
-# runs older than two days.
-#
-# /var/lib and not the runner's home: the runner's job-completed hook empties
-# /home/runner, /tmp and /var/tmp after every job, so a handoff there was gone
-# before the next job started.
+# of a failed job finds what the jobs before it left. The runner's
+# job-completed hook (runner-cleanup.sh on the VM), which empties everything
+# else a job leaves, keeps this directory and deletes runs older than two days.
 
 name: build
 
@@ -73,12 +70,6 @@ jobs:
     runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Prune old handoffs
-        if: runner.environment == 'self-hosted'
-        run: |
-          sudo install -d -o "$(id -u)" -g "$(id -g)" "$HANDOFF"
-          find "$HANDOFF" -mindepth 1 -maxdepth 1 -type d -mtime +1 -exec rm -rf {} +
 
       # parkeze.net offers a release to a gateway when the release's version
       # is newer than the one the gateway reports, and a gateway reports
