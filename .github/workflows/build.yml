@@ -29,9 +29,13 @@
 # job is the same machine, and artifacts are a round trip to GitHub's storage
 # for files that never had to leave the disk — and that storage has a quota,
 # which, once spent, failed every build at its first upload. So there they go
-# through ~/handoff/<run id> instead. Keyed by run id, not attempt, so a rerun
+# through $HANDOFF/<run id> instead. Keyed by run id, not attempt, so a rerun
 # of a failed job finds what the jobs before it left. The check job prunes
 # runs older than two days.
+#
+# /var/lib and not the runner's home: the runner's job-completed hook empties
+# /home/runner, /tmp and /var/tmp after every job, so a handoff there was gone
+# before the next job started.
 
 name: build
 
@@ -60,6 +64,7 @@ permissions:
 env:
   # One place to change the Node version, rather than three.
   NODE_VERSION: '22'
+  HANDOFF: /var/lib/runner-handoff
 
 jobs:
   # ───────────────────────────────────────────────────────────────────────
@@ -72,8 +77,8 @@ jobs:
       - name: Prune old handoffs
         if: runner.environment == 'self-hosted'
         run: |
-          mkdir -p "$HOME/handoff"
-          find "$HOME/handoff" -mindepth 1 -maxdepth 1 -type d -mtime +1 -exec rm -rf {} +
+          sudo install -d -o "$(id -u)" -g "$(id -g)" "$HANDOFF"
+          find "$HANDOFF" -mindepth 1 -maxdepth 1 -type d -mtime +1 -exec rm -rf {} +
 
       # parkeze.net offers a release to a gateway when the release's version
       # is newer than the one the gateway reports, and a gateway reports
@@ -263,7 +268,7 @@ jobs:
       - name: Hand over the console
         if: runner.environment == 'self-hosted'
         run: |
-          h="$HOME/handoff/$GITHUB_RUN_ID/console"
+          h="$HANDOFF/$GITHUB_RUN_ID/console"
           rm -rf "$h"; mkdir -p "$h"
           cp -a feed/parkeze-console/files/www/. "$h/"
 
@@ -285,7 +290,7 @@ jobs:
         if: runner.environment == 'self-hosted'
         run: |
           mkdir -p feed/parkeze-console/files/www
-          cp -a "$HOME/handoff/$GITHUB_RUN_ID/console/." feed/parkeze-console/files/www/
+          cp -a "$HANDOFF/$GITHUB_RUN_ID/console/." feed/parkeze-console/files/www/
 
       # The recovery PUBLIC key. Without it images still build, but cannot be
       # adopted offline — build.sh warns rather than failing, which is right
@@ -339,7 +344,7 @@ jobs:
       - name: Hand over the feed
         if: runner.environment == 'self-hosted'
         run: |
-          h="$HOME/handoff/$GITHUB_RUN_ID/feed"
+          h="$HANDOFF/$GITHUB_RUN_ID/feed"
           rm -rf "$h"; mkdir -p "$h"
           cp -a --parents .build/packages boards/common/files "$h/"
 
@@ -418,8 +423,8 @@ jobs:
         if: runner.environment == 'self-hosted'
         run: |
           mkdir -p feed/parkeze-console/files/www
-          cp -a "$HOME/handoff/$GITHUB_RUN_ID/console/." feed/parkeze-console/files/www/
-          cp -a "$HOME/handoff/$GITHUB_RUN_ID/feed/." .
+          cp -a "$HANDOFF/$GITHUB_RUN_ID/console/." feed/parkeze-console/files/www/
+          cp -a "$HANDOFF/$GITHUB_RUN_ID/feed/." .
 
       - name: Install build dependencies
         run: |
@@ -493,7 +498,7 @@ jobs:
         env:
           BOARD: ${{ matrix.board }}
         run: |
-          h="$HOME/handoff/$GITHUB_RUN_ID/images/${BOARD}"
+          h="$HANDOFF/$GITHUB_RUN_ID/images/${BOARD}"
           rm -rf "$h"; mkdir -p "$h"
           cp -a out/release/. "$h/"
           [ -n "$(ls -A "$h")" ] || { echo "::error::no images for ${BOARD}"; exit 1; }
@@ -523,7 +528,7 @@ jobs:
         if: runner.environment == 'self-hosted'
         run: |
           mkdir -p artifacts
-          cp -a "$HOME/handoff/$GITHUB_RUN_ID/images/." artifacts/
+          cp -a "$HANDOFF/$GITHUB_RUN_ID/images/." artifacts/
 
       - name: Collect
         run: |
