@@ -21,6 +21,17 @@
 #
 # Runners are Linux, so none of the Docker machinery build.sh uses on a Mac is
 # involved here — the runner is the Linux box.
+#
+# ── HANDING FILES BETWEEN JOBS ─────────────────────────────────────────────
+#
+# On GitHub's runners every job is a fresh machine, so the console, the feed
+# and each board's images travel as artifacts. On the self-hosted runner every
+# job is the same machine, and artifacts are a round trip to GitHub's storage
+# for files that never had to leave the disk — and that storage has a quota,
+# which, once spent, failed every build at its first upload. So there they go
+# through ~/handoff/<run id> instead. Keyed by run id, not attempt, so a rerun
+# of a failed job finds what the jobs before it left. The check job prunes
+# runs older than two days.
 
 name: build
 
@@ -57,6 +68,12 @@ jobs:
     runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Prune old handoffs
+        if: runner.environment == 'self-hosted'
+        run: |
+          mkdir -p "$HOME/handoff"
+          find "$HOME/handoff" -mindepth 1 -maxdepth 1 -type d -mtime +1 -exec rm -rf {} +
 
       # parkeze.net offers a release to a gateway when the release's version
       # is newer than the one the gateway reports, and a gateway reports
@@ -236,11 +253,19 @@ jobs:
       # The built app, for the feed job to package. Not the whole repo — just
       # what the console stage produced.
       - uses: actions/upload-artifact@v4
+        if: runner.environment == 'github-hosted'
         with:
           name: console
           path: feed/parkeze-console/files/www
           retention-days: 1
           if-no-files-found: error
+
+      - name: Hand over the console
+        if: runner.environment == 'self-hosted'
+        run: |
+          h="$HOME/handoff/$GITHUB_RUN_ID/console"
+          rm -rf "$h"; mkdir -p "$h"
+          cp -a feed/parkeze-console/files/www/. "$h/"
 
   # ───────────────────────────────────────────────────────────────────────
   feed:
@@ -251,9 +276,16 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: actions/download-artifact@v4
+        if: runner.environment == 'github-hosted'
         with:
           name: console
           path: feed/parkeze-console/files/www
+
+      - name: Take the console
+        if: runner.environment == 'self-hosted'
+        run: |
+          mkdir -p feed/parkeze-console/files/www
+          cp -a "$HOME/handoff/$GITHUB_RUN_ID/console/." feed/parkeze-console/files/www/
 
       # The recovery PUBLIC key. Without it images still build, but cannot be
       # adopted offline — build.sh warns rather than failing, which is right
@@ -295,6 +327,7 @@ jobs:
       # Both halves of the overlay travel together: the .ipk repository, and
       # the recovery key that install_fleet_key dropped into the board files.
       - uses: actions/upload-artifact@v4
+        if: runner.environment == 'github-hosted'
         with:
           name: feed
           path: |
@@ -302,6 +335,13 @@ jobs:
             boards/common/files
           retention-days: 1
           if-no-files-found: error
+
+      - name: Hand over the feed
+        if: runner.environment == 'self-hosted'
+        run: |
+          h="$HOME/handoff/$GITHUB_RUN_ID/feed"
+          rm -rf "$h"; mkdir -p "$h"
+          cp -a --parents .build/packages boards/common/files "$h/"
 
   # ───────────────────────────────────────────────────────────────────────
   boards:
@@ -364,13 +404,22 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: actions/download-artifact@v4
+        if: runner.environment == 'github-hosted'
         with:
           name: console
           path: feed/parkeze-console/files/www
 
       - uses: actions/download-artifact@v4
+        if: runner.environment == 'github-hosted'
         with:
           name: feed
+
+      - name: Take the console and the feed
+        if: runner.environment == 'self-hosted'
+        run: |
+          mkdir -p feed/parkeze-console/files/www
+          cp -a "$HOME/handoff/$GITHUB_RUN_ID/console/." feed/parkeze-console/files/www/
+          cp -a "$HOME/handoff/$GITHUB_RUN_ID/feed/." .
 
       - name: Install build dependencies
         run: |
@@ -430,6 +479,7 @@ jobs:
       # and the OS list fragment. Not the raw ImageBuilder output, which is
       # four cryptic files nobody can choose between.
       - uses: actions/upload-artifact@v4
+        if: runner.environment == 'github-hosted'
         with:
           name: parkezeos-${{ matrix.board }}
           path: out/release/*
@@ -437,6 +487,16 @@ jobs:
           # storage quota is not spent on every push to a branch.
           retention-days: 14
           if-no-files-found: error
+
+      - name: Hand over the images
+        if: runner.environment == 'self-hosted'
+        env:
+          BOARD: ${{ matrix.board }}
+        run: |
+          h="$HOME/handoff/$GITHUB_RUN_ID/images/${BOARD}"
+          rm -rf "$h"; mkdir -p "$h"
+          cp -a out/release/. "$h/"
+          [ -n "$(ls -A "$h")" ] || { echo "::error::no images for ${BOARD}"; exit 1; }
 
   # ───────────────────────────────────────────────────────────────────────
   release:
@@ -447,10 +507,23 @@ jobs:
     permissions:
       contents: write
     steps:
+      # No checkout in this job, so on the self-hosted runner its directory
+      # still holds the last release's files. Publishing those would attach
+      # another version's images to this tag.
+      - name: Start clean
+        run: rm -rf artifacts release
+
       - uses: actions/download-artifact@v4
+        if: runner.environment == 'github-hosted'
         with:
           pattern: parkezeos-*
           path: artifacts
+
+      - name: Take the images
+        if: runner.environment == 'self-hosted'
+        run: |
+          mkdir -p artifacts
+          cp -a "$HOME/handoff/$GITHUB_RUN_ID/images/." artifacts/
 
       - name: Collect
         run: |
