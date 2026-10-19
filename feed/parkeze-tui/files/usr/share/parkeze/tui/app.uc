@@ -39,6 +39,7 @@ let _m_fs = require('fs');
 let start, loop, draw, drawHeader, drawNav, drawBody, drawFooter, handleKey, handleEdit;
 let handleDialog, activate, moveFocus, openPath, current, navEntries, loadPage, tick;
 let signOut, signedIn, flash, makeCtx, pageFor, bodyBlocks, layoutBody, runAction, quit, banner, shell, qr, mayShell;
+let diagnostics;
 
 const LIB = getenv('PARKEZE_TUI_LIB') ?? '/usr/share/parkeze/tui';
 const load = (name) => loadfile(LIB + '/' + name + '.uc', { raw_mode: true })();
@@ -48,6 +49,7 @@ let ui = load('ui');
 let fmt = load('fmt');
 let api = load('api');
 let logo = loadfile(LIB + '/../logo.uc', { raw_mode: true })();
+let diag = load('diag');
 
 // The sidebar, in console/src/nav.ts's order and with its labels.
 const NAV = [
@@ -442,6 +444,21 @@ shell = function() {
     if (app.page) loadPage(app.page, true);
 };
 
+// `!` for everybody else signed in: logs and link state at a prompt that runs
+// fixed programs and nothing typed (diag.uc). An organization's admin at a
+// port needs the logs; the shell under them is Parkeze's.
+diagnostics = function() {
+    term.close();
+    const quiet = () => null;
+    for (let sig in [ 'SIGINT', 'SIGQUIT', 'SIGTSTP' ]) signal(sig, quiet);
+    try { diag(); } catch (e) {}
+    for (let sig in [ 'SIGINT', 'SIGQUIT', 'SIGTSTP' ]) signal(sig, 'default');
+    term.open(app.termOpts);
+    app.lastKey = time();
+    app.dirty = true;
+    if (app.page) loadPage(app.page, true);
+};
+
 quit = function() {
     if (app.console) {
         if (signedIn()) app.dialog = { kind: 'confirm', text: 'Sign out?', label: 'Sign out',
@@ -467,8 +484,9 @@ handleKey = function(key) {
     if (full) app.focus = 'page';
 
     // `!` for a shell, as less, vi and mutt have it. Not before sign-in, not
-    // before a forced password change, and only for a session mayShell allows.
-    if (key == '!' && !full && mayShell()) return shell();
+    // before a forced password change; a real shell only for a session
+    // mayShell allows, the diagnostic prompt for every other.
+    if (key == '!' && !full) return mayShell() ? shell() : diagnostics();
 
     if (app.focus == 'nav') {
         const entries = navEntries();
@@ -834,7 +852,7 @@ drawFooter = function(width) {
     if (app.dialog) keys = app.dialog.kind == 'confirm' ? 'Enter Confirm  Esc Cancel' : 'Enter Choose  Esc Cancel';
     else if (app.edit) keys = 'Enter Save  Esc Cancel';
     else {
-        const shellKey = mayShell() ? '! Shell  ' : '';
+        const shellKey = !signedIn() ? '' : mayShell() ? '! Shell  ' : '! Diagnostics  ';
         const quitKey = (app.console ? 'q Sign out' : 'q Quit') + (app.ssh ? '  Ctrl-C Disconnect' : '');
         if (app.focus == 'nav') keys = 'Enter Open  r Refresh  ' + shellKey + quitKey;
         else keys = signedIn() && app.path != '/password'
