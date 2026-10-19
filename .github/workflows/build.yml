@@ -54,7 +54,7 @@ jobs:
   # ───────────────────────────────────────────────────────────────────────
   check:
     name: Checks
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -217,7 +217,7 @@ jobs:
   console:
     name: Console
     needs: check
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -243,7 +243,7 @@ jobs:
   feed:
     name: Packages
     needs: console
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -304,7 +304,7 @@ jobs:
   boards:
     name: Discover boards
     needs: check
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
     outputs:
       matrix: ${{ steps.list.outputs.matrix }}
     steps:
@@ -349,7 +349,7 @@ jobs:
   image:
     name: ${{ matrix.board }}
     needs: [feed, boards]
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
     strategy:
       # One board failing should not hide whether the others build — a broken
       # RAK profile must not mask a working Pi image.
@@ -440,7 +440,7 @@ jobs:
     name: Release
     if: startsWith(github.ref, 'refs/tags/')
     needs: image
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
     permissions:
       contents: write
     steps:
