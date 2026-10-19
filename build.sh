@@ -643,8 +643,16 @@ build_feed() {
   local repo="${BUILD_DIR}/packages"
   mkdir -p "${repo}"
 
+  # Anything that is not a bench build ships compiled ucode, which needs a
+  # compiler at the gateway's exact ucode version. See scripts/harden-payload.sh.
+  local ucode=""
+  if [ "${PARKEZE_DEV:-0}" != 1 ]; then
+    ucode="$("${ROOT_DIR}/scripts/host-ucode.sh")" \
+      || die "no host ucode to compile the feed with (needs cmake and json-c)"
+  fi
+
   log "Building Parkeze feed"
-  "${ROOT_DIR}/scripts/build-feed.sh" "${FEED_DIR}" "${repo}" \
+  UCODE="${ucode}" "${ROOT_DIR}/scripts/build-feed.sh" "${FEED_DIR}" "${repo}" \
     "${PARKEZE_VERSION}" "${PARKEZE_BUILD}" "${PARKEZE_COMMIT}"
 }
 

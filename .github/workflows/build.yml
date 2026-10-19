@@ -314,10 +314,12 @@ jobs:
           fi
 
       # unsquashfs: the MIPS ChirpStack binaries are extracted from
-      # ChirpStack Gateway OS; see feed/chirpstack-gateway/fetch.
+      # ChirpStack Gateway OS; see feed/chirpstack-gateway/fetch. cmake and
+      # json-c: scripts/host-ucode.sh builds the compiler that ships the
+      # feed's ucode as bytecode.
       - name: Build the package feed
         run: |
-          sudo apt-get install -y squashfs-tools
+          sudo apt-get install -y squashfs-tools cmake libjson-c-dev
           ./build.sh --stage feed
 
       # Both halves of the overlay travel together: the .ipk repository, and

@@ -124,6 +124,13 @@ package_one() {
     mkdir -p "${stage}/data"
   fi
 
+  # A release ships our code without its source commentary: ucode compiled,
+  # shell comments dropped. Before fetch, so upstream binaries are left alone.
+  # build.sh sets UCODE for every build that is not a bench build.
+  if [ -n "${UCODE:-}" ]; then
+    "$(dirname "$0")/harden-payload.sh" "${stage}/data"
+  fi
+
   if [ -x "${pkgdir}/fetch" ]; then
     "${pkgdir}/fetch" "${want_arch}" "${stage}/data" "${CACHE_DIR}"
   fi
