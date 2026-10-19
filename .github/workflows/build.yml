@@ -104,6 +104,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake build-essential libjson-c-dev
+          # A self-hosted runner keeps /tmp between jobs, and the clone refuses
+          # a directory an earlier run left behind.
+          rm -rf /tmp/ucode
           git clone --depth 1 https://github.com/jow-/ucode /tmp/ucode
           cmake -B /tmp/ucode/build -DCMAKE_BUILD_TYPE=Release -DFS_SUPPORT=ON \
                 -DMATH_SUPPORT=ON -DUBUS_SUPPORT=OFF -DUCI_SUPPORT=OFF \
