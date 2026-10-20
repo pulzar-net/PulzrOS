@@ -38,19 +38,3 @@ export function bytes(value: number | null | undefined): string {
 export function count(value: number | null | undefined): string {
   return value == null ? '—' : value.toLocaleString();
 }
-
-/**
- * RSSI to a five-step quality band, matching the --signal-* tokens.
- *
- * The thresholds are the conventional LTE ones. They are here rather than
- * inline so the coverage colors mean the same thing everywhere they appear.
- */
-export function signalBand(
-  rssi: number | null | undefined,
-): 'none' | 'weak' | 'fair' | 'good' | 'strong' {
-  if (rssi == null) return 'none';
-  if (rssi < -100) return 'weak';
-  if (rssi < -85) return 'fair';
-  if (rssi < -70) return 'good';
-  return 'strong';
-}

@@ -59,16 +59,6 @@
      broken, and they used to. */
   --control-height: 34px;
 
-  /* ---- network signal scale ----
-     RSSI / SNR quality, weak → strong. Net-specific: the dashboard has no
-     equivalent, but these are derived from the shared status colors so a
-     coverage map still reads as Parkeze. */
-  --signal-none:   #cbd5e1;
-  --signal-weak:   #ef4444;
-  --signal-fair:   #f59e0b;
-  --signal-good:   #84cc16;
-  --signal-strong: #10b981;
-
   /* ---- charts ----
      Run through the dataviz palette validator against this surface, light and
      dark. The accent itself is too light to draw with on white (2.5:1), so a
@@ -109,12 +99,6 @@ html.dark {
   --accent:         #34d399;
   --accent-hover:   #10b981;
   --accent-subtle:  rgba(52,211,153,.08);
-
-  --signal-none:   #2a3a4e;
-  --signal-weak:   #f87171;
-  --signal-fair:   #fbbf24;
-  --signal-good:   #a3e635;
-  --signal-strong: #34d399;
 
   --chart-1:     #12a676;
   --chart-down:  #3987e5;
