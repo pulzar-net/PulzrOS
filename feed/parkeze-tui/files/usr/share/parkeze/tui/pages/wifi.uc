@@ -110,9 +110,14 @@ return function(ctx) {
             if (wifi.configured) {
                 push(out, { t: 'buttons', items: [ { label: 'Forget network', key: 'forget-current', run: () => forget(wifi.ssid) } ] });
                 push(out, { t: 'fact', label: 'Network', value: wifi.ssid });
-                push(out, { t: 'fact', label: 'State', value: ui.status(wifi.up, 'Connected', 'Not connected') });
+                // Signing in to a portal takes a browser: the console's Sign in,
+                // locally or through parkeze.net. Here it is a state and a MAC.
+                const warn = { portal: 'Sign-in required', offline: 'No internet', unchecked: 'Checking' };
+                push(out, { t: 'fact', label: 'State', value: ui.status(wifi.up, 'Connected', 'Not connected',
+                                                                         wifi.up ? warn[wifi.uplink] : null) });
                 push(out, { t: 'fact', label: 'Address', value: wifi.address });
                 push(out, { t: 'fact', label: 'Signal', value: wifi.signal != null ? sprintf('%d dBm', wifi.signal) : null });
+                push(out, { t: 'fact', label: 'MAC', value: wifi.mac });
                 if (detail.identity) push(out, { t: 'fact', label: 'Username', value: detail.identity });
                 if (detail.certSubject) push(out, { t: 'fact', label: 'Certificate', value: commonName(detail.certSubject) });
                 if (detail.certHash) push(out, { t: 'fact', label: 'SHA-256', value: fingerprint(detail.certHash) });

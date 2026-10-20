@@ -437,8 +437,12 @@ export interface AccessStatus {
         ssid: string;
         security: 'psk' | 'open' | 'eap';
         up: boolean;
+        /** Whether it reaches the internet: `portal` wants a sign-in first,
+            `offline` answers nothing. See parkeze-wifi-uplink. */
+        uplink: 'open' | 'portal' | 'offline' | 'unchecked';
         address: string | null;
         signal: number | null;
+        mac: string | null;
       };
 }
 

@@ -362,6 +362,11 @@ const ROUTES = {
         return respond(202, result);
     },
     'GET  /api/access/wifi/probe': (env, req, s) => respond(200, access.probeResult()),
+    'POST /api/access/wifi/signin': (env, req, s) => {
+        const result = actions.startSignin(req, s, clientAddr(env));
+        if (result.error) return error(409, result.error);
+        return respond(200, result);
+    },
 
     // ── io ──────────────────────────────────────────────────────────────────
     'GET  /api/io/status': () => respond(200, io.status()),

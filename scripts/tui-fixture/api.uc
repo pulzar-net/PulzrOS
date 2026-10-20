@@ -76,7 +76,7 @@ return {
         status: () => ({ ap: { capable: true, up: false, enabled: false, secured: false, ssid: 'Parkeze-1234AB', clients: 0 },
             port: { hostname: 'parkeze-1234ab', console: '192.168.61.1', uplink: '10.20.0.57' },
             usb: { present: true, connected: true, name: 'parkeze.local', address: '192.168.63.1', serial: '/dev/ttyGS0' },
-            wifi: { configured: true, ssid: 'Site-Ops', security: 'psk', up: true, address: '10.30.1.8', signal: -58 } }),
+            wifi: { configured: true, ssid: 'Site-Ops', security: 'psk', up: true, uplink: 'portal', address: '10.30.1.8', signal: -58, mac: 'a8:40:41:1c:22:9e' } }),
         wifiDetail: () => ({ configured: true, saved: [ { ssid: 'Site-Ops', security: 'psk', active: true }, { ssid: 'eduroam', security: 'eap', active: false } ] }),
         scan: () => ({ capable: true, networks: [ { ssid: 'Site-Ops', signal: -58, quality: 52, encryption: 'psk' }, { ssid: 'eduroam', signal: -70, quality: 40, encryption: 'eap' }, { ssid: 'Guest', signal: -80, quality: 30, encryption: 'open' } ] }),
         key: () => ({ key: 'kq7-WT2m-pX9z' }),

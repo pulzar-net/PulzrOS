@@ -42,6 +42,44 @@ Two properties make it safe to offer:
 > that a gateway should not put itself on an unassessed network. That was the
 > wrong trade: the first thing anyone does with a new gateway is plug it in.
 
+### WiFi counts once it reaches the internet
+
+A joined WiFi network (`wwifi`, joined from the console) sits between the two:
+free like ethernet, so preferred to cellular, at metric 15 — but only once
+`parkeze-wifi-uplink` has seen it reach the internet.
+
+A guest network hands out a lease and a default gateway before anybody has
+signed in to it, and netifd calls that interface up. Before this check, that
+was enough: the WiFi beat cellular for every packet, and the tunnel and the
+LoRa routing both pinned themselves to it — all of it into a network that
+answers nothing but its own sign-in page.
+
+So the check asks, out of the WiFi device and nowhere else, for a URL that
+answers 204 when the internet is there. It runs when the link comes up and once
+a minute after (free: the WiFi is not billed), and its answer is one of:
+
+| Answer | Meaning | Metric | Tunnel and LoRa may use it |
+|---|---|---|---|
+| `open` | 204 | 15 | yes |
+| `portal` | a redirect or a page | 30 | no |
+| `offline` | no answer | 30 | no |
+| `unchecked` | not asked yet | 30 (as joined) | no |
+
+Metric 30 rather than no route: the check needs one to send its own request out
+of the radio, and behind both other uplinks nothing picks it.
+
+The probe's name is asked of the WiFi's own DNS servers, on a socket bound to
+the WiFi device (`parkeze-wifi-resolve`), and the sign-in proxy resolves the
+same way. Not the gateway's resolver: it may ask over cellular and get the real
+address, where a portal that hijacks DNS answers with its own. Not `nslookup`
+against the WiFi's servers either: with the WiFi at metric 30 the route to them
+is the SIM's, which is how USCGuest's OpenDNS was first asked over cellular.
+And not a host route to those servers, which would move every lookup the
+gateway makes onto a captive WiFi and send MQTT and reports to the portal. A change of
+answer re-applies the tunnel and LoRa routing and sends a report, so
+parkeze.net shows `wifiUplink` beside the gateway. `roam()` treats `portal` and
+`offline` as down, except while somebody is signing in (see access.md).
+
 ### Nothing is accepted from the wan zone
 
 This is the rule that makes a wired backhaul safe, and it is worth stating

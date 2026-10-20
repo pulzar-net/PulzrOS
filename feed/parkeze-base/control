@@ -1,6 +1,6 @@
 Package: parkeze-base
 Version: @VERSION@-@BUILD@
-Depends: ucode, ucode-mod-uci, ucode-mod-fs, ucode-mod-ubus, uci, ip-full, openssh-server, openssh-keygen, dropbearconvert
+Depends: ucode, ucode-mod-uci, ucode-mod-fs, ucode-mod-ubus, uci, ip-full, curl, jshn, jsonfilter, ucode-mod-socket, openssh-server, openssh-keygen, dropbearconvert
 Source: parkeze
 Section: base
 Priority: optional

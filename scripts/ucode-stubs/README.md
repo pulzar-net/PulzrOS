@@ -12,4 +12,4 @@ module. That turns "I assumed ucode's fs had this" into a compile error rather
 than a 500 on a gateway in a car park.
 
 Sources of truth:
-  fs, uci, ubus, digest — https://github.com/jow-/ucode/tree/master/lib
+  fs, uci, ubus, digest, socket — https://github.com/jow-/ucode/tree/master/lib

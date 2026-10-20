@@ -1,10 +1,13 @@
 #!/bin/sh
 #
-# Once a minute, ask whether the WiFi uplink should move to another
-# remembered network. The decision is roam() in the console's access.uc —
-# kept there because joining is there, and a roam is a join.
+# Once a minute, ask whether the WiFi uplink reaches the internet
+# (parkeze-wifi-uplink), then whether it should move to another remembered
+# network. The decision is roam() in the console's access.uc — kept there
+# because joining is there, and a roam is a join. The check comes first
+# because roam() reads its answer: a network behind a portal counts as gone.
 
 while :; do
     sleep 60
+    /usr/sbin/parkeze-wifi-uplink check >/dev/null 2>&1
     ucode /usr/share/parkeze/console/wifi-roam.uc >/dev/null 2>&1
 done

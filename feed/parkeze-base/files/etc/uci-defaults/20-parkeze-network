@@ -198,7 +198,7 @@ set firewall.console_${n}.name='Allow-console-${n}'
 set firewall.console_${n}.src='wan'
 set firewall.console_${n}.src_ip='${src}'
 set firewall.console_${n}.proto='tcp'
-set firewall.console_${n}.dest_port='22 80 443'
+set firewall.console_${n}.dest_port='22 80 443 8443'
 set firewall.console_${n}.target='ACCEPT'
 EOF
 done
@@ -246,6 +246,10 @@ EOF
 #
 # `device` rather than `network`: wg0 is created by parkeze-wireguard, not by
 # netifd, and does not exist until the gateway has enrolled.
+#
+# 8443 is the WiFi sign-in proxy (signin.uc in parkeze-console), on a port of
+# its own so a portal's page never shares an origin with the console. It is
+# opened wherever the console is, because it is reached the same ways.
 uci -q batch <<EOF
 set firewall.mgmt=zone
 set firewall.mgmt.name='mgmt'
@@ -258,7 +262,7 @@ set firewall.mgmt_console=rule
 set firewall.mgmt_console.name='Allow-management-tunnel'
 set firewall.mgmt_console.src='mgmt'
 set firewall.mgmt_console.proto='tcp'
-set firewall.mgmt_console.dest_port='22 80 443'
+set firewall.mgmt_console.dest_port='22 80 443 8443'
 set firewall.mgmt_console.target='ACCEPT'
 EOF
 
@@ -292,7 +296,7 @@ set firewall.cellular_console=rule
 set firewall.cellular_console.name='Allow-cellular-management'
 set firewall.cellular_console.src='cellular'
 set firewall.cellular_console.proto='tcp'
-set firewall.cellular_console.dest_port='22 80 443'
+set firewall.cellular_console.dest_port='22 80 443 8443'
 set firewall.cellular_console.target='ACCEPT'
 EOF
 

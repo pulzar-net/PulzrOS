@@ -117,9 +117,10 @@ open_window() {
     printf '{"id":"%s","expires":%d,"subnet":"%s"}\n' \
         "${id}" "${expires}" "${subnet}" > "${STATE}"
 
-    # SSH as well as the console, the same three ports the permanent carve-outs
-    # open. Deploying a console build to a bench gateway is an scp.
-    printf 'ip saddr %s tcp dport { 22, 80, 443 } accept comment "%s"\n' \
+    # SSH as well as the console and its WiFi sign-in port, the same ports the
+    # permanent carve-outs open. Deploying a console build to a bench gateway
+    # is an scp.
+    printf 'ip saddr %s tcp dport { 22, 80, 443, 8443 } accept comment "%s"\n' \
         "${subnet}" "${TAG}" > "${RULES}"
 
     firewall_reload

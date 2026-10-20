@@ -100,6 +100,32 @@ set uhttpd.main.no_symlinks='1'
 EOF
 uci commit uhttpd
 
+# ── The WiFi sign-in proxy ──────────────────────────────────────────────────
+#
+# A second instance, on a port of its own, so a portal's page is never served
+# from the console's origin — see lib/signin.uc. It shares the console's
+# certificate and nothing else: no /api, and no static files beyond a page
+# that points at /signin/.
+uci -q delete uhttpd.signin
+uci -q batch <<EOF
+set uhttpd.signin=uhttpd
+add_list uhttpd.signin.listen_https='0.0.0.0:8443'
+set uhttpd.signin.home='/www/parkeze-signin'
+set uhttpd.signin.cgi_prefix=''
+add_list uhttpd.signin.ucode_prefix='/signin=/usr/share/parkeze/console/signin.uc'
+set uhttpd.signin.cert='${STATE}/cert.pem'
+set uhttpd.signin.key='${STATE}/key.pem'
+set uhttpd.signin.rfc1918_filter='0'
+set uhttpd.signin.max_requests='8'
+set uhttpd.signin.max_connections='32'
+set uhttpd.signin.script_timeout='60'
+set uhttpd.signin.network_timeout='30'
+set uhttpd.signin.http_keepalive='20'
+set uhttpd.signin.no_dirlists='1'
+set uhttpd.signin.no_symlinks='1'
+EOF
+uci commit uhttpd
+
 # ── TLS ─────────────────────────────────────────────────────────────────────
 # Self-signed and generated on the device, so no two gateways share a key.
 # A browser will warn, which is correct and unavoidable for a device on a

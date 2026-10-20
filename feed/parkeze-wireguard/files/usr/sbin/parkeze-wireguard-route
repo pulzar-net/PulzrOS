@@ -103,6 +103,15 @@ iface_gateway() {
   echo "${gw} ${dev}"
 }
 
+# The WiFi's lease, only once parkeze-wifi-uplink has seen it reach the
+# internet. A guest network hands out a lease and a gateway before anybody has
+# signed in, and the tunnel pinned there sent its keepalives into the sign-in
+# page. parkeze-wifi-uplink re-runs `apply` when its answer changes.
+wifi_gateway() {
+  /usr/sbin/parkeze-wifi-uplink usable 2>/dev/null || return 1
+  iface_gateway "${WIFI_IFACE}"
+}
+
 # Tell parkeze.net promptly when the tunnel's path actually changes, rather
 # than however long it takes the six-hourly report or a stale handshake to
 # say so. `parkeze-claim report` already no-ops in half a second when this
@@ -127,7 +136,7 @@ apply() {
   # tunnel is kept off cellular is the bill — see the header — and joining
   # somebody's WiFi does not produce one. A gateway backhauled over WiFi with
   # no tunnel would be a gateway nobody can reach for no reason at all.
-  elif spec="$(iface_gateway "${WIFI_IFACE}")"; then
+  elif spec="$(wifi_gateway)"; then
     via=wifi
   elif [ "${PARKEZE_WIREGUARD_ALLOW_CELLULAR:-0}" = "1" ] \
        && spec="$(iface_gateway "${CELL_IFACE}")"; then
@@ -193,7 +202,7 @@ status() {
   # The same order apply() pins the tunnel in: wired, then WiFi, then
   # cellular. This used to skip WiFi, so a gateway whose tunnel was on WiFi
   # told parkeze.net it was wired.
-  if iface_gateway "${WIFI_IFACE}" >/dev/null; then
+  if wifi_gateway >/dev/null; then
     wifi_usable="true"
     [ "${via}" = "none" ] && via=wifi
   fi

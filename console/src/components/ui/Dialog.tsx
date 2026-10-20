@@ -11,12 +11,18 @@ export default function Dialog({
   onClose,
   title,
   actions,
+  footer,
+  size = 'large',
   children,
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
   actions?: ReactNode;
+  footer?: ReactNode;
+  // compact sizes to its content: a question with a couple of facts, not a
+  // table that needs the screen.
+  size?: 'large' | 'compact';
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -31,7 +37,7 @@ export default function Dialog({
   return (
     <dialog
       ref={ref}
-      className={styles.dialog}
+      className={`${styles.dialog} ${size === 'compact' ? styles.compact : ''}`}
       onClose={onClose}
       // A click on the backdrop lands on the dialog element itself.
       onClick={(event) => event.target === event.currentTarget && onClose()}
@@ -46,6 +52,7 @@ export default function Dialog({
             </button>
           </header>
           <div className={styles.body}>{children}</div>
+          {footer && <footer className={styles.footer}>{footer}</footer>}
         </div>
       )}
     </dialog>

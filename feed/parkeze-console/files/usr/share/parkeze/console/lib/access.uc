@@ -20,6 +20,8 @@ let readfile = _m_fs.readfile;
 let _m_uci = require('uci');
 let cursor = _m_uci.cursor;
 let _m_util = loadfile('/usr/share/parkeze/console/lib/util.uc', { raw_mode: true })();
+let signin = loadfile('/usr/share/parkeze/console/lib/signin.uc', { raw_mode: true })();
+let wififail = loadfile('/usr/share/parkeze/console/lib/wififail.uc', { raw_mode: true })();
 
 // ── forward declarations ────────────────────────────────────────────────────
 //
@@ -103,15 +105,18 @@ status = function() {
             if (!ssid) return { configured: false };
             const link = runJson('ubus call network.interface.wwifi status') || {};
             const addresses = link['ipv4-address'] || [];
-            // Signal, from the station interface the radio actually created
-            // for this section; its name is the driver's choice, not ours.
-            let signal = null;
+            // Signal and MAC, from the station interface the radio actually
+            // created for this section; its name is the driver's choice, not
+            // ours. The MAC is what a site's IT registers to let the gateway
+            // past a portal for good.
+            let signal = null, mac = null;
             const radios = runJson('ubus call network.wireless status') || {};
             for (let name in radios)
                 for (let iface in (radios[name].interfaces || []))
                     if (iface.section == 'parkeze_sta' && iface.ifname) {
                         const info = runJson(sprintf('ubus call iwinfo info \'{"device":"%s"}\'', iface.ifname)) || {};
                         signal = info.signal ?? null;
+                        mac = trim(readfile(sprintf('/sys/class/net/%s/address', iface.ifname)) || '') || null;
                     }
             return {
                 configured: true,
@@ -121,8 +126,13 @@ status = function() {
                 // wifiDetail().
                 security: security(uci.get('wireless', 'parkeze_sta', 'encryption')),
                 up: link.up == true,
+                // Whether it reaches the internet or only a sign-in page — see
+                // parkeze-wifi-uplink. The portal's address is behind sign-in,
+                // in wifiDetail().
+                uplink: signin.uplink().state,
                 address: length(addresses) ? addresses[0].address : null,
                 signal: signal,
+                mac: mac,
             };
         })(),
     };
@@ -368,11 +378,13 @@ applyNetwork = function(uci, radio, net) {
     // that was off, and never came up.
     uci.set('wireless', radio, 'disabled', '0');
 
-    // Its own interface in the wan zone, with a metric between wired and
-    // cellular: better than paying for data, worse than a cable.
+    // Its own interface in the wan zone. Behind cellular until
+    // parkeze-wifi-uplink has seen it reach the internet, which moves it to
+    // 15, between wired and cellular: better than paying for data, worse than
+    // a cable. A guest network has a lease long before it carries anything.
     uci.set('network', 'wwifi', 'interface');
     uci.set('network', 'wwifi', 'proto', 'dhcp');
-    uci.set('network', 'wwifi', 'metric', '15');
+    uci.set('network', 'wwifi', 'metric', '30');
 
     // Into the wan zone with the wired uplink. An interface in no zone falls
     // to fw4's default chains — safe, because 20-parkeze-network sets those to
@@ -464,6 +476,10 @@ forgetWifi = function(req) {
 
 // Move to another remembered network when this one has been gone a while.
 //
+// Gone means down, or up and not reaching the internet: behind a portal, or
+// answering nothing (parkeze-wifi-uplink). Not while somebody is signing in to
+// that portal, which a scan would take off the air under them.
+//
 // Called once a minute by parkeze-wifi-roam. Deliberately slow and
 // conservative: three minutes of a dead uplink before scanning, a remembered
 // network only (never a new one), the strongest of those in range, and not
@@ -476,12 +492,14 @@ roam = function() {
     const active = uci.get('wireless', 'parkeze_sta', 'ssid');
     if (!active) return { action: 'none', reason: 'no wifi uplink' };
     if (uci.get('wireless', 'parkeze_ap')) return { action: 'none', reason: 'setup AP is up' };
+    if (signin.active()) return { action: 'none', reason: 'signing in' };
 
     let state = {};
     try { state = json(readfile(ROAM_STATE) || '{}') || {}; } catch (e) { state = {}; }
     const now = time();
     const link = runJson('ubus call network.interface.wwifi status') || {};
-    if (link.up) {
+    const reached = signin.uplink().state;
+    if (link.up && reached != 'portal' && reached != 'offline') {
         writefile(ROAM_STATE, sprintf('%J', { roamedAt: state.roamedAt }));
         return { action: 'none', reason: 'up' };
     }
@@ -562,9 +580,15 @@ wifiDetail = function() {
     }));
     if (!ssid) return { configured: false, saved };
     const current = findSaved(uci, ssid) || {};
+    const reached = signin.uplink();
     return {
         configured: true,
         ssid: ssid,
+        // Where the network's sign-in page is, while it has one.
+        portal: reached.state == 'portal' ? reached.url : null,
+        // Why it is not connected, when wpa_supplicant said. The RADIUS
+        // server's own words are in it, so it is here and not in status().
+        failure: wififail.last(),
         security: security(uci.get('wireless', 'parkeze_sta', 'encryption')),
         method: uci.get('wireless', 'parkeze_sta', 'eap_type'),
         phase2: uci.get('wireless', 'parkeze_sta', 'auth'),

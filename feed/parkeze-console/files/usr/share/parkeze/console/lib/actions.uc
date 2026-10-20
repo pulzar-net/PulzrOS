@@ -21,6 +21,7 @@ let io = loadfile('/usr/share/parkeze/console/lib/io.uc', { raw_mode: true })();
 let access = loadfile('/usr/share/parkeze/console/lib/access.uc', { raw_mode: true })();
 let firmware = loadfile('/usr/share/parkeze/console/lib/firmware.uc', { raw_mode: true })();
 let bluetooth = loadfile('/usr/share/parkeze/console/lib/bluetooth.uc', { raw_mode: true })();
+let signin = loadfile('/usr/share/parkeze/console/lib/signin.uc', { raw_mode: true })();
 
 // ucode does not hoist function declarations; see util.uc.
 let audited;
@@ -76,6 +77,10 @@ const ACTIONS = {
         access.joinWifi(req)),
     probeWifi: (req, s) => audited('wifi.probe', { by: s.subject, ssid: req.ssid },
                                    access.probeWifi(req)),
+    // A ticket into the WiFi sign-in proxy; see lib/signin.uc. `addr` is the
+    // caller's address, which says which URL opens the proxy.
+    startSignin: (req, s, addr) => audited('wifi.signin', { by: s.subject },
+                                           signin.mintTicket(s.subject, addr)),
 
     // ── io ──────────────────────────────────────────────────────────────────
     ioTest: (req, s) => { auth.audit('io.test', { by: s.subject }); return io.test(); },

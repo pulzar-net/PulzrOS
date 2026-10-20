@@ -98,6 +98,42 @@ The console then decides what to show based on adoption state. The portal is
 not a separate application — it is the same React console, which is why there
 is no second UI to keep in step.
 
+## Signing the gateway in to a WiFi portal
+
+The other direction: a WiFi network the gateway joined wants somebody to click
+through its sign-in page (`parkeze-wifi-uplink` says `portal`, backhaul.md).
+That somebody has to be the gateway, since a portal admits the device that
+loaded it, by MAC and address. So the console's **Sign in** on the WiFi page
+opens the network's page *as the gateway*: a proxy on the gateway fetches it out
+of the WiFi radio and hands it to the browser — whether that browser is on the
+cable, on the setup AP, or on parkeze.net with the gateway on cellular.
+
+- **Its own origin.** A portal's page is somebody else's HTML and script, and on
+  the console's origin it could use the console session. The proxy is a second
+  uhttpd on **8443** (`signin.uc`), opened wherever the console is, and the
+  console's own listener has no `/signin`. Through parkeze.net it is a second
+  device host for the same gateway: the console asks its own host for
+  `/__signin`, and net-api opens one that reaches 8443 (net-db 098).
+- **Getting in.** The console, signed in, mints a one-use ticket good for a
+  minute; the proxy trades it for a cookie on its own origin, good for half an
+  hour.
+- **When it answers.** While the network is `portal` or `offline`, and for ten
+  minutes after it opens. Not otherwise: on an open network it would be a way
+  into whatever is behind the customer's WiFi.
+- **Names.** A portal's hostnames are resolved by the WiFi network's own DNS
+  servers, out of the WiFi device (`parkeze-wifi-resolve`), so a portal that
+  answers every name with its own address is followed to its page.
+- **What it passes on.** Never the browser's cookies (on a local address those
+  include the console's session) or its Authorization. The portal's cookies
+  stay in one jar on the gateway. A certificate the gateway does not trust
+  gets a page that says so and a link to continue, as a browser asks.
+- **What it cannot follow.** Links in HTML and CSS, redirects, and fetch/XHR
+  are rewritten. A script that builds an absolute URL and assigns it to
+  `location` is not; such a portal does not load through it.
+
+The better answer at a site that has one is the network's own device
+registration: the WiFi page shows the station's MAC for exactly that.
+
 ## The ethernet port
 
 A Pi has one ethernet socket. It is the uplink **and** the console port, at the

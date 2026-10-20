@@ -175,4 +175,7 @@ else
     emit failed "No certificate from ${ssid}. Check the name and that the gateway is in range."
 fi
 restore
+# The console's failure reader (lib/wififail.uc) skips everything between
+# start and end: these handshakes fail on purpose.
+logger -t parkeze-wifi-probe "end ${nonce}"
 exit 0

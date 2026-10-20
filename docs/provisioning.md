@@ -74,9 +74,10 @@ online.
 ## When the claim is revoked
 
 parkeze.net revokes every claim a gateway was adopted with when it is
-transferred to another organization or released: the previous owner had root,
-so has the secret. From then on its reports and tunnel enrolments are answered
-404 `No such gateway.`.
+released, or adopted again by code. A transfer to another organization does
+not: the claim is the gateway's identity, and the previous owner has no root
+to have read the secret with. From then on its reports and tunnel enrolments
+are answered 404 `No such gateway.`.
 
 The gateway stays adopted. It keeps forwarding and keeps its tunnel, and after
 two such answers a minute apart it mints a second claim beside the first and

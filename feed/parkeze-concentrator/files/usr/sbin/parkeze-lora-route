@@ -98,6 +98,15 @@ iface_gateway() {
     echo "${gw} ${dev}"
 }
 
+# The WiFi's lease, only once parkeze-wifi-uplink has seen it reach the
+# internet: a guest network has a gateway before anybody has signed in, and
+# uplinks confined there went into its sign-in page. It re-runs `apply` when
+# its answer changes.
+wifi_gateway() {
+    /usr/sbin/parkeze-wifi-uplink usable 2>/dev/null || return 1
+    iface_gateway "${WIFI_IFACE}"
+}
+
 flush() {
     while ip rule del fwmark "${MARK}/${MASK}" table "${TABLE}" 2>/dev/null; do :; done
     while ip rule del fwmark "${MARK}/${MASK}" unreachable 2>/dev/null; do :; done
@@ -152,7 +161,7 @@ EOF
     if set -- $(iface_gateway "${WIRED_IFACE}"); [ -n "${1:-}" ]; then
         ip route replace default via "$1" dev "$2" table "${TABLE}"
         log "uplinks confined to wired (${2}), port ${port}"
-    elif set -- $(iface_gateway "${WIFI_IFACE}"); [ -n "${1:-}" ]; then
+    elif set -- $(wifi_gateway); [ -n "${1:-}" ]; then
         ip route replace default via "$1" dev "$2" table "${TABLE}"
         log "uplinks confined to WiFi (${2}), port ${port}"
     else
@@ -172,7 +181,7 @@ status)
     allowed=false; allow_cellular && allowed=true
     wired=false; wifi=false
     iface_gateway "${WIRED_IFACE}" >/dev/null 2>&1 && wired=true
-    iface_gateway "${WIFI_IFACE}" >/dev/null 2>&1 && wifi=true
+    wifi_gateway >/dev/null 2>&1 && wifi=true
     # Sending right now means: allowed anywhere, or confined with a free
     # link up.
     sending=false

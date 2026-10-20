@@ -86,7 +86,7 @@ delete firewall.setup_console
 set firewall.setup_console=rule
 set firewall.setup_console.name='Setup console'
 set firewall.setup_console.src='setup'
-set firewall.setup_console.dest_port='80 443'
+set firewall.setup_console.dest_port='80 443 8443'
 set firewall.setup_console.proto='tcp'
 set firewall.setup_console.target='ACCEPT'
 EOF

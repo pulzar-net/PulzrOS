@@ -56,13 +56,14 @@
 # ── WHEN THE CLAIM IS REVOKED ──────────────────────────────────────────────
 #
 # parkeze.net revokes every claim a gateway was adopted with when it is
-# transferred to another organization or released: the previous owner had root
-# on it, so holds the secret. From then on /report and /wireguard/enroll answer
+# released or adopted again by code. A transfer no longer does: the claim is
+# the gateway's identity, and the previous owner has no root to have read the
+# secret with. From then on /report and /wireguard/enroll answer
 # 404 "No such gateway." and /claim/poll 404 "No such claim.", and nothing the
 # old secret can prove will be accepted again.
 #
 # The gateway does not stop working when that happens. Its LoRa identity and
-# its tunnel survive a transfer, so it keeps them, stays adopted, and mints a
+# its tunnel survive it, so it keeps them, stays adopted, and mints a
 # second claim beside the first (next/) for the new owner to adopt. That claim
 # is shown wherever the first one was — the console, the terminal UI, the login
 # banner, the status LED — and polled on a backoff counted from when it was
@@ -256,7 +257,7 @@ reached_recently() {
 }
 
 # What parkeze.net answers when the claim in a request no longer proves this
-# gateway: transferred, released, or decommissioned. Matched on the sentence as
+# gateway: released, adopted again by code, or decommissioned. Matched on the sentence as
 # well as the status, because a 404 alone is also what a proxy in front of a
 # half-deployed API says ("Not found").
 revoked_answer() {
@@ -520,7 +521,7 @@ apply_offline() {
 # checked against a hash parkeze.net stored at registration.
 
 facts() {
-    local modem wired board_id version modem_present modem_model wired_usable tunnel iccid host_key tunnel_via ssh_ca
+    local modem wired board_id version modem_present modem_model wired_usable tunnel iccid host_key tunnel_via ssh_ca wifi_uplink
 
     modem="$(parkeze-modem-detect --status 2>/dev/null || echo '{"present":false}')"
     wired="$(parkeze-wireguard-route status 2>/dev/null || echo '{"wiredUsable":false}')"
@@ -549,6 +550,13 @@ facts() {
     # report parkeze-wireguard-route fires on a transition.
     tunnel_via="$(echo "${wired}" | jsonfilter -e '@.via' 2>/dev/null)" || true
     tunnel="$(parkeze-backhaul-check --tunnel 2>/dev/null)" || true
+    # Whether the WiFi uplink reaches the internet or is waiting at a portal
+    # for somebody to sign the gateway in (parkeze-wifi-uplink), and "none"
+    # without one. parkeze-wifi-uplink reports again when it changes.
+    wifi_uplink=none
+    if [ -n "$(uci -q get wireless.parkeze_sta.ssid)" ]; then
+        wifi_uplink="$(parkeze-wifi-uplink status 2>/dev/null | jsonfilter -e '@.state' 2>/dev/null)" || true
+    fi
 
     # jsonfilter prints nothing for a missing key, and an empty string is not
     # valid JSON in the value position. Default every field rather than emit a
@@ -559,9 +567,9 @@ facts() {
     board_id="${BOARD_ID:-unknown}"
     version="${PARKEZE_VERSION:-0.0.0}"
 
-    printf '{"board":"%s","osVersion":"%s","modemPresent":%s,"modemModel":"%s","simIccid":"%s","sshHostKey":"%s","wiredUsable":%s,"tunnelVia":"%s","tunnelState":"%s","consolePort":443,"consoleScheme":"https","sshPort":22,"sshCa":%s,"system":%s}' \
+    printf '{"board":"%s","osVersion":"%s","modemPresent":%s,"modemModel":"%s","simIccid":"%s","sshHostKey":"%s","wiredUsable":%s,"tunnelVia":"%s","tunnelState":"%s","wifiUplink":"%s","consolePort":443,"consoleScheme":"https","sshPort":22,"sshCa":%s,"system":%s}' \
         "${board_id}" "${version}" "${modem_present}" "${modem_model:-}" "${iccid:-}" \
-        "${host_key:-}" "${wired_usable}" "${tunnel_via:-none}" "${tunnel:-none}" "${ssh_ca}" "$(system_facts)"
+        "${host_key:-}" "${wired_usable}" "${tunnel_via:-none}" "${tunnel:-none}" "${wifi_uplink:-unchecked}" "${ssh_ca}" "$(system_facts)"
 }
 
 # The same key=value facts the MQTT forwarder attaches to LoRaWAN stats, as a

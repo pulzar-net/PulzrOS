@@ -58,7 +58,7 @@ set firewall.usb_console=rule
 set firewall.usb_console.name='Allow-USB-console'
 set firewall.usb_console.src='usb'
 set firewall.usb_console.proto='tcp'
-set firewall.usb_console.dest_port='22 80 443'
+set firewall.usb_console.dest_port='22 80 443 8443'
 set firewall.usb_console.target='ACCEPT'
 
 delete firewall.usb_dhcp

@@ -1,0 +1,155 @@
+#!/bin/sh
+#
+# Whether the WiFi uplink reaches the internet, or only a sign-in page.
+#
+#   parkeze-wifi-uplink check     ask once, out of the WiFi radio, and act on it
+#   parkeze-wifi-uplink usable    exit 0 when the WiFi may carry traffic
+#   parkeze-wifi-uplink status    the last answer, as JSON
+#
+# ── WHY ────────────────────────────────────────────────────────────────────
+#
+# A guest network hands out an address and a default gateway before anybody
+# has signed in, and netifd calls an interface with a gateway "up". So did
+# everything here. At metric 15 the WiFi then beat cellular for every packet
+# the gateway sent, and the tunnel and LoRa routing both pinned themselves to
+# it: MQTT, the management tunnel and the uplinks all went into a network that
+# answers nothing but its own sign-in page.
+#
+# ── THE QUESTION ───────────────────────────────────────────────────────────
+#
+# One plain-HTTP GET for a URL that answers 204 with no body when the internet
+# is really there, sent out of the WiFi device and nowhere else (curl
+# --interface binds the socket to it). WiFi is not billed, so this costs
+# nothing however often it runs.
+#
+#   204                 open
+#   a redirect, a page  portal
+#   no answer           offline
+#
+# For either of the last two, `url` is where a browser signing the gateway in
+# should start: where the portal pointed, or the probe URL itself, which a
+# portal that drops what it does not recognise may still answer from a
+# browser. The console's sign-in proxy (signin.uc) opens it.
+#
+# The name is asked of the WiFi network's own DNS servers, out of the WiFi
+# device (parkeze-wifi-resolve), never of the gateway's resolver: that may ask
+# over cellular and get the real address, where a portal that hijacks DNS
+# answers with its own, which is the one that leads to its page. No answer
+# from the WiFi's DNS at all is offline.
+#
+# ── WHAT AN ANSWER DOES ────────────────────────────────────────────────────
+#
+#   open        metric 15: ahead of cellular, behind a cable.
+#   otherwise   metric 30: behind both, so nothing picks it while anything else
+#               is up. Still a route, not none: this check needs one to send
+#               its own request out of the radio.
+#
+# The tunnel and LoRa routing ask `usable` themselves and are re-applied here
+# when the answer changes. Until the first answer the WiFi is not usable — the
+# console joins a network at metric 30 for the same reason — and the hotplug
+# handler asks within seconds of the link coming up.
+
+. /lib/functions/network.sh
+. /usr/share/libubox/jshn.sh
+
+IFACE=wwifi
+STATE=/var/run/parkeze/wifi-uplink.json
+BODY=/var/run/parkeze/wifi-uplink.body
+PROBE_URL="${PARKEZE_WIFI_PROBE_URL:-http://connectivitycheck.gstatic.com/generate_204}"
+OPEN_METRIC=15
+HELD_METRIC=30
+
+log() { logger -t wifi-uplink -p daemon.info "$*"; }
+
+last() { [ -f "${STATE}" ] && jsonfilter -i "${STATE}" -e "@.$1" 2>/dev/null; }
+
+# A portal's address goes into a URL the console builds and in front of
+# whoever signs in, so it has to look like one and nothing else.
+clean_url() {
+    case "$1" in http://*|https://*) ;; *) return ;; esac
+    printf '%s' "$1" | tr -cd 'A-Za-z0-9._~:/?#@!$&()*+,;=%-' | cut -c1-2048
+}
+
+# Where a 200 page sends the browser, when it says: a meta refresh or a
+# script assigning location. Otherwise the probe URL itself, which is what the
+# portal answered and will answer again.
+page_target() {
+    sed -n \
+        -e "s/.*[Hh][Tt][Tt][Pp]-[Ee][Qq][Uu][Ii][Vv]=[\"']*[Rr]efresh.*[Uu][Rr][Ll]=\([^\"' >]*\).*/\1/p" \
+        -e "s/.*location\(\.href\)\{0,1\} *= *[\"']\(https\{0,1\}:[^\"']*\)[\"'].*/\2/p" \
+        "${BODY}" 2>/dev/null | head -n1
+}
+
+write() {
+    mkdir -p "${STATE%/*}"
+    json_init
+    json_add_string state "$1"
+    [ -n "$2" ] && json_add_string url "$2"
+    json_add_int since "$3"
+    json_add_int checkedAt "$(date +%s)"
+    json_dump > "${STATE}.tmp" && mv "${STATE}.tmp" "${STATE}"
+}
+
+# Only when it differs: it is a write to flash and a network reload.
+set_metric() {
+    [ "$(uci -q get network.${IFACE}.metric)" = "$1" ] && return 0
+    uci -q set network.${IFACE}.metric="$1"
+    uci -q commit network
+    ubus call network reload >/dev/null 2>&1
+}
+
+check() {
+    local dev out code location verdict url now previous since hostport host port ip
+
+    # No WiFi uplink, or not associated: nothing to ask, and no answer to keep.
+    # The next one belongs to whatever network comes up next.
+    if ! network_get_device dev "${IFACE}" || [ -z "${dev}" ] \
+       || ! network_get_gateway location "${IFACE}" || [ -z "${location}" ]; then
+        rm -f "${STATE}"
+        return 0
+    fi
+
+    hostport="${PROBE_URL#http://}"; hostport="${hostport%%/*}"
+    host="${hostport%%:*}"; port=80
+    [ "${hostport}" = "${host}" ] || port="${hostport#*:}"
+    ip="$(/usr/sbin/parkeze-wifi-resolve "${host}" 2>/dev/null)"
+    out='000 '
+    [ -n "${ip}" ] && out="$(curl -4 -s -o "${BODY}" --max-filesize 65536 --interface "${dev}" \
+        --resolve "${host}:${port}:${ip}" --connect-timeout 5 --max-time 10 \
+        -w '%{http_code} %{redirect_url}' "${PROBE_URL}" 2>/dev/null)"
+    code="${out%% *}"
+    location="${out#* }"
+
+    case "${code}" in
+        204)       verdict=open ;;
+        000|'')    verdict=offline ;;
+        3??)       verdict=portal; url="$(clean_url "${location}")" ;;
+        *)         verdict=portal; url="$(clean_url "$(page_target)")" ;;
+    esac
+    rm -f "${BODY}"
+    [ "${verdict}" != open ] && [ -z "${url}" ] && url="${PROBE_URL}"
+
+    now="$(date +%s)"
+    previous="$(last state)"
+    since="$(last since)"
+    [ "${verdict}" = "${previous}" ] && [ -n "${since}" ] || since="${now}"
+    write "${verdict}" "${url}" "${since}"
+
+    if [ "${verdict}" = open ]; then set_metric "${OPEN_METRIC}"
+    else set_metric "${HELD_METRIC}"; fi
+
+    [ "${verdict}" = "${previous}" ] && return 0
+    log "WiFi uplink ${previous:-unchecked} -> ${verdict}${url:+ (${url})}"
+    [ -x /usr/sbin/parkeze-wireguard-route ] && /usr/sbin/parkeze-wireguard-route apply >/dev/null 2>&1
+    [ -x /usr/sbin/parkeze-lora-route ] && /usr/sbin/parkeze-lora-route apply >/dev/null 2>&1
+    # parkeze.net shows the answer beside the gateway. No-ops when unadopted.
+    ( parkeze-claim report >/dev/null 2>&1 & ) 2>/dev/null
+    return 0
+}
+
+case "${1:-status}" in
+    check)  check ;;
+    usable) [ "$(last state)" = open ] ;;
+    status) [ -f "${STATE}" ] && cat "${STATE}" || echo '{"state":"unchecked"}' ;;
+    *) echo "usage: parkeze-wifi-uplink {check|usable|status}" >&2; exit 2 ;;
+esac
