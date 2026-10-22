@@ -168,9 +168,11 @@ backhaul = function() {
             // the UI: somebody will eventually ask why the tunnel dies when
             // ethernet does, and the answer should be in the payload.
             wiredOnly: true,
-            note: 'The management tunnel is pinned to the wired uplink so it '
+            note: 'The management tunnel runs over ethernet or WiFi only, so it '
                 + 'can never bill cellular data.',
             configured: !!config,
+            // wired, wifi, cellular or none: the path its packets leave on now.
+            via: route ? route.via : 'none',
             // none: not enrolled yet. waiting: configured, the hub has not
             // answered recently. up: a handshake in the last three minutes.
             state: state,

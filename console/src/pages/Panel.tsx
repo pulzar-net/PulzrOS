@@ -95,7 +95,7 @@ export default function Panel() {
         )}
       </Section>
 
-      <Section title="Blink codes">
+      <Section title="Blink Codes">
         <FactList>
           {BLINK_CODES.map((code) => (
             <Fact
@@ -107,7 +107,7 @@ export default function Panel() {
         </FactList>
       </Section>
 
-      <Section title="Reset button">
+      <Section title="Reset Button">
         {state.button.reset ? (
           <FactList>
             <Fact label="Short press" value="Reports whether the gateway is manageable, on the cloud LED. Harmless." />

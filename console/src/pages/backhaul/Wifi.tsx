@@ -205,7 +205,7 @@ export default function Wifi() {
       )}
 
       {others.length > 0 && (
-        <Section title="Saved networks">
+        <Section title="Saved Networks">
           <ul className={styles.list}>
             {others.map((network) => (
               <li key={network.ssid} className={styles.savedRow}>

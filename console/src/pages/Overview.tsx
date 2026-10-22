@@ -64,9 +64,22 @@ export default function Overview() {
           They fail independently, and one of them costs money. */}
       <div className={styles.grid2}>
         <div>
-          <Section title="Wired · Management tunnel">
+          <Section title="Management Tunnel">
             <FactList>
-              <Fact label="Ethernet" value={<StatusBadge ok={Boolean(paths?.wired.up)} />} />
+              <Fact
+                label="Uplink"
+                value={
+                  paths?.tunnel.via === 'wired' ? (
+                    <Badge tone="success">Ethernet</Badge>
+                  ) : paths?.tunnel.via === 'wifi' ? (
+                    <Badge tone="success">WiFi</Badge>
+                  ) : paths?.tunnel.via === 'cellular' ? (
+                    <Badge tone="success">Cellular</Badge>
+                  ) : paths ? (
+                    <Badge tone="error">None</Badge>
+                  ) : null
+                }
+              />
               <Fact
                 label="Tunnel"
                 value={
@@ -83,7 +96,7 @@ export default function Overview() {
         </div>
 
         <div>
-          <Section title="Cellular · 1NCE">
+          <Section title="Cellular">
             <FactList>
               <Fact
                 label="Modem"

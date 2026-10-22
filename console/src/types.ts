@@ -134,6 +134,8 @@ export interface BackhaulStatus {
     wiredOnly: true;
     note: string;
     configured: boolean;
+    /** The uplink the tunnel's packets leave on right now. */
+    via: 'wired' | 'wifi' | 'cellular' | 'none';
     /** none: not enrolled yet. waiting: the hub has not answered recently. up: handshake in the last three minutes. */
     state: 'none' | 'waiting' | 'up';
     address: string | null;

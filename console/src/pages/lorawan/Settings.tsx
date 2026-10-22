@@ -54,7 +54,7 @@ function Region({ region, onSaved }: { region: string; onSaved: () => void }) {
   });
 
   return (
-    <Section title="Region plan">
+    <Section title="Region Plan">
       <div className={styles.form}>
         <SelectField
           label="Region"
@@ -107,7 +107,7 @@ function Delivery({ lora }: { lora: LorawanStatus }) {
   const brokerMissing = holding && !(buffer?.running ?? false);
 
   return (
-    <Section title="Uplink delivery">
+    <Section title="Uplink Delivery">
       {brokerMissing && (
         <Notice tone="error">
           Holding is on and the local broker is not running. Uplinks are being lost.
