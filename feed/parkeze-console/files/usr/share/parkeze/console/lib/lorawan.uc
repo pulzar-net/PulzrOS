@@ -359,7 +359,10 @@ forwarders = function() {
             port: int(uci.get('parkeze', 'mqtt', 'port') || '8883'),
             topicPrefix: uci.get('parkeze', 'mqtt', 'topic_prefix'),
             username: uci.get('parkeze', 'mqtt', 'username'),
-            buffered: uci.get('parkeze', 'lorawan', 'buffer') == '1',
+            // What the forwarder was actually pointed at, not the setting:
+            // the setting is on by default and does nothing without an SD
+            // card, and parkeze-lora-config decides by this same file.
+            buffered: length(readfile('/var/run/parkeze/lora/mosquitto.conf') ?? '') > 0,
         },
         location: {
             latitude: uci.get('parkeze', 'location', 'latitude'),

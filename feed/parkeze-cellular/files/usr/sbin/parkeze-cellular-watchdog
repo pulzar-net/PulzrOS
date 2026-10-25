@@ -1,0 +1,115 @@
+#!/bin/sh
+#
+# Bring the cellular link back when it is up in name and carries nothing.
+#
+# ── WHY THIS EXISTS ────────────────────────────────────────────────────────
+#
+# The 1NCE session on the RAKs is torn down and re-created every 24 hours,
+# within a second, on the same address. Nearly always the gateway carries on.
+# On 2026-10-23 the Osbourne gateway did not: the SIM was attached, held a
+# fresh session and its IP, and the gateway sent zero bytes over it for a day
+# — offline, unmanageable, and with nothing on it that would ever try again.
+# netifd and ModemManager both believed the link was fine.
+#
+# So this does not ask them. It asks the link.
+#
+# ── WHAT IT COSTS ──────────────────────────────────────────────────────────
+#
+# Nothing while the link is in use: the packet forwarder's 30s keepalive and
+# the MQTT agent's 60s ping both draw replies, so a live cellular link's
+# receive counter moves every minute, and reading it is free. Only a counter
+# that has not moved for STALL seconds earns a probe (parkeze-backhaul-check
+# --cellular, ~700 bytes), because an idle link and a dead one look the same
+# from the counter: a gateway whose wired path carries everything leaves its
+# SIM silent.
+#
+# A gateway whose tunnel is up is on the wired path and is not judged at all.
+#
+# ── THE LADDER ─────────────────────────────────────────────────────────────
+#
+# Each rung gets STALL seconds to work before the next:
+#
+#   1. ifup wwan — netifd tears the bearer down and ModemManager connects a
+#      new one. Cures a host that is still holding the old session.
+#   2. reset the modem. Cures a modem that has wedged; hotplug re-runs
+#      parkeze-modem-detect when it re-enumerates.
+#   3. reboot. Cures everything else, including the parts of the gateway this
+#      script cannot see. Only if the gateway cannot be managed by any path,
+#      and only past MIN_UPTIME, so a gateway in a dead spot reboots at most
+#      once every six hours rather than every quarter of one, and loses the
+#      LoRa buffer that seldom. Otherwise the ladder starts again at 1.
+
+INTERVAL=60
+STALL=300
+MIN_UPTIME=21600
+
+SYS_NET="${PARKEZE_SYS_NET:-/sys/class/net}"
+UPTIME_FILE="${PARKEZE_UPTIME_FILE:-/proc/uptime}"
+
+log() { logger -t parkeze-cellular -p daemon.notice "$*"; }
+
+last_rx=""
+stalled=0
+rung=0
+
+while :; do
+    sleep "${INTERVAL}"
+
+    if [ "$(uci -q get parkeze.cellular.modem_present)" != "1" ] \
+       || [ "$(uci -q get network.wwan.disabled)" = "1" ] \
+       || [ "$(parkeze-backhaul-check --tunnel 2>/dev/null)" = "up" ]; then
+        last_rx="" stalled=0 rung=0
+        continue
+    fi
+
+    # Empty when wwan is down or has no device: that counts as not moving,
+    # not as a reason to look away — a link netifd has given up on is the
+    # same outage.
+    dev="$(ifstatus wwan 2>/dev/null | jsonfilter -e '@.l3_device' 2>/dev/null)"
+    rx="$(cat "${SYS_NET}/${dev:-none}/statistics/rx_bytes" 2>/dev/null)"
+
+    # Grown, not merely different: a modem reset recreates the device and its
+    # counter starts again from zero, which is not traffic. Read as traffic,
+    # it sent the ladder back to rung 1 after every reset and never let it
+    # reach the reboot.
+    previous="${last_rx}"
+    last_rx="${rx}"
+    if [ -n "${rx}" ] && [ -n "${previous}" ] && [ "${rx}" -gt "${previous}" ]; then
+        [ "${rung}" -gt 0 ] && log "cellular is passing traffic again"
+        stalled=0 rung=0
+        continue
+    fi
+
+    stalled=$((stalled + INTERVAL))
+    [ "${stalled}" -ge "${STALL}" ] || continue
+    stalled=0
+
+    if parkeze-backhaul-check --cellular >/dev/null 2>&1; then
+        rung=0
+        continue
+    fi
+
+    rung=$((rung + 1))
+    case "${rung}" in
+        1)
+            log "cellular has carried nothing for ${STALL}s and cannot reach parkeze.net; restarting wwan"
+            ifup wwan
+            ;;
+        2)
+            log "cellular still dead after restarting wwan; resetting the modem"
+            mmcli -m any --reset >/dev/null 2>&1 || log "modem reset failed"
+            ;;
+        *)
+            up="$(cut -d. -f1 "${UPTIME_FILE}")"
+            if [ "${up}" -ge "${MIN_UPTIME}" ] && ! parkeze-backhaul-check >/dev/null 2>&1; then
+                log "cellular still dead after a modem reset and nothing else reaches parkeze.net; rebooting"
+                # The uplink buffer is holding this outage's uplinks. Have it
+                # write them to the card first; with no card they are lost,
+                # which is the price of a gateway that can be reached again.
+                pkill -USR1 -f "mosquitto -c /var/run/parkeze/lora/mosquitto.conf" 2>/dev/null && sleep 5
+                reboot
+            fi
+            rung=0
+            ;;
+    esac
+done

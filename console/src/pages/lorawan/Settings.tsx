@@ -101,13 +101,19 @@ function Delivery({ lora }: { lora: LorawanStatus }) {
   // that is a pause or a loss is the whole reason holding is a separate
   // setting.
   const confined = !backhaul.sending;
-  const holding = buffer?.enabled ?? false;
+  // Holding needs both the setting and an SD card to keep the queue on;
+  // without a card the buffer does not run and uplinks go straight out.
+  const wanted = buffer?.enabled ?? false;
+  const holding = wanted && (buffer?.persistent ?? false);
   // Holding on with no broker running: the forwarders publish to a port with
   // nothing behind it and every uplink is lost, while nothing else looks wrong.
   const brokerMissing = holding && !(buffer?.running ?? false);
 
   return (
     <Section title="Uplink Delivery">
+      {wanted && !holding && (
+        <Notice tone="warning">No SD card. Uplinks are not being held.</Notice>
+      )}
       {brokerMissing && (
         <Notice tone="error">
           Holding is on and the local broker is not running. Uplinks are being lost.
@@ -134,7 +140,7 @@ function Delivery({ lora }: { lora: LorawanStatus }) {
           <Fact label="WiFi" value={<StatusBadge ok={backhaul.wifiUp} />} />
         )}
         {holding && (
-          <Fact label="Queued" value={buffer?.persistent ? bytes(buffer.queuedBytes) : 'In memory'} />
+          <Fact label="Queued" value={bytes(buffer!.queuedBytes)} />
         )}
         {holding && (
           <Fact
@@ -155,7 +161,7 @@ function Delivery({ lora }: { lora: LorawanStatus }) {
         />
         <CheckboxField
           label="Hold uplinks that cannot be sent"
-          checked={holding}
+          checked={wanted}
           disabled={save.isPending}
           onChange={(e) => save.mutate({ buffer: e.target.checked })}
         />
