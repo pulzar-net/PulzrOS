@@ -105,7 +105,9 @@ fi
 SIM="$(mktemp -d)"
 "${WORK}/venv/bin/python" "${HERE}/simulator.py" "${SIM}" > "${SIM}/simulator.log" 2>&1 &
 SIM_PID=$!
-trap 'kill "${SIM_PID}" 2>/dev/null; wait "${SIM_PID}" 2>/dev/null; rm -rf "${SIM}"' EXIT
+# `|| true`: the simulator dies of the kill, so its wait returns 143, and under
+# set -e that became this script's exit status after every test had passed.
+trap 'kill "${SIM_PID}" 2>/dev/null; wait "${SIM_PID}" 2>/dev/null || true; rm -rf "${SIM}"' EXIT
 
 for _ in $(seq 1 50); do
   [ -s "${SIM}/port" ] && break
