@@ -158,6 +158,10 @@ inner source is in the sending peer's allowed IPs, and the one peer is the hub.
 There is no forwarding, so the tunnel reaches the gateway and nothing behind
 it: a customer's site network is not ours to expose.
 
+The one exception is on a board with LAN ports: a forward to one device's TCP
+port on the gateway's own LAN, opened on request and closed by the kernel when
+it expires. See [lan.md](lan.md). The site's network is never behind it.
+
 ## The tunnel does not run over cellular by default
 
 `PARKEZE_WIREGUARD_ALLOW_CELLULAR` is `"0"` on every board today, and turning

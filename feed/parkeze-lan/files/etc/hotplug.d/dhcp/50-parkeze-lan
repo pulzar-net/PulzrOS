@@ -1,0 +1,4 @@
+#!/bin/sh
+#
+# When a LAN device last asked for an address, and when it first did.
+case "${ACTION}" in add|old) /usr/sbin/parkeze-lan seen "${MACADDR}" "${IPADDR}" ;; esac

@@ -43,7 +43,9 @@
 # a gateway remotely should be reviewable in one place.
 #
 # Arguments are validated before use and never interpolated into a command
-# line. The only one that exists today is a boolean.
+# line. The LAN operations hand theirs to parkeze-lan as separate arguments,
+# and it refuses anything that is not a MAC, an address on its LAN, a port or
+# a number of seconds.
 #
 # ── COST ───────────────────────────────────────────────────────────────────
 #
@@ -124,6 +126,24 @@ op_storage()   { printf '{"present":"%s","device":"%s","freeMb":"%s","writable":
 op_firmware()  { /usr/sbin/parkeze-firmware status 2>/dev/null || echo '{}'; }
 op_cellular()  { /usr/sbin/parkeze-modem-detect --status 2>/dev/null || echo '{}'; }
 op_gps()       { /usr/sbin/parkeze-gps status 2>/dev/null || echo '{}'; }
+op_lan()       { /usr/sbin/parkeze-lan status 2>/dev/null || echo '{}'; }
+
+# A field of the request being answered, for the operations that take more
+# than one argument.
+field() { jsonfilter -i "${STATE_DIR}/request.json" -e "@.$1" 2>/dev/null; }
+
+# A LAN change: parkeze-lan prints the result as JSON, or an error on stderr,
+# which becomes the error object.
+lan() {
+    [ -x /usr/sbin/parkeze-lan ] || { echo '{"error":"this gateway has no LAN ports"}'; return 1; }
+    local out
+    if out="$(/usr/sbin/parkeze-lan "$@" 2>&1)"; then
+        echo "${out}"
+    else
+        printf '{"error":"%s"}' "$(echo "${out}" | head -n1 | tr -d '"\\')"
+        return 1
+    fi
+}
 
 # ── dispatch ────────────────────────────────────────────────────────────────
 
@@ -185,6 +205,11 @@ dispatch() {
         # 20s: this one shells out to mmcli, which is the call that hung.
         cellular)  out="$(bounded 20 op_cellular)" ;;
         gps)       out="$(bounded 20 op_gps)" ;;
+        # Leases, reservations, policies and each client's traffic per uplink,
+        # and the forwards open now and recently. Not part of `all`: it grows
+        # with the number of devices, and one busy LAN would take `all` past
+        # MAX_RESPONSE.
+        lan)       out="$(bounded 15 op_lan)" ;;
 
         # Everything at once, for the case this exists to serve: somebody
         # wanting to know how a gateway is without opening anything.
@@ -218,6 +243,26 @@ dispatch() {
             uci commit parkeze
             /usr/sbin/parkeze-lora-route apply >/dev/null 2>&1
             out="$(op_backhaul)" ;;
+
+        # The one forward a gateway makes: from the management tunnel to one
+        # LAN client's TCP port, until it expires or is closed. The answer
+        # names the tunnel port it is reached on. See parkeze-lan.
+        lan-forward)
+            out="$(lan forward "$(field ip)" "$(field port)" "$(field seconds)" "${id}")" || { echo "${out}"; return 1; } ;;
+        lan-unforward)
+            out="$(lan unforward "$(field port)" "${id}")" || { echo "${out}"; return 1; } ;;
+        lan-policy)
+            out="$(lan policy "$(field mac)" "$(field policy)")" || { echo "${out}"; return 1; } ;;
+        # A reservation, or with no ip, the end of one.
+        lan-reserve)
+            name="$(field name)"
+            if [ -z "$(field ip)" ]; then
+                out="$(lan unreserve "$(field mac)")"
+            elif [ -n "${name}" ]; then
+                out="$(lan reserve "$(field mac)" "$(field ip)" "${name}")"
+            else
+                out="$(lan reserve "$(field mac)" "$(field ip)")"
+            fi || { echo "${out}"; return 1; } ;;
 
         # Last, and deliberately plain. A reboot takes the gateway away for a
         # couple of minutes; it is here because the alternative is a truck.

@@ -1,0 +1,6 @@
+#!/bin/sh
+#
+# A bridge port loses its isolation flag whenever it leaves and rejoins the
+# bridge, and netifd rejoins them on every ifup.
+[ "${INTERFACE}" = "devlan" ] || exit 0
+case "${ACTION}" in ifup|ifupdate) /usr/sbin/parkeze-lan isolate ;; esac
