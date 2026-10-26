@@ -93,8 +93,8 @@ uci -q set dhcp.lan.ignore='1'
 # nothing. When wired is down, cellular is the only default route and carries
 # the control plane.
 if [ "${PARKEZE_WAN_CELL_ENABLED}" = "1" ]; then
-# proto modemmanager, not qmi: OpenWrt 24.10 ships no uqmi, which is what
-# provided the qmi proto. ModemManager wants the modem's *sysfs path* in
+# proto modemmanager, not qmi: OpenWrt 24.10 shipped no uqmi, which is what
+# provides the qmi proto. ModemManager wants the modem's *sysfs path* in
 # `device`, which cannot be known at build time — parkeze-modem-detect fills it
 # in on first boot and whenever the modem re-enumerates, and until it does the
 # interface simply does not come up.

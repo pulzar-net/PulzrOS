@@ -1,9 +1,5 @@
 Package: parkeze-concentrator
-Version: @VERSION@-@BUILD@
 Depends: ucode, ucode-mod-fs, ucode-mod-uci, jsonfilter, jshn, ca-bundle, coreutils-stty
-Source: parkeze
-Section: net
-Priority: optional
 Maintainer: Joseph Telaak <joseph@parkeze.com>
 Architecture: all
 Description: LoRaWAN concentrator detection and packet forwarder supervision.

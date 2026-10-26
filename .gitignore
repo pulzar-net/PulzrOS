@@ -1,5 +1,5 @@
 # ── build output ──────────────────────────────────────────────────────────
-# Downloaded ImageBuilders, packaged .ipk files, rendered rootfs overlays.
+# Downloaded ImageBuilders, the staged feed, rendered rootfs overlays.
 # Large, and entirely reproducible from the sources in this repo.
 .build/
 

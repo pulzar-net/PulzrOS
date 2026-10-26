@@ -1,9 +1,5 @@
 Package: parkeze-mqtt
-Version: @VERSION@-@BUILD@
 Depends: mosquitto-client-ssl, jsonfilter
-Source: parkeze
-Section: net
-Priority: optional
 Maintainer: Joseph Telaak <joseph@parkeze.com>
 Architecture: all
 Description: Manage a gateway over MQTT instead of its web console.

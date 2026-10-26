@@ -110,6 +110,35 @@ silkscreen LoRa1/LoRa2 order left to confirm on a Pro with both cards.
 `rak7268c` is still written from published specifications; see the template's
 README for taking a board through the same process.
 
+## Moving to a new OpenWrt release
+
+`OPENWRT_VERSION` in `boards/common/board.conf` is the whole fleet's release,
+and every board moves with it: the feed's ucode is compiled for the release's
+exact ucode (`scripts/host-ucode.sh`), so two releases at once would mean two
+feeds.
+
+1. Change `OPENWRT_VERSION` and run `scripts/check-deps.sh`. It reads the
+   release's `index.json` files and names every package that is gone or
+   renamed. Libraries are listed there without their ABI suffix (`libstdcpp`,
+   not `libstdcpp6`), and that is the name to depend on.
+2. Rebase each board that has its own ImageBuilder repo (today both RAK
+   boards), before anything else, because CI cannot build them until it is
+   done:
+   - Apply `devices/<board>/openwrt.patch` to the new release tag and fix what
+     does not apply. A device patch touches four files, so this is a few
+     minutes of context fixing.
+   - Set `OPENWRT_VERSION` in the repo's `.github/workflows/build.yml`.
+   - Tag `<version>-1`. The release build compiles the toolchain and the
+     kernel from the release's `config.buildinfo` and checks the kernel's
+     vermagic against the release's kmods; it takes about two hours.
+   - Point the board's `OPENWRT_IMAGEBUILDER_URL` at the new release.
+3. `./build.sh --all`, and boot one image of each target before releasing.
+
+24.10.0 to 25.12.6 took this for the RAK repos: `uboot-envtools` moved from
+`package/boot/uboot-envtools` to `package/boot/uboot-tools/uboot-envtools`, and
+new boards in the `uboot-envtools` and `02_network` lists moved the context
+lines. The DTS and the image recipe applied unchanged.
+
 ## Where the terminal UI runs
 
 Every board has the terminal UI on its serial console. Two features add

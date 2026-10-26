@@ -7,10 +7,11 @@
 # Same path, same name, same behaviour, with one device class filtered out.
 #
 # It lives in the board files overlay rather than in a package, and that is
-# load-bearing: build.sh copies this tree over the rootfs after opkg has
+# load-bearing: build.sh copies this tree over the rootfs after apk has
 # installed everything, so it replaces the package's copy. Shipping it inside
-# parkeze-concentrator instead put the same path in two .ipks, and opkg
-# refused both — "Cannot install package modemmanager" on every board.
+# parkeze-concentrator instead put the same path in two packages, and the
+# package manager refused both ("Cannot install package modemmanager" from
+# opkg, on every board; apk refuses the same clash).
 #
 # Keep it in step with upstream: it is twelve lines of theirs plus the block
 # below.

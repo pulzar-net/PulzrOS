@@ -1,8 +1,4 @@
 Package: chirpstack-gateway
-Version: @VERSION@-@BUILD@
-Source: parkeze
-Section: net
-Priority: optional
 Maintainer: Joseph Telaak <joseph@parkeze.com>
 Architecture: @ARCH@
 Description: ChirpStack Concentratord and MQTT Forwarder.

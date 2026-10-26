@@ -1,9 +1,5 @@
 Package: parkeze-ble
-Version: @VERSION@-@BUILD@
 Depends: kmod-bluetooth, bluez-utils, mosquitto-client-ssl
-Source: parkeze
-Section: net
-Priority: optional
 Maintainer: Joseph Telaak <joseph@parkeze.com>
 Architecture: all
 Description: Bluetooth beacons, heard beside the LoRaWAN radio.

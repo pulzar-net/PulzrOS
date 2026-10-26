@@ -1,9 +1,5 @@
 Package: parkeze-ap
-Version: @VERSION@-@BUILD@
 Depends: ucode, ucode-mod-uci, wpad-openssl, iw, dnsmasq-full, jsonfilter
-Source: parkeze
-Section: net
-Priority: optional
 Maintainer: Joseph Telaak <joseph@parkeze.com>
 Architecture: all
 Description: Setup access point and captive portal.

@@ -25,16 +25,15 @@ CACHE="${ROOT_DIR}/.build/host-ucode"
 mkdir -p "${CACHE}"
 
 # Any architecture's base feed: ucode is the same commit on all of them.
-index="${CACHE}/${OPENWRT_VERSION}-base.idx"
+index="${CACHE}/${OPENWRT_VERSION}-base.json"
 if [ ! -s "${index}" ]; then
-  curl -fsL --max-time 90 \
-    "https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/packages/aarch64_cortex-a53/base/Packages.gz" \
-    | gunzip > "${index}.partial"
+  curl -fsL --max-time 90 -o "${index}.partial" \
+    "https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/packages/aarch64_cortex-a53/base/index.json"
   mv "${index}.partial" "${index}"
 fi
 
-# "Version: 2025.07.18~3f64c808-r1" -> 3f64c808
-version="$(awk '/^Package: ucode$/ { p = 1 } p && /^Version:/ { print $2; exit }' "${index}")"
+# "2026.01.16~85922056-r2" -> 85922056
+version="$(jq -r '.packages.ucode // empty' "${index}")"
 commit="${version#*~}"; commit="${commit%%-*}"
 [ -n "${commit}" ] && [ "${commit}" != "${version}" ] \
   || { echo "error: no ucode commit in ${OPENWRT_VERSION}'s index (got '${version}')" >&2; exit 1; }

@@ -1,9 +1,5 @@
 Package: parkeze-tui
-Version: @VERSION@-@BUILD@
 Depends: ucode, ucode-mod-fs, ucode-mod-uci, parkeze-base, parkeze-console, coreutils-stty, qrencode
-Source: parkeze
-Section: utils
-Priority: optional
 Maintainer: Joseph Telaak <joseph@parkeze.com>
 Architecture: all
 Description: The gateway console, in a terminal.

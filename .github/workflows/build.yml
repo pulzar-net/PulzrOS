@@ -4,14 +4,16 @@
 #
 #   check     lint and typecheck. Fast, and gates everything else.
 #   console   build the React app ONCE.
-#   feed      build the .ipk packages ONCE.
+#   feed      stage the packages ONCE.
 #   image     per-board matrix, consuming both of the above.
 #   release   on a tag, collect every board's image.
 #
 # The point of splitting console and feed out is that neither depends on the
-# board. Every package in feed/ is `Architecture: all` — interpreted shell,
-# ucode and static files, no compile step — so one build genuinely serves all
-# five boards. Building them inside the matrix instead meant five identical npm
+# board. Nearly every package in feed/ is noarch — interpreted shell, ucode and
+# static files, no compile step — so one build genuinely serves all five
+# boards; ChirpStack's binaries are staged once per architecture. The image
+# job packs them into .apk files with its own ImageBuilder's apk, which is the
+# only apk that writes this release's format (scripts/build-feed.sh). Building them inside the matrix instead meant five identical npm
 # installs, five identical Vite builds and five identical package runs, which
 # was most of the wall clock for none of the value.
 #
@@ -190,7 +192,7 @@ jobs:
             exit 1
           fi
 
-      # Three packages that do not exist in 24.10 — figlet, libgpiod-utils and
+      # Three packages that did not exist in 24.10 — figlet, libgpiod-utils and
       # uqmi — shipped at once, and the only symptom was five image jobs
       # failing after four minutes with the cause buried under a page of
       # "Configuring ...". This asks the release's own indexes instead, in
@@ -322,14 +324,14 @@ jobs:
           sudo apt-get install -y squashfs-tools cmake libjson-c-dev
           ./build.sh --stage feed
 
-      # Both halves of the overlay travel together: the .ipk repository, and
-      # the recovery key that install_fleet_key dropped into the board files.
+      # Both halves of the overlay travel together: the staged feed, and the
+      # recovery key that install_fleet_key dropped into the board files.
       - uses: actions/upload-artifact@v4
         if: runner.environment == 'github-hosted'
         with:
           name: feed
           path: |
-            .build/packages
+            .build/feed
             boards/common/files
           retention-days: 1
           if-no-files-found: error
@@ -339,7 +341,7 @@ jobs:
         run: |
           h="$HANDOFF/$GITHUB_RUN_ID/feed"
           rm -rf "$h"; mkdir -p "$h"
-          cp -a --parents .build/packages boards/common/files "$h/"
+          cp -a --parents .build/feed boards/common/files "$h/"
 
   # ───────────────────────────────────────────────────────────────────────
   boards:
@@ -451,7 +453,7 @@ jobs:
           fi
           echo "Packages requested:" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
-          ls .build/packages/*.ipk 2>/dev/null | xargs -n1 basename >> "$GITHUB_STEP_SUMMARY" || true
+          ls .build/feed/*.tar 2>/dev/null | xargs -n1 basename >> "$GITHUB_STEP_SUMMARY" || true
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
       # ImageBuilder's filenames say everything except which file to write to a

@@ -1,9 +1,5 @@
 Package: parkeze-io
-Version: @VERSION@-@BUILD@
 Depends: ucode, ucode-mod-uci, ucode-mod-fs
-Source: parkeze
-Section: base
-Priority: optional
 Maintainer: Joseph Telaak <joseph@parkeze.com>
 Architecture: all
 Description: Front-panel LEDs and buttons.

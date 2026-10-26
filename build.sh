@@ -222,7 +222,7 @@ reexec_for_assembly() {
   # container does only what it must.
   #
   # Everything the container needs is already on disk in the repo: the built
-  # console sits in the package payload, the .ipk files and any cached
+  # console sits in the package payload, the staged feed and any cached
   # ImageBuilder in .build/. One bind mount covers all of it.
   local boards=("$@")
 
@@ -605,43 +605,57 @@ install_ssh_ca() {
 
 # ── Our own packages ────────────────────────────────────────────────────────
 
-wire_local_feed() {
-  # Point this ImageBuilder at the repository build_feed just produced.
+pack_feed() {
+  # Pack the staged feed into .apk files with this ImageBuilder's own apk, into
+  # its packages/ directory.
   #
-  # The line is added idempotently and *before* the upstream `src` lines, so
-  # that a Parkeze package always wins over a same-named package from
-  # downloads.openwrt.org rather than losing a coin toss to it.
+  # `make image` indexes that directory and signs the index with the
+  # ImageBuilder's local key, generated on first use and kept in its keys/,
+  # which is also where it looks for the keys it trusts. So every repository
+  # stays signature-checked, ours included, and nothing is switched off to let
+  # our packages in. The key never reaches an image: only ADD_LOCAL_KEY=1
+  # copies it into /etc/apk/keys, and nothing on a gateway installs from this
+  # feed.
   #
-  # `option check_signature` is then dropped, which turns signature checking
-  # off for *every* repo in this file, upstream included — opkg has no
-  # per-repo form of it. That is acceptable only because of what this file is:
-  # a throwaway build tree, extracted from a tarball whose sha256 we already
-  # verified against the release's published list in fetch_imagebuilder. The
-  # integrity guarantee comes from that check, not from this one.
-  #
-  # The alternative is signing our own feed with usign and adding the key to
-  # the ImageBuilder keyring, which keeps the option on. Worth doing if we ever
-  # serve this feed over the network to real gateways — at that point the
-  # packages are crossing a wire and a local checksum no longer covers them.
+  # Under the ImageBuilder's fakeroot, as OpenWrt packs its own: apk records
+  # each file's owner, and outside it every file would belong to whoever ran
+  # the build. sshd refuses an authorized_keys it does not trust the owner of.
   local ib="$1"
-  local conf="${ib}/repositories.conf"
-  local line="src parkeze file:${BUILD_DIR}/packages"
+  local stage="${BUILD_DIR}/feed"
+  local host="${ib}/staging_dir/host"
+  local apk="${host}/bin/apk"
+  [ -x "${apk}" ] || die "this ImageBuilder has no apk; OpenWrt ${OPENWRT_VERSION} is not an apk release"
 
-  grep -qxF "${line}" "${conf}" && return 0
-  sed -i.bak '/^src parkeze /d; /^option check_signature/d' "${conf}"
-  printf '%s\n%s\n' "${line}" "$(cat "${conf}")" > "${conf}.new"
-  mv "${conf}.new" "${conf}"
-  rm -f "${conf}.bak"
+  local tar name arch tmp
+  for tar in "${stage}"/*.tar; do
+    [ -f "${tar}" ] || die "no staged feed in ${stage}; run ./build.sh --stage feed"
+    name="$(basename "${tar}" .tar)"; arch="${name#*_}"; name="${name%%_*}"
+    [ "${arch}" = noarch ] || [ "${arch}" = "${OPENWRT_ARCH}" ] || continue
+
+    # An ImageBuilder is cached between builds, and a stale build of one of
+    # ours beside a new one is two candidates for the same name.
+    rm -f "${ib}/packages/${name}"-[0-9]*.apk
+
+    tmp="$(mktemp -d)"
+    tar -xf "${tar}" -C "${tmp}"
+    local info=()
+    while IFS= read -r line; do info+=(--info "${line}"); done < "${tmp}/info"
+    PATH="${host}/bin:${PATH}" "${host}/bin/fakeroot" \
+      -l "${host}/lib/libfakeroot.so" -f "${host}/bin/faked" -- \
+      "${apk}" mkpkg "${info[@]}" --files "${tmp}/data" \
+        --output "${ib}/packages/${name}-$(sed -n 's/^version://p' "${tmp}/info").apk" \
+      || die "apk could not pack ${name}"
+    rm -rf "${tmp}"
+  done
 }
 
 
 build_feed() {
-  # Every package in feed/ is architecture-independent shell, ucode and static
-  # assets, so one build serves every board and the "all" architecture is
-  # honest rather than a shortcut. A package that ever needs compiling must
-  # declare its own arch and this function grows a per-arch loop.
-  local repo="${BUILD_DIR}/packages"
-  mkdir -p "${repo}"
+  # Staged, not packed: see build-feed.sh for why the packing waits for an
+  # ImageBuilder. Nearly everything is noarch, so one stage serves every board;
+  # ChirpStack's binaries are staged once per architecture.
+  local stage="${BUILD_DIR}/feed"
+  mkdir -p "${stage}"
 
   # Anything that is not a bench build ships compiled ucode, which needs a
   # compiler at the gateway's exact ucode version. See scripts/harden-payload.sh.
@@ -651,9 +665,9 @@ build_feed() {
       || die "no host ucode to compile the feed with (needs cmake and json-c)"
   fi
 
-  log "Building Parkeze feed"
-  UCODE="${ucode}" "${ROOT_DIR}/scripts/build-feed.sh" "${FEED_DIR}" "${repo}" \
-    "${PARKEZE_VERSION}" "${PARKEZE_BUILD}" "${PARKEZE_COMMIT}"
+  log "Staging Parkeze feed"
+  UCODE="${ucode}" "${ROOT_DIR}/scripts/build-feed.sh" "${FEED_DIR}" "${stage}" \
+    "${PARKEZE_VERSION}" "${PARKEZE_BUILD}"
 }
 
 # ── Per-board image ─────────────────────────────────────────────────────────
@@ -707,7 +721,7 @@ build_board() {
       cat >&2 <<EOF
 error: ${BOARD_ID} cannot be built from a stock OpenWrt ImageBuilder.
 
-       OpenWrt 24.10 has no device profile for it, so there is nothing for
+       OpenWrt ${OPENWRT_VERSION} has no device profile for it, so there is nothing for
        \`make image\` to assemble — it would fail with
        'Profile "${OPENWRT_PROFILE}" does not exist!'.
 
@@ -721,7 +735,7 @@ EOF
 
     local ib files
     ib="$(imagebuilder_dir)"
-    wire_local_feed "${ib}"
+    pack_feed "${ib}"
     files="${BUILD_DIR}/files-${BOARD_ID}"
     rm -rf "${files}"; mkdir -p "${files}"
     render_board_files "${files}"
@@ -774,12 +788,11 @@ EOF
 
 # Confirm our packages actually put files in the image.
 #
-# This exists because they once did not. The .ipk files were ar archives, which
-# is what every description of the format says and what Debian uses — but
-# OpenWrt's opkg only reads the gzipped-tar form. It installed all eight
-# packages from our index, wrote them into /usr/lib/opkg/status, created an
-# empty file list for each, and extracted nothing. The build succeeded, the
-# image booted, and it contained no part of ParkezeOS.
+# This exists because they once did not. Our hand-built opkg packages were ar
+# archives where opkg only reads gzipped tar; it recorded all eight as
+# installed and extracted nothing. The build succeeded, the image booted, and
+# it contained no part of ParkezeOS. apk is less forgiving of a bad package,
+# but the packing is still ours rather than OpenWrt's.
 #
 # Nothing in the build reported a problem, so the check is here: look in the
 # rootfs ImageBuilder actually assembled and insist a file we ship is present.
@@ -826,10 +839,11 @@ error: the image built, but contains none of our files.
        ${witness} is missing from the assembled rootfs, which means the
        parkeze-* packages installed their metadata and no payload.
 
-       Check the .ipk format — it must be a gzipped tar, not an ar archive:
+       Compare what was staged with what was packed:
 
-         file .build/packages/parkeze-base_*.ipk
-         # expected: gzip compressed data
+         tar -tf .build/feed/parkeze-base_noarch.tar | grep parkeze-motd
+         $(imagebuilder_dir)/staging_dir/host/bin/apk adbdump \\
+           $(imagebuilder_dir)/packages/parkeze-base-*.apk
 EOF
     exit 1
   fi

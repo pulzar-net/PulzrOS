@@ -17,7 +17,7 @@
 # and again on any USB event that looks like a modem.
 #
 # The older uqmi-based config hardcoded /dev/cdc-wdm0 and did not have this
-# problem. 24.10 ships no uqmi, hence the trade.
+# problem. OpenWrt 24.10 shipped no uqmi, hence the trade.
 
 MM_TIMEOUT="${PARKEZE_MM_TIMEOUT:-30}"
 

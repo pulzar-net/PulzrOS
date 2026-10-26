@@ -1,9 +1,5 @@
 Package: parkeze-wireguard
-Version: @VERSION@-@BUILD@
 Depends: kmod-wireguard, wireguard-tools, ip-full, curl, ca-bundle, jsonfilter
-Source: parkeze
-Section: net
-Priority: optional
 Maintainer: Joseph Telaak <joseph@parkeze.com>
 Architecture: all
 Description: WireGuard management tunnel, pinned to the wired path.

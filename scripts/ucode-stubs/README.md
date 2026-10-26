@@ -13,3 +13,7 @@ than a 500 on a gateway in a car park.
 
 Sources of truth:
   fs, uci, ubus, digest, socket — https://github.com/jow-/ucode/tree/master/lib
+
+Each `export function f() {}` ends in `;`. The ucode OpenWrt 25.12 ships
+(2026.01.16) rejects every other declaration without it, and an empty
+statement costs nothing on the ucode CI caches.

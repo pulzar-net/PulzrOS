@@ -2,7 +2,7 @@
 #
 # Put ChirpStack's gateway binaries for one architecture into a package root.
 #
-#   fetch <opkg-arch> <dest-root> <cache-dir>
+#   fetch <package-arch> <dest-root> <cache-dir>
 #
 # ── WHERE THEY COME FROM ───────────────────────────────────────────────────
 #

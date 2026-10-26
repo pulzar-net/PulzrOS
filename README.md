@@ -8,7 +8,7 @@ carried over.
 
 ## What it is
 
-- **OpenWrt 24.10**, assembled with ImageBuilder from a pinned release.
+- **OpenWrt 25.12**, assembled with ImageBuilder from a pinned release.
 - **No LuCI.** The Parkeze console replaces it: a React app served as static
   files by uhttpd over a ucode API, sharing design tokens verbatim with
   parkeze.net so the two are visibly one product.
@@ -68,15 +68,14 @@ Images land in `out/<board>/`. First build downloads and checksum-verifies an
 ImageBuilder (~150MB, cached); after that a build is a few minutes.
 
 **Image assembly requires Linux.** OpenWrt's ImageBuilder is a tree of prebuilt
-x86_64 ELF binaries with no macOS build, so `build.sh` refuses to run on a Mac
-and prints a `docker run` line that does the same job. The package feed
-(`scripts/build-feed.sh`) *does* build natively on macOS, which is enough to
-iterate on the console and the packages — verified, including executable bits
-and the opkg index.
+x86_64 ELF binaries with no macOS build, so on a Mac `build.sh` runs that step
+in a Docker container. The feed (`scripts/build-feed.sh`) is staged natively on
+macOS, and packed into `.apk` files during assembly by the ImageBuilder's own
+`apk`, the only one that writes the release's format.
 
-Requires `node` (20+), `curl` and `zstd`, plus GNU `tar` for byte-reproducible
-packages: `brew install node zstd gnu-tar`. Without gnu-tar the packages are
-still correct, just not byte-reproducible.
+Requires `node` (20+), `curl`, `jq` and `zstd`, plus GNU `tar` for
+byte-reproducible packages: `brew install node jq zstd gnu-tar`. Without
+gnu-tar the packages are still correct, just not byte-reproducible.
 
 To bake the fleet recovery anchor into the image — required for offline
 adoption — point `PARKEZE_RECOVERY_PUBKEY` at the public half of the key from

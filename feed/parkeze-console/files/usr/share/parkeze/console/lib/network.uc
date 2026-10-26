@@ -98,8 +98,8 @@ status = function() {
 };
 
 modem = function() {
-    // mmcli, not uqmi: OpenWrt 24.10 ships no uqmi and cellular now goes
-    // through ModemManager. An absent modem is a normal state — a wired-only
+    // mmcli, not uqmi: cellular goes through ModemManager, chosen when
+    // OpenWrt 24.10 shipped no uqmi. An absent modem is a normal state — a wired-only
     // board has none — so this returns null rather than erroring.
     const found = runJson('/usr/sbin/parkeze-modem-detect --status');
     if (!found || !found.present) return null;

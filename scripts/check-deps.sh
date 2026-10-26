@@ -35,12 +35,19 @@ BASE_URL="https://downloads.openwrt.org/releases"
 
 mkdir -p "${CACHE}"
 
-fetch() {
-  # Cached: the indexes are large and a pinned release does not change.
+# Every package name in one of a release's index.json files. Cached: the
+# indexes are large and a pinned release does not change. index.json rather
+# than packages.adb because apk's index is a binary format only apk reads,
+# and this runs before any ImageBuilder is on disk.
+names() {
   local url="$1" out="$2"
-  [ -s "${out}" ] && return 0
-  curl -fsL --max-time 90 "${url}" 2>/dev/null | gunzip > "${out}" 2>/dev/null || return 1
-  [ -s "${out}" ]
+  if [ ! -s "${out}" ]; then
+    curl -fsL --max-time 90 "${url}" 2>/dev/null \
+      | jq -r '.packages | keys[]' > "${out}.partial" 2>/dev/null || return 1
+    [ -s "${out}.partial" ] || return 1
+    mv "${out}.partial" "${out}"
+  fi
+  cat "${out}"
 }
 
 # Every package name available to a given board, one per line.
@@ -49,19 +56,16 @@ index_for() {
   # The suffix versions what goes into the combined list. CI restores this
   # directory from cache, and a list built before the target index was added
   # would otherwise be trusted forever.
-  local combined="${CACHE}/${version}-${arch}-${target}-${subtarget}.v2.names"
+  local combined="${CACHE}/${version}-${arch}-${target}-${subtarget}.v3.names"
   [ -s "${combined}" ] && { cat "${combined}"; return 0; }
 
   local tmp="${combined}.partial"
   : > "${tmp}"
 
   for feed in base packages luci routing telephony; do
-    local f="${CACHE}/${version}-${arch}-${feed}.idx"
-    if fetch "${BASE_URL}/${version}/packages/${arch}/${feed}/Packages.gz" "${f}"; then
-      sed -n 's/^Package: //p' "${f}" >> "${tmp}"
-    else
-      echo "  note: no ${feed} feed for ${arch}" >&2
-    fi
+    names "${BASE_URL}/${version}/packages/${arch}/${feed}/index.json" \
+          "${CACHE}/${version}-${arch}-${feed}.names" >> "${tmp}" \
+      || echo "  note: no ${feed} feed for ${arch}" >&2
   done
 
   # Kernel modules live under the target, keyed by the exact kernel build. The
@@ -69,19 +73,15 @@ index_for() {
   # every kernel bump inside a release.
   # The target's own packages: libc, libgcc, libstdc++ and the rest of the
   # toolchain runtime live here, not in any feed.
-  local tf="${CACHE}/${version}-${target}-${subtarget}-target.idx"
-  if fetch "${BASE_URL}/${version}/targets/${target}/${subtarget}/packages/Packages.gz" "${tf}"; then
-    sed -n 's/^Package: //p' "${tf}" >> "${tmp}"
-  fi
+  names "${BASE_URL}/${version}/targets/${target}/${subtarget}/packages/index.json" \
+        "${CACHE}/${version}-${target}-${subtarget}-target.names" >> "${tmp}" || true
 
   local kdir
   kdir="$(curl -fsL --max-time 30 "${BASE_URL}/${version}/targets/${target}/${subtarget}/kmods/" 2>/dev/null \
           | grep -oE '[0-9]+\.[0-9]+\.[0-9]+-[0-9]+-[0-9a-f]+' | head -n1)"
   if [ -n "${kdir}" ]; then
-    local kf="${CACHE}/${version}-${target}-${subtarget}-kmods.idx"
-    if fetch "${BASE_URL}/${version}/targets/${target}/${subtarget}/kmods/${kdir}/Packages.gz" "${kf}"; then
-      sed -n 's/^Package: //p' "${kf}" >> "${tmp}"
-    fi
+    names "${BASE_URL}/${version}/targets/${target}/${subtarget}/kmods/${kdir}/index.json" \
+          "${CACHE}/${version}-${target}-${subtarget}-kmods.names" >> "${tmp}" || true
   else
     echo "  note: could not locate the kmods index for ${target}/${subtarget}" >&2
   fi

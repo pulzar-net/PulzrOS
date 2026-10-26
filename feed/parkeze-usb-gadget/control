@@ -1,9 +1,5 @@
 Package: parkeze-usb-gadget
-Version: @VERSION@-@BUILD@
 Depends: parkeze-tui, umdns, dnsmasq-full
-Source: parkeze
-Section: net
-Priority: optional
 Maintainer: Joseph Telaak <joseph@parkeze.com>
 Architecture: all
 Description: The console over a USB cable, as a network and a serial port.

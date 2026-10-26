@@ -1,9 +1,5 @@
 Package: parkeze-display
-Version: @VERSION@-@BUILD@
 Depends: parkeze-tui
-Source: parkeze
-Section: utils
-Priority: optional
 Maintainer: Joseph Telaak <joseph@parkeze.com>
 Architecture: all
 Description: The console on a Pi's own screen, when it has one.
