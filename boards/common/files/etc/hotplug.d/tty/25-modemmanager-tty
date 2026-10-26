@@ -12,7 +12,7 @@
 # parkeze-concentrator instead put the same path in two .ipks, and opkg
 # refused both — "Cannot install package modemmanager" on every board.
 #
-# Keep it in step with upstream: it is twelve lines of theirs plus the block
+# Keep it in step with upstream: it is twelve lines of theirs plus the blocks
 # below.
 #
 # ── WHY ────────────────────────────────────────────────────────────────────
@@ -76,6 +76,23 @@ case "${DEVNAME}" in
         done
         ;;
 esac
+
+# ── nor is the RS485 bridge ────────────────────────────────────────────────
+#
+# Same harm on a different port: AT probes written to the bus parkeze-rs485
+# feeds the power board's watchdog on, mid-frame, and ModemManager changing
+# the tty's line settings under it. Matched by the USB port board.conf names,
+# as parkeze-rs485 finds it, so a CH340 anywhere else is left alone.
+__pkz_rs485="$(sed -n "s/^PARKEZE_RS485='\(.*\)'\$/\1/p" /etc/parkeze/board.conf 2>/dev/null)"
+if [ -n "${__pkz_rs485}" ]; then
+    case "${DEVPATH}" in
+        */"${__pkz_rs485}:1.0"/*)
+            logger -t rs485 -p daemon.info \
+                "${DEVNAME} is the RS485 port (USB ${__pkz_rs485}); not reporting it to ModemManager"
+            exit 0
+            ;;
+    esac
+fi
 
 # Always make sure the rundir exists
 mkdir -m 0755 -p "${MODEMMANAGER_RUNDIR}"

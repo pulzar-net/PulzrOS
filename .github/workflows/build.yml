@@ -141,6 +141,15 @@ jobs:
           ./scripts/test-ssh-setup.sh
           ./scripts/test-cellular-watchdog.sh
 
+      # parkeze-rs485 against a fake bus and a simulated Modbus slave. The
+      # watchdog it feeds is what keeps a DC-powered RAK7289CV2 on, and there
+      # is no RS485 hardware on any bench to catch a wrong frame.
+      - name: RS485 and Modbus
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.1 liblua5.1-0-dev libmodbus-dev python3-venv pkg-config
+          ./scripts/test-rs485.sh
+
       # The upstream indexes are ~10MB and a pinned release never changes them.
       - name: Cache the upstream package indexes
         uses: actions/cache@v4

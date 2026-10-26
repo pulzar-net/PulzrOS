@@ -19,6 +19,10 @@
 #   shell       whole-line comments removed (strip-shell-comments.py), and
 #               the same for UCI config files and the sshd config, whose
 #               comments are as much rationale as any script's.
+#   Lua         whole-line comments removed (strip-lua-comments.py). Only
+#               parkeze-rs485 is Lua, for its Modbus library; compiling it the
+#               way ucode is would need luac at OpenWrt's exact Lua build,
+#               whose number patch changes the bytecode.
 #   *.md        removed. Nothing on a gateway reads them.
 #
 # Run by build-feed.sh for every package unless PARKEZE_DEV=1, so a bench image
@@ -41,6 +45,11 @@ is_ucode() {
   head -n1 "$1" 2>/dev/null | grep -q '^#!.*ucode'
 }
 
+is_lua() {
+  case "$1" in *.lua) return 0 ;; esac
+  head -n1 "$1" 2>/dev/null | grep -q '^#!.*lua'
+}
+
 is_shell() {
   case "$1" in
     */etc/uci-defaults/*|*/etc/hotplug.d/*|*/lib/preinit/*|*/lib/upgrade/*|*.sh) return 0 ;;
@@ -51,6 +60,7 @@ is_shell() {
 
 failed=0
 shells=()
+luas=()
 while IFS= read -r -d '' f; do
   case "${f}" in
     *.md) rm -f "${f}"; continue ;;
@@ -72,6 +82,8 @@ while IFS= read -r -d '' f; do
       failed=1
     fi
     rm -f "${out}" "${out}.err"
+  elif is_lua "${f}"; then
+    luas+=("${f}")
   elif is_shell "${f}"; then
     shells+=("${f}")
   fi
@@ -92,6 +104,10 @@ if [ "${#shells[@]}" -gt 0 ]; then
       failed=1
     fi
   done
+fi
+
+if [ "${#luas[@]}" -gt 0 ]; then
+  python3 "${HERE}/strip-lua-comments.py" "${luas[@]}" || failed=1
 fi
 
 exit "${failed}"

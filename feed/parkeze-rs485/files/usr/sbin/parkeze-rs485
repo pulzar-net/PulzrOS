@@ -1,0 +1,103 @@
+#!/usr/bin/lua
+--
+-- The board's RS485 port: the power board's watchdog, the battery, and any
+-- Modbus RTU device a site wires to the DC connector.
+--
+--   parkeze-rs485 run       own the port until killed (procd runs this)
+--   parkeze-rs485 status    the last recorded state, as JSON
+--
+-- The work is in /usr/lib/lua/parkeze/rs485.lua; this is the clock, the loop
+-- and the record. See docs/rs485.md.
+
+local rs485 = require("parkeze.rs485")
+local cjson = require("cjson")
+
+local STATE_DIR = "/var/run/parkeze/rs485"
+local STATE = STATE_DIR .. "/state.json"
+
+-- Seconds since boot. Not os.time(): the clock is 1970 until NTP answers and
+-- then jumps by fifty years, and a schedule on it would run everything at
+-- once or nothing for decades.
+local function uptime()
+  local f = io.open("/proc/uptime", "r")
+  local n = f and f:read("*n")
+  if f then f:close() end
+  return n or os.time()
+end
+
+local LEVELS = { err = true, warning = true, info = true }
+
+-- Through logger's stdin, so nothing in a message — a register spec somebody
+-- typed into UCI included — is ever part of a command line.
+local function log(level, msg)
+  if not LEVELS[level] then level = "info" end
+  local p = io.popen("logger -t rs485 -p daemon." .. level, "w")
+  if p then p:write(msg, "\n"); p:close() end
+end
+
+local function write_state(state)
+  local tmp = STATE .. ".tmp"
+  local f = io.open(tmp, "w")
+  if not f then return end
+  f:write(cjson.encode(state))
+  f:close()
+  os.rename(tmp, STATE)
+end
+
+local function status()
+  local f = io.open(STATE, "r")
+  local text = f and f:read("*a")
+  if f then f:close() end
+  local ok, state = pcall(cjson.decode, text or "")
+  io.write(cjson.encode(rs485.view(ok and state or nil, uptime())), "\n")
+end
+
+local function run()
+  local board = rs485.read_board()
+  local cursor = require("uci").cursor()
+  local cfg = rs485.config(board, cursor:get_all("parkeze"))
+  if cfg.usb == "" then
+    log("info", "this board declares no RS485 port")
+    return 0
+  end
+  for _, p in ipairs(cfg.problems) do log("warning", "config: " .. p) end
+
+  os.execute("mkdir -p " .. STATE_DIR)
+  local svc
+  svc = rs485.new(cfg, {
+    modbus = require("libmodbus"),
+    clock = uptime,
+    resolve = function() return rs485.resolve(cfg.usb, cfg.id) end,
+    present = function(path) return rs485.present(cfg.usb, path) end,
+    -- The record first, because the report reads it: asked mid-tick, the
+    -- file still says what was true before the change being reported. Then
+    -- in the background: a report is an HTTPS round trip, over a SIM on many
+    -- gateways, and the watchdog does not wait for it.
+    report = function()
+      write_state(svc:state())
+      os.execute("/usr/sbin/parkeze-claim report >/dev/null 2>&1 &")
+    end,
+    log = log,
+  })
+
+  local uloop = require("uloop")
+  uloop.init()
+  local timer
+  timer = uloop.timer(function()
+    local wait = svc:tick()
+    write_state(svc:state())
+    timer:set(math.floor(math.min(wait, rs485.STATE_EVERY) * 1000))
+  end, 0)
+  uloop.run()
+  return 0
+end
+
+local cmd = arg[1]
+if cmd == "run" then
+  os.exit(run())
+elseif cmd == "status" then
+  status()
+else
+  io.stderr:write("usage: parkeze-rs485 {run|status}\n")
+  os.exit(2)
+end
