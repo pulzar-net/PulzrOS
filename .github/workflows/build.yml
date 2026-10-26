@@ -143,6 +143,11 @@ jobs:
           ./scripts/test-ssh-setup.sh
           ./scripts/test-cellular-watchdog.sh
 
+      # The RAK hardware descriptor (never letting its passwords out), the
+      # named reset lines, and /dev/lora<n> following a card across resets.
+      - name: Hardware descriptor and lines
+        run: ./scripts/test-hwdesc.sh
+
       # parkeze-rak-power against a fake bus and a simulated power board. The
       # watchdog it feeds is what keeps a DC-powered RAK7289CV2 on, and no
       # bench unit has answered on that bus to catch a wrong frame.

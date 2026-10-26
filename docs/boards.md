@@ -99,8 +99,8 @@ like a stock one.
 `rak7289cv2` shares the RAK636 board, so its device support was written from
 that same shipping firmware rather than a fresh harvest — [parkeze/openwrt-rak7289cv2](https://github.com/parkeze/openwrt-rak7289cv2),
 built from [openwrt-device-template](https://github.com/parkeze/openwrt-device-template).
-Its two radios are RAK5146 (SX1303) cards on **USB** (`/dev/ttyACM0`,
-`/dev/ttyACM1`), not SPI — the one hardware difference from the Lite. A bench
+Its two radios are RAK5146 (SX1303) cards on **USB** (`/dev/lora0` and
+`/dev/lora1`, linked by hub port to whichever ttyACM each card gets), not SPI — the one hardware difference from the Lite. A bench
 run of the full `24.10.0-1` ParkezeOS image confirmed it boots as
 `rakwireless,rak7289cv2` with concentratord driving the SX1303 on
 `/dev/ttyACM0` (8 channels, gateway ID read off the hardware) and GNSS on

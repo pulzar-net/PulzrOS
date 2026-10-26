@@ -145,7 +145,13 @@ bring_up() {
 
 reset_modem() {
     log "$1; resetting the modem"
-    mmcli -m any --reset >/dev/null 2>&1 || log "modem reset failed"
+    # ModemManager's reset is an AT command, so it needs a modem that still
+    # answers one. One that has wedged, or dropped off USB, is reset through
+    # its reset line instead, where the board has one (modem-reset; RAK636
+    # boards do, on a different pin per board).
+    mmcli -m any --reset >/dev/null 2>&1 \
+        || parkeze-hwline modem-reset pulse 1 \
+        || log "modem reset failed"
     # It re-enumerates as a new ModemManager modem with its GPS engine off,
     # and nothing else re-detects it: 20-parkeze-modem skips wwan's own
     # events. wwan itself comes back on a later look, as down with the modem

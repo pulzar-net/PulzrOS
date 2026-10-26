@@ -252,6 +252,21 @@ detect_slot() {
                 # answered. Keyed to the node, a missing second module reads
                 # absent and the gateway lands in the loud `partial` state.
                 # A kit's USB slot is "auto" and never reaches this branch.
+                #
+                # A card that is fitted but has not enumerated gets one reset
+                # through its slot's line, where the board has one, and the
+                # time a RAK5146 takes to come back (about two seconds on the
+                # bench) and then some. The line is a name the device tree
+                # exports, never a number: on USB the number would be handed
+                # to concentratord as the SX1302's own reset, and that hung it.
+                if [ ! -c "${device}" ] && [ -n "${reset}" ] && parkeze-hwline "${reset}"; then
+                    log "slot ${index}: ${device} missing; resetting it through ${reset}"
+                    parkeze-hwline "${reset}" pulse 1
+                    local waited=0
+                    while [ ! -c "${device}" ] && [ "${waited}" -lt 10 ]; do
+                        sleep 1; waited=$((waited + 1))
+                    done
+                fi
                 if [ -c "${device}" ]; then
                     detected="${PARKEZE_CONCENTRATOR_PART:-sx1302_usb}"
                 fi
@@ -338,6 +353,13 @@ channels=0
 # see the skip in detect_slot's probe loop above.
 CLAIMED_BUSES=""
 
+# How many cards the unit left the factory with, where it says (RAK's hardware
+# descriptor; see parkeze-hwdesc). A RAK7289CV2 has two slots and is sold with
+# one card or two; a one-card unit's empty slot is how it was built, not a
+# card that died, and must not put the gateway in `partial`. A slot past that
+# count still counts when a card answers in it, since cards get added later.
+fitted="$(parkeze-hwdesc get 'LORA.concentrator[*].intf_type' 2>/dev/null | grep -c .)"
+
 for spec in ${PARKEZE_CONCENTRATOR_SLOTS:-auto}; do
     total=$((total + 1))
     if detect_slot "${index}" "${spec}"; then
@@ -345,6 +367,10 @@ for spec in ${PARKEZE_CONCENTRATOR_SLOTS:-auto}; do
         active="$(uci -q get "parkeze.slot${index}.active")"
         slot_ch="$(jsonfilter -i "${PROFILE_DIR}/${active}.json" -e '@.channels' 2>/dev/null)"
         channels=$((channels + ${slot_ch:-8}))
+    elif [ "${fitted}" -gt 0 ] && [ "${index}" -ge "${fitted}" ] && [ "${DRY_RUN}" != 1 ]; then
+        log "slot ${index}: empty, as the unit was built (${fitted} card(s) fitted)"
+        put "slot${index}.status" unfitted
+        total=$((total - 1))
     fi
     index=$((index + 1))
 done

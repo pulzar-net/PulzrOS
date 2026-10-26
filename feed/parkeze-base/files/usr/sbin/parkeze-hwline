@@ -1,0 +1,34 @@
+#!/bin/sh
+#
+# Drive a control line the device tree exports by name.
+#
+#   parkeze-hwline <name>                exit 0 if this board has that line
+#   parkeze-hwline <name> pulse [secs]   assert it, hold (default 1 s), release
+#   parkeze-hwline <name> assert|release
+#
+# The lines are the device tree's gpio-export names: modem-reset, lora-reset,
+# gnss-reset. By name because the numbers are the board's business and move
+# between boards that look alike: the RAK7268CV2 resets its modem on GPIO 42,
+# the RAK7289CV2 on GPIO 2, and pulsing 42 on the Pro does nothing at all. The
+# polarity is the device tree's too, so 1 is always "in reset" here, whatever
+# the pin does electrically.
+
+SYSFS="${PARKEZE_GPIO_SYSFS:-/sys/class/gpio}"
+
+name="${1:?usage: parkeze-hwline <name> [pulse [secs] | assert | release]}"
+value="${SYSFS}/${name}/value"
+[ -w "${value}" ] || exit 1
+
+put() { { echo "$1" > "${value}"; } 2>/dev/null; }
+
+case "${2:-}" in
+    "")      exit 0 ;;
+    assert)  put 1 ;;
+    release) put 0 ;;
+    pulse)
+        logger -t parkeze-hwline "pulsing ${name}"
+        put 1 || exit 1
+        sleep "${3:-1}"
+        put 0 ;;
+    *) echo "usage: parkeze-hwline <name> [pulse [secs] | assert | release]" >&2; exit 2 ;;
+esac

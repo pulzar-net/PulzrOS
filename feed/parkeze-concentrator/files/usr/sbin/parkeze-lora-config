@@ -107,11 +107,11 @@ case "${bus}" in
          # single USB stick, false on the RAK7289CV2, whose two RAK5146s are
          # ttyACM0 and ttyACM1. Handing both slots head -1 pointed them at the
          # same ttyACM0, so slot 1 fought slot 0 for one radio and the other
-         # eight channels never came up. A declared node ("usb:/dev/ttyACM1:-"
-         # in board.conf) is recorded per slot by detection; only the kit's
-         # bare "usb" needs the guess.
+         # eight channels never came up. A declared node ("usb:/dev/lora1:-"
+         # in board.conf, a ttyACM by its hub port) is recorded per slot by
+         # detection; only the kit's bare "usb" needs the guess.
          case "${device}" in
-             /dev/tty*) ;;
+             /dev/*) ;;
              *) device="$(ls /dev/ttyACM* /dev/ttyUSB* 2>/dev/null | head -n1)" ;;
          esac ;;
     *)   die "bus '${bus}' is not supported by concentratord" ;;

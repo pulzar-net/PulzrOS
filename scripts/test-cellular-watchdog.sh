@@ -47,12 +47,16 @@ stub logger 'exit 0'
 stub ifup 'echo "ifup $*" >> "$ACTIONS"
 [ -n "$IFUP_FIXES" ] && { echo connected > "$SANDBOX/mm"; echo true > "$SANDBOX/up"; }; exit 0'
 # A reset recreates the device, so its counter starts over, and the modem
-# comes back as RESET_TO when the case says how it does.
+# comes back as RESET_TO when the case says how it does. With MMCLI_RESET_FAILS
+# the modem no longer answers AT, and only its reset line does that.
 stub mmcli 'case "$*" in
   *--output-keyvalue*) echo "modem.generic.state : $(cat "$SANDBOX/mm")" ;;
-  *--reset*) echo "mmcli $*" >> "$ACTIONS"; echo 10 > "$RX"
+  *--reset*) echo "mmcli $*" >> "$ACTIONS"; [ -n "$MMCLI_RESET_FAILS" ] && exit 1
+             echo 10 > "$RX"
              [ -n "$RESET_TO" ] && { echo "$RESET_TO" > "$SANDBOX/mm"; echo false > "$SANDBOX/up"; } ;;
 esac; exit 0'
+stub parkeze-hwline 'echo "hwline $*" >> "$ACTIONS"; echo 10 > "$RX"
+[ -n "$RESET_TO" ] && { echo "$RESET_TO" > "$SANDBOX/mm"; echo false > "$SANDBOX/up"; }; exit 0'
 stub reboot 'echo reboot >> "$ACTIONS"'
 
 fail=0
@@ -92,6 +96,8 @@ run "wired tunnel up is not judged"      30    flat up      1     25200  true  c
 run "blocked wwan, modem registered"     10    grow waiting 1     25200  false registered ""       1     0   "$I"
 run "up with no bearer"                  10    grow waiting 1     25200  true  registered ""       1     0   "$I"
 run "SIM written off: reset, then up"    12    grow waiting 1     25200  false searching  disabled 1     0   "$R,$I"
+MMCLI_RESET_FAILS=1 \
+run "no AT: reset by its line, then up"  12    grow waiting 1     25200  false searching  disabled 1     0   "$R,hwline modem-reset pulse 1,$I"
 run "refused for good backs off, reboots" 32   flat waiting 1     25200  false searching  disabled ""    0   "$R,$I,$I,$I,$I,$I,reboot"
 run "refused, young: no reboot"          32    flat waiting 1     3600   false searching  disabled ""    0   "$R,$I,$I,$I,$I,$I"
 run "refused behind a wired tunnel"      32    flat up      1     25200  false searching  disabled ""    0   "$R,$I,$I,$I,$I,$I"

@@ -181,7 +181,7 @@ export interface Slot {
       resetGpio, which detection overwrites every run with whatever it
       actually probed with. */
   resetGpioOverride: string;
-  status: 'present' | 'absent' | 'unsupported' | 'unknown';
+  status: 'present' | 'absent' | 'unfitted' | 'unsupported' | 'unknown';
   detected: string | null;
   override: string | null;
   active: string | null;

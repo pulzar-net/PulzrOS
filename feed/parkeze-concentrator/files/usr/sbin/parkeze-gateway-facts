@@ -37,6 +37,14 @@ tunnel="$(jsonfilter -i /etc/parkeze/wireguard/tunnel.json -e '@.address' 2>/dev
 
 echo "concentrator=$(uci -q get parkeze.concentrator.status || echo unknown)"
 
+# The unit as its maker recorded it, where it did (parkeze-hwdesc): which of
+# a model's builds this is, the serial on its label, and its capabilities.
+if hw="$(parkeze-hwdesc get DEV_NAME 2>/dev/null)" && [ -n "${hw}" ]; then
+    echo "hw=${hw}"
+    echo "hw_sn=$(parkeze-hwdesc get DEV_SERIAL_NUMBER)"
+    echo "hw_caps=$(parkeze-hwdesc caps)"
+fi
+
 # on, off or absent; parkeze.net lists a gateway with Bluetooth as carrying
 # both radios, and shows the switch for it.
 [ -x /usr/sbin/parkeze-ble ] && echo "bluetooth=$(/usr/sbin/parkeze-ble state)"

@@ -307,8 +307,15 @@ function Concentrator({ slot }: { slot: Slot }) {
   });
 
   const configurable = concentrator.data?.configurable ?? false;
+  // unfitted: empty because the unit was built with fewer cards, not broken.
   const tone =
-    slot.status === 'present' ? 'success' : slot.status === 'absent' ? 'error' : 'warning';
+    slot.status === 'present'
+      ? 'success'
+      : slot.status === 'absent'
+        ? 'error'
+        : slot.status === 'unfitted'
+          ? 'neutral'
+          : 'warning';
 
   return (
     <>

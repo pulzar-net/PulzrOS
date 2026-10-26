@@ -251,10 +251,20 @@ elif [ -n "${PARKEZE_GPS}" ] && [ "${PARKEZE_GPS}" != "auto" ]; then
     # knowing what is fitted is not the same as knowing it works.
     found="${PARKEZE_GPS_DEV}"
     found_baud="${PARKEZE_GPS_BAUD:-9600}"
-    probe_nmea "${found}" "${found_baud}" || {
-        log "board declares GPS on ${found} but it emitted no NMEA"
-        found=""
-    }
+    # A receiver that has gone quiet gets one reset through its own line,
+    # where the board has one (the RAK7289CV2's u-blox, gnss-reset), before
+    # it is written off.
+    if ! probe_nmea "${found}" "${found_baud}"; then
+        if [ -n "${PARKEZE_GPS_RESET}" ] && parkeze-hwline "${PARKEZE_GPS_RESET}"; then
+            log "board declares GPS on ${found} but it emitted no NMEA; resetting it through ${PARKEZE_GPS_RESET}"
+            parkeze-hwline "${PARKEZE_GPS_RESET}" pulse 1
+            sleep 2
+        fi
+        probe_nmea "${found}" "${found_baud}" || {
+            log "board declares GPS on ${found} but it emitted no NMEA"
+            found=""
+        }
+    fi
 else
     for port in $(candidates); do
         if is_claimed "${port}"; then

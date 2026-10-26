@@ -1,5 +1,5 @@
 Package: parkeze-cellular
-Depends: modemmanager, kmod-usb-net-qmi-wwan, ucode, curl
+Depends: parkeze-base, modemmanager, kmod-usb-net-qmi-wwan, ucode, curl
 Maintainer: Joseph Telaak <joseph@parkeze.com>
 Architecture: all
 Description: Cellular backhaul management and data frugality.
