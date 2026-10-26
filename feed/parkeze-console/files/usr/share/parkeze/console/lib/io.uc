@@ -63,9 +63,9 @@ status = function() {
             // Mapped *and* actually present. A board file naming an LED the
             // kernel does not expose is the exact failure this surfaces.
             present: !!(physical && (index(present, physical) >= 0 ||
-                // An I2C-attached LED (the RAK7268's breathing light) is not a
-                // directory to list; parkeze-led knows how to ask the chip.
-                (substr(physical, 0, 7) == 'aw2013:' &&
+                // An RGB light (the RAK7268's breathing light) is three
+                // directories, not one; parkeze-led knows how to check them.
+                (substr(physical, 0, 4) == 'rgb:' &&
                  system(sprintf('/usr/sbin/parkeze-led --has %s >/dev/null 2>&1', logical)) == 0))),
         };
     }
@@ -73,7 +73,15 @@ status = function() {
     // Everything the kernel has that nothing is mapped to, so a wrong name in
     // a board file is fixable by looking rather than by guessing.
     const claimed = {};
-    for (let logical in LOGICAL) if (map[logical]) claimed[map[logical]] = true;
+    for (let logical in LOGICAL) {
+        const physical = map[logical];
+        if (!physical) continue;
+        if (substr(physical, 0, 4) == 'rgb:')
+            for (let c in ['red', 'green', 'blue'])
+                claimed[c + ':' + substr(physical, 4)] = true;
+        else
+            claimed[physical] = true;
+    }
     const spare = [];
     for (let name in present) if (!claimed[name]) spare[length(spare)] = name;
 

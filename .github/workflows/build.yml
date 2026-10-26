@@ -142,6 +142,11 @@ jobs:
           ./scripts/test-claim.sh
           ./scripts/test-ssh-setup.sh
 
+      # The RAK7268's light breathes in hardware, in software or not at all
+      # depending on the kernel; each is checked against a fake sysfs.
+      - name: LED script
+        run: ./scripts/test-led.sh
+
       # The upstream indexes are ~10MB and a pinned release never changes them.
       - name: Cache the upstream package indexes
         uses: actions/cache@v4

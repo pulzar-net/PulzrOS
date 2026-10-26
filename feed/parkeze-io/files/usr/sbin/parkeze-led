@@ -19,9 +19,9 @@
 # RAK7289CV2 has six. Without a mapping layer, every caller would need to know
 # which board it is on, and the Pi case would be a pile of conditionals.
 
-. /etc/parkeze/board.conf
+. "${PARKEZE_BOARD_CONF:-/etc/parkeze/board.conf}"
 
-LEDS=/sys/class/leds
+LEDS="${PARKEZE_LEDS:-/sys/class/leds}"
 
 # Resolve a logical name to a physical LED directory, or empty.
 resolve() {
@@ -37,9 +37,8 @@ resolve() {
     esac
     [ -n "${physical}" ] || return 1
     case "${physical}" in
-        aw2013:*)
-            aw_present "$(echo "${physical}" | cut -d: -f2)" \
-                       "$(echo "${physical}" | cut -d: -f3)" || return 1
+        rgb:*)
+            rgb_present "${physical#rgb:}" || return 1
             echo "${physical}"
             return 0 ;;
     esac
@@ -51,85 +50,78 @@ max_brightness() {
     cat "$1/max_brightness" 2>/dev/null || echo 1
 }
 
-# ── the breathing LED ───────────────────────────────────────────────────────
+# ── the RGB light ───────────────────────────────────────────────────────────
 #
-# The big light on top of a RAK7268 is not in /sys/class/leds. It is an AW2013
-# three-channel driver on I2C, and the "breathing" is the chip's own hardware
-# fade — it is told the rise, hold, fall and dark times once and then does it
-# forever with no help from us. That is why this is a register write and not a
-# userspace loop: a loop would be a wakeup every few dozen milliseconds on a
-# board this small. The register map is the vendor's, from breathing_led in the
-# stock firmware.
+# The big light on top of a RAK7268 is an AW2013 three-channel driver on I2C,
+# which the kernel's leds-aw2013 exposes as three LEDs: red:status,
+# green:status and blue:status. A board maps a logical LED onto such a set as
+# `rgb:<function>`, e.g. PARKEZE_LED_CLOUD="rgb:status".
 #
-# A board maps a logical LED onto it as `aw2013:<i2c bus>:<address>`, e.g.
-# PARKEZE_LED_CLOUD="aw2013:0:0x45".
+# The breathing is the chip's own fade. The pattern trigger's hw_pattern tells
+# it the rise, hold, fall and dark times once and it breathes forever with no
+# help from us; a userspace loop would be a wakeup every few dozen
+# milliseconds on a board this small. A driver without hardware patterns gets
+# the same four stages as a software pattern, which the kernel plays itself.
 
-AW_PWM="${PARKEZE_LED_AW2013_PWM:-0xff}"
-# Rise/hold and fall/dark, one nibble each, in the chip's steps (0=0.13s,
-# 1=0.26s, 2=0.52s, 3=1.04s, 4=2.08s). 0x40/0x41 is 2s up, 2s down and a short
-# rest: a slow breath. This is the knob to turn if it reads too twitchy or too
-# sleepy on a real unit.
-AW_TIMING="${PARKEZE_LED_BREATHE_TIMING:-0x40 0x41}"
-AW_CACHE=/var/run/parkeze/led-aw2013
+# Rise, hold, fall and dark, in ms; the AW2013 rounds each up to 130ms * 2^n.
+# 2s up, 2s down and a short rest: a slow breath. This is the knob to turn if
+# it reads too twitchy or too sleepy on a real unit.
+BREATHE="${PARKEZE_LED_BREATHE:-2080 130 2080 260}"
+RGB_CACHE="${PARKEZE_LED_CACHE:-/var/run/parkeze}/led-rgb"
 
-# resolve() runs inside $(...), a subshell, so it cannot hand the bus and
-# address back through variables; whoever holds the spec calls this.
-aw_select() {
-    AW_BUS="$(echo "$1" | cut -d: -f2)"
-    AW_ADDR="$(echo "$1" | cut -d: -f3)"
+rgb_present() {
+    local c
+    for c in red green blue; do [ -d "${LEDS}/${c}:$1" ] || return 1; done
 }
 
-aw_w() { i2cset -y "${AW_BUS}" "${AW_ADDR}" "$1" "$2" >/dev/null 2>&1; }
-
-# Register 0x77 reads back 0x45 on this chip; the stock firmware uses the same
-# check to decide the LED exists at all, so a board without it stays dark and
-# silent instead of writing to whatever else answers at that address.
-aw_present() {
-    command -v i2cget >/dev/null 2>&1 &&
-        [ "$(i2cget -y "$1" "$2" 0x77 2>/dev/null)" = 0x45 ]
-}
-
-# Colour is which of the three channels are enabled. y is red+green.
-aw_mask() {
+# Colour is which of the three channels are lit. y is red+green.
+rgb_channels() {
     case "$1" in
-        r) echo 1 ;; g) echo 2 ;; b) echo 4 ;; y) echo 3 ;; w) echo 7 ;;
-        off) echo 0 ;;
+        r) echo red ;; g) echo green ;; b) echo blue ;;
+        y) echo "red green" ;; w) echo "red green blue" ;;
+        off) echo "" ;;
         *) return 1 ;;
     esac
 }
 
-# aw_show <steady|breathe> <colour|off>
-aw_show() {
-    local mode="$1" color="$2" mask cfg reg t1 t2 sig
-    mask="$(aw_mask "${color}")" || return 1
+# rgb_show <steady|breathe> <colour|off>, on the set named by RGB.
+rgb_show() {
+    local mode="$1" color="$2" lit c dir max sig pat
+    lit="$(rgb_channels "${color}")" || return 1
 
     # The daemon re-asserts state every few seconds. Sending the same thing
     # again would restart the fade from the bottom each time, which reads as a
-    # stutter; only touch the chip when what it should show has changed.
+    # stutter; only touch the light when what it should show has changed.
     sig="${mode}:${color}"
-    [ "$(cat "${AW_CACHE}" 2>/dev/null)" = "${sig}" ] && return 0
+    [ "$(cat "${RGB_CACHE}-${RGB}" 2>/dev/null)" = "${sig}" ] && return 0
 
-    aw_w 0x01 0x01            # chip on
-    aw_w 0x30 0x00            # all channels dark while reconfiguring, so the
-                              # ones enabled below start their fade together
-    if [ "${mask}" -ne 0 ]; then
-        cfg=0x63; [ "${mode}" = breathe ] && cfg=0x73   # 15mA; 0x7_ is breathe
-        for reg in 0x31 0x32 0x33; do aw_w "${reg}" "${cfg}"; done
-        for reg in 0x34 0x35 0x36; do aw_w "${reg}" "${AW_PWM}"; done
-        set -- ${AW_TIMING}; t1="$1"; t2="$2"
-        for reg in 0x37 0x3a 0x3d; do aw_w "${reg}" "${t1}"; done
-        for reg in 0x38 0x3b 0x3e; do aw_w "${reg}" "${t2}"; done
-        for reg in 0x39 0x3c 0x3f; do aw_w "${reg}" 0x50; done
-    fi
-    aw_w 0x30 "${mask}"
+    for c in red green blue; do
+        put none "${LEDS}/${c}:${RGB}/trigger"
+        put 0 "${LEDS}/${c}:${RGB}/brightness"
+    done
+    for c in ${lit}; do
+        dir="${LEDS}/${c}:${RGB}"
+        max="$(max_brightness "${dir}")"
+        # Without kmod-ledtrig-pattern there is no pattern trigger to select
+        # and no pattern file appears; a steady light beats a dark one.
+        if [ "${mode}" = breathe ] && put pattern "${dir}/trigger" &&
+           [ -e "${dir}/pattern" ]; then
+            set -- ${BREATHE}
+            pat="0 $1 ${max} $2 ${max} $3 0 $4"
+            { [ -e "${dir}/hw_pattern" ] && put "${pat}" "${dir}/hw_pattern"; } ||
+                put "${pat}" "${dir}/pattern"
+        else
+            put "${max}" "${dir}/brightness"
+        fi
+    done
 
-    mkdir -p "$(dirname "${AW_CACHE}")" 2>/dev/null
-    echo "${sig}" > "${AW_CACHE}" 2>/dev/null
+    mkdir -p "$(dirname "${RGB_CACHE}")" 2>/dev/null
+    echo "${sig}" > "${RGB_CACHE}-${RGB}" 2>/dev/null
     return 0
 }
 
 # What each generic state means on a light that can do colour.
-aw_state() {
+rgb_state() {
     case "$1" in
         path)
             # The same three answers a plain LED gives with on / blink / off,
@@ -138,15 +130,15 @@ aw_state() {
             # red is deliberately not breathing, so a light that has stopped
             # breathing is itself the signal.
             case "$2" in
-                wired)    aw_show breathe b ;;
-                cellular) aw_show breathe y ;;
-                *)        aw_show steady r ;;
+                wired)    rgb_show breathe b ;;
+                cellular) rgb_show breathe y ;;
+                *)        rgb_show steady r ;;
             esac ;;
-        breathe) aw_show breathe "${2:-b}" ;;
-        solid)   aw_show steady "${2:-w}" ;;
-        on)      aw_show steady w ;;
-        off)     aw_show steady off ;;
-        blink|flash|heartbeat) aw_show breathe w ;;
+        breathe) rgb_show breathe "${2:-b}" ;;
+        solid)   rgb_show steady "${2:-w}" ;;
+        on)      rgb_show steady w ;;
+        off)     rgb_show steady off ;;
+        blink|flash|heartbeat) rgb_show breathe w ;;
         *) echo "unknown LED state '$1'" >&2; return 2 ;;
     esac
 }
@@ -158,7 +150,8 @@ put()     { { echo "$1" > "$2"; } 2>/dev/null; }
 
 case "${1:-}" in
     --has)
-        # For the console, which cannot see I2C the way it can list a directory.
+        # For the console, which sees one directory per LED and an RGB light
+        # as three of them.
         resolve "${2:?usage: parkeze-led --has <name>}" >/dev/null 2>&1
         exit $?
         ;;
@@ -182,11 +175,11 @@ case "${1:-}" in
             path="$(resolve "${logical}" 2>/dev/null)" || continue
             echo "${logical} -> ${path}"
             case "${path}" in
-                aw2013:*)
-                    aw_select "${path}"
-                    for c in r g b; do aw_state solid "${c}"; sleep 1; done
-                    aw_state breathe b; sleep 5
-                    aw_state off
+                rgb:*)
+                    RGB="${path#rgb:}"
+                    for c in r g b; do rgb_state solid "${c}"; sleep 1; done
+                    rgb_state breathe b; sleep 5
+                    rgb_state off
                     continue ;;
             esac
             put none "${path}/trigger"
@@ -204,9 +197,9 @@ STATE="${2:?usage: parkeze-led <name> <state>}"
 path="$(resolve "${NAME}")" || exit 0   # absent LED: not an error, just nothing
 
 case "${path}" in
-    aw2013:*)
-        aw_select "${path}"
-        aw_state "${STATE}" "${3:-}"
+    rgb:*)
+        RGB="${path#rgb:}"
+        rgb_state "${STATE}" "${3:-}"
         exit $?
         ;;
 esac
@@ -245,7 +238,7 @@ case "${STATE}" in
         ;;
     path)
         # Which backhaul is carrying us, on a light that can only be on, off or
-        # blinking. The RGB LED says the same thing in colour (see aw_state).
+        # blinking. The RGB LED says the same thing in colour (see rgb_state).
         case "${3:-}" in
             wired)    trigger none; bright "$(max_brightness "${path}")" ;;
             cellular) trigger timer; put 1000 "${path}/delay_on"; put 1000 "${path}/delay_off" ;;
