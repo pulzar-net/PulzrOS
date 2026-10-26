@@ -3,8 +3,8 @@
 //
 // ── READING A KEY ON THE ucode THIS IMAGE SHIPS ────────────────────────────
 //
-// OpenWrt 24.10.0 pins ucode 2024-07-22, whose file.read(n) is a bare fread()
-// with no clearerr() after it — that arrived upstream in 2026. Under musl the
+// file.read(n) is a bare fread() with no clearerr() after it, still in the
+// 2026.01.16 ucode that OpenWrt 25.12 pins. Under musl the
 // EOF flag is sticky: once a read times out, every later read on that handle
 // returns nothing, immediately, forever. stdin is therefore never read
 // directly. Input is a handle opened on the same tty, read until a read comes
@@ -12,8 +12,8 @@
 // EOF, which is the one moment its stdio buffer is known to be empty, so no
 // keystroke is lost in the swap.
 //
-// The tty runs in one of two modes, set with stty because 24.10's fs has no
-// ioctl() either:
+// The tty runs in one of two modes, set with stty, which predates fs.ioctl()
+// (the ucode 24.10 pinned had none):
 //
 //   wait()    VMIN 1: block until a key. Used whenever nothing on screen is
 //             live — the sign-in screen, an idle console — so a TUI sitting

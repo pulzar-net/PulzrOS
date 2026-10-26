@@ -31,7 +31,7 @@
 # back when the process ends. libgpiod v2 can hold one with `gpioset -z`, but
 # that leaves a daemon per line to reap, and the reset has to survive whoever
 # calls it. The deprecated sysfs interface persists by design, which is why the
-# vendor scripts all use it — and OpenWrt 24.10 still ships it.
+# vendor scripts all use it — and OpenWrt 24.10 and 25.12 still ship it.
 #
 # Note the base offset: sysfs numbers are not BCM numbers on a modern kernel.
 # gpiochip0 starts at 512 on a Pi with kernel 6.6, so BCM18 is /sys/.../gpio530.

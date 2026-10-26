@@ -165,7 +165,7 @@ const CRYPT_ROUNDS = 100000;
 crypt = function(password, spec) {
     // openssl passwd, NOT busybox mkpasswd.
     //
-    // The busybox shipped in OpenWrt 24.10 has neither the `mkpasswd` nor the
+    // The busybox in OpenWrt 24.10 and 25.12 has neither the `mkpasswd` nor the
     // `cryptpw` applet compiled in. The old call therefore produced nothing at
     // all, on every gateway: /etc/parkeze/console/password was written zero
     // bytes at provisioning, verifyPassword refused every attempt because the

@@ -144,8 +144,9 @@ which turns the whole mark cyan, so on that console the mark picks its own.
 
 ## The ucode it runs on
 
-OpenWrt 24.10.0 pins ucode 2024-07-22. Three things about it shaped this code,
-and will bite anything else that reads a terminal:
+OpenWrt 25.12 pins ucode 2026.01.16; this code was written against 24.10's
+2024-07-22. Three things about it shaped this code, and will bite anything else
+that reads a terminal. All three still hold on 2026.01.16:
 
 - **A timed-out read is sticky.** `file.read(n)` is a bare `fread()`; under
   musl the EOF flag it sets is never cleared, so every later read on that
@@ -156,8 +157,8 @@ and will bite anything else that reads a terminal:
   or use `map()`.
 - **`7 / 2` is `3`.** Integer division stays integer; multiply by `1.0` first.
 
-There is no `ioctl()` either, so raw mode and the window size go through
-`stty`. OpenWrt's busybox has none, which is why the package depends on
+Raw mode and the window size go through `stty`, because 24.10's ucode had no
+`fs.ioctl()`; 25.12's does. OpenWrt's busybox has none, which is why the package depends on
 `coreutils-stty`.
 
 ## Running it on a Mac

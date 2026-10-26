@@ -192,8 +192,8 @@ if [ ! -f "${STATE}/password" ]; then
 
     # openssl passwd, NOT busybox mkpasswd.
     #
-    # The busybox in OpenWrt 24.10 has neither the mkpasswd nor the cryptpw
-    # applet compiled in. The previous call here produced nothing at all, on
+    # The busybox in OpenWrt 24.10 and 25.12 has neither the mkpasswd nor the
+    # cryptpw applet compiled in. The previous call here produced nothing at all, on
     # every gateway ever built: ${STATE}/password was written zero bytes, the
     # console refused every sign-in because the stored hash was empty, and
     # root's /etc/shadow entry was never populated either — which left
