@@ -135,10 +135,11 @@ jobs:
 
       # The claim's revocation path and sshd's trust: shell that otherwise
       # only runs on a gateway, against stubs for everything it calls.
-      - name: Claim and SSH setup logic
+      - name: Claim, SSH setup and cellular watchdog logic
         run: |
           ./scripts/test-claim.sh
           ./scripts/test-ssh-setup.sh
+          ./scripts/test-cellular-watchdog.sh
 
       # The upstream indexes are ~10MB and a pinned release never changes them.
       - name: Cache the upstream package indexes

@@ -80,6 +80,58 @@ answer re-applies the tunnel and LoRa routing and sends a report, so
 parkeze.net shows `wifiUplink` beside the gateway. `roam()` treats `portal` and
 `offline` as down, except while somebody is signing in (see access.md).
 
+### Cellular comes back on its own
+
+`parkeze-cellular-watchdog` keeps the cellular link carrying traffic. It was
+written for two 1NCE outages, each of which left a gateway offline with
+nothing on it that would ever try again.
+
+**A link that carries nothing.** 1NCE re-creates the session every 24 hours.
+On 2026-10-23 the Osbourne gateway sent zero bytes over the new one for a day
+while netifd and ModemManager both called the link fine.
+
+**A link nobody brings back.** A connectivity reset made while the network is
+refusing the SIM left a 0.1.0 gateway offline for good. Two things give up, one
+on top of the other:
+
+- **netifd.** ModemManager's `10-report-down` bounces `wwan` once. If
+  registration or connect fails in that one setup, OpenWrt's modemmanager proto
+  calls `proto_block_restart` and netifd never tries `wwan` again.
+- **The modem.** A refused attach can come back with cause #8, "EPS and
+  non-EPS services not allowed". After that the modem treats the SIM as invalid
+  until it is switched off, and searches in emergency-only mode forever.
+  Re-enabling the SIM at 1NCE, `ifup` and a ModemManager disable/enable all
+  leave it there. A modem reset clears it.
+
+When the network answers straight away, `10-report-down` alone recovers in
+about 15 seconds. It takes a refusal longer than that one retry.
+
+Once a minute the watchdog reads netifd's status and ModemManager's state, and
+acts when:
+
+| Seen for | State | Does |
+|---|---|---|
+| 2 min | `wwan` down, modem registered, disabled or gone | `ifup`; retries 1, 2, 4 min, up to 30 |
+| 5 min | `wwan` down, modem not registered | modem reset, then the row above; resets 5, 10, 20 min, up to 30 |
+| 2 min | `wwan` up, modem has no bearer | `ifup` |
+| 10 min | `wwan` still setting up | `ifup` |
+| 5 min | `wwan` up and connected, receive counter not growing | probe out of the cellular device; if that fails, `ifup`, then a modem reset, then a reboot, 5 min apart |
+| 30 min | `wwan` down | reboot |
+
+A reboot happens only when the gateway has been up six hours and nothing
+reaches parkeze.net, and the uplink buffer writes its queue to the card first.
+The traffic row is skipped while the wired tunnel is up, because a SIM behind
+ethernet is silent by design. Nothing happens while cellular is turned off in
+the console (`network.wwan.disabled`) or there is no modem. The probe is the
+only thing that spends data: one TCP connect, about 700 bytes, per five minutes
+of silence.
+
+The proto's own `force_connection` is not used. It covers registration and
+connect but not the other failures that block, and re-running setup does
+nothing for a modem that has written the SIM off.
+
+`scripts/test-cellular-watchdog.sh` drives all of it against stubs, in CI.
+
 ### Nothing is accepted from the wan zone
 
 This is the rule that makes a wired backhaul safe, and it is worth stating
