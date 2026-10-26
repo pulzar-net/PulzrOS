@@ -167,10 +167,11 @@ jobs:
             bash -n "$f" || { echo "::error file=$f::bash syntax error"; fail=1; }
           done
           while IFS= read -r f; do
-            # Shebang-aware: /usr/sbin also holds ucode programs, and feeding
-            # one to `sh -n` reports a syntax error in perfectly good ucode.
+            # Shebang-aware: /usr/sbin also holds ucode programs and
+            # parkeze-rak-power's Lua, and feeding either to `sh -n` reports a
+            # syntax error in perfectly good code.
             case "$(head -c 32 "$f")" in
-              '#!'*ucode*) continue ;;
+              '#!'*ucode*|'#!'*lua*) continue ;;
             esac
             sh -n "$f" || { echo "::error file=$f::POSIX sh syntax error"; fail=1; }
           done < <(find feed boards -type f \
