@@ -17,8 +17,8 @@ own design, not this one grown.
 
 ## What is known, and from where
 
-Nothing on this bus has been seen answering. The design rests on two sources
-and one bench probe.
+Nothing on this bus has been seen answering. The design rests on three
+sources and one bench probe.
 
 - **ChirpStack's RAK support**, the one known-working user of this bus:
   `chirpstack/chirpstack-gateway-utils`, `src/rak/watchdog.rs` and
@@ -38,6 +38,22 @@ and one bench probe.
   bridge: `ch341 1-1.4:1.0: ch341-uart converter detected`, so a CH340
   (`1a86:7523`) at port `1-1.4` on the internal hub. RAK's instructions there
   for disabling the watchdog name its WisGateOS daemon, `spregread`.
+- **RAK's own WisGateOS 2.3.1** (RAK636 image, read statically, not run).
+  - `/etc/hotplug.d/usb/11-symlinks` maps `1-1.4:1.0` to `/dev/ttyRS485`, so
+    the CH340 is RAK's RS485 port. The same file has LoRa card 0 at `1-1.2`,
+    card 1 at `1-1.3`, and the EG95's AT port at `1-1.1:1.2`.
+  - The bus is driven by `/usr/sbin/spregread`, which uses libmodbus. Its init
+    script runs it only when the unit's factory capabilities
+    (`einfo.dev.caps`) include `solar_battery` (battery) or `hwwdg`
+    (watchdog). It first runs `spregread -i /dev/ttyRS485 -e 0 -E 1 -F`,
+    whose help says "force off WDT". So the watchdog can be switched off over
+    Modbus as well as fed. RAK's `stop_wdt_service` does the same, presumably
+    so a long operation such as an upgrade is not cut off. That register
+    is not known here: the binary has not been disassembled.
+  - `/etc/config/spregread`: battery at device 110, address `0x6000`, read
+    every 10 s; `wdtcfg` timeout `10`. That 10 matches the value ChirpStack
+    writes to `0x0001`, so the feed is most likely the watchdog's timeout in
+    minutes, rewritten.
 - **The bench Pro** (2026-10-26, ParkezeOS 0.1.0, with
   `kmod-usb-serial-ch341` from the 24.10.0 feed, on PoE). The CH340 came up as
   `/dev/ttyUSB4` at `1-1.4`, with the EG95 on `ttyUSB0`-`3`. At 9600 8N1,
@@ -47,9 +63,12 @@ and one bench probe.
   - a read of `0x6000` at slave 110
 
   The line was silent for 5 s idle, and its own TX did not echo. No battery
-  pack was fitted, so 110's silence is expected. 200's says nothing about the
-  revision: an older board has no watchdog, and on PoE a newer one may not run
-  it or answer.
+  pack was fitted, so 110's silence is expected. The unit's factory
+  descriptor (mtd `factory` at `0x2000`) lists `DEV_CAPS` as
+  `dying_gasp solar_battery hwwdg lbt`, so it has the watchdog and the
+  battery hardware. Its watchdog was silent on PoE, so a unit that has one
+  may not answer, or may not run it, off DC. A Lite's descriptor lists only
+  `breathing_light`.
 
 Still open:
 
@@ -57,8 +76,9 @@ Still open:
 |---|---|
 | Does a newer-revision unit on DC answer at 200, and does the feed keep it up? | Everything here. ChirpStack's code and the reporter in #155 are the only evidence. |
 | Does a fitted battery pack answer at 110 with those registers? | The battery facts on the gateway page. |
-| What does register `0x0001 = 10` mean? | The feed interval. It may be a timeout in minutes. Feeding every two minutes is safe under any reading that keeps ChirpStack's five working. |
-| What does the watchdog do during a long sysupgrade, or in failsafe or recovery? | Nothing feeds it in those states. A flash takes about four minutes on this board and the last feed is at most two minutes before it, so it should fit inside ten. Recovery on DC power will not fit. |
+| What does register `0x0001 = 10` mean? | Most likely the timeout in minutes, matching RAK's `wdtcfg timeout 10`. Feeding every two minutes is safe under any reading that keeps ChirpStack's five working. |
+| What does the watchdog do during a long sysupgrade, or in failsafe or recovery? | Nothing feeds it in those states. A flash takes about four minutes on this board and the last feed is at most two minutes before it, so it should fit inside ten. Recovery on DC power will not fit. RAK switches the watchdog off over Modbus first (`spregread -F`), but which register that writes is not known. |
+| Does the watchdog answer, or run at all, on PoE? | Whether a silent watchdog can ever be a warning. The bench unit has one and was silent on PoE, so for now silence is never a fault. |
 
 ## Design
 
@@ -100,7 +120,7 @@ starts nothing on a board that does not set the port.
 |---|---|
 | `fed` | The last feed succeeded. |
 | `failing` | It answered earlier in this boot and has stopped. On DC power the unit is ten minutes from a power cut. Retried every 15 s, logged as an error, reported at once. |
-| `absent` | It has never answered this boot. An older revision has no watchdog, and a newer one on PoE may not answer, so this is not a fault: logged once at info, never reported on its own, and still fed every 2 minutes in case it is there. While the port itself is missing, as it is for the first seconds of boot, it is retried every 10 s instead. |
+| `absent` | It has never answered this boot. An older revision has no watchdog, and one that has it may not answer on PoE (the bench unit does not), so this is not a fault: logged once at info, never reported on its own, and still fed every 2 minutes in case it is there. While the port itself is missing, as it is for the first seconds of boot, it is retried every 10 s instead. |
 
 **The battery pack** is an optional accessory, so one that has never answered
 is `absent` and is asked every 30 minutes, in case one is fitted later, instead

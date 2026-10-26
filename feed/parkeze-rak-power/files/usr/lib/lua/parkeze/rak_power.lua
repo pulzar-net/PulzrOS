@@ -257,11 +257,11 @@ function Service:feed()
   -- power cut, so it is retried hard and logged loudly.
   --
   -- Never fed is what an older revision, which has no watchdog, looks like,
-  -- and what a newer one may look like on PoE: the bench Pro (2026-10-26, on
-  -- PoE) answered nothing at 0xC8, read or write, and nobody knows which it
-  -- is. So silence is not a fault and is not treated as one: logged once,
-  -- asked again at the ordinary interval, which still fits four tries inside
-  -- the ten minutes a newer board on DC would allow. A port that is not there
+  -- and also what a newer one looks like on PoE: the bench Pro's factory
+  -- descriptor lists `hwwdg`, and on PoE (2026-10-26) it answered nothing at
+  -- 0xC8, read or write. So silence is not a fault and is not treated as one:
+  -- logged once, asked again at the ordinary interval, which still fits four
+  -- tries inside the ten minutes a board on DC would allow. A port that is not there
   -- yet is different: nothing was asked, the CH340 driver loads seconds into
   -- boot, and the first feed should follow it rather than wait two minutes.
   if wd.answered then
