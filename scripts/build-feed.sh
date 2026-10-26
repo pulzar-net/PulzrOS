@@ -62,8 +62,9 @@ else
   echo "      brew install gnu-tar   (for reproducible builds on macOS)"
   # --no-mac-metadata, or every file with an extended attribute (which cp -a
   # gives most of them on a Mac) brings a ._<name> AppleDouble file with it,
-  # and that lands in the image beside the real one.
-  tar_create() { "${TAR}" --uid 0 --gid 0 --no-mac-metadata -cf "$1" .; }
+  # and that lands in the image beside the real one. --no-xattrs, or the same
+  # attributes ride along as pax headers that GNU tar warns about per file.
+  tar_create() { "${TAR}" --uid 0 --gid 0 --no-mac-metadata --no-xattrs -cf "$1" .; }
 fi
 
 mkdir -p "${STAGE_DIR}"

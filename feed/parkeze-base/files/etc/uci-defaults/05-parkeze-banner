@@ -1,5 +1,5 @@
 #!/bin/sh
-# Silence the stock OpenWrt banner.
+# Silence the stock OpenWrt banner, and OpenWrt 25.12's opkg-to-apk table.
 #
 # /etc/profile cats /etc/banner before it sources profile.d, so leaving it in
 # place means every login shows OpenWrt's wordmark and then ours. Emptied
@@ -13,4 +13,8 @@
 [ -n "${IPKG_INSTROOT}" ] && exit 0
 
 : > /etc/banner
+
+# Fourteen lines on every login about a package manager nobody at a gateway
+# runs: nothing here is installed by hand, and firmware is the only update.
+: > /etc/profile.d/apk-cheatsheet.sh
 exit 0
