@@ -176,8 +176,22 @@ local function unit()
 
   bus = fake_bus()
   svc = bus.service(rs485.config(BOARD, {}))
-  svc:tick()
+  wait = svc:tick()
   eq("never answered is absent, not failing", svc:state().watchdog.state, "absent")
+  -- The bench Pro on PoE: nothing at 0xC8, and nobody knows whether it has
+  -- the watchdog. Feeding it must cost nothing and alarm nobody.
+  check("a silent watchdog is asked at the ordinary interval", wait > 119 and wait <= 120, wait)
+  for _ = 1, 5 do bus.t = bus.t + 120; svc:tick() end
+  eq("so six asks in ten minutes", writes_to(bus, 200), 6)
+  local loud = 0
+  for _, l in ipairs(bus.log) do
+    if l:find("watchdog", 1, true) and not l:find("^info") then loud = loud + 1 end
+  end
+  eq("and nothing about it above info", loud, 0)
+  local said = 0
+  for _, l in ipairs(bus.log) do if l:find("no watchdog answers", 1, true) then said = said + 1 end end
+  eq("said once", said, 1)
+  eq("and never reported", bus.reports, 0)
 
   -- ── a missing port, and one that goes away ───────────────────────────────
 

@@ -477,15 +477,29 @@ function Service:feed()
   wd.failures = wd.failures + 1
   wd.error = err
   -- Fed before, this boot, and now not: the unit is on a clock that ends in a
-  -- power cut. Never fed: a revision without the watchdog, or a bus that
-  -- does not reach it, which this cannot tell apart.
-  local state = wd.answered and "failing" or "absent"
-  if state ~= wd.state or wd.failures % 20 == 0 then
-    self:log(state == "failing" and "err" or "warning",
-      string.format("watchdog at slave %d not fed (%s, %d in a row): %s", wd.slave, kind, wd.failures, err))
+  -- power cut, so it is retried hard and logged loudly.
+  --
+  -- Never fed is what an older revision, which has no watchdog, looks like,
+  -- and what a newer one may look like on PoE: the bench Pro (2026-10-26, on
+  -- PoE) answered nothing at 0xC8, read or write, and nobody knows which it
+  -- is. So silence is not a fault and is not treated as one: logged once,
+  -- asked again at the ordinary interval, which still fits four tries inside
+  -- the ten minutes a newer board on DC would allow. A port that is not there
+  -- yet is different: nothing was asked, the CH340 driver loads seconds into
+  -- boot, and the first feed should follow it rather than wait two minutes.
+  if wd.answered then
+    if wd.state ~= "failing" or wd.failures % 20 == 0 then
+      self:log("err", string.format("watchdog at slave %d not fed (%s, %d in a row): %s",
+        wd.slave, kind, wd.failures, err))
+    end
+    wd.state, wd.due = "failing", now + M.WATCHDOG_RETRY
+  else
+    if wd.state ~= "absent" then
+      self:log("info", string.format("no watchdog answers at slave %d (%s); feeding it anyway", wd.slave, err))
+    end
+    wd.state = "absent"
+    wd.due = now + (kind == "port" and M.PORT_RETRY or M.WATCHDOG_INTERVAL)
   end
-  wd.state = state
-  wd.due = now + M.WATCHDOG_RETRY
 end
 
 function Service:read_battery()
