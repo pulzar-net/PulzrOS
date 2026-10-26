@@ -23,13 +23,13 @@
 
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.primary { background: var(--accent); border-color: var(--accent); color: var(--text-inverse); }
 .primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
 
 /* Outlined rather than filled. A destructive button as loud as the primary one
    gets clicked by muscle memory; this one has to be aimed at. */
 .danger { border-color: color-mix(in srgb, var(--status-error) 45%, transparent); color: var(--status-error); }
-.danger:hover:not(:disabled) { background: var(--status-error); border-color: var(--status-error); color: #fff; }
+.danger:hover:not(:disabled) { background: var(--status-error); border-color: var(--status-error); color: var(--text-inverse); }
 
 .spinner {
   width: 12px;

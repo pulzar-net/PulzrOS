@@ -46,7 +46,7 @@ expr = args[args.index('-e') + 1]
 src = open(args[args.index('-i') + 1]) if '-i' in args else sys.stdin
 try:
     value = json.load(src)
-    for part in expr[2:].split('.'):
+    for part in filter(None, expr[2:].split('.')):
         value = value[part]
 except Exception:
     sys.exit(1)
@@ -179,6 +179,20 @@ check "the report is valid JSON" python3 -c 'import json,sys; json.loads(sys.arg
 check "report carries sshCa" [ "$(field "$(last_body report)" facts.sshCa)" = true ]
 check "report carries the host key" \
     [ "$(field "$(last_body report)" facts.sshHostKey)" = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITEST" ]
+check "a board without a RAK power board reports it as null" \
+    python3 -c 'import json,sys; assert json.loads(sys.argv[1])["facts"]["rakPower"] is None' "$(last_body report)"
+
+printf '#!/bin/sh\necho "{\\"running\\":true,\\"watchdog\\":{\\"state\\":\\"failing\\"}}"\n' > "${STUBS}/parkeze-rak-power"
+chmod +x "${STUBS}/parkeze-rak-power"
+claim report
+check "the power board record rides the report" \
+    [ "$(field "$(last_body report)" facts.rakPower.watchdog.state)" = failing ]
+
+printf '#!/bin/sh\necho "{\\"running\\":tr"\n' > "${STUBS}/parkeze-rak-power"
+claim report
+check "an unreadable power board record is null, and the report still parses" \
+    python3 -c 'import json,sys; assert json.loads(sys.argv[1])["facts"]["rakPower"] is None' "$(last_body report)"
+rm -f "${STUBS}/parkeze-rak-power"
 
 # ── a 404 that is not the revoked answer ────────────────────────────────────
 

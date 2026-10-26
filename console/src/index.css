@@ -3,7 +3,9 @@
 /* Base. Component styling lives in CSS modules beside each component, the way
    parkeze.net does it — this file holds only what is genuinely global. */
 
-* { box-sizing: border-box; }
+/* overscroll: no rubber-band bounce, on the page or any scrolling list. It
+   drags the whole console past its edges and reads as a web page. */
+* { box-sizing: border-box; overscroll-behavior: none; }
 
 html, body, #root {
   height: 100%;

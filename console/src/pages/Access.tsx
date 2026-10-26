@@ -78,7 +78,7 @@ function ApCard({ state, onChange }: { state: AccessStatus; onChange: () => void
 
   if (!ap.capable) {
     return (
-      <Section title="Setup access point">
+      <Section title="Setup Access Point">
         <Notice tone="info">{ap.reason ?? 'This board has no WiFi radio.'}</Notice>
       </Section>
     );
@@ -86,7 +86,7 @@ function ApCard({ state, onChange }: { state: AccessStatus; onChange: () => void
 
   return (
     <Section
-      title="Setup access point"
+      title="Setup Access Point"
       note={
         ap.up ? (
           <Badge tone="warning">Broadcasting</Badge>
@@ -187,7 +187,7 @@ function Tunnel() {
   const tunnel = paths.data?.tunnel;
 
   return (
-    <Section title="Management tunnel">
+    <Section title="Management Tunnel">
       <FactList>
         <Fact
           label="State"
@@ -220,8 +220,10 @@ function Tunnel() {
               <span className="mono">
                 {paths.data.wired.device} → {paths.data.wired.gateway}
               </span>
+            ) : paths.data?.tunnel.via === 'wifi' ? (
+              'WiFi'
             ) : paths.data ? (
-              <Badge tone="warning">No wired route</Badge>
+              <Badge tone="warning">No ethernet or WiFi route</Badge>
             ) : null
           }
         />
@@ -235,7 +237,7 @@ function PortCard({ state }: { state: AccessStatus }) {
 
   return (
     <Section
-      title="Ethernet port"
+      title="Ethernet Port"
       note={
         port.uplink ? (
           <Badge tone="success">Uplink up</Badge>
@@ -272,7 +274,7 @@ function PortCard({ state }: { state: AccessStatus }) {
 function UsbCard({ usb }: { usb: UsbPort }) {
   return (
     <Section
-      title="USB port"
+      title="USB Port"
       note={
         usb.connected ? (
           <Badge tone="success">Connected</Badge>

@@ -567,9 +567,27 @@ facts() {
     board_id="${BOARD_ID:-unknown}"
     version="${PARKEZE_VERSION:-0.0.0}"
 
-    printf '{"board":"%s","osVersion":"%s","modemPresent":%s,"modemModel":"%s","simIccid":"%s","sshHostKey":"%s","wiredUsable":%s,"tunnelVia":"%s","tunnelState":"%s","wifiUplink":"%s","consolePort":443,"consoleScheme":"https","sshPort":22,"sshCa":%s,"system":%s}' \
+    printf '{"board":"%s","osVersion":"%s","modemPresent":%s,"modemModel":"%s","simIccid":"%s","sshHostKey":"%s","wiredUsable":%s,"tunnelVia":"%s","tunnelState":"%s","wifiUplink":"%s","consolePort":443,"consoleScheme":"https","sshPort":22,"sshCa":%s,"system":%s,"rakPower":%s}' \
         "${board_id}" "${version}" "${modem_present}" "${modem_model:-}" "${iccid:-}" \
-        "${host_key:-}" "${wired_usable}" "${tunnel_via:-none}" "${tunnel:-none}" "${wifi_uplink:-unchecked}" "${ssh_ca}" "$(system_facts)"
+        "${host_key:-}" "${wired_usable}" "${tunnel_via:-none}" "${tunnel:-none}" "${wifi_uplink:-unchecked}" "${ssh_ca}" "$(system_facts)" "$(rak_power_facts)"
+}
+
+# The RAK power board's watchdog and battery pack, as parkeze-rak-power last
+# recorded them, on a board that has one. parkeze-rak-power asks for this
+# report itself when the watchdog stops answering or the battery changes band,
+# so that reaches parkeze.net in minutes rather than at the next six-hourly one.
+#
+# Already JSON, written by lua-cjson; checked anyway, because one bad byte
+# here would make parkeze.net reject the whole report.
+rak_power_facts() {
+    local out
+    command -v parkeze-rak-power >/dev/null 2>&1 || { echo null; return; }
+    out="$(parkeze-rak-power status 2>/dev/null)"
+    if [ -n "${out}" ] && echo "${out}" | jsonfilter -e '@' >/dev/null 2>&1; then
+        echo "${out}"
+    else
+        echo null
+    fi
 }
 
 # The same key=value facts the MQTT forwarder attaches to LoRaWAN stats, as a

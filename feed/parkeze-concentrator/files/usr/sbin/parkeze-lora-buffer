@@ -49,11 +49,11 @@
 #
 # ── WHERE THE QUEUE LIVES ──────────────────────────────────────────────────
 #
-# In memory, and on the SD card if there is one. Not on flash: a queue is
-# written continuously by definition, and a RAK's 32MB of soldered NOR is not
-# somewhere to do that. A gateway with no card keeps its queue in RAM and
-# loses it on reboot, which is still far better than dropping every message
-# the moment the link goes.
+# In memory, written to an SD card during an outage: the RAK's card in its
+# slot, or the card a Pi boots from. Not on flash: a queue is written
+# continuously by definition, and a RAK's 32MB of soldered NOR is not
+# somewhere to do that. A gateway with no card does not buffer at all — see
+# persistence_dir.
 
 . /etc/parkeze/board.conf
 
@@ -81,15 +81,29 @@ enabled() {
     [ "${set}" = "1" ]
 }
 
-# The card, if there is one and it is writable. Checked rather than assumed:
-# parkeze-storage records both, and a card that has worn read-only is exactly
-# the case where writing a queue to it would fail continuously.
+# A card to keep the queue on, or nothing — and nothing means no buffer.
+#
+# The storage card first, if parkeze-storage found one and it is writable.
+# Checked rather than assumed: a card that has worn read-only is exactly the
+# case where writing a queue to it would fail continuously.
+#
+# Otherwise the disk the system runs from, if that is a card. That is a Pi:
+# it boots from its SD, and parkeze-storage will never offer that disk
+# because it will never mount, format or fill the system's own. Writing a
+# file into the running root is not that — it is what the overlay is for.
+# Told apart by filesystem rather than by board: a RAK's writable layer is
+# jffs2 or ubifs on its NOR and never matches, so a RAK with no card in the
+# slot gets no buffer, and a board nobody has tried yet still lands on the
+# right side.
 persistence_dir() {
-    [ "$(get parkeze.storage.present)" = "1" ] || return 1
-    [ "$(get parkeze.storage.writable)" = "1" ] || return 1
-    local mount; mount="$(get parkeze.storage.mount)"
-    [ -d "${mount}" ] || return 1
-    echo "${mount}/parkeze/queue"
+    local mount
+    if [ "$(get parkeze.storage.present)" = "1" ] && [ "$(get parkeze.storage.writable)" = "1" ]; then
+        mount="$(get parkeze.storage.mount)"
+        [ -d "${mount}" ] && { echo "${mount}/parkeze/queue"; return 0; }
+    fi
+    awk '($2 == "/" || $2 == "/overlay") && $3 ~ /^(ext4|f2fs|btrfs)$/ { found = 1 }
+         END { exit !found }' /proc/mounts 2>/dev/null || return 1
+    echo /srv/parkeze/queue
 }
 
 # Whether broker <pid> holds an established TCP connection to remote port
@@ -137,6 +151,12 @@ render() {
 
     [ -n "${host}" ] && [ -n "${eui}" ] || { log "not adopted; nothing to bridge to"; return 1; }
 
+    # No card, no buffer. A queue only in RAM is lost to the reboot or power
+    # cut that is the likeliest end of a long outage, and meanwhile it is a
+    # broker in the middle of the data path, so it is not worth running.
+    persist="$(persistence_dir)" || { log "no SD card to keep a queue on; uplinks go straight out"; return 1; }
+    mkdir -p "${persist}" 2>/dev/null
+
     # Bounded, because an unbounded queue on a 128MB gateway is a way to run
     # the box out of memory during exactly the outage it was meant to survive.
     # ~10k uplinks is hours of a busy site and a few megabytes.
@@ -169,23 +189,15 @@ log_type information
 connection_messages true
 EOF
 
-        if persist="$(persistence_dir)"; then
-            mkdir -p "${persist}" 2>/dev/null
-            # Never on a timer. It used to autosave every 30s, which rewrote
-            # the whole database to the card twice a minute for the life of
-            # the gateway, almost always to record an empty queue. The queue
-            # lives in RAM; `watch` writes it out only while the uplink is
-            # down, which is the only time a power cut could cost anything.
-            cat <<EOF
+        # Never on a timer. It used to autosave every 30s, which rewrote the
+        # whole database to the card twice a minute for the life of the
+        # gateway, almost always to record an empty queue. The queue lives in
+        # RAM; `watch` writes it out only while the uplink is down, which is
+        # the only time a power cut could cost anything.
+        cat <<EOF
 persistence true
 persistence_location ${persist}/
 autosave_interval 0
-EOF
-        else
-            echo "persistence false"
-        fi
-
-        cat <<EOF
 
 connection parkeze
 address ${host}:${port}

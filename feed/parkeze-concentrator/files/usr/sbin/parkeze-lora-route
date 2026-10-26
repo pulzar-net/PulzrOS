@@ -29,9 +29,9 @@
 # makes this setting a trade: later data, no bill.
 #
 # Without it they are dropped, because the forwarder publishes to a broker it
-# cannot reach and nothing here stores them. Both defaults are deliberately
-# the harmless ones — cellular allowed, buffering off — so a gateway behaves
-# exactly as it does now until somebody chooses otherwise.
+# cannot reach and nothing here stores them. Buffering is on by default
+# wherever there is an SD card; cellular stays allowed by default, so a
+# gateway only stops sending uplinks over the SIM when somebody chooses that.
 #
 # ── HOW ────────────────────────────────────────────────────────────────────
 #

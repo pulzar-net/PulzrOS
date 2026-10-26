@@ -1,0 +1,100 @@
+#!/usr/bin/lua
+--
+-- The RAK7289CV2's power board: its hardware watchdog and the RAK battery
+-- pack, over the CH340 inside the Pro.
+--
+--   parkeze-rak-power run       own the port until killed (procd runs this)
+--   parkeze-rak-power status    the last recorded state, as JSON
+--
+-- The work is in /usr/lib/lua/parkeze/rak_power.lua; this is the clock, the
+-- loop and the record. See docs/rak-power.md.
+
+local power = require("parkeze.rak_power")
+local cjson = require("cjson")
+
+local STATE_DIR = "/var/run/parkeze/rak-power"
+local STATE = STATE_DIR .. "/state.json"
+
+-- Seconds since boot. Not os.time(): the clock is 1970 until NTP answers and
+-- then jumps by fifty years, and a schedule on it would run everything at
+-- once or nothing for decades.
+local function uptime()
+  local f = io.open("/proc/uptime", "r")
+  local n = f and f:read("*n")
+  if f then f:close() end
+  return n or os.time()
+end
+
+local LEVELS = { err = true, warning = true, info = true }
+
+-- Through logger's stdin, so no message is ever part of a command line.
+local function log(level, msg)
+  if not LEVELS[level] then level = "info" end
+  local p = io.popen("logger -t rak-power -p daemon." .. level, "w")
+  if p then p:write(msg, "\n"); p:close() end
+end
+
+local function write_state(state)
+  local tmp = STATE .. ".tmp"
+  local f = io.open(tmp, "w")
+  if not f then return end
+  f:write(cjson.encode(state))
+  f:close()
+  os.rename(tmp, STATE)
+end
+
+local function status()
+  local f = io.open(STATE, "r")
+  local text = f and f:read("*a")
+  if f then f:close() end
+  local ok, state = pcall(cjson.decode, text or "")
+  io.write(cjson.encode(power.view(ok and state or nil, uptime())), "\n")
+end
+
+local function run()
+  local board = power.read_board()
+  local usb, id = board.PARKEZE_RAK_POWER_USB or "", board.PARKEZE_RAK_POWER_ID or ""
+  if usb == "" then
+    log("info", "this board has no RAK power board")
+    return 0
+  end
+
+  os.execute("mkdir -p " .. STATE_DIR)
+  local svc
+  svc = power.new({
+    modbus = require("libmodbus"),
+    clock = uptime,
+    resolve = function() return power.resolve(usb, id) end,
+    present = function(path) return power.present(usb, path) end,
+    -- The record first, because the report reads it: asked mid-tick, the
+    -- file still says what was true before the change being reported. Then
+    -- in the background: a report is an HTTPS round trip, over a SIM on many
+    -- gateways, and the watchdog does not wait for it.
+    report = function()
+      write_state(svc:state())
+      os.execute("/usr/sbin/parkeze-claim report >/dev/null 2>&1 &")
+    end,
+    log = log,
+  })
+
+  local uloop = require("uloop")
+  uloop.init()
+  local timer
+  timer = uloop.timer(function()
+    local wait = svc:tick()
+    write_state(svc:state())
+    timer:set(math.floor(math.min(wait, power.STATE_EVERY) * 1000))
+  end, 0)
+  uloop.run()
+  return 0
+end
+
+local cmd = arg[1]
+if cmd == "run" then
+  os.exit(run())
+elseif cmd == "status" then
+  status()
+else
+  io.stderr:write("usage: parkeze-rak-power {run|status}\n")
+  os.exit(2)
+end

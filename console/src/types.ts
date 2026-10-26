@@ -134,6 +134,8 @@ export interface BackhaulStatus {
     wiredOnly: true;
     note: string;
     configured: boolean;
+    /** The uplink the tunnel's packets leave on right now. */
+    via: 'wired' | 'wifi' | 'cellular' | 'none';
     /** none: not enrolled yet. waiting: the hub has not answered recently. up: handshake in the last three minutes. */
     state: 'none' | 'waiting' | 'up';
     address: string | null;
@@ -237,7 +239,8 @@ export interface LorawanStatus {
   buffer: {
     enabled: boolean;
     running: boolean;
-    /** Whether the queue survives a reboot, which needs an SD card. */
+    /** Whether there is an SD card to keep the queue on. Without one the
+        buffer does not run at all. */
     persistent: boolean;
     /** The loopback port the broker listens on. Not 1883: the mosquitto
         package's own service owns that one. */

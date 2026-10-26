@@ -66,7 +66,7 @@ function PasswordCard() {
   });
 
   return (
-    <Section title="Local password">
+    <Section title="Local Password">
       <TextField
         label="New password"
         type="password"

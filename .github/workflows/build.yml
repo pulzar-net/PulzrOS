@@ -137,10 +137,20 @@ jobs:
 
       # The claim's revocation path and sshd's trust: shell that otherwise
       # only runs on a gateway, against stubs for everything it calls.
-      - name: Claim and SSH setup logic
+      - name: Claim, SSH setup and cellular watchdog logic
         run: |
           ./scripts/test-claim.sh
           ./scripts/test-ssh-setup.sh
+          ./scripts/test-cellular-watchdog.sh
+
+      # parkeze-rak-power against a fake bus and a simulated power board. The
+      # watchdog it feeds is what keeps a DC-powered RAK7289CV2 on, and no
+      # bench unit has answered on that bus to catch a wrong frame.
+      - name: RAK power board
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.1 liblua5.1-0-dev libmodbus-dev python3-venv pkg-config
+          ./scripts/test-rak-power.sh
 
       # The RAK7268's light breathes in hardware, in software or not at all
       # depending on the kernel; each is checked against a fake sysfs.
@@ -164,10 +174,11 @@ jobs:
             bash -n "$f" || { echo "::error file=$f::bash syntax error"; fail=1; }
           done
           while IFS= read -r f; do
-            # Shebang-aware: /usr/sbin also holds ucode programs, and feeding
-            # one to `sh -n` reports a syntax error in perfectly good ucode.
+            # Shebang-aware: /usr/sbin also holds ucode programs and
+            # parkeze-rak-power's Lua, and feeding either to `sh -n` reports a
+            # syntax error in perfectly good code.
             case "$(head -c 32 "$f")" in
-              '#!'*ucode*) continue ;;
+              '#!'*ucode*|'#!'*lua*) continue ;;
             esac
             sh -n "$f" || { echo "::error file=$f::POSIX sh syntax error"; fail=1; }
           done < <(find feed boards -type f \

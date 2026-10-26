@@ -144,6 +144,9 @@ lan() {
         return 1
     fi
 }
+# The daemon's last record, not a read of the bus: the port has one owner, and
+# a request from here must not become a second master on it.
+op_rak_power() { /usr/sbin/parkeze-rak-power status 2>/dev/null || echo '{"error":"this gateway has no RAK power board"}'; }
 
 # ── dispatch ────────────────────────────────────────────────────────────────
 
@@ -210,6 +213,7 @@ dispatch() {
         # with the number of devices, and one busy LAN would take `all` past
         # MAX_RESPONSE.
         lan)       out="$(bounded 15 op_lan)" ;;
+        rak-power) out="$(bounded 10 op_rak_power)" ;;
 
         # Everything at once, for the case this exists to serve: somebody
         # wanting to know how a gateway is without opening anything.

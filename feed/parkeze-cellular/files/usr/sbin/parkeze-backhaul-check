@@ -5,6 +5,9 @@
 #   parkeze-backhaul-check          exit 0 if manageable, 1 if not
 #   parkeze-backhaul-check --json   report both paths
 #   parkeze-backhaul-check --tunnel print the tunnel state: none|waiting|up
+#   parkeze-backhaul-check --cellular  exit 0 if parkeze.net answers out of
+#                                   the cellular device itself, whatever
+#                                   the wired path is doing
 #
 # BUDGET
 #
@@ -61,6 +64,27 @@ CHECK_HOST="${PARKEZE_HEALTH_HOST:-${_net_host%%/*}}"
 CHECK_HOST="${CHECK_HOST:-net.parkeze.com}"
 CHECK_PORT="${PARKEZE_HEALTH_PORT:-443}"
 
+# time_connect is 0 unless the TCP handshake completed, whatever curl does
+# afterwards — the far end answering plain HTTP on an HTTPS port with an error
+# is the expected outcome, not a failure. Timeouts cap how long a dead network
+# can hold the link open. With a device, the socket is bound to it, so the
+# answer is about that link and not whichever route the main table prefers.
+connects() {
+    local connected
+    connected="$(curl -s --connect-timeout 5 --max-time 6 -o /dev/null \
+                      ${1:+--interface "$1"} -w '%{time_connect}' \
+                      "http://${CHECK_HOST}:${CHECK_PORT}/" </dev/null 2>/dev/null)"
+    case "${connected}" in
+        ''|0|0.0|0.00000|0.000000) return 1 ;;
+    esac
+}
+
+if [ "$1" = "--cellular" ]; then
+    dev="$(ifstatus wwan 2>/dev/null | jsonfilter -e '@.l3_device' 2>/dev/null)"
+    [ -n "${dev}" ] && connects "${dev}"
+    exit
+fi
+
 # ── wired ───────────────────────────────────────────────────────────────────
 # The tunnel's own view is the honest answer for this path: it is the thing we
 # actually manage over, so "is the hub hearing us" is the question, not "does
@@ -87,17 +111,7 @@ cell_up=false
 if [ "${wired_up}" != "true" ]; then
     if ip link show "$(uci -q get network.wwan.device >/dev/null; echo wwan0)" >/dev/null 2>&1 \
        || ip route show table main | grep -q wwan; then
-        # time_connect is 0 unless the TCP handshake completed, whatever curl
-        # does afterwards — the far end answering plain HTTP on an HTTPS port
-        # with an error is the expected outcome, not a failure. Timeouts cap
-        # how long a dead network can hold the link open.
-        connected="$(curl -s --connect-timeout 5 --max-time 6 -o /dev/null \
-                          -w '%{time_connect}' \
-                          "http://${CHECK_HOST}:${CHECK_PORT}/" </dev/null 2>/dev/null)"
-        case "${connected}" in
-            ''|0|0.0|0.00000|0.000000) ;;
-            *) cell_up=true ;;
-        esac
+        connects && cell_up=true
     fi
 fi
 

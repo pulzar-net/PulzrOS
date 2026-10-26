@@ -59,6 +59,16 @@
      broken, and they used to. */
   --control-height: 34px;
 
+  /* ---- network signal scale ----
+     RSSI / SNR quality, weak → strong. Net-specific: the dashboard has no
+     equivalent, but these are derived from the shared status colors so a
+     coverage map still reads as Parkeze. */
+  --signal-none:   #cbd5e1;
+  --signal-weak:   #ef4444;
+  --signal-fair:   #f59e0b;
+  --signal-good:   #84cc16;
+  --signal-strong: #10b981;
+
   /* ---- charts ----
      Run through the dataviz palette validator against this surface, light and
      dark. The accent itself is too light to draw with on white (2.5:1), so a
@@ -70,38 +80,50 @@
   --chart-grid:  #edf1f5;
 }
 
-html.dark {
-  --bg-primary:     #0c111d;
-  --bg-secondary:   #141a27;
-  --bg-tertiary:    #1c2333;
-  --bg-elevated:    #1a2235;
-  --bg-modal:       #141a27;
+/* The same values parkeze.net hangs on html.dark, keyed to the OS instead.
+   Nothing here ever set that class, so they never applied; a gateway console
+   has no account to remember a choice against, and the technician's phone
+   already says which one they want. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg-primary:     #0c111d;
+    --bg-secondary:   #141a27;
+    --bg-tertiary:    #1c2333;
+    --bg-elevated:    #1a2235;
+    --bg-modal:       #141a27;
 
-  --text-primary:   #e8edf5;
-  --text-secondary: #8b99b0;
-  --text-tertiary:  #5b6a82;
-  --text-inverse:   #0c111d;
+    --text-primary:   #e8edf5;
+    --text-secondary: #8b99b0;
+    --text-tertiary:  #5b6a82;
+    --text-inverse:   #0c111d;
 
-  --border-primary:   #1e2a3a;
-  --border-secondary: #2a3a4e;
-  --border-focus:     #10b981;
+    --border-primary:   #1e2a3a;
+    --border-secondary: #2a3a4e;
+    --border-focus:     #10b981;
 
-  --card-bg:       #141a27;
-  --card-border:   #1e2a3a;
-  --card-shadow:   0 1px 2px rgba(0,0,0,.2), 0 2px 6px rgba(0,0,0,.15);
-  --card-shadow-hover: 0 4px 16px rgba(0,0,0,.3), 0 2px 6px rgba(0,0,0,.2);
+    --card-bg:       #141a27;
+    --card-border:   #1e2a3a;
+    --card-shadow:   0 1px 2px rgba(0,0,0,.2), 0 2px 6px rgba(0,0,0,.15);
+    --card-shadow-hover: 0 4px 16px rgba(0,0,0,.3), 0 2px 6px rgba(0,0,0,.2);
 
-  --status-success: #34d399;
-  --status-warning: #fbbf24;
-  --status-error:   #f87171;
-  --status-info:    #60a5fa;
+    --status-success: #34d399;
+    --status-warning: #fbbf24;
+    --status-error:   #f87171;
+    --status-info:    #60a5fa;
 
-  --accent:         #34d399;
-  --accent-hover:   #10b981;
-  --accent-subtle:  rgba(52,211,153,.08);
+    --accent:         #34d399;
+    --accent-hover:   #10b981;
+    --accent-subtle:  rgba(52,211,153,.08);
 
-  --chart-1:     #12a676;
-  --chart-down:  #3987e5;
-  --chart-up:    #d95926;
-  --chart-grid:  #1f2738;
+    --signal-none:   #2a3a4e;
+    --signal-weak:   #f87171;
+    --signal-fair:   #fbbf24;
+    --signal-good:   #a3e635;
+    --signal-strong: #34d399;
+
+    --chart-1:     #12a676;
+    --chart-down:  #3987e5;
+    --chart-up:    #d95926;
+    --chart-grid:  #1f2738;
+  }
 }
