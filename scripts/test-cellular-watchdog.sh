@@ -54,7 +54,6 @@ stub mmcli 'case "$*" in
              [ -n "$RESET_TO" ] && { echo "$RESET_TO" > "$SANDBOX/mm"; echo false > "$SANDBOX/up"; } ;;
 esac; exit 0'
 stub reboot 'echo reboot >> "$ACTIONS"'
-stub pkill 'exit 1'
 
 fail=0
 # run NAME TICKS RX TUNNEL PROBE UPTIME UP MODEM RESET_TO IFUP_FIXES DISABLED WANT

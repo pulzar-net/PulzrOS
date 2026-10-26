@@ -153,6 +153,21 @@ reset_modem() {
     ( sleep 20; /usr/sbin/parkeze-modem-detect >/dev/null 2>&1 ) &
 }
 
+# Have the uplink buffer's broker write its queue to the card. Found by
+# command line through /proc: the image has no pkill or pgrep (OpenWrt's
+# busybox leaves them out), so the `pkill -USR1` this used to be failed every
+# time and the reboot went ahead with the queue still in memory.
+flush_buffer() {
+    local p found=1
+    for p in /proc/[0-9]*; do
+        case "$(tr '\0' ' ' < "${p}/cmdline" 2>/dev/null)" in
+            *"mosquitto -c /var/run/parkeze/lora/mosquitto.conf"*)
+                kill -USR1 "${p#/proc/}" 2>/dev/null && found=0 ;;
+        esac
+    done
+    return "${found}"
+}
+
 reboot_if_stranded() {
     local up
     up="$(cut -d. -f1 "${UPTIME_FILE}")"
@@ -162,7 +177,7 @@ reboot_if_stranded() {
     # The uplink buffer is holding this outage's uplinks. Have it write them
     # to the card first; with no card they are lost, which is the price of a
     # gateway that can be reached again.
-    pkill -USR1 -f "mosquitto -c /var/run/parkeze/lora/mosquitto.conf" 2>/dev/null && sleep 5
+    flush_buffer && sleep 5
     reboot
 }
 
