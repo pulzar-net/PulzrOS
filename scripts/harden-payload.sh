@@ -20,7 +20,7 @@
 #               the same for UCI config files and the sshd config, whose
 #               comments are as much rationale as any script's.
 #   Lua         whole-line comments removed (strip-lua-comments.py). Only
-#               parkeze-rs485 is Lua, for its Modbus library; compiling it the
+#               parkeze-rak-power is Lua, for its Modbus library; compiling it the
 #               way ucode is would need luac at OpenWrt's exact Lua build,
 #               whose number patch changes the bytecode.
 #   *.md        removed. Nothing on a gateway reads them.

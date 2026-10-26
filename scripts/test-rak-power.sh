@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 #
-# parkeze-rs485 against a fake bus, then against a simulated Modbus RTU slave.
+# parkeze-rak-power against a fake bus, then against a simulated RAK power board.
 #
-#   scripts/test-rs485.sh             both
-#   RS485_UNIT_ONLY=1 scripts/...     the fake bus only: no compiler, no pymodbus
+#   scripts/test-rak-power.sh             both
+#   RAK_POWER_UNIT_ONLY=1 scripts/...     the fake bus only: no compiler, no pymodbus
 #
-# There is no RS485 device on any bench, so this is what says the watchdog is
+# No bench unit has answered on this bus, so this is what says the watchdog is
 # fed with the right frame. The simulated half runs the real library: the
 # lua-libmodbus release OpenWrt 24.10 packages, built here from the same
 # tarball (its hash is OpenWrt's PKG_HASH), linked to the host's libmodbus,
 # talking over a pty pair to pymodbus, which frames and decodes everything
-# independently. See scripts/rs485-test/simulator.py.
+# independently. See scripts/rak-power-test/simulator.py.
 #
 # Needs: Lua 5.1 or LuaJIT and, for the simulated half, a C compiler, curl,
 # libmodbus with its headers (apt libmodbus-dev, brew libmodbus), and
@@ -20,9 +20,9 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-HERE="${ROOT_DIR}/scripts/rs485-test"
-WORK="${ROOT_DIR}/.build/rs485-test"
-LUA_PATH_FEED="${ROOT_DIR}/feed/parkeze-rs485/files/usr/lib/lua/?.lua"
+HERE="${ROOT_DIR}/scripts/rak-power-test"
+WORK="${ROOT_DIR}/.build/rak-power-test"
+LUA_PATH_FEED="${ROOT_DIR}/feed/parkeze-rak-power/files/usr/lib/lua/?.lua"
 
 LUA_LIBMODBUS_URL="https://codeload.github.com/etactica/lua-libmodbus/tar.gz/v0.7"
 LUA_LIBMODBUS_SHA256="70369f4c4e36421095bf00dcee36c633b4284eaa79bcfdfd230bfefb27acefda"
@@ -44,7 +44,7 @@ run_lua() {
     "${HERE}/test.lua"
 }
 
-if [ "${RS485_UNIT_ONLY:-0}" = 1 ]; then
+if [ "${RAK_POWER_UNIT_ONLY:-0}" = 1 ]; then
   run_lua
   exit $?
 fi
@@ -116,4 +116,4 @@ done
 # Its server is listening a moment after the port file appears.
 sleep 0.5
 
-RS485_SIM="${SIM}" RS485_MAIN="${ROOT_DIR}/feed/parkeze-rs485/files/usr/sbin/parkeze-rs485" run_lua || { echo "--- simulator log" >&2; tail -n 30 "${SIM}/simulator.log" >&2; exit 1; }
+RAK_POWER_SIM="${SIM}" RAK_POWER_MAIN="${ROOT_DIR}/feed/parkeze-rak-power/files/usr/sbin/parkeze-rak-power" run_lua || { echo "--- simulator log" >&2; tail -n 30 "${SIM}/simulator.log" >&2; exit 1; }

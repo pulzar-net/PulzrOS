@@ -179,20 +179,20 @@ check "the report is valid JSON" python3 -c 'import json,sys; json.loads(sys.arg
 check "report carries sshCa" [ "$(field "$(last_body report)" facts.sshCa)" = true ]
 check "report carries the host key" \
     [ "$(field "$(last_body report)" facts.sshHostKey)" = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITEST" ]
-check "a board without RS485 reports it as null" \
-    python3 -c 'import json,sys; assert json.loads(sys.argv[1])["facts"]["rs485"] is None' "$(last_body report)"
+check "a board without a RAK power board reports it as null" \
+    python3 -c 'import json,sys; assert json.loads(sys.argv[1])["facts"]["rakPower"] is None' "$(last_body report)"
 
-printf '#!/bin/sh\necho "{\\"running\\":true,\\"watchdog\\":{\\"state\\":\\"failing\\",\\"slave\\":200}}"\n' > "${STUBS}/parkeze-rs485"
-chmod +x "${STUBS}/parkeze-rs485"
+printf '#!/bin/sh\necho "{\\"running\\":true,\\"watchdog\\":{\\"state\\":\\"failing\\"}}"\n' > "${STUBS}/parkeze-rak-power"
+chmod +x "${STUBS}/parkeze-rak-power"
 claim report
-check "the RS485 record rides the report" \
-    [ "$(field "$(last_body report)" facts.rs485.watchdog.state)" = failing ]
+check "the power board record rides the report" \
+    [ "$(field "$(last_body report)" facts.rakPower.watchdog.state)" = failing ]
 
-printf '#!/bin/sh\necho "{\\"running\\":tr"\n' > "${STUBS}/parkeze-rs485"
+printf '#!/bin/sh\necho "{\\"running\\":tr"\n' > "${STUBS}/parkeze-rak-power"
 claim report
-check "an unreadable RS485 record is null, and the report still parses" \
-    python3 -c 'import json,sys; assert json.loads(sys.argv[1])["facts"]["rs485"] is None' "$(last_body report)"
-rm -f "${STUBS}/parkeze-rs485"
+check "an unreadable power board record is null, and the report still parses" \
+    python3 -c 'import json,sys; assert json.loads(sys.argv[1])["facts"]["rakPower"] is None' "$(last_body report)"
+rm -f "${STUBS}/parkeze-rak-power"
 
 # ── a 404 that is not the revoked answer ────────────────────────────────────
 

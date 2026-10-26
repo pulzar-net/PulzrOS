@@ -104,10 +104,10 @@ feed/             the Parkeze OpenWrt package feed
   parkeze-tui           the console in a terminal, on every board
   parkeze-display       the TUI on a Pi's own screen, when it has one
   parkeze-usb-gadget    the USB-C port as a network and a serial console
-  parkeze-rs485         the RS485 port: watchdog, battery, Modbus devices
+  parkeze-rak-power     the RAK7289CV2 power board: watchdog, battery pack
 scripts/          build-feed.sh, check-ucode.sh, ucode stubs, run-tui.sh,
                   test-claim.sh and test-ssh-setup.sh (device shell, stubbed),
-                  test-rs485.sh (against a simulated Modbus slave)
+                  test-rak-power.sh (against a simulated power board)
 docs/             the design decisions worth writing down
 ```
 
@@ -132,9 +132,9 @@ docs/             the design decisions worth writing down
   two concentrators, and kit versus product boards.
 - [`docs/boards.md`](docs/boards.md) — adding a board, and adding a
   concentrator.
-- [`docs/rs485.md`](docs/rs485.md) — the RAK7289CV2's Modbus bus, the power
-  board's watchdog that keeps a DC-powered unit on, and what about it is still
-  unverified on hardware.
+- [`docs/rak-power.md`](docs/rak-power.md) — the RAK7289CV2's power board: the
+  watchdog that keeps a DC-powered unit on, the battery pack, and what about
+  them is still unverified on hardware.
 - [`openwrt-device-template`](https://github.com/parkeze/openwrt-device-template) — porting a board OpenWrt does not
   support, and why the flash layout has to come off the hardware rather than a
   datasheet.

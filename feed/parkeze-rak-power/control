@@ -1,0 +1,14 @@
+Package: parkeze-rak-power
+Version: @VERSION@-@BUILD@
+Depends: lua, lua-libmodbus, lua-cjson, libubox-lua, kmod-usb-serial-ch341
+Source: parkeze
+Section: utils
+Priority: optional
+Maintainer: Joseph Telaak <joseph@parkeze.com>
+Architecture: all
+Description: The RAK7289CV2's power board: its watchdog and battery pack.
+ Feeds the power board's hardware watchdog, which on the newer RAK7289CV2
+ revision cuts DC power ten minutes after the last feed, and reads the RAK
+ battery pack when one is fitted, over Modbus RTU on the CH340 inside the
+ Pro. Reports both to parkeze.net. RAK-specific; only on boards that declare
+ the power board.

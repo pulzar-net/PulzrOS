@@ -3,11 +3,10 @@
 
     strip-lua-comments.py <file>...
 
-The Lua counterpart of strip-shell-comments.py, for parkeze-rs485: whole-line
-`--` comments go and everything else stays, so line numbers in a gateway's
-error messages still mean something after a blank line or two less. A `--`
-after code may be inside a string, and the long comments worth removing are
-the whole-line ones anyway.
+The Lua counterpart of strip-shell-comments.py, for parkeze-rak-power:
+whole-line `--` comments go and everything else stays. A `--` after code may
+be inside a string, and the long comments worth removing are the whole-line
+ones anyway.
 
 A long bracket (`[[`, `[=[`, `--[[`) can hold a line that starts with `--` and
 is not a comment, and telling which takes a Lua lexer. None of ours use one,

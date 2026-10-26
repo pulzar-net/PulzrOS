@@ -567,22 +567,22 @@ facts() {
     board_id="${BOARD_ID:-unknown}"
     version="${PARKEZE_VERSION:-0.0.0}"
 
-    printf '{"board":"%s","osVersion":"%s","modemPresent":%s,"modemModel":"%s","simIccid":"%s","sshHostKey":"%s","wiredUsable":%s,"tunnelVia":"%s","tunnelState":"%s","wifiUplink":"%s","consolePort":443,"consoleScheme":"https","sshPort":22,"sshCa":%s,"system":%s,"rs485":%s}' \
+    printf '{"board":"%s","osVersion":"%s","modemPresent":%s,"modemModel":"%s","simIccid":"%s","sshHostKey":"%s","wiredUsable":%s,"tunnelVia":"%s","tunnelState":"%s","wifiUplink":"%s","consolePort":443,"consoleScheme":"https","sshPort":22,"sshCa":%s,"system":%s,"rakPower":%s}' \
         "${board_id}" "${version}" "${modem_present}" "${modem_model:-}" "${iccid:-}" \
-        "${host_key:-}" "${wired_usable}" "${tunnel_via:-none}" "${tunnel:-none}" "${wifi_uplink:-unchecked}" "${ssh_ca}" "$(system_facts)" "$(rs485_facts)"
+        "${host_key:-}" "${wired_usable}" "${tunnel_via:-none}" "${tunnel:-none}" "${wifi_uplink:-unchecked}" "${ssh_ca}" "$(system_facts)" "$(rak_power_facts)"
 }
 
-# The watchdog, the battery and the Modbus devices, as parkeze-rs485 last
-# recorded them, on a board with the port. parkeze-rs485 asks for this report
-# itself when the watchdog stops answering or a device drops off, so that
-# reaches parkeze.net in minutes rather than at the next six-hourly one.
+# The RAK power board's watchdog and battery pack, as parkeze-rak-power last
+# recorded them, on a board that has one. parkeze-rak-power asks for this
+# report itself when the watchdog stops answering or the battery changes band,
+# so that reaches parkeze.net in minutes rather than at the next six-hourly one.
 #
 # Already JSON, written by lua-cjson; checked anyway, because one bad byte
 # here would make parkeze.net reject the whole report.
-rs485_facts() {
+rak_power_facts() {
     local out
-    command -v parkeze-rs485 >/dev/null 2>&1 || { echo null; return; }
-    out="$(parkeze-rs485 status 2>/dev/null)"
+    command -v parkeze-rak-power >/dev/null 2>&1 || { echo null; return; }
+    out="$(parkeze-rak-power status 2>/dev/null)"
     if [ -n "${out}" ] && echo "${out}" | jsonfilter -e '@' >/dev/null 2>&1; then
         echo "${out}"
     else

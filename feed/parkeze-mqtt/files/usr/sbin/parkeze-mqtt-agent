@@ -126,7 +126,7 @@ op_cellular()  { /usr/sbin/parkeze-modem-detect --status 2>/dev/null || echo '{}
 op_gps()       { /usr/sbin/parkeze-gps status 2>/dev/null || echo '{}'; }
 # The daemon's last record, not a read of the bus: the port has one owner, and
 # a request from here must not become a second master on it.
-op_rs485()     { /usr/sbin/parkeze-rs485 status 2>/dev/null || echo '{"error":"this gateway has no RS485 port"}'; }
+op_rak_power() { /usr/sbin/parkeze-rak-power status 2>/dev/null || echo '{"error":"this gateway has no RAK power board"}'; }
 
 # ── dispatch ────────────────────────────────────────────────────────────────
 
@@ -188,7 +188,7 @@ dispatch() {
         # 20s: this one shells out to mmcli, which is the call that hung.
         cellular)  out="$(bounded 20 op_cellular)" ;;
         gps)       out="$(bounded 20 op_gps)" ;;
-        rs485)     out="$(bounded 10 op_rs485)" ;;
+        rak-power) out="$(bounded 10 op_rak_power)" ;;
 
         # Everything at once, for the case this exists to serve: somebody
         # wanting to know how a gateway is without opening anything.

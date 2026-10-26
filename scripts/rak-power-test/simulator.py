@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""A Modbus RTU bus for parkeze-rs485's tests: the RAK7289CV2's power board
-and battery as ChirpStack's RAK support talks to them, plus a meter.
+"""A Modbus RTU bus for parkeze-rak-power's tests: the RAK7289CV2's power
+board watchdog and battery pack as ChirpStack's RAK support talks to them.
 
     simulator.py <dir>
 
@@ -16,12 +16,11 @@ a restart of the simulator would not be the same thing.
 
 pymodbus is the independent half: libmodbus frames and checks every request on
 one side and a different implementation on the other, so a register address
-off by one or a word order backwards shows up as a wrong number.
+off by one shows up as a wrong number or an exception.
 """
 
 import os
 import select
-import struct
 import sys
 import threading
 import tty
@@ -33,12 +32,7 @@ from pymodbus.server import StartSerialServer
 from pymodbus.transaction import ModbusRtuFramer
 
 DIR = sys.argv[1]
-WATCHDOG, BATTERY, METER = 0xC8, 0x6E, 1
-
-
-def f32(value, low_first=False):
-    hi, lo = struct.unpack('>HH', struct.pack('>f', value))
-    return [lo, hi] if low_first else [hi, lo]
+WATCHDOG, BATTERY = 0xC8, 0x6E
 
 
 class Recording(ModbusSparseDataBlock):
@@ -53,14 +47,15 @@ class Recording(ModbusSparseDataBlock):
         super().setValues(address, values, *args, **kwargs)
 
 
-def slave(holding=None, inputs=None, coils=None, discretes=None, number=0):
+def slave(holding, number):
     # zero_mode: register N on the wire is N here. The default adds one, which
     # is the off-by-one these tests exist to catch, so it must not be ours.
+    empty = {0xFFFF: 0}
     return ModbusSlaveContext(
-        hr=Recording(number, holding or {0xFFFF: 0}),
-        ir=ModbusSparseDataBlock(inputs or {0xFFFF: 0}),
-        co=ModbusSparseDataBlock(coils or {0xFFFF: 0}),
-        di=ModbusSparseDataBlock(discretes or {0xFFFF: 0}),
+        hr=Recording(number, holding),
+        ir=ModbusSparseDataBlock(empty),
+        co=ModbusSparseDataBlock(empty),
+        di=ModbusSparseDataBlock(empty),
         zero_mode=True,
     )
 
@@ -77,20 +72,9 @@ class Bus(ModbusServerContext):
         return super().__getitem__(slave_id)
 
 
-meter = {
-    0: 2301,                      # voltage, u16 x0.1 -> 230.1
-    1: 0xFFF6,                    # temperature, s16 -> -10
-    2: 1, 3: 0x86A0,              # energy, u32 -> 100000
-    10: f32(3.5)[0], 11: f32(3.5)[1],
-    20: f32(-1.25, True)[0], 21: f32(-1.25, True)[1],
-    30: 0x86A0, 31: 1,            # u32le -> 100000
-    40: 0xFFFF, 41: 0xFF38,       # s32 -> -200
-}
-
 bus = Bus(slaves={
-    WATCHDOG: slave(holding={0x0001: 0}, number=WATCHDOG),
-    BATTERY: slave(holding={0x6000: 1280, 0x6003: 97, 0x6005: 2500, 0x6006: 3000}, number=BATTERY),
-    METER: slave(holding=meter, inputs={5: 42}, coils={3: 1}, discretes={2: 1}, number=METER),
+    WATCHDOG: slave({0x0001: 0}, WATCHDOG),
+    BATTERY: slave({0x6000: 1280, 0x6003: 97, 0x6005: 2500, 0x6006: 3000}, BATTERY),
 }, single=False)
 
 

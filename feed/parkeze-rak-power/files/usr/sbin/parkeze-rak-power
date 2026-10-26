@@ -1,18 +1,18 @@
 #!/usr/bin/lua
 --
--- The board's RS485 port: the power board's watchdog, the battery, and any
--- Modbus RTU device a site wires to the DC connector.
+-- The RAK7289CV2's power board: its hardware watchdog and the RAK battery
+-- pack, over the CH340 inside the Pro.
 --
---   parkeze-rs485 run       own the port until killed (procd runs this)
---   parkeze-rs485 status    the last recorded state, as JSON
+--   parkeze-rak-power run       own the port until killed (procd runs this)
+--   parkeze-rak-power status    the last recorded state, as JSON
 --
--- The work is in /usr/lib/lua/parkeze/rs485.lua; this is the clock, the loop
--- and the record. See docs/rs485.md.
+-- The work is in /usr/lib/lua/parkeze/rak_power.lua; this is the clock, the
+-- loop and the record. See docs/rak-power.md.
 
-local rs485 = require("parkeze.rs485")
+local power = require("parkeze.rak_power")
 local cjson = require("cjson")
 
-local STATE_DIR = "/var/run/parkeze/rs485"
+local STATE_DIR = "/var/run/parkeze/rak-power"
 local STATE = STATE_DIR .. "/state.json"
 
 -- Seconds since boot. Not os.time(): the clock is 1970 until NTP answers and
@@ -27,11 +27,10 @@ end
 
 local LEVELS = { err = true, warning = true, info = true }
 
--- Through logger's stdin, so nothing in a message — a register spec somebody
--- typed into UCI included — is ever part of a command line.
+-- Through logger's stdin, so no message is ever part of a command line.
 local function log(level, msg)
   if not LEVELS[level] then level = "info" end
-  local p = io.popen("logger -t rs485 -p daemon." .. level, "w")
+  local p = io.popen("logger -t rak-power -p daemon." .. level, "w")
   if p then p:write(msg, "\n"); p:close() end
 end
 
@@ -49,26 +48,24 @@ local function status()
   local text = f and f:read("*a")
   if f then f:close() end
   local ok, state = pcall(cjson.decode, text or "")
-  io.write(cjson.encode(rs485.view(ok and state or nil, uptime())), "\n")
+  io.write(cjson.encode(power.view(ok and state or nil, uptime())), "\n")
 end
 
 local function run()
-  local board = rs485.read_board()
-  local cursor = require("uci").cursor()
-  local cfg = rs485.config(board, cursor:get_all("parkeze"))
-  if cfg.usb == "" then
-    log("info", "this board declares no RS485 port")
+  local board = power.read_board()
+  local usb, id = board.PARKEZE_RAK_POWER_USB or "", board.PARKEZE_RAK_POWER_ID or ""
+  if usb == "" then
+    log("info", "this board has no RAK power board")
     return 0
   end
-  for _, p in ipairs(cfg.problems) do log("warning", "config: " .. p) end
 
   os.execute("mkdir -p " .. STATE_DIR)
   local svc
-  svc = rs485.new(cfg, {
+  svc = power.new({
     modbus = require("libmodbus"),
     clock = uptime,
-    resolve = function() return rs485.resolve(cfg.usb, cfg.id) end,
-    present = function(path) return rs485.present(cfg.usb, path) end,
+    resolve = function() return power.resolve(usb, id) end,
+    present = function(path) return power.present(usb, path) end,
     -- The record first, because the report reads it: asked mid-tick, the
     -- file still says what was true before the change being reported. Then
     -- in the background: a report is an HTTPS round trip, over a SIM on many
@@ -86,7 +83,7 @@ local function run()
   timer = uloop.timer(function()
     local wait = svc:tick()
     write_state(svc:state())
-    timer:set(math.floor(math.min(wait, rs485.STATE_EVERY) * 1000))
+    timer:set(math.floor(math.min(wait, power.STATE_EVERY) * 1000))
   end, 0)
   uloop.run()
   return 0
@@ -98,6 +95,6 @@ if cmd == "run" then
 elseif cmd == "status" then
   status()
 else
-  io.stderr:write("usage: parkeze-rs485 {run|status}\n")
+  io.stderr:write("usage: parkeze-rak-power {run|status}\n")
   os.exit(2)
 end
