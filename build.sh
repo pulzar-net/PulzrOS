@@ -117,9 +117,20 @@ imagebuilder_base() {
 }
 
 # Distinct per source, so the stock and a device-support ImageBuilder for the
-# same target sit side by side rather than one shadowing the other.
+# same target sit side by side rather than one shadowing the other. The
+# device repo's name is part of it, not only the release: the RAK7268CV2 and
+# RAK7289CV2 repos both publish 25.12.6-1 for ramips/mt76x8, and keyed on the
+# tag alone the second board built with the first one's ImageBuilder. It is
+# also the CI cache key.
 imagebuilder_id() {
-  echo "${OPENWRT_VERSION}-${OPENWRT_TARGET}-${OPENWRT_SUBTARGET}${OPENWRT_IMAGEBUILDER_URL:+-$(basename "${OPENWRT_IMAGEBUILDER_URL}")}"
+  local source="" url="${OPENWRT_IMAGEBUILDER_URL:-}"
+  url="${url%/}"
+  if [[ "${url}" =~ /([^/]+)/releases/download/([^/]+)$ ]]; then
+    source="${BASH_REMATCH[1]}-${BASH_REMATCH[2]}"
+  elif [ -n "${url}" ]; then
+    source="$(basename "${url}")"
+  fi
+  echo "${OPENWRT_VERSION}-${OPENWRT_TARGET}-${OPENWRT_SUBTARGET}${source:+-${source}}"
 }
 
 imagebuilder_dir() {
