@@ -124,9 +124,12 @@ device's TCP port, for between a minute and a day. It is how somebody on
 parkeze.net opens a PLC's own interface without the PLC holding a second
 connection or the site opening anything.
 
-`lan-forward` answers with a tunnel port, from 40000 to 40015. gateway-link
-connects to the gateway's tunnel address on that port and reaches the device,
-which sees the connection come from the gateway's LAN address.
+`lan-forward` answers with a tunnel port, from 40000 to 40015, and `expires`,
+the Unix time it closes (the report's `expiresIn` is the seconds left).
+gateway-link connects to the gateway's WireGuard address on that port and
+reaches the device, which sees the connection come from the gateway's LAN
+address. Only traffic arriving on `wg0` is forwarded: the same port on the SIM
+address, the site network or anything else reaches nothing.
 
 - **It closes on time.** The forward is an nftables element with a timeout,
   so the kernel removes it; nothing on the gateway has to remember to.
