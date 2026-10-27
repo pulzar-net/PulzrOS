@@ -53,10 +53,7 @@ export type Feature =
   | 'cellular'
   | 'wifi'
   | 'lan'
-  | 'forwards'
-  | 'firewall'
   | 'dns'
-  | 'vpn'
   | 'failover';
 
 export interface SystemSummary {

@@ -22,10 +22,7 @@ that could only fail.
 | `cellular` | `PACKAGES_CELLULAR`: parkeze-cellular, ModemManager, qmi-wwan | Backhaul > Cellular, Overview's Cellular card | `/api/network/cellular` | |
 | `wifi` | `PACKAGES_WIFI`: parkeze-ap, wpad-openssl | Backhaul > WiFi, Access's setup AP | `/api/access/wifi`, `scan`, `ap`, `key` | |
 | `lan` | `PACKAGES_LAN`: parkeze-lan | planned: Network > LAN | planned | `PARKEZE_LAN_PORTS` |
-| `forwards` | | planned: Network > Port forwards | | `lan` |
-| `firewall` | | planned: Network > Firewall | | |
 | `dns` | | planned: Network > DNS | | |
-| `vpn` | | planned: Network > VPN | | |
 | `failover` | | planned: Network > Uplinks | | |
 
 Always present, on every board: Overview, Backhaul > Ethernet, Access, Panel,
@@ -56,7 +53,7 @@ in the image and a missing binary otherwise surfaces as a 500.
 | `rpi3`, `rpi4`, `rpi5` | `lorawan cellular wifi gnss bluetooth` |
 | `rak7268c`, `rak7289cv2` | `lorawan cellular wifi gnss` |
 | `rak7268cv2` | `lorawan cellular wifi` (no GNSS) |
-| `gl-sft1200` | `cellular lan forwards firewall dns vpn failover` |
+| `gl-sft1200` | `cellular lan dns failover` |
 
 The Pi and RAK images are package-for-package what they were before the
 feature list existed; the list only names what they already carried. The Opal
@@ -93,6 +90,22 @@ partition the console's UART setting already reads it as absent.
 4. Add its API prefix to `FEATURE_PREFIXES`.
 5. List it on the boards that have it.
 
+## What a router board may not do
+
+The Opal is a Parkeze Net gateway like any other, and the devices on its LAN
+are listed under it (logbook `docs/plans/connected-devices.md`, section 9).
+Three rules follow, and every router page keeps them:
+
+- **One way in.** Nothing opens a path from outside into the LAN except the
+  tunnel forward net-api asks for (`lan-forward`, [lan.md](lan.md)). So there
+  is no uplink port forward, no DMZ, no site VPN that reaches the LAN, and no
+  firewall rule editor.
+- **Policy is per MAC**: `parkeze` or `internet`, through `parkeze-lan policy`.
+  No blocklist, no allowlist, no per-client speed limit.
+- **Local is reported.** A setting changed at the gateway (a reservation, an
+  upstream DNS server, the uplink order) is in the gateway's report to Parkeze
+  Net, as the LAN's state already is (`parkeze-lan status`).
+
 ## The router set, from GL.iNet's
 
 The Opal ships with GL.iNet's admin panel (firmware 4.8.3). Its feature
@@ -107,19 +120,17 @@ paragraph explaining itself, which this console does not do.
 | Internet: the Ethernet card (DHCP / static / PPPoE, VLAN, MTU) | Backhaul > Ethernet, on every board |
 | Internet: Repeater | Backhaul > WiFi (`wifi`) |
 | Internet: Cellular | Backhaul > Cellular (`cellular`) |
-| Clients, LAN, DHCP, address reservation | Network > LAN (`lan`): `parkeze-lan status`, reserve, policy |
+| Clients, LAN, DHCP, address reservation | Network > LAN (`lan`): `parkeze-lan status`, reserve, per-MAC policy, the open tunnel forwards |
 | Multi-WAN: priority, tracking, failover | Network > Uplinks (`failover`); failover only, no load balance |
 | DNS: hosts, upstream, rebind protection | Network > DNS (`dns`) |
-| Port Forwarding | Network > Port forwards (`forwards`): uplink to a devlan device, apart from the tunnel forward |
-| Firewall zones (LuCI) | Network > Firewall (`firewall`): the zones, read-only first |
-| WireGuard client / server | Network > VPN (`vpn`): site peers; the management tunnel stays its own |
 | Management Control | Access, already |
 | Overview, Upgrade, Log, Time zone | System and Logs, already |
 
-Left out: OpenVPN (WireGuard covers it in a fraction of the flash), guest
-network, network mode, drop-in gateway, IGMP snooping, hardware acceleration,
-NAT mode, tethering, plug-ins, NAS, GL's DDNS, GoodCloud and AstroWarp
-(parkeze.net is the fleet manager).
+Left out, because each is a way into the LAN: port forwarding and DMZ,
+WireGuard and OpenVPN servers and clients, LuCI's firewall rules. Left out
+because nothing here needs them: guest network, network mode, drop-in
+gateway, IGMP snooping, hardware acceleration, NAT mode, tethering, plug-ins,
+NAS, GL's DDNS, GoodCloud and AstroWarp (parkeze.net is the fleet manager).
 
 The management tunnel is the organization's when the organization has a hub
 of its own; see [backhaul.md](backhaul.md), "Which hub". An Opal enrols the
