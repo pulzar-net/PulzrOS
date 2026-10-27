@@ -14,7 +14,7 @@ import Badge from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
 import Dialog from '@/components/ui/Dialog';
 import Notice from '@/components/ui/Notice';
-import Select from '@/components/ui/Select';
+import Segmented from '@/components/ui/Segmented';
 import { TextField } from '@/components/ui/Field';
 import Fact, { FactList } from '@/components/Fact';
 import DataTable from '@/components/DataTable';
@@ -34,9 +34,9 @@ import styles from '../Pages.module.css';
  * what parkeze.net's `lan` op reads.
  */
 
-const POLICIES = [
-  { value: 'parkeze' as const, label: 'Parkeze' },
-  { value: 'internet' as const, label: 'Internet' },
+const POLICIES: { value: LanClient['policy']; label: string }[] = [
+  { value: 'parkeze', label: 'Parkeze' },
+  { value: 'internet', label: 'Internet' },
 ];
 
 const total = (traffic: LanTraffic, only?: string) =>
@@ -72,13 +72,13 @@ export default function Lan() {
       column.accessor((c) => c.hostname ?? '', {
         id: 'name',
         header: 'Name',
-        size: 140,
+        size: 110,
         cell: (info) => info.getValue() || '—',
       }),
       column.accessor((c) => c.ip ?? '', {
         id: 'ip',
         header: 'Address',
-        size: 210,
+        size: 198,
         sortingFn: (a, b) => ipOrder(a.original.ip) - ipOrder(b.original.ip),
         cell: (info) => (
           <>
@@ -89,16 +89,21 @@ export default function Lan() {
       }),
       column.accessor('mac', {
         header: 'MAC',
-        size: 150,
+        size: 135,
         cell: (info) => <span className="mono">{info.getValue()}</span>,
+      }),
+      column.accessor((c) => c.port ?? '', {
+        id: 'port',
+        header: 'Port',
+        size: 56,
+        cell: (info) => info.getValue() || '—',
       }),
       column.accessor('policy', {
         header: 'Policy',
-        size: 140,
+        size: 160,
         enableSorting: false,
         cell: (info) => (
-          <Select
-            inline
+          <Segmented
             aria-label={`Policy for ${info.row.original.mac}`}
             value={info.getValue()}
             options={POLICIES}
@@ -110,14 +115,14 @@ export default function Lan() {
       column.accessor((c) => total(c.traffic), {
         id: 'traffic',
         header: 'Traffic',
-        size: 90,
+        size: 82,
         meta: { numeric: true },
         cell: (info) => bytes(info.getValue()),
       }),
       column.accessor((c) => total(c.traffic, 'wwan'), {
         id: 'cellular',
         header: 'Cellular',
-        size: 90,
+        size: 82,
         meta: { numeric: true },
         cell: (info) => bytes(info.getValue()),
       }),
@@ -125,7 +130,7 @@ export default function Lan() {
       column.accessor((c) => (c.online ? Number.MAX_SAFE_INTEGER : (c.lastSeen ?? 0)), {
         id: 'lastSeen',
         header: 'Seen',
-        size: 110,
+        size: 100,
         cell: (info) =>
           info.row.original.online
             ? <Badge tone="success">Online</Badge>
@@ -164,48 +169,74 @@ export default function Lan() {
 
   const clients = state.clients ?? [];
   const online = clients.filter((c) => c.online).length;
+  const links = state.links ?? (state.ports ?? []).map((name) => ({ name, up: false, speed: null }));
+  const cellular = clients.reduce((sum, c) => sum + total(c.traffic, 'wwan'), 0);
+  const nameOf = (ip: string) => clients.find((c) => c.ip === ip)?.hostname;
 
   return (
     <div className="fade-in">
       <Section title="LAN">
         <FactList>
           <Fact label="Gateway" value={state.address} mono />
-          <Fact label="Ports" value={(state.ports ?? []).join(', ')} mono />
-          <Fact label="Clients" value={`${online} online, ${clients.length} known`} />
+          {links.map((link) => (
+            <Fact
+              key={link.name}
+              label={link.name}
+              value={
+                <span className={styles.status}>
+                  {link.up ? <Badge tone="success">Up</Badge> : <Badge tone="neutral">No link</Badge>}
+                  {link.up && link.speed && <span>{link.speed >= 1000 ? `${link.speed / 1000} Gb/s` : `${link.speed} Mb/s`}</span>}
+                  <span className={styles.dim}>
+                    {clients
+                      .filter((c) => c.port === link.name && c.online)
+                      .map((c) => c.hostname ?? c.ip ?? c.mac)
+                      .join(', ')}
+                  </span>
+                </span>
+              }
+            />
+          ))}
+          <Fact label="Over cellular" value={`${bytes(cellular)} since boot`} />
         </FactList>
       </Section>
 
-      <Section title="Clients" note={clients.length ? String(clients.length) : undefined}>
+      <Section title="Clients" note={`${online} online, ${clients.length} known`}>
         {policy.isError && <Notice tone="error">{(policy.error as Error).message}</Notice>}
         <DataTable table={table} fill="reserve" />
       </Section>
 
-      <Forwards forwards={state.forwards ?? []} />
+      <Forwards forwards={state.forwards ?? []} nameOf={nameOf} />
 
       {editing && <ReserveDialog client={editing} onClose={() => setEditing(null)} />}
     </div>
   );
 }
 
-function Forwards({ forwards }: { forwards: LanForward[] }) {
+// Every forward is one net-api opened over MQTT (lan-forward); the console
+// has no way to open one, so "Parkeze Net" is always who.
+function Forwards({ forwards, nameOf }: { forwards: LanForward[]; nameOf: (ip: string) => string | null | undefined }) {
   return (
-    <Section title="Tunnel forwards" note={forwards.length ? String(forwards.length) : undefined}>
-      {forwards.length === 0 ? (
-        <FactList>
+    <Section title="Tunnel forwards">
+      <FactList>
+        {forwards.length === 0 ? (
           <Fact label="Open" value="None" />
-        </FactList>
-      ) : (
-        <FactList>
-          {forwards.map((f) => (
+        ) : (
+          forwards.map((f) => (
             <Fact
               key={f.port}
               label={`Port ${f.port}`}
-              value={`${f.ip}:${f.dport}, closes in ${duration(f.expiresIn)}`}
-              mono
+              value={
+                <span className={styles.status}>
+                  <span className="mono">
+                    {[nameOf(f.ip), `${f.ip}:${f.dport}`].filter(Boolean).join(' ')}
+                  </span>
+                  <span className={styles.dim}>Parkeze Net, closes in {duration(f.expiresIn)}</span>
+                </span>
+              }
             />
-          ))}
-        </FactList>
-      )}
+          ))
+        )}
+      </FactList>
     </Section>
   );
 }

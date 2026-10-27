@@ -140,7 +140,16 @@ export interface NetworkStatus {
 }
 
 export interface BackhaulStatus {
-  wired: { up: boolean; device: string | null; gateway: string | null };
+  wired: {
+    up: boolean;
+    device: string | null;
+    gateway: string | null;
+    address?: string | null;
+    proto?: string | null;
+    /** Mb/s; null with no link. */
+    speed?: number | null;
+  };
+  wifi?: { up: boolean; device: string | null; address: string | null };
   tunnel: {
     wiredOnly: true;
     note: string;
@@ -154,7 +163,7 @@ export interface BackhaulStatus {
     /** Seconds since the last handshake, or null if there has never been one. */
     lastHandshake: number | null;
   };
-  cellular: { up: boolean; modem: Modem | null };
+  cellular: { up: boolean; device?: string | null; modem: Modem | null };
 }
 
 // ── lorawan ─────────────────────────────────────────────────────────────────
@@ -563,6 +572,15 @@ export interface LanClient {
   lastSeen: number | null;
   leaseExpires?: number;
   traffic: LanTraffic;
+  /** The LAN port it is behind, from the bridge's forwarding table. */
+  port?: string | null;
+}
+
+export interface LanLink {
+  name: string;
+  up: boolean;
+  /** Mb/s; null with no link. */
+  speed: number | null;
 }
 
 /** A tunnel forward net-api opened (lan-forward). Read here, never opened. */
@@ -578,6 +596,7 @@ export interface LanStatus {
   configured: boolean;
   address?: string;
   ports?: string[];
+  links?: LanLink[];
   clients?: LanClient[];
   forwards?: LanForward[];
 }

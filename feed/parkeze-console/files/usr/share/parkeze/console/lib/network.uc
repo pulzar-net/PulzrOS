@@ -28,7 +28,7 @@ let _m_util = loadfile('/usr/share/parkeze/console/lib/util.uc', { raw_mode: tru
 // Declaring the names first makes every one of them a known local before any
 // body is compiled, so closures capture the binding rather than a missing
 // global and definition order stops mattering. auth.uc alone had six of these.
-let ifaceStatus, status, modem, backhaul, setCellular, setEthernet, ipv4, maskToPrefix;
+let ifaceStatus, linkSpeed, status, modem, backhaul, setCellular, setEthernet, ipv4, maskToPrefix;
 
 let run = _m_util.run;; let runJson = _m_util.runJson;; let ubus = _m_util.ubus;
 
@@ -52,6 +52,14 @@ ifaceStatus = function(name) {
         gateway: gateway,
         uptime: status.uptime,
     };
+};
+
+// Negotiated speed in Mb/s, or null: the kernel answers -1 or nothing for a
+// port with no link, and a virtual device has no speed at all.
+linkSpeed = function(dev) {
+    if (!dev || !match(dev, /^[A-Za-z0-9._-]+$/)) return null;
+    const speed = int(trim(readfile(sprintf('/sys/class/net/%s/speed', dev)) ?? ''));
+    return speed > 0 ? speed : null;
 };
 
 status = function() {
@@ -157,11 +165,22 @@ backhaul = function() {
         if (at > 0) lastHandshake = time() - at;
     }
 
+    const wan = ifaceStatus('wan'), wwifi = ifaceStatus('wwifi'), wwan = ifaceStatus('wwan');
+    const wiredDevice = route ? route.device : null;
+
     return {
         wired: {
             up: route ? route.wiredUsable : false,
-            device: route ? route.device : null,
+            device: wiredDevice,
             gateway: route ? route.gateway : null,
+            address: wan.address,
+            proto: wan.proto,
+            speed: linkSpeed(wiredDevice || wan.device),
+        },
+        wifi: {
+            up: wwifi.up == true,
+            device: wwifi.device,
+            address: wwifi.address,
         },
         tunnel: {
             // Deliberately restated on every response rather than assumed by
@@ -181,7 +200,8 @@ backhaul = function() {
             lastHandshake: lastHandshake,
         },
         cellular: {
-            up: ifaceStatus('wwan').up == true,
+            up: wwan.up == true,
+            device: wwan.device,
             modem: modem(),
         },
     };

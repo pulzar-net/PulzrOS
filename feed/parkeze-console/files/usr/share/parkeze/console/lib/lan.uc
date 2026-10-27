@@ -10,11 +10,13 @@
 // sees a reservation made at the gateway exactly as one it made itself.
 
 let _m_fs = require('fs');
-let popen = _m_fs.popen;
+let popen = _m_fs.popen;; let readfile = _m_fs.readfile;
+let _m_uci = require('uci');
+let cursor = _m_uci.cursor;
 let _m_util = loadfile('/usr/share/parkeze/console/lib/util.uc', { raw_mode: true })();
 
 // ucode does not hoist function declarations; see util.uc.
-let lan, status, setPolicy, reserve;
+let lan, links, portOf, status, setPolicy, reserve;
 
 let runJson = _m_util.runJson;
 
@@ -35,8 +37,39 @@ lan = function(args) {
     try { return json(out); } catch (e) { return { error: out }; }
 };
 
+// Each LAN port's link, from the kernel. parkeze-lan reports the ports by
+// name only, and "nothing answers on lan2" is usually a cable.
+links = function(ports) {
+    return map(ports, (name) => {
+        const sys = sprintf('/sys/class/net/%s/', name);
+        const speed = int(trim(readfile(sys + 'speed') ?? ''));
+        return { name, up: trim(readfile(sys + 'operstate') ?? '') == 'up', speed: speed > 0 ? speed : null };
+    });
+};
+
+// Which port each client is behind, from the bridge's forwarding table.
+// `bridge fdb` and not the bridge's own sysfs table: on a DSA switch the
+// addresses are learned in hardware, and only the dump through the ports
+// lists them.
+portOf = function(ports) {
+    const bridge = cursor().get('network', 'devlan_dev', 'name');
+    const out = {};
+    if (!bridge || !match(bridge, /^[A-Za-z0-9._-]+$/)) return out;
+    for (let e in (runJson(sprintf('bridge -j fdb show br %s 2>/dev/null', bridge)) ?? []))
+        if (e.mac && (e.ifname in ports) && !('permanent' in (e.flags ?? [])) && e.state != 'permanent')
+            out[lc(e.mac)] ??= e.ifname;
+    return out;
+};
+
 status = function() {
-    return runJson('/usr/sbin/parkeze-lan status') ?? { configured: false };
+    const s = runJson('/usr/sbin/parkeze-lan status') ?? { configured: false };
+    if (!s.configured) return s;
+    const ports = filter(s.ports ?? [], (p) => match(p, /^[A-Za-z0-9._-]+$/));
+    s.links = links(ports);
+    const where = portOf(ports);
+    for (let c in (s.clients ?? []))
+        c.port = where[lc(c.mac)] ?? null;
+    return s;
 };
 
 setPolicy = function(req) {

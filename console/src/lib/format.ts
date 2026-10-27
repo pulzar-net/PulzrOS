@@ -38,3 +38,22 @@ export function bytes(value: number | null | undefined): string {
 export function count(value: number | null | undefined): string {
   return value == null ? '—' : value.toLocaleString();
 }
+
+/**
+ * Bytes charted in one unit, chosen from the largest value, so the axis lands
+ * on round numbers of that unit — 0, 50, 100 MB — rather than on round
+ * numbers of bytes, which read as 47.7 MB.
+ */
+export function inUnit(peak: number, suffix = '') {
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let i = 0;
+  while (peak >= 1024 * 10 && i < units.length - 1) {
+    peak /= 1024;
+    i += 1;
+  }
+  const divisor = 1024 ** i;
+  return {
+    scale: (v: number | null) => (v == null ? null : v / divisor),
+    format: (v: number) => `${Number.isInteger(v) ? v : v.toFixed(1)} ${units[i]}${suffix}`,
+  };
+}
