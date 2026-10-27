@@ -10,7 +10,10 @@
 # no broker change.
 #
 # Also used by `parkeze-claim report`, so a gateway with no working radio —
-# which sends no stats — still says what it is.
+# which sends no stats — still says what it is. In parkeze-base, not the
+# lorawan feature's package, for the same reason: a router such as the Opal
+# has no radio at all, and without these facts parkeze.net cannot tell it
+# runs ParkezeOS, so never asks for its LAN or lists the devices behind it.
 #
 # Small on purpose: this rides every stats message, and on a SIM those are
 # billed. Keys are short and nothing here is slow.
@@ -38,7 +41,13 @@ wwan="$(addr wwan)"; [ -n "${wwan}" ]  && echo "cellular_ip=${wwan}"
 tunnel="$(jsonfilter -i /etc/parkeze/wireguard/tunnel.json -e '@.address' 2>/dev/null)"
 [ -n "${tunnel}" ] && echo "tunnel_ip=${tunnel%/*}"
 
-echo "concentrator=$(uci -q get parkeze.concentrator.status || echo unknown)"
+# absent on a build without the lorawan feature: there is nothing to detect,
+# and parkeze.net reads a ParkezeOS gateway with no concentrator as a router.
+if [ -x /usr/sbin/parkeze-concentrator-detect ]; then
+    echo "concentrator=$(uci -q get parkeze.concentrator.status || echo unknown)"
+else
+    echo "concentrator=absent"
+fi
 
 # The unit as its maker recorded it, where it did (parkeze-hwdesc): which of
 # a model's builds this is, the serial on its label, and its capabilities.

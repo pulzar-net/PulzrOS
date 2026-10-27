@@ -90,12 +90,15 @@ otherwise install the feature the board said it lacked.
 
 ## Packages that are not a feature's own
 
-Two scripts are called from everywhere and live in parkeze-base, not in a
+Some scripts are called from everywhere and live in parkeze-base, not in a
 feature's package: `parkeze-backhaul-check` (adoption, the health gate, the
 motd, the reset button, the console) moved there from parkeze-cellular so a
-board without `cellular` still has it. Everything else that reaches into a
-feature's package already copes with it being absent: `parkeze-claim` asks
-`command -v parkeze-gateway-facts`, `parkeze-wifi-uplink` tests for
+board without `cellular` still has it. `parkeze-gateway-facts` moved there
+from parkeze-concentrator: `parkeze-claim report` sends its facts from every
+gateway, and a board without `lorawan` that sent none was one parkeze.net
+could not tell ran ParkezeOS. On such a board it reports
+`concentrator=absent`. Everything else that reaches into a feature's package
+already copes with it being absent: `parkeze-wifi-uplink` tests for
 `parkeze-lora-route`, and the MQTT agent's ops fall back to `{}`.
 
 `parkeze-boot-config` stays in parkeze-concentrator. It writes a Pi's
