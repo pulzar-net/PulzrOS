@@ -77,6 +77,12 @@ parkeze-lan forward <ip> <port> <seconds>
 parkeze-lan unforward <tunnel port>
 ```
 
+In the console, Network > LAN (`lib/lan.uc`, `pages/network/Lan.tsx`): the
+clients, each one's policy and reservation, and the open forwards. It sets a
+policy and a reservation through the commands above, audited as `lan.policy`
+and `lan.reserve`, so the `lan` op reports them like any other. It never opens
+or closes a forward: that is net-api's, over MQTT.
+
 Over MQTT (`parkeze/gateway/<eui>/mgmt/request`, see `parkeze-mqtt-agent`):
 
 | `op` | Fields | Answer |

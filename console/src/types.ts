@@ -544,3 +544,40 @@ export interface ProcessList {
     rss: number;
   }[];
 }
+
+// ── lan ─────────────────────────────────────────────────────────────────────
+
+/** Bytes since boot, by the netifd interface that carried them (wan, wwifi,
+    wwan), and `tunnel` for a forward's traffic. */
+export type LanTraffic = Record<string, { txBytes: number; rxBytes: number }>;
+
+export interface LanClient {
+  mac: string;
+  ip: string | null;
+  hostname: string | null;
+  reserved: string | null;
+  policy: 'parkeze' | 'internet';
+  online: boolean;
+  /** Unix seconds; DHCP contact, kept across reboots. */
+  firstSeen: number | null;
+  lastSeen: number | null;
+  leaseExpires?: number;
+  traffic: LanTraffic;
+}
+
+/** A tunnel forward net-api opened (lan-forward). Read here, never opened. */
+export interface LanForward {
+  port: number;
+  ip: string;
+  dport: number;
+  expiresIn: number;
+}
+
+/** `parkeze-lan status`; see docs/lan.md. */
+export interface LanStatus {
+  configured: boolean;
+  address?: string;
+  ports?: string[];
+  clients?: LanClient[];
+  forwards?: LanForward[];
+}

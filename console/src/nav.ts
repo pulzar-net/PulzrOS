@@ -5,6 +5,7 @@ import {
   Lightbulb,
   Network,
   Radio,
+  Router,
   Satellite,
   ScrollText,
   Settings2,
@@ -23,7 +24,8 @@ import type { Feature } from '@/types';
  * first child, and the children show in the sidebar while you are inside it.
  *
  * An entry with a feature exists only on a board built with it; the sidebar
- * leaves it out and App.tsx sends its route home.
+ * leaves it out, and a group whose children are all left out, and App.tsx
+ * sends its route home.
  */
 export interface NavChild {
   path: string;
@@ -64,6 +66,12 @@ export const NAV: NavEntry[] = [
       { path: '/lorawan/forwarders', label: 'Forwarders' },
       { path: '/lorawan/settings', label: 'Settings' },
     ],
+  },
+  {
+    path: '/network',
+    label: 'Network',
+    icon: Router,
+    children: [{ path: '/network/lan', label: 'LAN', feature: 'lan', wide: true }],
   },
   { path: '/gnss', label: 'GNSS', icon: Satellite, feature: 'gnss' },
   { path: '/bluetooth', label: 'Bluetooth', icon: Bluetooth, feature: 'bluetooth' },

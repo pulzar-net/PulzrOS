@@ -24,10 +24,12 @@ export default function Layout({
   const location = useLocation();
   const queryClient = useQueryClient();
   const features = useFeatures();
-  const nav = NAV.filter((entry) => features.has(entry.feature)).map((entry) => ({
-    ...entry,
-    children: entry.children?.filter((child) => features.has(child.feature)),
-  }));
+  const nav = NAV.filter((entry) => features.has(entry.feature))
+    .map((entry) => ({
+      ...entry,
+      children: entry.children?.filter((child) => features.has(child.feature)),
+    }))
+    .filter((entry) => !entry.children || entry.children.length > 0);
 
   // Which gateway this is, on every page. The page's own name is already its
   // heading; repeating it up here said the same thing twice per screen.

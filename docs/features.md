@@ -21,7 +21,7 @@ that could only fail.
 | `bluetooth` | `PACKAGES_BLUETOOTH`: parkeze-ble | Bluetooth | `/api/bluetooth` | |
 | `cellular` | `PACKAGES_CELLULAR`: parkeze-cellular, ModemManager, qmi-wwan | Backhaul > Cellular, Overview's Cellular card | `/api/network/cellular` | |
 | `wifi` | `PACKAGES_WIFI`: parkeze-ap, wpad-openssl | Backhaul > WiFi, Access's setup AP | `/api/access/wifi`, `scan`, `ap`, `key` | |
-| `lan` | `PACKAGES_LAN`: parkeze-lan | planned: Network > LAN | planned | `PARKEZE_LAN_PORTS` |
+| `lan` | `PACKAGES_LAN`: parkeze-lan | Network > LAN | `/api/lan/` | `PARKEZE_LAN_PORTS` |
 | `dns` | | planned: Network > DNS | | |
 | `failover` | | planned: Network > Uplinks | | |
 
@@ -120,7 +120,7 @@ paragraph explaining itself, which this console does not do.
 | Internet: the Ethernet card (DHCP / static / PPPoE, VLAN, MTU) | Backhaul > Ethernet, on every board |
 | Internet: Repeater | Backhaul > WiFi (`wifi`) |
 | Internet: Cellular | Backhaul > Cellular (`cellular`) |
-| Clients, LAN, DHCP, address reservation | Network > LAN (`lan`): `parkeze-lan status`, reserve, per-MAC policy, the open tunnel forwards |
+| Clients, LAN, DHCP, address reservation | Network > LAN (`lan`), built: `parkeze-lan status`, reserve, per-MAC policy, the open tunnel forwards read-only |
 | Multi-WAN: priority, tracking, failover | Network > Uplinks (`failover`); failover only, no load balance |
 | DNS: hosts, upstream, rebind protection | Network > DNS (`dns`) |
 | Management Control | Access, already |

@@ -47,6 +47,7 @@ let io = loadfile('/usr/share/parkeze/console/lib/io.uc', { raw_mode: true })();
 let access = loadfile('/usr/share/parkeze/console/lib/access.uc', { raw_mode: true })();
 let firmware = loadfile('/usr/share/parkeze/console/lib/firmware.uc', { raw_mode: true })();
 let bluetooth = loadfile('/usr/share/parkeze/console/lib/bluetooth.uc', { raw_mode: true })();
+let lan = loadfile('/usr/share/parkeze/console/lib/lan.uc', { raw_mode: true })();
 // What changes the gateway, shared with the terminal UI; see actions.uc.
 let actions = loadfile('/usr/share/parkeze/console/lib/actions.uc', { raw_mode: true })();
 
@@ -369,6 +370,17 @@ const ROUTES = {
         return respond(200, result);
     },
 
+    // ── lan: the devlan zone; no forwards, see lib/lan.uc ──────────────────
+    'GET  /api/lan/status':  () => respond(200, lan.status()),
+    'POST /api/lan/policy':  (env, req, s) => {
+        const result = actions.setLanPolicy(req, s);
+        return result.error ? error(400, result.error) : respond(200, result);
+    },
+    'POST /api/lan/reserve': (env, req, s) => {
+        const result = actions.setLanReserve(req, s);
+        return result.error ? error(400, result.error) : respond(200, result);
+    },
+
     // ── io ──────────────────────────────────────────────────────────────────
     'GET  /api/io/status': () => respond(200, io.status()),
     'POST /api/io/test':   (env, req, s) => respond(200, actions.ioTest(req, s)),
@@ -417,6 +429,7 @@ const FEATURE_PREFIXES = [
     ['/api/access/scan',       'wifi'],
     ['/api/access/ap',         'wifi'],
     ['/api/access/key',        'wifi'],
+    ['/api/lan/',              'lan'],
 ];
 
 function featureOf(path) {
