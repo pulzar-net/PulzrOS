@@ -17,7 +17,7 @@ set -uo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SETUP="${ROOT_DIR}/feed/parkeze-base/files/usr/sbin/parkeze-ssh-setup"
 SHIPPED_CONFIG="${ROOT_DIR}/feed/parkeze-base/files/usr/share/parkeze/ssh/sshd_config"
-SHIPPED_CA="${ROOT_DIR}/keys/ca/parkeze_user_ca.pub"
+SHIPPED_CA="${ROOT_DIR}/boards/common/ssh/parkeze_user_ca.pub"
 KEYS_ONLY="${ROOT_DIR}/feed/parkeze-console/files/usr/libexec/parkeze-root-keys-only"
 
 command -v python3 >/dev/null 2>&1 || { echo "python3 is required" >&2; exit 2; }

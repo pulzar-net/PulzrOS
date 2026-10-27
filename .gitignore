@@ -11,16 +11,13 @@ out/
 # or a stale copy ships instead of the source in console/.
 feed/parkeze-console/files/www/
 
-# Operator authorized_keys, assembled by build.sh from keys/*.pub. Generated
-# on every build from the sources in keys/ — committing it would let a stale
-# copy ship after somebody's key is removed. Same for the fleet-keys bundle
-# build.sh writes alongside them.
-boards/common/files/etc/dropbear/authorized_keys
-boards/common/files/root/.ssh/authorized_keys
+# The fleet-keys bundle, assembled by build.sh from boards/common/ssh/fleet/
+# on every build — committing it would let a stale copy ship after somebody's
+# key is removed.
 boards/common/files/usr/share/parkeze/fleet-keys
 # Developers' own keys for a PARKEZE_DEV=1 image. People's, not the platform's.
-keys/dev/
-# The SSH CA's public line, copied in by build.sh from keys/ca/.
+boards/common/ssh/dev/
+# The SSH CA's public line, copied in by build.sh from boards/common/ssh/.
 boards/common/files/usr/share/parkeze/ssh/
 
 # The fleet recovery PUBLIC key, copied in by build.sh. Public, but it belongs
@@ -51,7 +48,7 @@ ucode/
 .env.local
 *.pem
 *_ed25519
-# Public halves are not secret, and keys/*.pub is meant to be committed.
+# Public halves are not secret, and boards/common/ssh/ is meant to be committed.
 !*_ed25519.pub
 # Except this one. It belongs to a deployment rather than to this repo — an
 # image built from a checkout should use whichever key that deployment uses,

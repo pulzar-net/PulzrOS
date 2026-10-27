@@ -142,7 +142,7 @@ docs/             the design decisions worth writing down
 
 `PARKEZE_DEV=1 ./build.sh <board>` builds a development image: the serial
 console's root shell, failsafe, the TUI's `!` for any sign-in, and your key
-from `keys/dev/`. Its version ends in `-dev`; CI will not build one. See
+from `boards/common/ssh/dev/`. Its version ends in `-dev`; CI will not build one. See
 [`docs/auth.md`](docs/auth.md), "Who gets root".
 
 The console has two halves. The React app typechecks and builds normally:
