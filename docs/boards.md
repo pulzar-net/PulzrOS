@@ -85,7 +85,7 @@ why detection disagrees.
 | `rak7268c` | ramips/mt76x8 | 1 slot, fixed SPI | **Unverified.** 8 channels. |
 | `rak7268cv2` | ramips/mt76x8 | 1 slot, fixed SPI | Harvested. ImageBuilder from parkeze/openwrt-rak7268cv2. 8 channels. |
 | `rak7289cv2` | ramips/mt76x8 | 2 slots, fixed USB | **Supported.** Full ParkezeOS bench-confirmed on a single-radio unit (concentratord, 8 ch, GPS, adoption); two-slot structure ready, LoRa1/LoRa2 order to be confirmed on a dual-card Pro. 16 channels. Power-board watchdog and battery pack per ChirpStack's RAK support, not yet seen answering ([rak-power.md](rak-power.md)). ImageBuilder from parkeze/openwrt-rak7289cv2. |
-| `gl-sft1200` | siflower/sf19a2890 | none: a router | **Needs device support.** GL.iNet Opal, the router IP devices sit behind on its two LAN ports ([lan.md](lan.md)). ImageBuilder from parkeze/openwrt-gl-sft1200, not yet built or booted. |
+| `gl-sft1200` | siflower/sf19a2890 | none: a router | **Builds, not yet booted.** GL.iNet Opal, the router IP devices sit behind on its two LAN ports ([lan.md](lan.md)). ImageBuilder from parkeze/openwrt-gl-sft1200. |
 
 The Pi boards share `boards/common/raspberrypi.conf` and the RAK boards share
 `boards/common/rakwireless.conf`, so each individual board file is a dozen
@@ -116,7 +116,8 @@ builds the 25.12.6 tree with siflower's 6.18 kernel grafted in, and an
 ImageBuilder that carries the kernel, every kmod and the target's own
 packages while installing the release's userland. `check-deps.sh` lists what
 that ImageBuilder has to supply. Its README is the board's hardware record and
-the harvest and recovery procedure; no unit has been harvested yet.
+the harvest and recovery procedure. A unit has been harvested on GL's
+firmware; none has booted ParkezeOS yet.
 
 `rak7268c` is still written from published specifications; see the template's
 README for taking a board through the same process.
