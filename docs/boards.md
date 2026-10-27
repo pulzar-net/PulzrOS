@@ -85,6 +85,7 @@ why detection disagrees.
 | `rak7268c` | ramips/mt76x8 | 1 slot, fixed SPI | **Unverified.** 8 channels. |
 | `rak7268cv2` | ramips/mt76x8 | 1 slot, fixed SPI | Harvested. ImageBuilder from parkeze/openwrt-rak7268cv2. 8 channels. |
 | `rak7289cv2` | ramips/mt76x8 | 2 slots, fixed USB | **Supported.** Full ParkezeOS bench-confirmed on a single-radio unit (concentratord, 8 ch, GPS, adoption); two-slot structure ready, LoRa1/LoRa2 order to be confirmed on a dual-card Pro. 16 channels. Power-board watchdog and battery pack per ChirpStack's RAK support, not yet seen answering ([rak-power.md](rak-power.md)). ImageBuilder from parkeze/openwrt-rak7289cv2. |
+| `gl-sft1200` | siflower/sf19a2890 | none: a router | **Needs device support.** GL.iNet Opal, the router IP devices sit behind on its two LAN ports ([lan.md](lan.md)). ImageBuilder from parkeze/openwrt-gl-sft1200, not yet built or booted. |
 
 The Pi boards share `boards/common/raspberrypi.conf` and the RAK boards share
 `boards/common/rakwireless.conf`, so each individual board file is a dozen
@@ -107,6 +108,16 @@ run of the full `24.10.0-1` ParkezeOS image confirmed it boots as
 `/dev/ttyS1`; the absent second card was reported as the partial state. It is
 `supported` on that basis — the two-slot structure is ready — with only the
 silkscreen LoRa1/LoRa2 order left to confirm on a Pro with both cards.
+`gl-sft1200` is the GL.iNet Opal, the first board that is a router rather
+than a LoRa gateway: one WAN port and two LAN ports on a MaxLinear GSW150
+switch, with Wi-Fi off. Its target is source-only in 25.12 and has no GSW150
+driver on 6.12, so [parkeze/openwrt-gl-sft1200](https://github.com/parkeze/openwrt-gl-sft1200)
+builds the 25.12.6 tree with siflower's 6.18 kernel grafted in, and an
+ImageBuilder that carries the kernel, every kmod and the target's own
+packages while installing the release's userland. `check-deps.sh` lists what
+that ImageBuilder has to supply. Its README is the board's hardware record and
+the harvest and recovery procedure; no unit has been harvested yet.
+
 `rak7268c` is still written from published specifications; see the template's
 README for taking a board through the same process.
 
@@ -153,6 +164,7 @@ hardware leaves them alone, and nothing for them is in its image.
 | `rpi4` | 115200 | HDMI | USB-C, `dwc2` |
 | `rpi5` | 115200 | HDMI | USB-C, `dwc2` |
 | RAK | 57600, on the USB-C socket | no | no — that socket is a CH340 on the UART |
+| `gl-sft1200` | 115200, inside the case | no | no |
 
 A board's console baud rate is its own business; the TUI asks the terminal for
 its size rather than assume one.

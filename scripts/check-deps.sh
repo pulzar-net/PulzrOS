@@ -145,18 +145,35 @@ for board in "${boards[@]}"; do
 $(cat "${ROOT_DIR}"/feed/*/arches 2>/dev/null \
   | awk -v a="${OPENWRT_ARCH}" '$1 == a && $2 != "-" { print $2 }' | tr ',' '\n')"
 
-    missing=0
+    # A source-only target publishes neither its own packages nor its kmods,
+    # and a board on one gets both from the ImageBuilder its device repo
+    # builds. What the release's feeds do not have is listed for that
+    # ImageBuilder to supply, rather than counted as missing.
+    from_ib=0
+    if [ ! -s "${CACHE}/${OPENWRT_VERSION}-${OPENWRT_TARGET}-${OPENWRT_SUBTARGET}-target.names" ] \
+       && [ -n "${OPENWRT_IMAGEBUILDER_URL:-}" ]; then
+      from_ib=1
+    fi
+
+    missing=0 supplied=0
     while IFS= read -r pkg; do
       [ -n "${pkg}" ] || continue
       case "${pkg}" in \#*) continue ;; esac
       grep -qxF "${pkg}" <<<"${available}" && continue
       # Our own feed satisfies these.
       is_ours "${pkg}" && continue
+      if [ "${from_ib}" = 1 ]; then
+        echo "  IB       ${pkg}"
+        supplied=$((supplied + 1))
+        continue
+      fi
       echo "  MISSING  ${pkg}"
       missing=$((missing + 1))
     done < <(printf '%s\n%s\n' "${wanted}" "${deps}" | sort -u)
 
     if [ "${missing}" -eq 0 ]; then
+      [ "${supplied}" -gt 0 ] \
+        && echo "  ${supplied} package(s) must come from ${OPENWRT_IMAGEBUILDER_URL}"
       echo "  all packages resolve"
       exit 0
     fi
