@@ -118,7 +118,8 @@ to stay under the agent's 8KB answer.
   upgrades. A device answering ARP right now is `online`, and its `lastSeen`
   is now.
 - `traffic` is per uplink, by the netifd interface that carried it (`wan`,
-  `wwifi`, `wwan`), and `tunnel` for a forward's traffic. Counted after the
+  `wwifi`, `wwan`, `usbwan`), and `tunnel` for a forward's traffic. The
+  console's Cellular column is `wwan` and `usbwan` together. Counted after the
   firewall, so a refused attempt is not traffic, and since boot. It lives in
   ParkezeOS's own nftables table, so a firewall reload does not zero it.
 - `journal` is the last twenty forwards opened and closed.

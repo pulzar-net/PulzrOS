@@ -1,0 +1,44 @@
+#!/bin/sh
+#
+# usbwan: a HiLink dongle or a tethered phone, as an uplink.
+
+# OpenWrt's prepare_rootfs runs every uci-defaults script during image
+# assembly, with IPKG_INSTROOT set. The build host's network devices are not
+# this gateway's.
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+
+. /etc/parkeze/board.conf
+
+# Metric 21: behind a cable (10) and an open WiFi (15) like any cellular
+# link, and one behind wwan (20), so where a gateway has a modem and a phone
+# both, the SIM Parkeze provisioned carries the traffic.
+#
+# Off when the board has cellular off, and left as it is on a re-run: the
+# console's "Use cellular as a backhaul" turns this off along with wwan, and a
+# sysupgrade must not turn it back on.
+if [ -z "$(uci -q get network.usbwan)" ]; then
+    uci -q batch <<EOF
+set network.usbwan=interface
+set network.usbwan.proto='dhcp'
+set network.usbwan.disabled='$([ "${PARKEZE_WAN_CELL_ENABLED}" = 1 ] && echo 0 || echo 1)'
+EOF
+fi
+uci -q set network.usbwan.metric='21'
+uci commit network
+
+# The wan zone, not cellular. The cellular zone admits SSH and the console
+# from anywhere, because the only thing on the far side of a 1NCE SIM is the
+# carrier network gateway-link reaches through. The far side of usbwan is a
+# dongle's or a phone's NAT, a box nobody here runs, which is what the wan
+# zone is for. Its masquerade and the DHCP client rule come with it.
+zone="$(uci -q get firewall.wan.network)"
+case " ${zone} " in
+    *" usbwan "*) ;;
+    *) uci -q set firewall.wan.network="$(echo "${zone} usbwan" | sed 's/^ *//')"
+       uci commit firewall ;;
+esac
+
+# Something may already be plugged in. Backgrounded: first boot should not
+# wait on sysfs walks or an ifup.
+( /usr/sbin/parkeze-usb-cellular scan >/dev/null 2>&1 ) &
+exit 0

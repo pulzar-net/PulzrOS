@@ -48,10 +48,10 @@ return {
     network: {
         status: () => ({ console: { address: '192.168.61.1/24' }, linkLocal: { address: '169.254.61.1/16' },
             wan: { up: true, address: '10.20.0.57/24', gateway: '10.20.0.1', mode: 'dhcp', staticNetmask: null, dns: [] },
-            cellular: { up: false, enabled: true, apn: 'iot.1nce.net', address: null, modem: { model: 'EG25-G', network: '1NCE', technology: 'lte', rssi: -71 } } }),
+            cellular: { up: false, enabled: true, apn: 'iot.1nce.net', address: null, modem: { kind: 'qmi', model: 'EG25-G', network: '1NCE', technology: 'lte', rssi: -71 } } }),
         backhaul: () => ({ wired: { up: true, device: 'eth0', gateway: '10.20.0.1' },
             tunnel: { state: 'up', address: '10.99.4.17', endpoint: 'hub.parkeze.com:51820', lastHandshake: 42 },
-            cellular: { up: false, modem: { rssi: -71 } } }),
+            cellular: { up: false, modem: { kind: 'qmi', rssi: -71 } } }),
     },
     lorawan: {
         status: () => ({ concentrator: { status: 'present', slots: 1, present: 1, channels: 8 },

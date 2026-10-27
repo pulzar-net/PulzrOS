@@ -7,7 +7,7 @@ import Fact, { FactList } from '@/components/Fact';
 import Notice from '@/components/ui/Notice';
 import Spinner from '@/components/ui/Spinner';
 import ErrorState from '@/components/ErrorState';
-import { duration } from '@/lib/format';
+import { duration, modemKind } from '@/lib/format';
 import { useFeatures } from '@/hooks/useFeatures';
 import styles from './Pages.module.css';
 
@@ -103,11 +103,11 @@ export default function Overview() {
             <Section title="Cellular">
               <FactList>
                 <Fact
-                  label="Modem"
+                  label="Adapter"
                   value={
                     <StatusBadge
                       ok={Boolean(paths?.cellular.modem)}
-                      okLabel="Present"
+                      okLabel={modemKind(paths?.cellular.modem?.kind) ?? 'Present'}
                       badLabel="Absent"
                     />
                   }

@@ -114,7 +114,8 @@ export default function Lan() {
         meta: { numeric: true },
         cell: (info) => bytes(info.getValue()),
       }),
-      column.accessor((c) => total(c.traffic, 'wwan'), {
+      // Both billed interfaces: the modem's, and a dongle's or a phone's.
+      column.accessor((c) => total(c.traffic, 'wwan') + total(c.traffic, 'usbwan'), {
         id: 'cellular',
         header: 'Cellular',
         size: 90,

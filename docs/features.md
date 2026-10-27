@@ -19,7 +19,7 @@ that could only fail.
 | `lorawan` | `PACKAGES_LORAWAN`: parkeze-concentrator, chirpstack-gateway, spi-tools, gpiod-tools, mosquitto-ssl | LoRaWAN | `/api/lorawan/` | |
 | `gnss` | none (parkeze-gps is in parkeze-concentrator) | GNSS | `/api/gnss` | `PARKEZE_GPS` not `none` |
 | `bluetooth` | `PACKAGES_BLUETOOTH`: parkeze-ble | Bluetooth | `/api/bluetooth` | |
-| `cellular` | `PACKAGES_CELLULAR`: parkeze-cellular, ModemManager, qmi-wwan | Backhaul > Cellular, Overview's Cellular card | `/api/network/cellular` | |
+| `cellular` | `PACKAGES_CELLULAR`: parkeze-cellular, ModemManager, qmi-wwan; `PACKAGES_USB_CELLULAR` on a board with a USB host port | Backhaul > Cellular, Overview's Cellular card | `/api/network/cellular` | |
 | `wifi` | `PACKAGES_WIFI`: parkeze-ap, wpad-openssl | Backhaul > WiFi, Access's setup AP | `/api/access/wifi`, `scan`, `ap`, `key` | |
 | `lan` | `PACKAGES_LAN`: parkeze-lan | Network > LAN | `/api/lan/` | `PARKEZE_LAN_PORTS` |
 | `dns` | | planned: Network > DNS | | |
@@ -55,8 +55,9 @@ in the image and a missing binary otherwise surfaces as a 500.
 | `rak7268cv2` | `lorawan cellular wifi` (no GNSS) |
 | `gl-sft1200` | `cellular lan dns failover` |
 
-The Pi and RAK images are package-for-package what they were before the
-feature list existed; the list only names what they already carried. The Opal
+The Pi and RAK images were package-for-package what they were before the
+feature list existed; the list only named what they already carried. The Pis
+have since gained `PACKAGES_USB_CELLULAR` (below). The Opal
 loses parkeze-concentrator, chirpstack-gateway, spi-tools, gpiod-tools,
 mosquitto-ssl and parkeze-ap. It keeps `cellular` because a USB modem is its
 second uplink, and has no `wifi` because its radios have only Siflower's
@@ -65,6 +66,27 @@ vendor driver.
 RAK gateways never get the router set: their one port is the uplink and the
 console at once (see [access.md](access.md)), and there is nothing to route
 for.
+
+## USB cellular is a board's, not a word
+
+`PACKAGES_USB_CELLULAR` is the drivers for a modem somebody plugs in: MBIM,
+AT ports, a Huawei stick, `usb-modeswitch`, and the USB Ethernet drivers and
+`parkeze-usb-cellular` for a HiLink dongle or a tethered phone (see
+[backhaul.md](backhaul.md), "Cellular adapters"). It is a group a board adds
+to `PACKAGES_BOARD`, like the display and USB gadget groups, not a feature
+word.
+
+A word is what a board is for, and brings pages and endpoints with it. A USB
+modem is the `cellular` feature's own page, endpoint and uplink, reached
+through a different socket; what decides it is whether the board has a free
+USB host port, which is hardware, the question the display and gadget groups
+already answer per board. A word for it would have had no page to gate.
+
+The Pis and the Opal take it. The RAK images do not: their modem is QMI and
+soldered to their one USB port, and their flash is the tightest.
+`parkeze_check_features` refuses `parkeze-usb-cellular` in `PACKAGES_BOARD`
+without `cellular`, because it depends on parkeze-cellular and apk would
+otherwise install the feature the board said it lacked.
 
 ## Packages that are not a feature's own
 

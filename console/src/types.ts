@@ -100,7 +100,13 @@ export interface InterfaceStatus {
   uptime?: number;
 }
 
+/** How the cellular adapter reaches the gateway. qmi, mbim and at are modems
+    ModemManager drives as wwan. hilink and tether are USB Ethernet devices on
+    usbwan, with no SIM, operator or signal the gateway can read. */
+export type ModemKind = 'qmi' | 'mbim' | 'at' | 'hilink' | 'tether';
+
 export interface Modem {
+  kind?: ModemKind;
   model?: string | null;
   imei?: string | null;
   registration: string | null;
@@ -548,7 +554,7 @@ export interface ProcessList {
 // ── lan ─────────────────────────────────────────────────────────────────────
 
 /** Bytes since boot, by the netifd interface that carried them (wan, wwifi,
-    wwan), and `tunnel` for a forward's traffic. */
+    wwan, usbwan), and `tunnel` for a forward's traffic. */
 export type LanTraffic = Record<string, { txBytes: number; rxBytes: number }>;
 
 export interface LanClient {

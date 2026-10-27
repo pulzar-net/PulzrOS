@@ -117,7 +117,7 @@ backhaul_line() {
     local colour text
     if [ "$(parkeze-backhaul-check --tunnel 2>/dev/null)" = "up" ]; then
         colour="${GREEN}"; text="wired (management tunnel up)"
-    elif ip route show 2>/dev/null | grep -qE '^default.*(wwan|rmnet|ppp)'; then
+    elif ( . /usr/share/parkeze/cellular.sh; cellular_gateway >/dev/null ); then
         colour="${YELLOW}"; text="cellular only — metered"
     else
         colour="${RED}"; text="unreachable"

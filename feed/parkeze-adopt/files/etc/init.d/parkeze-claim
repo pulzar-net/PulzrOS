@@ -43,5 +43,6 @@ service_triggers() {
     # should not sit for an hour before noticing it can reach us.
     procd_add_reload_interface_trigger wan
     procd_add_reload_interface_trigger wwan
+    procd_add_reload_interface_trigger usbwan
     procd_add_config_trigger "config.change" "parkeze" /etc/init.d/parkeze-claim restart
 }

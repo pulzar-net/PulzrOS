@@ -33,7 +33,8 @@ elif [ "${INTERFACE}" = "${WIFI}" ]; then
         ifup)   /etc/init.d/parkeze-wireguard restart ;;
         ifdown) /usr/sbin/parkeze-wireguard-route apply ;;
     esac
-elif [ "${INTERFACE}" = "${CELL}" ]; then
+elif [ "${INTERFACE}" = "${CELL}" ] || [ "${INTERFACE}" = usbwan ]; then
+    # usbwan is a HiLink dongle or a phone: cellular, though it looks wired.
     case "${ACTION}" in
         ifup|ifdown) /usr/sbin/parkeze-wireguard-route apply ;;
     esac

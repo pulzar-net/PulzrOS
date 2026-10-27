@@ -1,5 +1,7 @@
 /** Formatting helpers. Pure functions, no React. */
 
+import type { ModemKind } from '@/types';
+
 /** Seconds as a coarse human duration: "3d 4h", "12m". */
 export function duration(seconds: number | null | undefined): string {
   if (seconds == null) return '—';
@@ -37,4 +39,17 @@ export function bytes(value: number | null | undefined): string {
 /** A count with its unit, or an em dash. Avoids "0" reading as "unknown". */
 export function count(value: number | null | undefined): string {
   return value == null ? '—' : value.toLocaleString();
+}
+
+const MODEM_KINDS: Record<ModemKind, string> = {
+  qmi: 'QMI modem',
+  mbim: 'MBIM modem',
+  at: 'AT modem',
+  hilink: 'HiLink dongle',
+  tether: 'Tethered phone',
+};
+
+/** The cellular adapter's kind as a technician would name it. */
+export function modemKind(kind: ModemKind | null | undefined): string | null {
+  return kind ? MODEM_KINDS[kind] : null;
 }
