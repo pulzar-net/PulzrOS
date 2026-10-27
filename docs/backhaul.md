@@ -181,8 +181,18 @@ tunnel. No inbound port on the uplink is ever needed or opened.
 ## The management tunnel
 
 Plain kernel WireGuard, hub-and-spoke. There is no mesh and no coordination
-server: the hub is a sidecar in gateway-link's pod, and each gateway has one
-peer — the hub — at a single `/32`.
+server, and each gateway has one peer — the hub — at a single `/32`.
+
+**Which hub.** An organization that has its own hub gets it: a
+`wireguard-hub-<slug>` pod on the organization's own subnet and UDP port
+(parkeze.net's `gateway-planes` chart, `wireguard_hubs` table). Every other
+gateway is on Parkeze's hub in gateway-link's pod (`wg.net.parkeze.com:51820`,
+`100.96.0.0/16`), which is also where every gateway enrolled before org hubs
+existed stays until staff move it. parkeze.net picks the hub at enrolment
+(`hub_for_org` in `net-api/utils/wireguard.py`); the gateway takes whatever
+endpoint, hub key and hub address the answer gives, so nothing here differs
+by organization. A gateway transferred to another organization is moved off
+the old owner's hub the next time it enrols.
 
 Chosen over Tailscale, which this replaced, because a 128MB MIPS gateway could
 not carry it: `tailscaled` is a 26MB Go binary that left about 13MB of RAM free

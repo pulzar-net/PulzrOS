@@ -8,6 +8,7 @@ import { useSession } from '@/contexts/SessionContext';
 import { NAV } from '@/nav';
 import RecoveryBanner from './RecoveryBanner';
 import { useSessionCountdown } from '@/hooks/useSessionCountdown';
+import { useFeatures } from '@/hooks/useFeatures';
 import { countdown } from '@/lib/format';
 import ErrorBoundary from './ErrorBoundary';
 import Spinner from './ui/Spinner';
@@ -22,6 +23,11 @@ export default function Layout({
   const { session, signOut } = useSession();
   const location = useLocation();
   const queryClient = useQueryClient();
+  const features = useFeatures();
+  const nav = NAV.filter((entry) => features.has(entry.feature)).map((entry) => ({
+    ...entry,
+    children: entry.children?.filter((child) => features.has(child.feature)),
+  }));
 
   // Which gateway this is, on every page. The page's own name is already its
   // heading; repeating it up here said the same thing twice per screen.
@@ -38,7 +44,7 @@ export default function Layout({
         </div>
 
         <nav className={styles.nav}>
-          {NAV.map(({ path, label, icon: Icon, children }) => {
+          {nav.map(({ path, label, icon: Icon, children }) => {
             const inside = path !== '/' && location.pathname.startsWith(path);
             return (
               <div key={path}>

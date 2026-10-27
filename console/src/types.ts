@@ -45,6 +45,20 @@ export interface RecoveryChallenge {
 
 // ── system ──────────────────────────────────────────────────────────────────
 
+/** A board's feature words; boards/common/board.conf lists what each means. */
+export type Feature =
+  | 'lorawan'
+  | 'gnss'
+  | 'bluetooth'
+  | 'cellular'
+  | 'wifi'
+  | 'lan'
+  | 'forwards'
+  | 'firewall'
+  | 'dns'
+  | 'vpn'
+  | 'failover';
+
 export interface SystemSummary {
   identity: {
     hostname: string | null;

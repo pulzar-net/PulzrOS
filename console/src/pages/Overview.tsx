@@ -8,6 +8,7 @@ import Notice from '@/components/ui/Notice';
 import Spinner from '@/components/ui/Spinner';
 import ErrorState from '@/components/ErrorState';
 import { duration } from '@/lib/format';
+import { useFeatures } from '@/hooks/useFeatures';
 import styles from './Pages.module.css';
 
 /**
@@ -19,6 +20,7 @@ import styles from './Pages.module.css';
  * completely different fixes.
  */
 export default function Overview() {
+  const features = useFeatures();
   const summary = useQuery({
     queryKey: ['system-summary'],
     queryFn: () => api.get<SystemSummary>('/system/summary'),
@@ -32,6 +34,7 @@ export default function Overview() {
     queryKey: ['lorawan-status'],
     queryFn: () => api.get<LorawanStatus>('/lorawan/status'),
     refetchInterval: 15_000,
+    enabled: features.has('lorawan'),
   });
 
   if (summary.isLoading) return <Spinner label="Reading gateway state" />;
@@ -95,31 +98,33 @@ export default function Overview() {
           </Section>
         </div>
 
-        <div>
-          <Section title="Cellular">
-            <FactList>
-              <Fact
-                label="Modem"
-                value={
-                  <StatusBadge
-                    ok={Boolean(paths?.cellular.modem)}
-                    okLabel="Present"
-                    badLabel="Absent"
-                  />
-                }
-              />
-              <Fact label="Data" value={<StatusBadge ok={Boolean(paths?.cellular.up)} />} />
-              <Fact
-                label="Signal"
-                value={
-                  paths?.cellular.modem?.rssi != null
-                    ? `${paths.cellular.modem.rssi} dBm`
-                    : null
-                }
-              />
-            </FactList>
-          </Section>
-        </div>
+        {features.has('cellular') && (
+          <div>
+            <Section title="Cellular">
+              <FactList>
+                <Fact
+                  label="Modem"
+                  value={
+                    <StatusBadge
+                      ok={Boolean(paths?.cellular.modem)}
+                      okLabel="Present"
+                      badLabel="Absent"
+                    />
+                  }
+                />
+                <Fact label="Data" value={<StatusBadge ok={Boolean(paths?.cellular.up)} />} />
+                <Fact
+                  label="Signal"
+                  value={
+                    paths?.cellular.modem?.rssi != null
+                      ? `${paths.cellular.modem.rssi} dBm`
+                      : null
+                  }
+                />
+              </FactList>
+            </Section>
+          </div>
+        )}
       </div>
 
       <Section title="Identity">

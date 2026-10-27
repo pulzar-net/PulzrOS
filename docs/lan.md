@@ -14,7 +14,7 @@ In the board's `board.conf`:
 
 ```sh
 PARKEZE_LAN_PORTS="lan1 lan2 lan3"     # the ports, by their Linux names
-PACKAGES_BOARD="${PACKAGES_BOARD} ${PACKAGES_LAN}"
+PARKEZE_FEATURES="${PARKEZE_FEATURES} lan"
 ```
 
 A USB adapter also needs its driver in `PACKAGES_BOARD`:

@@ -716,6 +716,7 @@ build_board() {
     . "${conf}"
 
     : "${OPENWRT_PROFILE:?board.conf must set OPENWRT_PROFILE}"
+    parkeze_check_features || exit 1
 
     if [ "${BOARD_STATUS:-supported}" != "supported" ]; then
       cat >&2 <<EOF
@@ -740,7 +741,7 @@ EOF
     rm -rf "${files}"; mkdir -p "${files}"
     render_board_files "${files}"
 
-    # Package list: shared, then board, then the removals as `-name` entries,
+    # Package list: shared, each feature's group, then board, then the removals as `-name` entries,
     # all flattened onto one line because ImageBuilder wants it that way.
     #
     # COMMENTS ARE STRIPPED FIRST, AND THAT IS NOT COSMETIC.
@@ -759,7 +760,7 @@ EOF
     # Nothing in the build reports a problem; the only trace is ImageBuilder
     # echoing a "Packages:" line that stops mid-sentence.
     local packages
-    packages="$(printf '%s\n%s\n' "${PACKAGES_COMMON}" "${PACKAGES_BOARD:-}" \
+    packages="$(parkeze_packages \
                 | sed 's/#.*//' \
                 | tr -s '[:space:]' ' ')"
     for pkg in ${PACKAGES_REMOVE}; do packages="${packages} -${pkg}"; done

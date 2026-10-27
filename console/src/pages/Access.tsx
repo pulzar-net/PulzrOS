@@ -12,6 +12,7 @@ import { CheckboxField } from '@/components/ui/Field';
 import Spinner from '@/components/ui/Spinner';
 import ErrorState from '@/components/ErrorState';
 import { duration } from '@/lib/format';
+import { useFeatures } from '@/hooks/useFeatures';
 import styles from './Pages.module.css';
 
 /**
@@ -29,6 +30,7 @@ import styles from './Pages.module.css';
  */
 export default function Access() {
   const queryClient = useQueryClient();
+  const features = useFeatures();
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['access'] });
 
   const access = useQuery({
@@ -45,7 +47,7 @@ export default function Access() {
 
   return (
     <div className="fade-in">
-      <ApCard state={state} onChange={refresh} />
+      {features.has('wifi') && <ApCard state={state} onChange={refresh} />}
       <Tunnel />
       <PortCard state={state} />
       {state.usb?.present && <UsbCard usb={state.usb} />}

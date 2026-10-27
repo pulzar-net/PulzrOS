@@ -1,9 +1,10 @@
-import { lazy, useState } from 'react';
+import { lazy, useState, type ReactNode } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useSession } from '@/contexts/SessionContext';
 import { api } from '@/services/api';
-import type { ClaimStatus } from '@/types';
+import type { ClaimStatus, Feature } from '@/types';
+import { useFeatures } from '@/hooks/useFeatures';
 import Layout from '@/components/Layout';
 import Login from '@/pages/Login';
 import Spinner from '@/components/ui/Spinner';
@@ -96,14 +97,14 @@ export default function App() {
         <Route index element={<Overview />} />
         <Route path="backhaul" element={<Navigate to="/backhaul/ethernet" replace />} />
         <Route path="backhaul/ethernet" element={<Ethernet />} />
-        <Route path="backhaul/cellular" element={<Cellular />} />
-        <Route path="backhaul/wifi" element={<Wifi />} />
+        <Route path="backhaul/cellular" element={<Gated feature="cellular"><Cellular /></Gated>} />
+        <Route path="backhaul/wifi" element={<Gated feature="wifi"><Wifi /></Gated>} />
         <Route path="lorawan" element={<Navigate to="/lorawan/forwarders/1/status" replace />} />
         <Route path="lorawan/forwarders" element={<Navigate to="/lorawan/forwarders/1/status" replace />} />
-        <Route path="lorawan/forwarders/:forwarder/:tab" element={<Forwarders />} />
-        <Route path="lorawan/settings" element={<LorawanSettings />} />
-        <Route path="gnss" element={<Gnss />} />
-        <Route path="bluetooth" element={<Bluetooth />} />
+        <Route path="lorawan/forwarders/:forwarder/:tab" element={<Gated feature="lorawan"><Forwarders /></Gated>} />
+        <Route path="lorawan/settings" element={<Gated feature="lorawan"><LorawanSettings /></Gated>} />
+        <Route path="gnss" element={<Gated feature="gnss"><Gnss /></Gated>} />
+        <Route path="bluetooth" element={<Gated feature="bluetooth"><Bluetooth /></Gated>} />
         {/* Where concentrator hardware used to be; it is a forwarder's tab now. */}
         <Route path="hardware" element={<Navigate to="/lorawan/forwarders/1/concentrator" replace />} />
         <Route path="access" element={<Access />} />
@@ -118,4 +119,12 @@ export default function App() {
       </Route>
     </Routes>
   );
+}
+
+/** A page for a feature this board was not built with goes home, as an
+    unknown path does; the API would only answer it with 404s. */
+function Gated({ feature, children }: { feature: Feature; children: ReactNode }) {
+  const features = useFeatures();
+  if (features.loading) return <Spinner label="Loading" />;
+  return features.has(feature) ? children : <Navigate to="/" replace />;
 }

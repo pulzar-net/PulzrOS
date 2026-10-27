@@ -288,6 +288,7 @@ const ROUTES = {
 
     // ── system ──────────────────────────────────────────────────────────────
     'GET  /api/system/summary':   () => respond(200, system.summary()),
+    'GET  /api/system/features':  () => respond(200, { features: system.features() }),
     'GET  /api/system/stats':     () => respond(200, system.stats()),
     'GET  /api/system/history':   (env) => respond(200, system.history(env.QUERY_STRING)),
     'GET  /api/system/processes': () => respond(200, system.processes()),
@@ -404,6 +405,26 @@ const STREAMED = {
     'POST /api/system/firmware': true,
 };
 
+// Endpoints that belong to a feature, by path prefix. On a board without the
+// feature they answer 404: the scripts behind them are not in its image, and
+// a 500 from a missing binary reads as a fault rather than as absent.
+const FEATURE_PREFIXES = [
+    ['/api/lorawan/',          'lorawan'],
+    ['/api/gnss',              'gnss'],
+    ['/api/bluetooth',         'bluetooth'],
+    ['/api/network/cellular',  'cellular'],
+    ['/api/access/wifi',       'wifi'],
+    ['/api/access/scan',       'wifi'],
+    ['/api/access/ap',         'wifi'],
+    ['/api/access/key',        'wifi'],
+];
+
+function featureOf(path) {
+    for (let entry in FEATURE_PREFIXES)
+        if (substr(path, 0, length(entry[0])) == entry[0]) return entry[1];
+    return null;
+}
+
 // Normalised so 'GET  /api/x' in the tables above matches a real request
 // regardless of how many spaces the table used to line its columns up.
 function routeKey(method, path) {
@@ -435,6 +456,10 @@ function route(env) {
     }
 
     if (!handler) return error(404, 'No such endpoint.');
+
+    const feature = featureOf(path);
+    if (feature && !(feature in system.features()))
+        return error(404, 'Not on this board.');
 
     // Provisioning endpoints exist only until the gateway belongs to somebody.
     if (PROVISIONING_ONLY[key] && claim.isAdopted()
