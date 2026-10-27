@@ -29,6 +29,7 @@
 # The wired path is free, so it gets the fuller check.
 
 . /etc/parkeze/board.conf
+. /usr/share/parkeze/cellular.sh
 
 JSON=0
 [ "$1" = "--json" ] && JSON=1
@@ -80,7 +81,7 @@ connects() {
 }
 
 if [ "$1" = "--cellular" ]; then
-    dev="$(ifstatus wwan 2>/dev/null | jsonfilter -e '@.l3_device' 2>/dev/null)"
+    dev="$(cellular_device)"
     [ -n "${dev}" ] && connects "${dev}"
     exit
 fi
@@ -107,10 +108,13 @@ esac
 # Only tested if the wired path is down. When the tunnel is up we already know
 # we are manageable, and spending cellular bytes to confirm a second path we
 # are not using is precisely the waste this whole design avoids.
+#
+# Asked of netifd, not of device names. This looked for wwan0 or a route
+# mentioning wwan, which an AT modem's ppp-wwan only matched by accident and
+# a HiLink dongle's eth1 never would.
 cell_up=false
 if [ "${wired_up}" != "true" ]; then
-    if ip link show "$(uci -q get network.wwan.device >/dev/null; echo wwan0)" >/dev/null 2>&1 \
-       || ip route show table main | grep -q wwan; then
+    if cellular_gateway >/dev/null; then
         connects && cell_up=true
     fi
 fi

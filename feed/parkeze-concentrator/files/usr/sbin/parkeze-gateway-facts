@@ -30,6 +30,9 @@ echo "board=${BOARD_ID}"
 echo "uptime=$(cut -d. -f1 /proc/uptime)"
 
 wan="$(addr wan)";   [ -n "${wan}" ]   && echo "wan_ip=${wan}"
+# wwan only. usbwan's address is the one a HiLink dongle or a phone handed out
+# behind its own NAT, which reaches nothing; parkeze.net reaching it would be
+# a wrong turn, not a missing fact.
 wwan="$(addr wwan)"; [ -n "${wwan}" ]  && echo "cellular_ip=${wwan}"
 
 tunnel="$(jsonfilter -i /etc/parkeze/wireguard/tunnel.json -e '@.address' 2>/dev/null)"

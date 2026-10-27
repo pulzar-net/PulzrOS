@@ -42,6 +42,11 @@ done
 
 if [ -z "${modem_index}" ]; then
     if [ "$1" = "--status" ]; then
+        # A HiLink dongle or a tethered phone is a modem ModemManager never
+        # sees: it is a USB Ethernet adapter, and parkeze-usb-cellular binds
+        # it to usbwan. Reported here so the console, the claim report and the
+        # MQTT agent, which all read this, learn of it without asking twice.
+        [ -x /usr/sbin/parkeze-usb-cellular ] && /usr/sbin/parkeze-usb-cellular status --present && exit 0
         printf '{"present":false,"reason":"No modem. Normal on a wired-only gateway."}\n'
     else
         log "no modem found after ${waited}s"
@@ -62,6 +67,16 @@ device_path="$(echo "${detail}" | sed -n 's/.*device: *//p' | head -n1 | tr -d '
 manufacturer="$(echo "${detail}" | sed -n 's/.*manufacturer: *//p' | head -n1)"
 model="$(echo "${detail}" | sed -n 's/.*model: *//p' | head -n1)"
 imei="$(echo "${detail}" | sed -n 's/.*equipment id: *//p' | head -n1 | tr -d ' ')"
+
+# How ModemManager talks to it, from the control ports it lists:
+# "cdc-wdm0 (mbim)", "cdc-wdm0 (qmi)", or only "ttyUSB2 (at)", where the data
+# goes over PPP and the interface's device is ppp-wwan. All three are wwan
+# with proto modemmanager; the console shows which.
+case "${detail}" in
+    *'(mbim)'*) kind=mbim ;;
+    *'(qmi)'*)  kind=qmi ;;
+    *)          kind='at' ;;
+esac
 
 # The SIM the modem is actually holding. Parkeze links a gateway to its 1NCE
 # SIM by ICCID, and until now somebody read it off the card and typed it into
@@ -207,8 +222,8 @@ if mmcli -m "${modem_index}" --location-status 2>/dev/null | grep -q 'gps-nmea';
 fi
 
 if [ "$1" = "--status" ]; then
-    printf '{"present":true,"index":%s,"device":"%s","manufacturer":"%s","model":"%s","imei":"%s","iccid":"%s","gpsCapable":%s}\n' \
-        "${modem_index}" "${device_path}" "${manufacturer}" "${model}" "${imei}" "${iccid}" "${gps_capable}"
+    printf '{"present":true,"kind":"%s","index":%s,"device":"%s","manufacturer":"%s","model":"%s","imei":"%s","iccid":"%s","gpsCapable":%s}\n' \
+        "${kind}" "${modem_index}" "${device_path}" "${manufacturer}" "${model}" "${imei}" "${iccid}" "${gps_capable}"
     exit 0
 fi
 

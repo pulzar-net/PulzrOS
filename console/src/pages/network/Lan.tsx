@@ -119,7 +119,8 @@ export default function Lan() {
         meta: { numeric: true },
         cell: (info) => bytes(info.getValue()),
       }),
-      column.accessor((c) => total(c.traffic, 'wwan'), {
+      // Both billed interfaces: the modem's, and a dongle's or a phone's.
+      column.accessor((c) => total(c.traffic, 'wwan') + total(c.traffic, 'usbwan'), {
         id: 'cellular',
         header: 'Cellular',
         size: 82,
@@ -170,7 +171,7 @@ export default function Lan() {
   const clients = state.clients ?? [];
   const online = clients.filter((c) => c.online).length;
   const links = state.links ?? (state.ports ?? []).map((name) => ({ name, up: false, speed: null }));
-  const cellular = clients.reduce((sum, c) => sum + total(c.traffic, 'wwan'), 0);
+  const cellular = clients.reduce((sum, c) => sum + total(c.traffic, 'wwan') + total(c.traffic, 'usbwan'), 0);
   const nameOf = (ip: string) => clients.find((c) => c.ip === ip)?.hostname;
 
   return (

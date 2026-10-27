@@ -10,6 +10,7 @@ import Button from '@/components/ui/Button';
 import { CheckboxField, TextField } from '@/components/ui/Field';
 import Spinner from '@/components/ui/Spinner';
 import ErrorState from '@/components/ErrorState';
+import { modemKind } from '@/lib/format';
 import styles from '../Pages.module.css';
 
 /**
@@ -27,6 +28,8 @@ export default function Cellular() {
   });
 
   const cellular = network.data?.cellular;
+  // A HiLink dongle or a phone sets its own APN; this one is the modem's.
+  const usbEthernet = cellular?.modem?.kind === 'hilink' || cellular?.modem?.kind === 'tether';
   const [apn, setApn] = useState('');
   const [enabled, setEnabled] = useState(false);
 
@@ -39,7 +42,7 @@ export default function Cellular() {
   }, [cellular?.apn, cellular?.enabled]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const apply = useMutation({
-    mutationFn: () => api.post('/network/cellular', { apn: apn.trim(), enabled }),
+    mutationFn: () => api.post('/network/cellular', { apn: usbEthernet ? undefined : apn.trim(), enabled }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['network-status'] });
       queryClient.invalidateQueries({ queryKey: ['backhaul'] });
@@ -56,6 +59,8 @@ export default function Cellular() {
       <Section>
         <FactList>
           <Fact label="State" value={<StatusBadge ok={cellular!.up === true} />} />
+          <Fact label="Adapter" value={modemKind(modem?.kind)} />
+          <Fact label="Model" value={modem?.model} />
           <Fact label="Address" value={cellular!.address} mono />
           <Fact label="Network" value={modem?.network} />
           <Fact label="Technology" value={modem?.technology} />
@@ -65,11 +70,13 @@ export default function Cellular() {
 
       <Section title="Connection">
         <div className={styles.form}>
-          <TextField
-            label="APN"
-            value={apn}
-            onChange={(event) => setApn(event.target.value)}
-          />
+          {!usbEthernet && (
+            <TextField
+              label="APN"
+              value={apn}
+              onChange={(event) => setApn(event.target.value)}
+            />
+          )}
           <CheckboxField
             label="Use cellular as a backhaul"
             checked={enabled}
@@ -78,7 +85,11 @@ export default function Cellular() {
         </div>
 
         {apply.isError && <Notice tone="error">{(apply.error as Error).message}</Notice>}
-        {apply.isSuccess && <Notice tone="success">Applied. The modem is re-attaching.</Notice>}
+        {apply.isSuccess && (
+          <Notice tone="success">
+            {usbEthernet ? 'Applied.' : 'Applied. The modem is re-attaching.'}
+          </Notice>
+        )}
 
         <div className={styles.actions}>
           <Button variant="primary" loading={apply.isPending} onClick={() => apply.mutate()}>

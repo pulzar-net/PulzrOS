@@ -154,6 +154,18 @@ feeds.
 new boards in the `uboot-envtools` and `02_network` lists moved the context
 lines. The DTS and the image recipe applied unchanged.
 
+## USB cellular
+
+A board with a free USB host port adds `PACKAGES_USB_CELLULAR` to
+`PACKAGES_BOARD`, for a modem, dongle or phone plugged into it; see
+[backhaul.md](backhaul.md), "Cellular adapters", for what works.
+
+| Board | USB cellular |
+|---|---|
+| `rpi3`, `rpi4`, `rpi5` | yes |
+| `gl-sft1200` | yes; the kmods come from openwrt-gl-sft1200's ImageBuilder, which builds every kmod |
+| RAK | no: the one USB port is the soldered QMI modem's |
+
 ## Where the terminal UI runs
 
 Every board has the terminal UI on its serial console. Two features add

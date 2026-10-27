@@ -10,7 +10,7 @@ import Notice from '@/components/ui/Notice';
 import Spinner from '@/components/ui/Spinner';
 import ErrorState from '@/components/ErrorState';
 import TimeChart, { type Series } from '@/components/TimeChart';
-import { duration, inUnit } from '@/lib/format';
+import { duration, inUnit, modemKind } from '@/lib/format';
 import { useFeatures } from '@/hooks/useFeatures';
 import styles from './Pages.module.css';
 
@@ -255,8 +255,8 @@ function cellular(paths: BackhaulStatus | undefined): Row {
   return {
     tone: paths.cellular.up ? 'success' : 'neutral',
     badge: paths.cellular.up ? 'Connected' : 'Standby',
-    text: join(modem.model, signal),
-    detail: join(modem.network, modem.technology),
+    text: join(modem.model ?? modemKind(modem.kind), signal),
+    detail: join(modem.model ? modemKind(modem.kind) : null, modem.network, modem.technology),
     to, page: 'Cellular',
   };
 }

@@ -35,8 +35,12 @@ return function(ctx) {
             push(out, { t: 'fact', label: 'Address', value: tunnel.address });
 
             const cell = b.cellular ?? {};
-            push(out, { t: 'section', title: 'Cellular ' + ui.glyph('dot') + ' 1NCE' });
-            push(out, { t: 'fact', label: 'Modem', value: ui.status(cell.modem != null, 'Present', 'Absent') });
+            const kind = cell.modem?.kind;
+            // A dongle or a phone carries whatever SIM is in it, not 1NCE's.
+            const usb = kind == 'hilink' || kind == 'tether';
+            push(out, { t: 'section', title: usb ? 'Cellular' : 'Cellular ' + ui.glyph('dot') + ' 1NCE' });
+            push(out, { t: 'fact', label: 'Adapter',
+                        value: ui.status(cell.modem != null, fmt.modemKind(kind) ?? 'Present', 'Absent') });
             push(out, { t: 'fact', label: 'Data', value: ui.status(cell.up) });
             push(out, { t: 'fact', label: 'Signal', value: cell.modem?.rssi != null ? sprintf('%d dBm', cell.modem.rssi) : null });
 

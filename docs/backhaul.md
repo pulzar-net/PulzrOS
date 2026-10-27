@@ -10,9 +10,83 @@ between them is money.
 | Cost | free | billed per megabyte |
 | Enabled by default | **yes** | **yes** |
 | Operator-configurable in the console | **no** | yes (APN, on/off) |
-| Route metric | 10 | 20 |
+| Route metric | 10 | 20 (`wwan`), 21 (`usbwan`) |
 
-Both are defined in `feed/parkeze-base/files/etc/uci-defaults/20-parkeze-network`.
+Both are defined in `feed/parkeze-base/files/etc/uci-defaults/20-parkeze-network`,
+except `usbwan`, which `parkeze-usb-cellular` adds on boards that have it.
+
+### Cellular adapters
+
+Cellular is one of two netifd interfaces, depending on how the adapter talks
+to the gateway:
+
+| Interface | Adapter | Driver | Console shows |
+|---|---|---|---|
+| `wwan` | modem on QMI | `qmi_wwan` | QMI modem |
+| `wwan` | modem on MBIM | `cdc_mbim` | MBIM modem |
+| `wwan` | modem with only AT ports; data over PPP (`ppp-wwan`) | `option` | AT modem |
+| `wwan` | Huawei stick in modem mode | `huawei_cdc_ncm`, `option` | AT modem |
+| `usbwan` | HiLink dongle (Huawei E3372h, ZTE) | `cdc_ether`, `rndis_host`, `cdc_ncm` | HiLink dongle |
+| `usbwan` | phone sharing its data over USB | `rndis_host`, `cdc_ncm`, `ipheth` | Tethered phone |
+
+`wwan` is `proto modemmanager` whatever the modem speaks: ModemManager picks
+QMI, MBIM or AT, and the proto runs pppd when the bearer says PPP.
+`parkeze-modem-detect` binds it by the modem's sysfs path, which is the same
+for all three, and reads the kind off the control ports ModemManager lists.
+
+`usbwan` is a DHCP client. A HiLink dongle or a phone runs the modem, a NAT
+and a DHCP server of its own, and shows the gateway a USB Ethernet port, so
+ModemManager has nothing to talk to. `parkeze-usb-cellular` binds `usbwan` to
+whichever device appeared: one on those four drivers, not a port the board
+names (`PARKEZE_PORT_IFACE`, `PARKEZE_LAN_PORTS`) or a bridge member, and with
+no control port on the same USB device. One with a control port is a modem
+ModemManager drives as `wwan`. Huawei and ZTE devices, and any the kernel flags
+as a WWAN function, read as HiLink; anything else as a phone. Only the label
+depends on that guess.
+
+What is supported where: the RAK images carry `qmi_wwan` only, for the modem
+soldered to their one USB port. The Pis and the Opal carry every row above
+(`PACKAGES_USB_CELLULAR` in `boards/common/board.conf`), with `usb-modeswitch`
+for a dongle that first appears as a CD-ROM. An iPhone needs `usbmuxd` to pair:
+unlock it and tap Trust when it asks, with Personal Hotspot on.
+
+None of the `usbwan` rows has been tried on hardware, and neither have MBIM or
+AT modems; QMI is the RAK's and the one that has.
+
+### A tethered link is cellular
+
+`usbwan` is a DHCP lease on an Ethernet device, which is exactly what the wired
+uplink is, and nothing about the device says it is billed. Every rule here that
+keeps traffic off the SIM treats it as cellular anyway, through one list:
+`/usr/share/parkeze/cellular.sh` names `wwan` and `usbwan`, and nothing names
+`wwan` alone any more.
+
+| | `usbwan` |
+|---|---|
+| Route metric | 21: behind wired, an open WiFi and the modem |
+| Management tunnel | refused unless `PARKEZE_WIREGUARD_ALLOW_CELLULAR` (`parkeze-wireguard-route`) |
+| LoRaWAN uplinks | refused when `parkeze.lorawan.allow_cellular` is 0 (`parkeze-lora-route`) |
+| `parkeze-backhaul-check` | the cellular path |
+| Traffic | the Cellular column on Network > LAN; `parkeze-cellular-usage` |
+| Report | `modemPresent`, `modemModel` and `modemKind`, no `simIccid`; net-api keeps `modemKind` once its report handler lists it |
+| "Use cellular as a backhaul" | turns it off with `wwan` |
+| Firewall zone | wan, not cellular |
+
+The zone is the one exception, and it is about who is on the far side, not
+about the bill. The cellular zone admits SSH and the console because the far
+side of a 1NCE SIM is the carrier network gateway-link reaches through. The far
+side of `usbwan` is a dongle's or a phone's NAT, a box nobody here runs, and
+gateway-link cannot reach the gateway through it. So `cellular_ip` in
+`parkeze-gateway-facts` stays `wwan`'s.
+
+A dongle in HiLink mode has no SIM ModemManager can read, so the console and
+the report have the adapter's kind and the name its USB descriptor gives, and
+no ICCID, operator or signal. The dongle's own page (usually 192.168.8.1) has
+them.
+
+What is knowingly wrong: a plain USB Ethernet adapter that speaks CDC, plugged
+into a USB port as something other than a LAN port, is taken for a modem and
+counted billed. That is the safe direction.
 
 ### Ethernet is configurable where you stand
 
@@ -122,7 +196,9 @@ A reboot happens only when the gateway has been up six hours and nothing
 reaches parkeze.net, and the uplink buffer writes its queue to the card first.
 The traffic row is skipped while the wired tunnel is up, because a SIM behind
 ethernet is silent by design. Nothing happens while cellular is turned off in
-the console (`network.wwan.disabled`) or there is no modem. The probe is the
+the console (`network.wwan.disabled`) or there is no modem. A HiLink dongle or
+a phone on `usbwan` is outside it: the device runs its own connection, and the
+gateway's half is a DHCP lease netifd renews. The probe is the
 only thing that spends data: one TCP connect, about 700 bytes, per five minutes
 of silence.
 

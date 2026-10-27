@@ -46,6 +46,7 @@
 # should be.
 
 . /etc/parkeze/board.conf
+. /usr/share/parkeze/cellular.sh
 
 INTERVAL="${PARKEZE_IO_INTERVAL:-5}"
 STATS=/var/run/parkeze/lora/uplinks
@@ -68,7 +69,7 @@ backhaul_state() {
             /usr/sbin/parkeze-wireguard-route status 2>/dev/null | grep -q '"wiredUsable":true' \
                 && { echo wired; return; } ;;
     esac
-    if ip route show 2>/dev/null | grep -qE '^default.*(wwan|rmnet|ppp)'; then
+    if cellular_gateway >/dev/null; then
         echo cellular; return
     fi
     echo none
@@ -86,9 +87,15 @@ concentrator_state() {
 }
 
 modem_state() {
-    # up | attaching | absent
-    [ -c /dev/cdc-wdm0 ] || { echo absent; return; }
-    if ip route show 2>/dev/null | grep -qE '^default.*(wwan|rmnet|ppp)'; then
+    # up | attaching | absent. Present is ModemManager's word, or a USB
+    # Ethernet modem bound to usbwan: an AT modem has no cdc-wdm0, and a
+    # HiLink dongle has nothing ModemManager sees at all.
+    local usb
+    usb="$(uci -q get network.usbwan.device)"
+    [ "$(uci -q get parkeze.cellular.modem_present)" = 1 ] || [ -c /dev/cdc-wdm0 ] \
+        || { [ -n "${usb}" ] && [ -e "/sys/class/net/${usb}" ]; } \
+        || { echo absent; return; }
+    if cellular_gateway >/dev/null; then
         echo up
     else
         echo attaching

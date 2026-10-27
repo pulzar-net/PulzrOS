@@ -1,5 +1,7 @@
 /** Formatting helpers. Pure functions, no React. */
 
+import type { ModemKind } from '@/types';
+
 /** Seconds as a coarse human duration: "3d 4h", "12m". */
 export function duration(seconds: number | null | undefined): string {
   if (seconds == null) return '—';
@@ -56,4 +58,17 @@ export function inUnit(peak: number, suffix = '') {
     scale: (v: number | null) => (v == null ? null : v / divisor),
     format: (v: number) => `${Number.isInteger(v) ? v : v.toFixed(1)} ${units[i]}${suffix}`,
   };
+}
+
+const MODEM_KINDS: Record<ModemKind, string> = {
+  qmi: 'QMI modem',
+  mbim: 'MBIM modem',
+  at: 'AT modem',
+  hilink: 'HiLink dongle',
+  tether: 'Tethered phone',
+};
+
+/** The cellular adapter's kind as a technician would name it. */
+export function modemKind(kind: ModemKind | null | undefined): string | null {
+  return kind ? MODEM_KINDS[kind] : null;
 }
