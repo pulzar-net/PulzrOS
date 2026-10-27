@@ -69,12 +69,15 @@ set -e
 
 . /lib/functions/network.sh
 . /etc/parkeze/board.conf
+# cellular_gateway: wwan, or usbwan — a HiLink dongle or a tethered phone,
+# which is an Ethernet device on DHCP like the wired uplink and billed like
+# the SIM. Asking for wwan alone let the tunnel onto a phone's data plan.
+. /usr/share/parkeze/cellular.sh
 
 TABLE_ID="${PARKEZE_WIREGUARD_TABLE:-97}"
 MARK="${PARKEZE_WIREGUARD_MARK:-0x9700}"
 MASK="0xff00"
 WIRED_IFACE="${PARKEZE_WAN_ETH_IFACE:-wan}"
-CELL_IFACE="${PARKEZE_WAN_CELL_IFACE:-wwan}"
 WIFI_IFACE="${PARKEZE_WAN_WIFI_IFACE:-wwifi}"
 # Where the last-applied egress is remembered, purely to notice a change.
 # tmpfs: forgetting it across a reboot means one extra report at most, not a
@@ -139,7 +142,7 @@ apply() {
   elif spec="$(wifi_gateway)"; then
     via=wifi
   elif [ "${PARKEZE_WIREGUARD_ALLOW_CELLULAR:-0}" = "1" ] \
-       && spec="$(iface_gateway "${CELL_IFACE}")"; then
+       && spec="$(cellular_gateway)"; then
     via=cellular
   else
     log "no usable backhaul for the tunnel — leaving the table empty so its traffic is dropped rather than escaping"
@@ -207,7 +210,7 @@ status() {
     [ "${via}" = "none" ] && via=wifi
   fi
   if [ "${PARKEZE_WIREGUARD_ALLOW_CELLULAR:-0}" = "1" ] \
-     && cell_spec="$(iface_gateway "${CELL_IFACE}")"; then
+     && cell_spec="$(cellular_gateway)"; then
     cell_usable="true"; cgw="${cell_spec% *}"; cdev="${cell_spec#* }"
     [ "${via}" = "none" ] && via=cellular
   fi

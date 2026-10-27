@@ -45,10 +45,10 @@ PARKEZE_VERSION="$(cat "${ROOT_DIR}/VERSION" 2>/dev/null || echo 0.0.0-dev)"
 # A development image: what a production image locks away from whoever is
 # standing at the gateway, left open for whoever is building it. The serial
 # console's root shell, failsafe mode, the TUI's `!` for any signed-in
-# session, site keys from the card, and every key in keys/dev/. Its version
-# says -dev everywhere it is shown, parkeze.net included, and CI refuses to
-# build one, so a release can never be one. render_board_files records it in
-# board.conf, which is what the gateway reads.
+# session, site keys from the card, and every key in boards/common/ssh/dev/.
+# Its version says -dev everywhere it is shown, parkeze.net included, and CI
+# refuses to build one, so a release can never be one. render_board_files
+# records it in board.conf, which is what the gateway reads.
 if [ "${PARKEZE_DEV:-0}" = 1 ]; then
   if [ "${GITHUB_ACTIONS:-}" = true ]; then
     echo "PARKEZE_DEV=1 is a bench build; CI builds releases, and a release is never one." >&2
@@ -176,9 +176,33 @@ verify_download() {
 
 # ── Running the assembly step on a Mac ──────────────────────────────────────
 
-# The tag for the assembly container. Bumped only when docker/Dockerfile
+# The tag for the assembly container. Bumped only when assembly_dockerfile
 # changes; docker's own layer cache handles everything finer-grained.
 DOCKER_IMAGE="parkeze-os-build:1"
+
+# The image-assembly container, only needed on macOS. OpenWrt's ImageBuilder is
+# a tree of prebuilt x86_64 ELF binaries with no macOS build, so the parts that
+# work natively (the console, the feed) run on the host and only the final
+# assembly re-execs in here. A Dockerfile rather than `docker run debian
+# apt-get ...` so the install is cached: the first build takes a minute and
+# every one after starts at once. No Node: the console is built on the host by
+# then, and its node_modules hold darwin binaries that would not run here.
+#
+# GNU awk and distutils because ImageBuilder's prereq check wants both
+# (bookworm-slim ships mawk); libncurses for the menuconfig machinery `make
+# image` touches. The remaining prereq, a case-sensitive filesystem, cannot
+# hold on a macOS bind mount, so make gets FORCE=1.
+assembly_dockerfile() {
+  cat <<'EOF'
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential libncurses-dev zstd unzip gzip file wget curl \
+        ca-certificates git python3 python3-distutils gawk rsync binutils \
+        openssl perl \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /src
+EOF
+}
 
 can_assemble_here() {
   [ "$(uname -s)" = "Linux" ]
@@ -270,8 +294,7 @@ EOF
     # No timeout on this one: it genuinely takes a minute or two on a slow
     # connection, and a deadline long enough to be safe is not a useful
     # deadline. It fails loudly on its own if it cannot proceed.
-    docker build --platform linux/amd64 \
-      -t "${DOCKER_IMAGE}" -f "${ROOT_DIR}/docker/Dockerfile" "${ROOT_DIR}/docker" \
+    assembly_dockerfile | docker build --platform linux/amd64 -t "${DOCKER_IMAGE}" - \
       || die "could not build the assembly container"
   fi
 
@@ -490,7 +513,7 @@ install_ops_keys() {
   # is a rebuild rather than a fleet-wide password change. But it is still one
   # secret standing in front of every unit, so:
   #
-  #   - keep keys/ to the platform key, not to individuals
+  #   - keep ssh/fleet/ to the platform key, not to individuals
   #   - rotating is cheap and deliberate so: new pair, rebuild, push the new
   #     authorized_keys over the management tunnel with the old key. Unlike the fleet
   #     recovery key this needs no re-adoption
@@ -499,7 +522,7 @@ install_ops_keys() {
   #   - it is not a substitute for the per-unit password, which is what an
   #     installer in the field uses; both exist because they answer to
   #     different people
-  local keydir="${PARKEZE_OPS_KEYS_DIR:-${ROOT_DIR}/keys}"
+  local keydir="${PARKEZE_OPS_KEYS_DIR:-${ROOT_DIR}/boards/common/ssh/fleet}"
   # NOT /etc/dropbear/authorized_keys. A file shipped under /etc is a package
   # conffile, and sysupgrade keeps conffiles — so the key a gateway was
   # flashed with survived every upgrade that carried a new one, and rotating
@@ -517,7 +540,7 @@ install_ops_keys() {
   fi
 
   local found=0 ca_blob=""
-  ca_blob="$(awk '{ print $2; exit }' "${PARKEZE_SSH_CA_PUBKEY:-${ROOT_DIR}/keys/ca/parkeze_user_ca.pub}" 2>/dev/null || true)"
+  ca_blob="$(awk '{ print $2; exit }' "${PARKEZE_SSH_CA_PUBKEY:-${ROOT_DIR}/boards/common/ssh/parkeze_user_ca.pub}" 2>/dev/null || true)"
   mkdir -p "${sharedir}"
   for pub in "${keydir}"/*.pub; do
     [ -f "${pub}" ] || continue
@@ -532,7 +555,7 @@ install_ops_keys() {
     # open every gateway directly, which is the one thing certificates exist
     # to stop; parkeze.net's generator once said to copy it here.
     if [ -n "${ca_blob}" ] && awk '{ print $2 }' "${pub}" | grep -qxF "${ca_blob}"; then
-      die "${pub} is the SSH CA, not a login key. It belongs in ${ROOT_DIR}/keys/ca/."
+      die "${pub} is the SSH CA, not a login key. It belongs in ${ROOT_DIR}/boards/common/ssh/."
     fi
     cat "${pub}" >> "${fleet}"
     found=$((found + 1))
@@ -553,14 +576,14 @@ install_ops_keys() {
 }
 
 install_dev_keys() {
-  # A development image's own keys: every keys/dev/*.pub, for the people at
-  # the bench. Added to the fleet keys, so root's authorized_keys takes them
-  # as it takes Parkeze's. Ignored in .gitignore, because they are people's,
+  # A development image's own keys: every boards/common/ssh/dev/*.pub, for the
+  # people at the bench. Added to the fleet keys, so root's authorized_keys
+  # takes them as it takes Parkeze's. Ignored in .gitignore, because they are people's,
   # and never read for a production image.
   [ "${PARKEZE_DEV:-0}" = 1 ] || return 0
   local fleet="${ROOT_DIR}/boards/common/files/usr/share/parkeze/fleet-keys" found=0 pub ca_blob
-  ca_blob="$(awk '{ print $2; exit }' "${PARKEZE_SSH_CA_PUBKEY:-${ROOT_DIR}/keys/ca/parkeze_user_ca.pub}" 2>/dev/null || true)"
-  for pub in "${ROOT_DIR}/keys/dev"/*.pub; do
+  ca_blob="$(awk '{ print $2; exit }' "${PARKEZE_SSH_CA_PUBKEY:-${ROOT_DIR}/boards/common/ssh/parkeze_user_ca.pub}" 2>/dev/null || true)"
+  for pub in "${ROOT_DIR}/boards/common/ssh/dev"/*.pub; do
     [ -f "${pub}" ] || continue
     grep -qE '^(ssh-(rsa|ed25519)|ecdsa-sha2-)' "${pub}" || { warn "${pub} holds no public key; skipped"; continue; }
     # As install_ops_keys refuses it: the CA in authorized_keys is every gateway.
@@ -572,7 +595,7 @@ install_dev_keys() {
     found=$((found + 1))
   done
   [ -f "${fleet}" ] && chmod 0600 "${fleet}"
-  log "Development image: ${found} key(s) from keys/dev"
+  log "Development image: ${found} key(s) from boards/common/ssh/dev"
 }
 
 install_ssh_ca() {
@@ -589,7 +612,7 @@ install_ssh_ca() {
   #
   # Warns rather than failing: an image without it is reached with the fleet
   # key, as every image before it was.
-  local key="${PARKEZE_SSH_CA_PUBKEY:-${ROOT_DIR}/keys/ca/parkeze_user_ca.pub}"
+  local key="${PARKEZE_SSH_CA_PUBKEY:-${ROOT_DIR}/boards/common/ssh/parkeze_user_ca.pub}"
   local dest="${ROOT_DIR}/boards/common/files/usr/share/parkeze/ssh"
 
   rm -f "${dest}/parkeze_user_ca.pub"
@@ -727,6 +750,7 @@ build_board() {
     . "${conf}"
 
     : "${OPENWRT_PROFILE:?board.conf must set OPENWRT_PROFILE}"
+    parkeze_check_features || exit 1
 
     if [ "${BOARD_STATUS:-supported}" != "supported" ]; then
       cat >&2 <<EOF
@@ -751,7 +775,7 @@ EOF
     rm -rf "${files}"; mkdir -p "${files}"
     render_board_files "${files}"
 
-    # Package list: shared, then board, then the removals as `-name` entries,
+    # Package list: shared, each feature's group, then board, then the removals as `-name` entries,
     # all flattened onto one line because ImageBuilder wants it that way.
     #
     # COMMENTS ARE STRIPPED FIRST, AND THAT IS NOT COSMETIC.
@@ -770,7 +794,7 @@ EOF
     # Nothing in the build reports a problem; the only trace is ImageBuilder
     # echoing a "Packages:" line that stops mid-sentence.
     local packages
-    packages="$(printf '%s\n%s\n' "${PACKAGES_COMMON}" "${PACKAGES_BOARD:-}" \
+    packages="$(parkeze_packages \
                 | sed 's/#.*//' \
                 | tr -s '[:space:]' ' ')"
     for pkg in ${PACKAGES_REMOVE}; do packages="${packages} -${pkg}"; done

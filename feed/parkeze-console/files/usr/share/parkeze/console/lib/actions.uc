@@ -22,6 +22,7 @@ let access = loadfile('/usr/share/parkeze/console/lib/access.uc', { raw_mode: tr
 let firmware = loadfile('/usr/share/parkeze/console/lib/firmware.uc', { raw_mode: true })();
 let bluetooth = loadfile('/usr/share/parkeze/console/lib/bluetooth.uc', { raw_mode: true })();
 let signin = loadfile('/usr/share/parkeze/console/lib/signin.uc', { raw_mode: true })();
+let lan = loadfile('/usr/share/parkeze/console/lib/lan.uc', { raw_mode: true })();
 
 // ucode does not hoist function declarations; see util.uc.
 let audited;
@@ -81,6 +82,13 @@ const ACTIONS = {
     // caller's address, which says which URL opens the proxy.
     startSignin: (req, s, addr) => audited('wifi.signin', { by: s.subject },
                                            signin.mintTicket(s.subject, addr)),
+
+    // ── lan ─────────────────────────────────────────────────────────────────
+    setLanPolicy: (req, s) => audited('lan.policy', { by: s.subject, mac: req.mac, policy: req.policy },
+                                      lan.setPolicy(req)),
+    setLanReserve: (req, s) => audited('lan.reserve',
+        { by: s.subject, mac: req.mac, ip: req.ip || null, name: req.name || null },
+        lan.reserve(req)),
 
     // ── io ──────────────────────────────────────────────────────────────────
     ioTest: (req, s) => { auth.audit('io.test', { by: s.subject }); return io.test(); },

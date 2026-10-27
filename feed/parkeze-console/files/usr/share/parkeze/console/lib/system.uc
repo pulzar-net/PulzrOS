@@ -16,7 +16,7 @@ let _m_util = loadfile('/usr/share/parkeze/console/lib/util.uc', { raw_mode: tru
 // Declaring the names first makes every one of them a known local before any
 // body is compiled, so closures capture the binding rather than a missing
 // global and definition order stops mattering. auth.uc alone had six of these.
-let boardConf, summary, thermal, stats, history, processes, logs, reboot, uart, setUart;
+let boardConf, features, summary, thermal, stats, history, processes, logs, reboot, uart, setUart;
 
 let run = _m_util.run;; let runJson = _m_util.runJson;; let ubus = _m_util.ubus;
 
@@ -40,6 +40,13 @@ boardConf = function() {
         if (m) out[m[1]] = m[2];
     }
     return out;
+};
+
+// The board's features, from the image it was built as (PARKEZE_FEATURES, see
+// boards/common/board.conf). Not settable here: a feature is a package in the
+// image, and a page for a package that is not there is a page of errors.
+features = function() {
+    return filter(split(boardConf().PARKEZE_FEATURES ?? '', ' '), (w) => length(w) > 0);
 };
 
 summary = function() {
@@ -367,4 +374,4 @@ history = function(queryString) {
         ?? { interval: 20, points: [] };
 };
 
-return { history, logs, processes, reboot, setUart, stats, summary, uart };
+return { features, history, logs, processes, reboot, setUart, stats, summary, uart };

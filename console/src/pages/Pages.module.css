@@ -147,3 +147,31 @@
   font-size: 12px;
   color: var(--text-secondary);
 }
+
+/* A status row's value: its badge, the value, a quieter detail, and the page
+   that fixes it at the far end. */
+.status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.dim { color: var(--text-secondary); }
+
+.go {
+  margin-left: auto;
+  font-size: 12.5px;
+  text-decoration: none;
+}
+
+.go:hover { text-decoration: underline; }
+
+/* A grid of sections after other sections: the rule a Section would draw
+   above itself, drawn once across the row instead. */
+.ruled {
+  border-top: 1px solid var(--border-primary);
+  padding-top: 16px;
+  margin-top: 28px;
+}

@@ -12,6 +12,7 @@ Only what is genuinely different about the hardware:
 - board-specific kernel modules (`PACKAGES_BOARD`)
 - which GPIO the concentrator's reset and power-enable lines are on
 - whether the concentrator is fixed or has to be probed, and in what order
+- which features it has (`PARKEZE_FEATURES`, see [features.md](features.md))
 - any default that differs (LAN address, region, whether ethernet WAN is on)
 
 Everything else — the console, the auth model, the network shape, tunnel
@@ -33,7 +34,10 @@ confinement, the LoRa stack — is shared and must not be duplicated.
    OPENWRT_ARCH="..."
    ```
 
-2. Add board-specific kernel modules to `PACKAGES_BOARD`.
+2. Add board-specific kernel modules to `PACKAGES_BOARD`, and set
+   `PARKEZE_FEATURES` to what the board is for. A feature's packages come with
+   the word; `build.sh` refuses a word the board cannot back
+   ([features.md](features.md)).
 
 3. Declare the concentrator slots. See `docs/concentrators.md` for the model:
 
@@ -150,6 +154,18 @@ feeds.
 `package/boot/uboot-envtools` to `package/boot/uboot-tools/uboot-envtools`, and
 new boards in the `uboot-envtools` and `02_network` lists moved the context
 lines. The DTS and the image recipe applied unchanged.
+
+## USB cellular
+
+A board with a free USB host port adds `PACKAGES_USB_CELLULAR` to
+`PACKAGES_BOARD`, for a modem, dongle or phone plugged into it; see
+[backhaul.md](backhaul.md), "Cellular adapters", for what works.
+
+| Board | USB cellular |
+|---|---|
+| `rpi3`, `rpi4`, `rpi5` | yes |
+| `gl-sft1200` | yes; the kmods come from openwrt-gl-sft1200's ImageBuilder, which builds every kmod |
+| RAK | no: the one USB port is the soldered QMI modem's |
 
 ## Where the terminal UI runs
 

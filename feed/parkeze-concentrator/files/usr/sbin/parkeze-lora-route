@@ -157,6 +157,10 @@ EOF
     # This used to mean wired only, so a gateway whose uplink was somebody's
     # WiFi dropped every uplink with this setting off — the setting exists to
     # avoid a data bill, and WiFi has none.
+    #
+    # Named by interface, never "any DHCP uplink that is not wwan": usbwan,
+    # a HiLink dongle or a tethered phone, is an Ethernet device with a lease
+    # exactly as wan is, and it is billed.
     ip route flush table "${TABLE}" 2>/dev/null
     if set -- $(iface_gateway "${WIRED_IFACE}"); [ -n "${1:-}" ]; then
         ip route replace default via "$1" dev "$2" table "${TABLE}"

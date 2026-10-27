@@ -5,11 +5,13 @@ import {
   Lightbulb,
   Network,
   Radio,
+  Router,
   Satellite,
   ScrollText,
   Settings2,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import type { Feature } from '@/types';
 
 /**
  * The console's pages, in sidebar order.
@@ -20,17 +22,23 @@ import type { LucideIcon } from 'lucide-react';
  *
  * A section with children is a group, not a page: its own path goes to the
  * first child, and the children show in the sidebar while you are inside it.
+ *
+ * An entry with a feature exists only on a board built with it; the sidebar
+ * leaves it out, and a group whose children are all left out, and App.tsx
+ * sends its route home.
  */
 export interface NavChild {
   path: string;
   label: string;
   wide?: boolean;
+  feature?: Feature;
 }
 
 export interface NavEntry {
   path: string;
   label: string;
   icon: LucideIcon;
+  feature?: Feature;
   children?: NavChild[];
   /** Uses the whole window rather than the reading column — a table that
       needs every column it can get. */
@@ -45,21 +53,28 @@ export const NAV: NavEntry[] = [
     icon: Network,
     children: [
       { path: '/backhaul/ethernet', label: 'Ethernet' },
-      { path: '/backhaul/cellular', label: 'Cellular' },
-      { path: '/backhaul/wifi', label: 'WiFi' },
+      { path: '/backhaul/cellular', label: 'Cellular', feature: 'cellular' },
+      { path: '/backhaul/wifi', label: 'WiFi', feature: 'wifi' },
     ],
   },
   {
     path: '/lorawan',
     label: 'LoRaWAN',
     icon: Radio,
+    feature: 'lorawan',
     children: [
       { path: '/lorawan/forwarders', label: 'Forwarders' },
       { path: '/lorawan/settings', label: 'Settings' },
     ],
   },
-  { path: '/gnss', label: 'GNSS', icon: Satellite },
-  { path: '/bluetooth', label: 'Bluetooth', icon: Bluetooth },
+  {
+    path: '/network',
+    label: 'Network',
+    icon: Router,
+    children: [{ path: '/network/lan', label: 'LAN', feature: 'lan', wide: true }],
+  },
+  { path: '/gnss', label: 'GNSS', icon: Satellite, feature: 'gnss' },
+  { path: '/bluetooth', label: 'Bluetooth', icon: Bluetooth, feature: 'bluetooth' },
   { path: '/access', label: 'Access', icon: KeyRound },
   { path: '/io', label: 'Panel', icon: Lightbulb },
   { path: '/logs', label: 'Logs', icon: ScrollText, wide: true },

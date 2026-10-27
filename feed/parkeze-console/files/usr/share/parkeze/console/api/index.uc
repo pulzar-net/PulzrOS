@@ -47,6 +47,7 @@ let io = loadfile('/usr/share/parkeze/console/lib/io.uc', { raw_mode: true })();
 let access = loadfile('/usr/share/parkeze/console/lib/access.uc', { raw_mode: true })();
 let firmware = loadfile('/usr/share/parkeze/console/lib/firmware.uc', { raw_mode: true })();
 let bluetooth = loadfile('/usr/share/parkeze/console/lib/bluetooth.uc', { raw_mode: true })();
+let lan = loadfile('/usr/share/parkeze/console/lib/lan.uc', { raw_mode: true })();
 // What changes the gateway, shared with the terminal UI; see actions.uc.
 let actions = loadfile('/usr/share/parkeze/console/lib/actions.uc', { raw_mode: true })();
 
@@ -288,6 +289,7 @@ const ROUTES = {
 
     // ── system ──────────────────────────────────────────────────────────────
     'GET  /api/system/summary':   () => respond(200, system.summary()),
+    'GET  /api/system/features':  () => respond(200, { features: system.features() }),
     'GET  /api/system/stats':     () => respond(200, system.stats()),
     'GET  /api/system/history':   (env) => respond(200, system.history(env.QUERY_STRING)),
     'GET  /api/system/processes': () => respond(200, system.processes()),
@@ -368,6 +370,17 @@ const ROUTES = {
         return respond(200, result);
     },
 
+    // ── lan: the devlan zone; no forwards, see lib/lan.uc ──────────────────
+    'GET  /api/lan/status':  () => respond(200, lan.status()),
+    'POST /api/lan/policy':  (env, req, s) => {
+        const result = actions.setLanPolicy(req, s);
+        return result.error ? error(400, result.error) : respond(200, result);
+    },
+    'POST /api/lan/reserve': (env, req, s) => {
+        const result = actions.setLanReserve(req, s);
+        return result.error ? error(400, result.error) : respond(200, result);
+    },
+
     // ── io ──────────────────────────────────────────────────────────────────
     'GET  /api/io/status': () => respond(200, io.status()),
     'POST /api/io/test':   (env, req, s) => respond(200, actions.ioTest(req, s)),
@@ -404,6 +417,27 @@ const STREAMED = {
     'POST /api/system/firmware': true,
 };
 
+// Endpoints that belong to a feature, by path prefix. On a board without the
+// feature they answer 404: the scripts behind them are not in its image, and
+// a 500 from a missing binary reads as a fault rather than as absent.
+const FEATURE_PREFIXES = [
+    ['/api/lorawan/',          'lorawan'],
+    ['/api/gnss',              'gnss'],
+    ['/api/bluetooth',         'bluetooth'],
+    ['/api/network/cellular',  'cellular'],
+    ['/api/access/wifi',       'wifi'],
+    ['/api/access/scan',       'wifi'],
+    ['/api/access/ap',         'wifi'],
+    ['/api/access/key',        'wifi'],
+    ['/api/lan/',              'lan'],
+];
+
+function featureOf(path) {
+    for (let entry in FEATURE_PREFIXES)
+        if (substr(path, 0, length(entry[0])) == entry[0]) return entry[1];
+    return null;
+}
+
 // Normalised so 'GET  /api/x' in the tables above matches a real request
 // regardless of how many spaces the table used to line its columns up.
 function routeKey(method, path) {
@@ -435,6 +469,10 @@ function route(env) {
     }
 
     if (!handler) return error(404, 'No such endpoint.');
+
+    const feature = featureOf(path);
+    if (feature && !(feature in system.features()))
+        return error(404, 'Not on this board.');
 
     // Provisioning endpoints exist only until the gateway belongs to somebody.
     if (PROVISIONING_ONLY[key] && claim.isAdopted()

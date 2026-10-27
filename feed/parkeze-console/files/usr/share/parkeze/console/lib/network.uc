@@ -28,7 +28,7 @@ let _m_util = loadfile('/usr/share/parkeze/console/lib/util.uc', { raw_mode: tru
 // Declaring the names first makes every one of them a known local before any
 // body is compiled, so closures capture the binding rather than a missing
 // global and definition order stops mattering. auth.uc alone had six of these.
-let ifaceStatus, status, modem, backhaul, setCellular, setEthernet, ipv4, maskToPrefix;
+let ifaceStatus, linkSpeed, cellularStatus, status, modem, backhaul, setCellular, setEthernet, ipv4, maskToPrefix;
 
 let run = _m_util.run;; let runJson = _m_util.runJson;; let ubus = _m_util.ubus;
 
@@ -52,6 +52,25 @@ ifaceStatus = function(name) {
         gateway: gateway,
         uptime: status.uptime,
     };
+};
+
+// Negotiated speed in Mb/s, or null: the kernel answers -1 or nothing for a
+// port with no link, and a virtual device has no speed at all.
+linkSpeed = function(dev) {
+    if (!dev || !match(dev, /^[A-Za-z0-9._-]+$/)) return null;
+    const speed = int(trim(readfile(sprintf('/sys/class/net/%s/speed', dev)) ?? ''));
+    return speed > 0 ? speed : null;
+};
+
+// The cellular uplink carrying traffic, as ifaceStatus reports it. wwan is
+// the modem ModemManager drives; usbwan a HiLink dongle or a tethered phone
+// (parkeze-usb-cellular). wwan unless only usbwan is up, the same order the
+// tunnel and the route metrics take them in.
+cellularStatus = function() {
+    const wwan = ifaceStatus('wwan');
+    if (wwan.up) return wwan;
+    const usb = ifaceStatus('usbwan');
+    return usb.up ? usb : wwan;
 };
 
 status = function() {
@@ -91,7 +110,7 @@ status = function() {
             manageable: true,
             enabled: uci.get('network', 'wwan', 'disabled') != '1',
             apn: uci.get('network', 'wwan', 'apn'),
-            ...ifaceStatus('wwan'),
+            ...cellularStatus(),
             modem: modem(),
         },
     };
@@ -104,10 +123,18 @@ modem = function() {
     const found = runJson('/usr/sbin/parkeze-modem-detect --status');
     if (!found || !found.present) return null;
 
+    // A HiLink dongle or a phone. Not ModemManager's, so there is no index to
+    // ask and no SIM, operator or signal to read: the model is what the USB
+    // device calls itself, and that is all there is.
+    if (found.kind == 'hilink' || found.kind == 'tether')
+        return { kind: found.kind, model: found.model || null, registration: null,
+                 network: null, technology: null, quality: null,
+                 rssi: null, rsrp: null, snr: null };
+
     // `mmcli --output-keyvalue` is the stable machine-readable form; the human
     // output reflows between releases and is not worth parsing.
     const raw = run(sprintf('mmcli -m %d --output-keyvalue 2>/dev/null', found.index));
-    if (!raw) return { model: found.model, registration: null };
+    if (!raw) return { kind: found.kind, model: found.model, registration: null };
 
     const field = {};
     for (let line in split(raw, '\n')) {
@@ -121,6 +148,7 @@ modem = function() {
     // --signal-setup` has run, so they are reported when available and skipped
     // when not rather than faked from the percentage.
     return {
+        kind: found.kind,
         model: found.model,
         imei: found.imei,
         registration: field['modem.generic.state'] || null,
@@ -157,11 +185,22 @@ backhaul = function() {
         if (at > 0) lastHandshake = time() - at;
     }
 
+    const wan = ifaceStatus('wan'), wwifi = ifaceStatus('wwifi'), cell = cellularStatus();
+    const wiredDevice = route ? route.device : null;
+
     return {
         wired: {
             up: route ? route.wiredUsable : false,
-            device: route ? route.device : null,
+            device: wiredDevice,
             gateway: route ? route.gateway : null,
+            address: wan.address,
+            proto: wan.proto,
+            speed: linkSpeed(wiredDevice || wan.device),
+        },
+        wifi: {
+            up: wwifi.up == true,
+            device: wwifi.device,
+            address: wwifi.address,
         },
         tunnel: {
             // Deliberately restated on every response rather than assumed by
@@ -181,7 +220,8 @@ backhaul = function() {
             lastHandshake: lastHandshake,
         },
         cellular: {
-            up: ifaceStatus('wwan').up == true,
+            up: cell.up == true,
+            device: cell.device,
             modem: modem(),
         },
     };
@@ -199,11 +239,18 @@ setCellular = function(req, session) {
         uci.set('network', 'wwan', 'apn', req.apn);
     }
 
-    if (req.enabled != null)
+    // Both cellular interfaces: "Use cellular as a backhaul" off means a
+    // phone plugged in later is not used either.
+    if (req.enabled != null) {
         uci.set('network', 'wwan', 'disabled', req.enabled ? '0' : '1');
+        if (uci.get('network', 'usbwan'))
+            uci.set('network', 'usbwan', 'disabled', req.enabled ? '0' : '1');
+    }
 
     uci.commit('network');
     run('/sbin/ifup wwan >/dev/null 2>&1 &');
+    if (uci.get('network', 'usbwan'))
+        run('/sbin/ifup usbwan >/dev/null 2>&1 &');
 
     return { ok: true, applied: { apn: req.apn, enabled: req.enabled } };
 };

@@ -14,7 +14,7 @@ In the board's `board.conf`:
 
 ```sh
 PARKEZE_LAN_PORTS="lan1 lan2 lan3"     # the ports, by their Linux names
-PACKAGES_BOARD="${PACKAGES_BOARD} ${PACKAGES_LAN}"
+PARKEZE_FEATURES="${PARKEZE_FEATURES} lan"
 ```
 
 A USB adapter also needs its driver in `PACKAGES_BOARD`:
@@ -77,6 +77,12 @@ parkeze-lan forward <ip> <port> <seconds>
 parkeze-lan unforward <tunnel port>
 ```
 
+In the console, Network > LAN (`lib/lan.uc`, `pages/network/Lan.tsx`): the
+clients, each one's policy and reservation, and the open forwards. It sets a
+policy and a reservation through the commands above, audited as `lan.policy`
+and `lan.reserve`, so the `lan` op reports them like any other. It never opens
+or closes a forward: that is net-api's, over MQTT.
+
 Over MQTT (`parkeze/gateway/<eui>/mgmt/request`, see `parkeze-mqtt-agent`):
 
 | `op` | Fields | Answer |
@@ -112,7 +118,8 @@ to stay under the agent's 8KB answer.
   upgrades. A device answering ARP right now is `online`, and its `lastSeen`
   is now.
 - `traffic` is per uplink, by the netifd interface that carried it (`wan`,
-  `wwifi`, `wwan`), and `tunnel` for a forward's traffic. Counted after the
+  `wwifi`, `wwan`, `usbwan`), and `tunnel` for a forward's traffic. The
+  console's Cellular column is `wwan` and `usbwan` together. Counted after the
   firewall, so a refused attempt is not traffic, and since boot. It lives in
   ParkezeOS's own nftables table, so a firewall reload does not zero it.
 - `journal` is the last twenty forwards opened and closed.

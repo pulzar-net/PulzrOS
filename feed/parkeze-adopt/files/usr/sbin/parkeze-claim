@@ -521,7 +521,7 @@ apply_offline() {
 # checked against a hash parkeze.net stored at registration.
 
 facts() {
-    local modem wired board_id version modem_present modem_model wired_usable tunnel iccid host_key tunnel_via ssh_ca wifi_uplink
+    local modem wired board_id version modem_present modem_model modem_kind wired_usable tunnel iccid host_key tunnel_via ssh_ca wifi_uplink
 
     modem="$(parkeze-modem-detect --status 2>/dev/null || echo '{"present":false}')"
     wired="$(parkeze-wireguard-route status 2>/dev/null || echo '{"wiredUsable":false}')"
@@ -529,6 +529,10 @@ facts() {
     modem_present="$(echo "${modem}" | jsonfilter -e '@.present' 2>/dev/null)" || true
     modem_model="$(echo "${modem}" | jsonfilter -e '@.model' 2>/dev/null)" || true
     iccid="$(echo "${modem}" | jsonfilter -e '@.iccid' 2>/dev/null)" || true
+    # qmi, mbim or at through ModemManager; hilink or tether for a USB
+    # Ethernet modem, which has no SIM this gateway can read, so simIccid is
+    # empty for it and parkeze.net should not wait for one.
+    modem_kind="$(echo "${modem}" | jsonfilter -e '@.kind' 2>/dev/null)" || true
 
     # This gateway's SSH host key, so gateway-link can pin it instead of
     # trusting whatever answers on the tunnel address. A shared known_hosts
@@ -567,8 +571,8 @@ facts() {
     board_id="${BOARD_ID:-unknown}"
     version="${PARKEZE_VERSION:-0.0.0}"
 
-    printf '{"board":"%s","osVersion":"%s","modemPresent":%s,"modemModel":"%s","simIccid":"%s","sshHostKey":"%s","wiredUsable":%s,"tunnelVia":"%s","tunnelState":"%s","wifiUplink":"%s","consolePort":443,"consoleScheme":"https","sshPort":22,"sshCa":%s,"system":%s,"rakPower":%s}' \
-        "${board_id}" "${version}" "${modem_present}" "${modem_model:-}" "${iccid:-}" \
+    printf '{"board":"%s","osVersion":"%s","modemPresent":%s,"modemModel":"%s","modemKind":"%s","simIccid":"%s","sshHostKey":"%s","wiredUsable":%s,"tunnelVia":"%s","tunnelState":"%s","wifiUplink":"%s","consolePort":443,"consoleScheme":"https","sshPort":22,"sshCa":%s,"system":%s,"rakPower":%s}' \
+        "${board_id}" "${version}" "${modem_present}" "${modem_model:-}" "${modem_kind:-}" "${iccid:-}" \
         "${host_key:-}" "${wired_usable}" "${tunnel_via:-none}" "${tunnel:-none}" "${wifi_uplink:-unchecked}" "${ssh_ca}" "$(system_facts)" "$(rak_power_facts)"
 }
 

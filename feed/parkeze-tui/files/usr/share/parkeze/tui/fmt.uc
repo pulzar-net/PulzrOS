@@ -2,7 +2,7 @@
 // for line, so the same gateway reads the same in a browser and a terminal.
 
 // ucode does not hoist function declarations; see console/lib/util.uc.
-let duration, countdown, bytes, count, pad2, ago;
+let duration, countdown, bytes, count, pad2, ago, modemKind;
 
 pad2 = function(n) { return sprintf('%02d', n); };
 
@@ -45,4 +45,13 @@ count = function(v) {
     return (neg ? '-' : '') + s + out;
 };
 
-return { bytes, count, countdown, duration, pad2 };
+const MODEM_KINDS = {
+    qmi: 'QMI modem', mbim: 'MBIM modem', at: 'AT modem',
+    hilink: 'HiLink dongle', tether: 'Tethered phone',
+};
+
+modemKind = function(kind) {
+    return kind ? (MODEM_KINDS[kind] ?? null) : null;
+};
+
+return { bytes, count, countdown, duration, pad2, modemKind };

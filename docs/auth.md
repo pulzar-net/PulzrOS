@@ -204,10 +204,10 @@ What sshd trusts is written at every boot by `parkeze-ssh-setup`:
 | File | From |
 |---|---|
 | `/etc/ssh/sshd_config` | `/usr/share/parkeze/ssh/sshd_config` in the image |
-| `/etc/ssh/parkeze_user_ca.pub` | `keys/ca/parkeze_user_ca.pub` in this repo, via the image |
+| `/etc/ssh/parkeze_user_ca.pub` | `boards/common/ssh/parkeze_user_ca.pub` in this repo, via the image |
 | `/etc/ssh/sshd_config.d/parkeze-ca.conf` | `TrustedUserCAKeys` and `AuthorizedPrincipalsFile` |
 | `/etc/ssh/auth_principals/root` | the gateway's EUI, 16 lowercase hex |
-| `/root/.ssh/authorized_keys` | the fleet key; on a development image also `keys/dev/` and site keys (`parkeze-fleet-keys`) |
+| `/root/.ssh/authorized_keys` | the fleet key; on a development image also `boards/common/ssh/dev/` and site keys (`parkeze-fleet-keys`) |
 
 Rewritten from the image each boot rather than kept, because sysupgrade keeps
 conffiles and `/etc/ssh/sshd_config` is one: a change shipped in a release
@@ -231,13 +231,45 @@ cat /etc/ssh/auth_principals/root
 logread | grep parkeze-net          # the key ID of every certificate login
 ```
 
-An image built without `keys/ca/parkeze_user_ca.pub` gets no CA configuration
-and is reached with the fleet key, as before.
+An image built without `boards/common/ssh/parkeze_user_ca.pub` gets no CA
+configuration and is reached with the fleet key, as before.
 
 **Rotating the CA** is a firmware release: put the new public line in
-`keys/ca/`, ship it, and only then switch recovery-service to the new private
-key. A gateway trusts exactly one CA, so a gateway on the old release refuses
-the new CA's certificates until it upgrades.
+`boards/common/ssh/`, ship it, and only then switch recovery-service to the
+new private key. A gateway trusts exactly one CA, so a gateway on the old
+release refuses the new CA's certificates until it upgrades.
+
+### The keys in this repo
+
+All public; nothing in `boards/common/ssh/` is secret.
+
+| Path | What it is |
+|---|---|
+| `fleet/*.pub` | baked into root's `authorized_keys` (`install_ops_keys` in `build.sh`) |
+| `parkeze_user_ca.pub` | the CA above; one `ssh-ed25519` line, copied from parkeze.net's `secrets/parkeze_ssh_ca.pub` |
+| `dev/*.pub` | people's keys for a development image, ignored by git |
+
+The CA is outside the `fleet/` glob on purpose: in `authorized_keys` its
+private half would open every gateway directly, and `build.sh` refuses an
+image that puts it there.
+
+`fleet/parkeze-fleet.pub`'s private half is parkeze.net's, not a person's:
+`tools/generate-fleet-ssh-key.sh` in that repo makes the pair and gateway-link
+mounts the private half. Access follows whoever runs the platform, and no
+laptop key ships in an image. It is RSA because gateways still on a dropbear
+image accept nothing else. To use it locally:
+
+```bash
+# in parkeze.net
+tools/generate-fleet-ssh-key.sh secrets
+cp secrets/fleet_ssh_rsa.pub ../ParkezeOS/boards/common/ssh/fleet/parkeze-fleet.pub
+ssh -i secrets/fleet_ssh_rsa root@192.168.61.1
+```
+
+Rotating it is a rebuild: a new pair, then reflash or push the new
+`authorized_keys` over the management tunnel with the old key. No re-adoption.
+`PARKEZE_OPS_KEYS=0 ./build.sh <board>` builds an image with no fleet key at
+all, reached only by certificate.
 
 ## Who gets root
 
@@ -252,7 +284,7 @@ password was the console's, so anybody with the label was root.
 | | Production image | Development image |
 |---|---|---|
 | Root's password | none (`*`, `parkeze-root-keys-only`) | none |
-| SSH as root | fleet key, staff certificate | also `keys/dev/*.pub`, site keys |
+| SSH as root | fleet key, staff certificate | also `boards/common/ssh/dev/*.pub`, site keys |
 | SSH with a password | refused | refused |
 | `ssh parkeze@<gateway>` | the TUI, behind the console's sign-in | the same |
 | Serial console | the TUI, behind the console's sign-in | the stock root shell |
@@ -288,7 +320,7 @@ ask for root's password, which no longer exists.
 
 **A development image** is `PARKEZE_DEV=1 ./build.sh <board>`. Its version
 ends in `-dev`, which parkeze.net shows, and CI refuses to build one, so a
-release never is. Put your public key in `keys/dev/` (ignored by git).
+release never is. Put your public key in `boards/common/ssh/dev/` (ignored by git).
 
 **What this does not cover** is the hardware. A Pi's root filesystem is a
 plain squashfs on its SD card, and a RAK's is in flash its U-Boot will hand to
