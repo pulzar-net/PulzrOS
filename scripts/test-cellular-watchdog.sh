@@ -32,7 +32,7 @@ stub sleep '[ "$1" = 60 ] || exit 0
 n=$(( $(cat "$SANDBOX/ticks") + 1 )); echo $n > "$SANDBOX/ticks"
 [ "$RX_MODE" = grow ] && echo $(( n * 100 )) > "$RX"
 [ $n -ge "$TICKS" ] && kill $PPID; exit 0'
-stub uci 'case "$3" in parkeze.cellular.modem_present) echo 1 ;; network.wwan.disabled) echo "$DISABLED" ;; esac'
+stub uci 'case "$3" in parkeze.cellular.modem_present) echo "${PRESENT-1}" ;; network.wwan.disabled) echo "$DISABLED" ;; esac'
 stub parkeze-backhaul-check 'case "$1" in
   --tunnel) echo "$TUNNEL" ;;
   --cellular) exit "$CELL_PROBE" ;;
@@ -58,6 +58,10 @@ esac; exit 0'
 stub parkeze-hwline 'echo "hwline $*" >> "$ACTIONS"; echo 10 > "$RX"
 [ -n "$RESET_TO" ] && { echo "$RESET_TO" > "$SANDBOX/mm"; echo false > "$SANDBOX/up"; }; exit 0'
 stub reboot 'echo reboot >> "$ACTIONS"'
+# ModemManager restarted finds the modem as RESTART_TO, when the case says it
+# does.
+stub mm-init 'echo "mm $*" >> "$ACTIONS"
+[ -n "$RESTART_TO" ] && echo "$RESTART_TO" > "$SANDBOX/mm"; exit 0'
 
 fail=0
 # run NAME TICKS RX TUNNEL PROBE UPTIME UP MODEM RESET_TO IFUP_FIXES DISABLED WANT
@@ -66,11 +70,19 @@ run() {
   echo 0 > "${SANDBOX}/ticks"; echo 5000 > "${RX}"; : > "${ACTIONS}"
   echo "${uptime}.00 0.00" > "${SANDBOX}/uptime"
   echo "$7" > "${SANDBOX}/up"; echo false > "${SANDBOX}/pending"; echo "$8" > "${SANDBOX}/mm"
+  # USB=net is a modem's control port and net interface both registered;
+  # USB=port the control port alone, before qmi_wwan has made the other.
+  rm -rf "${SANDBOX}/usbmisc"; mkdir -p "${SANDBOX}/usbmisc"
+  case "${USB-}" in
+    net) mkdir -p "${SANDBOX}/usbmisc/cdc-wdm0/device/net/wwan0" ;;
+    port) mkdir -p "${SANDBOX}/usbmisc/cdc-wdm0/device" ;;
+  esac
   # Backgrounded and waited on, so bash does not announce the stub's kill.
   SANDBOX="${SANDBOX}" RX="${RX}" ACTIONS="${ACTIONS}" TICKS="${ticks}" RX_MODE="${rx_mode}" \
     TUNNEL="${tunnel}" CELL_PROBE="${cell_probe}" RESET_TO="$9" IFUP_FIXES="${10}" \
     DISABLED="${11}" \
     PARKEZE_SYS_NET="${SANDBOX}/net" PARKEZE_UPTIME_FILE="${SANDBOX}/uptime" \
+    PARKEZE_SYS_USBMISC="${SANDBOX}/usbmisc" PARKEZE_MM_INIT="${STUBS}/mm-init" \
     PATH="${STUBS}:${PATH}" sh "${WATCHDOG}" 2>/dev/null &
   wait $! 2>/dev/null
   local got; got="$(paste -sd, "${ACTIONS}")"
@@ -83,6 +95,7 @@ run() {
 
 R="mmcli -m any --reset"
 I="ifup wwan"
+M="mm restart"
 
 # A link netifd and the modem call fine, judged by its traffic.
 #   name                                 ticks rx   tunnel  probe uptime up    modem      reset_to fixes off want
@@ -102,5 +115,20 @@ run "refused for good backs off, reboots" 32   flat waiting 1     25200  false s
 run "refused, young: no reboot"          32    flat waiting 1     3600   false searching  disabled ""    0   "$R,$I,$I,$I,$I,$I"
 run "refused behind a wired tunnel"      32    flat up      1     25200  false searching  disabled ""    0   "$R,$I,$I,$I,$I,$I"
 run "cellular off in the console"        30    flat waiting 1     25200  false searching  disabled ""    1   ""
+
+# A modem ModemManager never made: probed before its net interface existed,
+# so it is on USB, the last detect recorded none, and mmcli lists nothing.
+PRESENT=0 USB=net RESTART_TO=disabled \
+run "unlisted modem: restart MM, then up" 8    grow waiting 1     25200  false ""         ""       1     0   "$M,$I"
+PRESENT=0 USB=net RESTART_TO="" \
+run "never listed: backs off, reboots"   32    flat waiting 1     25200  false ""         ""       ""    0   "$M,$M,$M,$M,reboot"
+PRESENT=0 USB=net RESTART_TO="" \
+run "never listed, young: no reboot"     32    flat waiting 1     3600   false ""         ""       ""    0   "$M,$M,$M,$M"
+PRESENT=0 USB=net RESTART_TO=disabled \
+run "unlisted, cellular off"             30    flat waiting 1     25200  false ""         ""       1     1   ""
+PRESENT=0 USB=port RESTART_TO=disabled \
+run "no net interface yet: waits"        30    flat waiting 1     25200  false ""         ""       1     0   ""
+PRESENT=0 USB="" RESTART_TO=disabled \
+run "no modem at all is left alone"      30    flat waiting 1     25200  false ""         ""       1     0   ""
 
 exit "${fail}"

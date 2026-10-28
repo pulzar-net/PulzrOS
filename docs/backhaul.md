@@ -180,6 +180,15 @@ on top of the other:
 When the network answers straight away, `10-report-down` alone recovers in
 about 15 seconds. It takes a refusal longer than that one retry.
 
+**A modem ModemManager never makes.** At boot on the bench Pro (2026-10-28),
+ModemManager probed the EG95 before `qmi_wwan` had registered `wwan0`, logged
+"Failed to find a net port in the QMI modem", and did not try that device
+again. `mmcli -L` found no modem for twelve minutes with `cdc-wdm0` and `wwan0`
+both present, and `parkeze-modem-detect` recorded the gateway as having no
+modem. It is a race; most boots miss it. Restarting ModemManager brings the
+modem straight back, because on start it replays its cached hotplug events with
+both ports at once. This build has no `mmcli -S` to rescan with.
+
 Once a minute the watchdog reads netifd's status and ModemManager's state, and
 acts when:
 
@@ -190,13 +199,15 @@ acts when:
 | 2 min | `wwan` up, modem has no bearer | `ifup` |
 | 10 min | `wwan` still setting up | `ifup` |
 | 5 min | `wwan` up and connected, receive counter not growing | probe out of the cellular device; if that fails, `ifup`, then a modem reset, then a reboot, 5 min apart |
+| 3 min | no modem in ModemManager, a modem's control port and net interface on USB | restart ModemManager and detect the modem again; repeated 3, 6, 12, 24 min, up to 30 |
 | 30 min | `wwan` down | reboot |
 
 A reboot happens only when the gateway has been up six hours and nothing
 reaches parkeze.net, and the uplink buffer writes its queue to the card first.
 The traffic row is skipped while the wired tunnel is up, because a SIM behind
 ethernet is silent by design. Nothing happens while cellular is turned off in
-the console (`network.wwan.disabled`) or there is no modem. A HiLink dongle or
+the console (`network.wwan.disabled`) or there is no modem, either recorded or
+on USB. A HiLink dongle or
 a phone on `usbwan` is outside it: the device runs its own connection, and the
 gateway's half is a DHCP lease netifd renews. The probe is the
 only thing that spends data: one TCP connect, about 700 bytes, per five minutes

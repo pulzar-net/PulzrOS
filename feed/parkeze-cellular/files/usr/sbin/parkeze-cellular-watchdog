@@ -32,6 +32,18 @@
 # A plain reset with the network answering recovers in 15 seconds through
 # 10-report-down alone. It takes a refusal longer than that one retry.
 #
+# A modem ModemManager never makes. On the bench Pro (2026-10-28), at boot,
+# ModemManager probed the EG95 before qmi_wwan had registered wwan0, failed
+# with "Failed to find a net port in the QMI modem", and did not try that
+# device again: `mmcli -L` found no modem for twelve minutes with cdc-wdm0
+# and wwan0 both there. parkeze-modem-detect then recorded no modem, which
+# is the state that sends this watchdog to sleep. A race, so most boots
+# miss it. Restarting ModemManager brought it straight back: on start it
+# replays the hotplug events it has cached, both ports at once. Re-reporting
+# the late net event to a running ModemManager is not a fix, since the net
+# hotplug script already did that and nothing came of it, and this build has
+# no `mmcli -S` to rescan with.
+#
 # ── WHAT IT DOES ───────────────────────────────────────────────────────────
 #
 # Once a minute, by what netifd and ModemManager say:
@@ -47,6 +59,9 @@
 #   down, modem not registered for 5 min
 #                      modem reset, then the row above on the next looks.
 #                      Repeated at 5, 10, 20, 30 minutes
+#   no modem in ModemManager for 3 min, a modem's ports on USB
+#                      restart ModemManager, then detect the modem again.
+#                      Repeated at 3, 6, 12, 24, 30 minutes
 #
 # Down for half an hour, with the gateway up six hours and nothing reaching
 # parkeze.net, it reboots, as the ladder does.
@@ -92,11 +107,16 @@ GAP_MAX=1800
 # Long enough for a real search after losing coverage; nothing else brings
 # back a modem that has written the SIM off.
 RESET_AFTER=300
+# ModemManager lists a cold modem within half a minute of its ports, and a
+# modem reset re-enumerates in about as long.
+UNLISTED_AFTER=180
 # Setup takes seconds; ModemManager's own calls time out at 120s.
 PENDING_MAX=600
 DOWN_REBOOT=1800
 
 SYS_NET="${PARKEZE_SYS_NET:-/sys/class/net}"
+SYS_USBMISC="${PARKEZE_SYS_USBMISC:-/sys/class/usbmisc}"
+MM_INIT="${PARKEZE_MM_INIT:-/etc/init.d/modemmanager}"
 UPTIME_FILE="${PARKEZE_UPTIME_FILE:-/proc/uptime}"
 
 log() { logger -t parkeze-cellular -p daemon.notice "$*"; }
@@ -111,6 +131,7 @@ modem_state() {
 clock=0
 last_rx="" stalled=0 rung=0
 attempts=0 last_attempt=-100000 resets=0 last_reset=-100000
+restarts=0 last_restart=-100000
 seen_key="" seen=0 pending_since="" down_since=""
 
 # The same condition on consecutive looks: SETTLE of them, or $2.
@@ -159,6 +180,26 @@ reset_modem() {
     ( sleep 20; /usr/sbin/parkeze-modem-detect >/dev/null 2>&1 ) &
 }
 
+# A modem's control port (cdc-wdm, QMI or MBIM) on the same USB interface as
+# its net interface: the two halves ModemManager needs, both registered. Read
+# from sysfs, so a gateway with no modem never asks ModemManager anything.
+modem_on_usb() {
+    local d
+    for d in "${SYS_USBMISC}"/cdc-wdm*; do
+        [ -n "$(ls "${d}/device/net" 2>/dev/null)" ] && return 0
+    done
+    return 1
+}
+
+restart_mm() {
+    log "$1; restarting ModemManager"
+    "${MM_INIT}" restart >/dev/null 2>&1 || log "ModemManager restart failed"
+    # The last detect recorded no modem, and that is what idles this
+    # watchdog and the console's cellular card. It waits for ModemManager's
+    # probe itself; two minutes is a slow one.
+    ( PARKEZE_MM_TIMEOUT=120 /usr/sbin/parkeze-modem-detect >/dev/null 2>&1 ) &
+}
+
 # Have the uplink buffer's broker write its queue to the card. Found by
 # command line through /proc: the image has no pkill or pgrep (OpenWrt's
 # busybox leaves them out), so the `pkill -USR1` this used to be failed every
@@ -185,6 +226,14 @@ reboot_if_stranded() {
     # gateway that can be reached again.
     flush_buffer && sleep 5
     reboot
+}
+
+down_too_long() {
+    if [ $((clock - down_since)) -ge "${DOWN_REBOOT}" ] \
+       && [ "$(parkeze-backhaul-check --tunnel 2>/dev/null)" != "up" ]; then
+        down_since="${clock}"
+        reboot_if_stranded "cellular has been down for ${DOWN_REBOOT}s"
+    fi
 }
 
 judge_traffic() {
@@ -236,10 +285,12 @@ while :; do
     sleep "${INTERVAL}"
     clock=$((clock + INTERVAL))
 
-    if [ "$(uci -q get parkeze.cellular.modem_present)" != "1" ] \
-       || [ "$(uci -q get network.wwan.disabled)" = "1" ]; then
+    # A modem on USB counts as present whatever the last detect recorded:
+    # a modem ModemManager never made is recorded as none.
+    if [ "$(uci -q get network.wwan.disabled)" = "1" ] \
+       || { [ "$(uci -q get parkeze.cellular.modem_present)" != "1" ] && ! modem_on_usb; }; then
         last_rx="" stalled=0 rung=0 seen_key="" pending_since="" down_since=""
-        attempts=0 resets=0
+        attempts=0 resets=0 restarts=0
         continue
     fi
 
@@ -247,8 +298,22 @@ while :; do
     up="$(field up "${status}")"
     mm="$(modem_state)"
 
+    # Whatever netifd says: without a modem nothing below can work, and
+    # ifup only fails again.
+    if [ -z "${mm}" ] && modem_on_usb; then
+        last_rx="" pending_since=""
+        [ -n "${down_since}" ] || down_since="${clock}"
+        if settled unlisted $((UNLISTED_AFTER / INTERVAL)) \
+           && [ $((clock - last_restart)) -ge "$(backoff "${UNLISTED_AFTER}" "${restarts}")" ]; then
+            restarts=$((restarts + 1)) last_restart="${clock}" seen_key=""
+            restart_mm "ModemManager has had no modem for ${UNLISTED_AFTER}s with one on USB"
+        fi
+        down_too_long
+        continue
+    fi
+
     if [ "${up}" = "true" ] && [ "${mm}" = "connected" ]; then
-        attempts=0 resets=0 seen_key="" pending_since="" down_since=""
+        attempts=0 resets=0 restarts=0 seen_key="" pending_since="" down_since=""
         judge_traffic "$(field l3_device "${status}")"
         continue
     fi
@@ -287,9 +352,5 @@ while :; do
         esac
     fi
 
-    if [ $((clock - down_since)) -ge "${DOWN_REBOOT}" ] \
-       && [ "$(parkeze-backhaul-check --tunnel 2>/dev/null)" != "up" ]; then
-        down_since="${clock}"
-        reboot_if_stranded "cellular has been down for ${DOWN_REBOOT}s"
-    fi
+    down_too_long
 done
