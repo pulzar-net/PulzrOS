@@ -161,15 +161,16 @@ asks `parkeze-uplinks usable wan`, so it leaves a dead cable too. See
 Neither opens anything: a name and a metric reach nothing that was not
 reachable before.
 
-### What parkeze.net needs
+### On parkeze.net
 
-The gateway answers the `dns` and `uplinks` ops; parkeze.net does not ask yet.
-For a setting made at the gateway to show up under the gateway, net-api has
-to request them as it requests `lan`, keep the answer, and show it on the
-gateway's page: the upstream mode and servers, local names, rebind
-protection and allowed domains, and the uplink order with each uplink's
-state and which one carries traffic. Nothing else changes: the claim report
-already carries `wiredUsable` and `tunnelVia`, which now follow tracking.
+net-api asks a gateway with a LAN for `uplinks` and `dns` on each lan-paths
+run, and again when somebody opens its Backhaul, and keeps the last answer
+under the gateway's metadata (`utils/gateway_router.py`, allowlisted as the
+power board's record is). The gateway's Backhaul shows the order with each
+uplink's state, the tracking settings, the upstream servers, local names and
+rebind protection, read-only: a change is made at the gateway, which checks
+it against its own state. The claim report's `wiredUsable` and `tunnelVia`
+follow tracking on their own.
 
 ## The router set, from GL.iNet's
 
