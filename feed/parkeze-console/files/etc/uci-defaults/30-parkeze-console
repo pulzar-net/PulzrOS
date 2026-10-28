@@ -135,13 +135,19 @@ uci commit uhttpd
 # The parkeze.net proxy terminates its own TLS and does not rely on this being
 # trusted; this exists so that a laptop plugged directly into the LAN port is
 # not sending a password in the clear.
+#
+# P-256, not RSA, as OpenWrt's own uhttpd defaults to. This runs in uci-defaults,
+# ahead of the network, so a first boot's LAN waits for it. An RSA key is a
+# search for two primes, a different length every time: px5g took 5 to 13 s for
+# one on the Opal's own build under qemu, and 65 ms for P-256. Each handshake
+# is cheaper on a MIPS core too.
 if [ ! -f "${STATE}/cert.pem" ]; then
     hostname="$(uci -q get parkeze.identity.hostname || echo parkeze)"
     px5g selfsigned -der \
-        -days 3650 -newkey rsa:2048 \
+        -days 3650 -newkey ec -pkeyopt ec_paramgen_curve:P-256 \
         -certout "${STATE}/cert.pem" -keyout "${STATE}/key.pem" \
         -subj "/C=US/ST=NY/O=Parkeze/CN=${hostname}.local" 2>/dev/null \
-    || openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
+    || openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 3650 \
         -keyout "${STATE}/key.pem" -out "${STATE}/cert.pem" \
         -subj "/C=US/ST=NY/O=Parkeze/CN=${hostname}.local" 2>/dev/null
     chmod 0600 "${STATE}/key.pem"
