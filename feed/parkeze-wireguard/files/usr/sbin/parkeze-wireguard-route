@@ -106,6 +106,17 @@ iface_gateway() {
   echo "${gw} ${dev}"
 }
 
+# The wired lease, unless parkeze-uplinks has seen it carry nothing: a cable
+# to a router whose own internet is gone keeps its lease, and the tunnel
+# pinned to it would wait there instead of moving to the WiFi. It re-runs
+# `apply` when its answer changes.
+wired_gateway() {
+  if [ -x /usr/sbin/parkeze-uplinks ]; then
+    /usr/sbin/parkeze-uplinks usable "${WIRED_IFACE}" 2>/dev/null || return 1
+  fi
+  iface_gateway "${WIRED_IFACE}"
+}
+
 # The WiFi's lease, only once parkeze-wifi-uplink has seen it reach the
 # internet. A guest network hands out a lease and a gateway before anybody has
 # signed in, and the tunnel pinned there sent its keepalives into the sign-in
@@ -133,7 +144,7 @@ announce_if_changed() {
 apply() {
   local spec gw dev via
 
-  if spec="$(iface_gateway "${WIRED_IFACE}")"; then
+  if spec="$(wired_gateway)"; then
     via=wired
   # WiFi counts as wired here, and that is not an oversight. The reason the
   # tunnel is kept off cellular is the bill — see the header — and joining
@@ -198,7 +209,7 @@ status() {
   local wired_spec cell_spec wired_usable="false" cell_usable="false"
   local wgw wdev cgw cdev via="none" wifi_usable="false"
 
-  if wired_spec="$(iface_gateway "${WIRED_IFACE}")"; then
+  if wired_spec="$(wired_gateway)"; then
     wired_usable="true"; wgw="${wired_spec% *}"; wdev="${wired_spec#* }"
     via=wired
   fi

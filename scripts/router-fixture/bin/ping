@@ -1,0 +1,4 @@
+#!/bin/sh
+# Answers out of the devices listed in $T/ping_ok.
+while [ $# -gt 0 ]; do [ "$1" = -I ] && dev="$2"; shift; done
+grep -qx "${dev}" "${T}/ping_ok"

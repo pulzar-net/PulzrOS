@@ -1,0 +1,3 @@
+#!/bin/sh
+# 9.9.9.9 and 1.1.1.1 answer; anything else does not.
+[ "$2" = 9.9.9.9 ] || [ "$2" = 1.1.1.1 ]

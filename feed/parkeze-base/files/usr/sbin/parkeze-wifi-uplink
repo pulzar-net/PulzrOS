@@ -44,6 +44,9 @@
 #               is up. Still a route, not none: this check needs one to send
 #               its own request out of the radio.
 #
+# Where parkeze-uplinks is installed, it sets the metric instead, from the
+# WiFi's place in the order and this answer.
+#
 # The tunnel and LoRa routing ask `usable` themselves and are re-applied here
 # when the answer changes. Until the first answer the WiFi is not usable — the
 # console joins a network at metric 30 for the same reason — and the hotplug
@@ -90,8 +93,14 @@ write() {
     json_dump > "${STATE}.tmp" && mv "${STATE}.tmp" "${STATE}"
 }
 
-# Only when it differs: it is a write to flash and a network reload.
+# Only when it differs: it is a write to flash and a network reload. On a
+# board with failover the uplink order decides every metric, and this answer
+# is the WiFi's health in it.
 set_metric() {
+    if [ -x /usr/sbin/parkeze-uplinks ]; then
+        /usr/sbin/parkeze-uplinks apply >/dev/null 2>&1
+        return 0
+    fi
     [ "$(uci -q get network.${IFACE}.metric)" = "$1" ] && return 0
     uci -q set network.${IFACE}.metric="$1"
     uci -q commit network

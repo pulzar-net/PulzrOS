@@ -1,0 +1,5 @@
+#!/bin/sh
+# netifd from $NET_JSON; a reload is recorded in $T/events.
+[ "$1" = call ] && [ "$3" = status ] && jq -e --arg n "${2#network.interface.}" '.[$n]' "${NET_JSON}" 2>/dev/null && exit 0
+[ "$1" = call ] && [ "$2" = network ] && [ "$3" = reload ] && { echo reload >> "${T}/events"; exit 0; }
+exit 4

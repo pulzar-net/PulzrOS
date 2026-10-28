@@ -127,6 +127,8 @@ op_firmware()  { /usr/sbin/parkeze-firmware status 2>/dev/null || echo '{}'; }
 op_cellular()  { /usr/sbin/parkeze-modem-detect --status 2>/dev/null || echo '{}'; }
 op_gps()       { /usr/sbin/parkeze-gps status 2>/dev/null || echo '{}'; }
 op_lan()       { /usr/sbin/parkeze-lan status 2>/dev/null || echo '{}'; }
+op_dns()       { /usr/sbin/parkeze-dns status 2>/dev/null || echo '{}'; }
+op_uplinks()   { /usr/sbin/parkeze-uplinks status 2>/dev/null || echo '{}'; }
 
 # A field of the request being answered, for the operations that take more
 # than one argument.
@@ -213,6 +215,12 @@ dispatch() {
         # with the number of devices, and one busy LAN would take `all` past
         # MAX_RESPONSE.
         lan)       out="$(bounded 15 op_lan)" ;;
+        # What the site set at the gateway, read back the way lan is: the
+        # resolver's upstream servers, local names and rebind protection, and
+        # the uplink order with each uplink's tracked state. Read-only; the
+        # settings are the site's.
+        dns)       out="$(bounded 10 op_dns)" ;;
+        uplinks)   out="$(bounded 10 op_uplinks)" ;;
         rak-power) out="$(bounded 10 op_rak_power)" ;;
 
         # Everything at once, for the case this exists to serve: somebody

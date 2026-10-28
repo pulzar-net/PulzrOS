@@ -23,6 +23,8 @@ let firmware = loadfile('/usr/share/parkeze/console/lib/firmware.uc', { raw_mode
 let bluetooth = loadfile('/usr/share/parkeze/console/lib/bluetooth.uc', { raw_mode: true })();
 let signin = loadfile('/usr/share/parkeze/console/lib/signin.uc', { raw_mode: true })();
 let lan = loadfile('/usr/share/parkeze/console/lib/lan.uc', { raw_mode: true })();
+let dns = loadfile('/usr/share/parkeze/console/lib/dns.uc', { raw_mode: true })();
+let uplinks = loadfile('/usr/share/parkeze/console/lib/uplinks.uc', { raw_mode: true })();
 
 // ucode does not hoist function declarations; see util.uc.
 let audited;
@@ -89,6 +91,24 @@ const ACTIONS = {
     setLanReserve: (req, s) => audited('lan.reserve',
         { by: s.subject, mac: req.mac, ip: req.ip || null, name: req.name || null },
         lan.reserve(req)),
+
+    // ── dns ─────────────────────────────────────────────────────────────────
+    setDnsUpstream: (req, s) => audited('dns.upstream', { by: s.subject, servers: req.servers ?? [] },
+                                        dns.setUpstream(req)),
+    setDnsHost: (req, s) => audited('dns.host', { by: s.subject, name: req.name, ip: req.ip || null },
+                                    dns.setHost(req)),
+    setDnsRebind: (req, s) => audited('dns.rebind',
+        { by: s.subject, protection: !!req.protection, allowed: req.allowed ?? [] },
+        dns.setRebind(req)),
+
+    // ── uplinks ─────────────────────────────────────────────────────────────
+    setUplinkOrder: (req, s) => audited('uplinks.order', { by: s.subject, order: req.order ?? [] },
+                                        uplinks.setOrder(req)),
+    setUplinkTrack: (req, s) => audited('uplinks.track', { by: s.subject, iface: req.iface, on: !!req.on },
+                                        uplinks.setTrack(req)),
+    setUplinkTracking: (req, s) => audited('uplinks.tracking',
+        { by: s.subject, ips: req.ips ?? [], interval: req.interval, down: req.down, up: req.up },
+        uplinks.setTracking(req)),
 
     // ── io ──────────────────────────────────────────────────────────────────
     ioTest: (req, s) => { auth.audit('io.test', { by: s.subject }); return io.test(); },

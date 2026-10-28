@@ -606,3 +606,50 @@ export interface LanStatus {
   clients?: LanClient[];
   forwards?: LanForward[];
 }
+
+// ── dns ─────────────────────────────────────────────────────────────────────
+
+/** `parkeze-dns status`. */
+export interface DnsStatus {
+  upstream: {
+    /** auto: the servers each uplink's lease or bearer handed out. */
+    mode: 'auto' | 'custom';
+    servers: string[];
+  };
+  hosts: { name: string; ip: string }[];
+  rebind: {
+    protection: boolean;
+    /** Domains allowed to answer with a private address. */
+    allowed: string[];
+  };
+}
+
+// ── uplinks ─────────────────────────────────────────────────────────────────
+
+/** A netifd uplink interface. */
+export type UplinkIface = 'wan' | 'wwifi' | 'wwan' | 'usbwan';
+
+export interface Uplink {
+  iface: UplinkIface;
+  kind: 'ethernet' | 'wifi' | 'cellular' | 'usb-cellular';
+  metered: boolean;
+  up: boolean;
+  device: string | null;
+  tracked: boolean;
+  /** down: netifd has no link. offline: tracking's pings went unanswered.
+      portal: the WiFi answers with a sign-in page. */
+  state: 'down' | 'online' | 'offline' | 'portal' | 'unchecked' | 'untracked';
+  /** Unix seconds the tracked state last changed. */
+  since: number | null;
+  checkedAt: number | null;
+  metric: number | null;
+}
+
+/** `parkeze-uplinks status`. */
+export interface UplinksStatus {
+  order: UplinkIface[];
+  /** The uplink carrying traffic now. */
+  active: UplinkIface | null;
+  tracking: { ips: string[]; interval: number; down: number; up: number };
+  uplinks: Uplink[];
+}

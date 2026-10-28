@@ -12,7 +12,7 @@ let _m_fs = require('fs');
 // Declaring the names first makes every one of them a known local before any
 // body is compiled, so closures capture the binding rather than a missing
 // global and definition order stops mattering. auth.uc alone had six of these.
-let run, runJson, grepFile, ubus;
+let run, runJson, grepFile, ubus, tool;
 
 let popen = _m_fs.popen;; let readfile = _m_fs.readfile;
 
@@ -52,10 +52,28 @@ ubus = function(object, method, args) {
     return runJson(sprintf('ubus call %s %s%s', object, method, payload));
 };
 
+// One of the gateway's own tools (parkeze-lan, parkeze-dns, parkeze-uplinks)
+// with arguments from a request. Each argument must be plain (letters,
+// digits, dot, colon, hyphen, underscore) before it is quoted, so none can
+// carry a quote; what each one means is the tool's to check. A refusal is the
+// tool's one line on stderr, which is what the caller shows.
+tool = function(path, args) {
+    for (let a in args)
+        if (type(a) != 'string' || !match(a, /^[A-Za-z0-9.:_-]{1,253}$/))
+            return { error: 'Letters, digits, dots, colons and hyphens only.' };
+    const quoted = join(' ', map(args, (a) => "'" + a + "'"));
+    const proc = popen(path + ' ' + quoted + ' 2>&1', 'r');
+    if (!proc) return { error: sprintf('%s is not on this gateway.', path) };
+    const out = trim(proc.read('all') ?? '');
+    const rc = proc.close();
+    if (rc != 0) return { error: out ? uc(substr(out, 0, 1)) + substr(out, 1) + '.' : sprintf('%s failed.', path) };
+    try { return json(out); } catch (e) { return { error: out }; }
+};
+
 // ── module exports ──────────────────────────────────────────────────────────
 //
 // A returned object, not `export` statements. uhttpd's ucode plugin compiles
 // its handler in TEMPLATE mode and loads anything else through loadfile(),
 // neither of which is module mode — `export` is a syntax error there. See the
 // header of api/index.uc for the full contract.
-return { grepFile, run, runJson, ubus };
+return { grepFile, run, runJson, tool, ubus };

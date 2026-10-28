@@ -15,6 +15,9 @@ between them is money.
 Both are defined in `feed/parkeze-base/files/etc/uci-defaults/20-parkeze-network`,
 except `usbwan`, which `parkeze-usb-cellular` adds on boards that have it.
 
+On a board with the `failover` feature these metrics are parkeze-uplinks',
+from the order the site chooses; see "Failover" below.
+
 ### Cellular adapters
 
 Cellular is one of two netifd interfaces, depending on how the adapter talks
@@ -207,6 +210,43 @@ connect but not the other failures that block, and re-running setup does
 nothing for a modem that has written the SIM off.
 
 `scripts/test-cellular-watchdog.sh` drives all of it against stubs, in CI.
+
+### Failover
+
+The metrics alone fail over only when netifd takes an interface down. A cable
+to a site router whose own internet is gone keeps its carrier and its lease,
+so `wan` stays at metric 10 and everything goes into it while the SIM behind
+it works. On a board with `failover` (the Opal), `parkeze-uplinks` fixes that:
+
+| | |
+|---|---|
+| Metric | 10, 20, 30, 40 by place in the order; 100 plus the same step once tracking has seen it fail |
+| Tracking | a ping out of the uplink's own device (`ping -I`) to each target in turn, any answer counts |
+| Default targets | 1.1.1.1, 8.8.8.8, every 10 s |
+| Down | after 3 misses in a row |
+| Back | after 3 answers in a row |
+| Tracked by default | Ethernet |
+| Cellular | untracked unless turned on: a ping every 10 s is about 40 MB a month |
+| WiFi | parkeze-wifi-uplink's portal check is its health; it calls `parkeze-uplinks apply` instead of setting its own metric |
+| Settings | `parkeze.uplinks` in UCI, kept across a sysupgrade |
+
+A failed uplink keeps its route, at the back, because the next probe has to
+leave through it. An uplink with no link, or no longer tracked, loses its
+tracked state and comes back unchecked, which counts as healthy: waiting for
+proof would hold a fresh cable back for half a minute after every boot.
+
+When an uplink goes down or comes back, the tunnel and LoRa routing are
+re-applied and a report is sent. `parkeze-wireguard-route` asks
+`parkeze-uplinks usable wan` before pinning the tunnel to the cable, so a
+dead cable moves the tunnel to the WiFi where there is one, and otherwise
+leaves it waiting, as unplugging would.
+
+Not mwan3: it is policy routing with fwmarks of its own, and the tunnel and
+LoRa routing already confine their traffic with fwmark rules. And not load
+balancing: it splits one site's connections over two public addresses and
+spends the SIM on traffic a cable would carry free.
+
+`scripts/test-router.sh` walks it through a failover and back, in CI.
 
 ### Nothing is accepted from the wan zone
 

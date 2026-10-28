@@ -10,7 +10,7 @@
 // sees a reservation made at the gateway exactly as one it made itself.
 
 let _m_fs = require('fs');
-let popen = _m_fs.popen;; let readfile = _m_fs.readfile;
+let readfile = _m_fs.readfile;
 let _m_uci = require('uci');
 let cursor = _m_uci.cursor;
 let _m_util = loadfile('/usr/share/parkeze/console/lib/util.uc', { raw_mode: true })();
@@ -24,18 +24,8 @@ const MAC = /^[0-9a-fA-F]{2}(:[0-9a-fA-F]{2}){5}$/;
 const IPV4 = /^[0-9]{1,3}(\.[0-9]{1,3}){3}$/;
 const NAME = /^[A-Za-z0-9-]{1,63}$/;
 
-// parkeze-lan with arguments already checked against the patterns above, so
-// none can carry a quote; quoted anyway. Its refusals are one line on stderr,
-// which is what the caller shows.
-lan = function(args) {
-    const quoted = join(' ', map(args, (a) => "'" + a + "'"));
-    const proc = popen('/usr/sbin/parkeze-lan ' + quoted + ' 2>&1', 'r');
-    if (!proc) return { error: 'parkeze-lan is not on this gateway.' };
-    const out = trim(proc.read('all') ?? '');
-    const rc = proc.close();
-    if (rc != 0) return { error: out ? uc(substr(out, 0, 1)) + substr(out, 1) + '.' : 'parkeze-lan failed.' };
-    try { return json(out); } catch (e) { return { error: out }; }
-};
+// parkeze-lan with arguments already checked against the patterns above.
+lan = (args) => _m_util.tool('/usr/sbin/parkeze-lan', args);
 
 // Each LAN port's link, from the kernel. parkeze-lan reports the ports by
 // name only, and "nothing answers on lan2" is usually a cable.

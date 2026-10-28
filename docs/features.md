@@ -22,8 +22,8 @@ that could only fail.
 | `cellular` | `PACKAGES_CELLULAR`: parkeze-cellular, ModemManager, qmi-wwan; `PACKAGES_USB_CELLULAR` on a board with a USB host port | Backhaul > Cellular, Overview's Cellular card | `/api/network/cellular` | |
 | `wifi` | `PACKAGES_WIFI`: parkeze-ap, wpad-openssl | Backhaul > WiFi, Access's setup AP | `/api/access/wifi`, `scan`, `ap`, `key` | |
 | `lan` | `PACKAGES_LAN`: parkeze-lan | Network > LAN | `/api/lan/` | `PARKEZE_LAN_PORTS` |
-| `dns` | | planned: Network > DNS | | |
-| `failover` | | planned: Network > Uplinks | | |
+| `dns` | `PACKAGES_DNS`: parkeze-dns | Network > DNS | `/api/dns/` | |
+| `failover` | `PACKAGES_FAILOVER`: parkeze-uplinks | Network > Uplinks; Overview's Uplink row follows its order | `/api/uplinks/` | `cellular` or `wifi` |
 
 Always present, on every board: Overview, Backhaul > Ethernet, Access, Panel,
 Logs, System, the management tunnel, adoption, MQTT and the TUI.
@@ -32,7 +32,8 @@ Logs, System, the management tunnel, adoption, MQTT and the TUI.
 and two functions every caller shares:
 
 - `parkeze_check_features` refuses an unknown word, a word whose "needs" the
-  board does not meet, and `PARKEZE_WAN_CELL_ENABLED=1` without `cellular`.
+  board does not meet (failover with nowhere to fail over to is one), and
+  `PARKEZE_WAN_CELL_ENABLED=1` without `cellular`.
   `build.sh` and `scripts/check-deps.sh` both run it.
 - `parkeze_packages` prints `PACKAGES_COMMON`, then each listed word's group,
   then `PACKAGES_BOARD`. `build.sh` and `scripts/check-deps.sh` both install
@@ -131,11 +132,50 @@ Three rules follow, and every router page keeps them:
   upstream DNS server, the uplink order) is in the gateway's report to Parkeze
   Net, as the LAN's state already is (`parkeze-lan status`).
 
+## DNS and Uplinks
+
+Both follow Network > LAN: a tool on the gateway that owns the state and
+prints it as JSON (`parkeze-dns`, `parkeze-uplinks`), a console module that
+calls it (`lib/dns.uc`, `lib/uplinks.uc`), audited actions, and a read-only
+MQTT op (`dns`, `uplinks`) that answers with the tool's `status`, as `lan`
+answers with `parkeze-lan status`.
+
+**DNS** is dnsmasq's UCI. Upstream is the uplinks' own servers, or up to three
+named ones that replace them (`noresolv`); a list where none resolves Parkeze's
+MQTT host is refused, because the gateway resolves through the same dnsmasq.
+Local names are `domain` sections the LAN resolves. A name under a Parkeze
+domain is refused: a client whose policy is `parkeze` may reach the addresses
+dnsmasq answered for Parkeze's names (`parkeze_dst`), so such a name would hand
+that client any address. So is a reservation's name, which parkeze-lan already
+serves. Rebind protection stays on unless somebody turns it off, with the
+domains allowed past it listed.
+
+**Uplinks** sets each uplink's route metric from the order: 10, 20, 30, 40.
+Tracking pings out of each tracked uplink's own device and, after `down`
+misses, moves it behind the others (100 plus its step); `up` answers bring it
+back. Ethernet is tracked by default, cellular only when turned on, and the
+WiFi's health is parkeze-wifi-uplink's portal check. The tunnel's wired path
+asks `parkeze-uplinks usable wan`, so it leaves a dead cable too. See
+[backhaul.md](backhaul.md), "Failover".
+
+Neither opens anything: a name and a metric reach nothing that was not
+reachable before.
+
+### What parkeze.net needs
+
+The gateway answers the `dns` and `uplinks` ops; parkeze.net does not ask yet.
+For a setting made at the gateway to show up under the gateway, net-api has
+to request them as it requests `lan`, keep the answer, and show it on the
+gateway's page: the upstream mode and servers, local names, rebind
+protection and allowed domains, and the uplink order with each uplink's
+state and which one carries traffic. Nothing else changes: the claim report
+already carries `wiredUsable` and `tunnelVia`, which now follow tracking.
+
 ## The router set, from GL.iNet's
 
 The Opal ships with GL.iNet's admin panel (firmware 4.8.3). Its feature
 inventory, read off a stock unit, is in the router-features session's notes;
-the parts ParkezeOS takes are the planned words above. What is taken is the
+the parts ParkezeOS takes are `lan`, `dns` and `failover`. What is taken is the
 layout, not the prose: one page per concern, cards with their own Apply, a
 status badge on the uplink carrying traffic. Every GL card opens with a
 paragraph explaining itself, which this console does not do.
@@ -146,8 +186,8 @@ paragraph explaining itself, which this console does not do.
 | Internet: Repeater | Backhaul > WiFi (`wifi`) |
 | Internet: Cellular | Backhaul > Cellular (`cellular`) |
 | Clients, LAN, DHCP, address reservation | Network > LAN (`lan`), built: `parkeze-lan status`, reserve, per-MAC policy, the open tunnel forwards read-only |
-| Multi-WAN: priority, tracking, failover | Network > Uplinks (`failover`); failover only, no load balance |
-| DNS: hosts, upstream, rebind protection | Network > DNS (`dns`) |
+| Multi-WAN: priority, tracking, failover | Network > Uplinks (`failover`), built: the order, per-uplink tracking, the ping targets and thresholds; failover only, no load balance |
+| DNS: hosts, upstream, rebind protection | Network > DNS (`dns`), built: automatic or custom upstream, local names, rebind protection and its allowed domains |
 | Management Control | Access, already |
 | Overview, Upgrade, Log, Time zone | System and Logs, already |
 

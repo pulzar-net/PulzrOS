@@ -48,6 +48,8 @@ let access = loadfile('/usr/share/parkeze/console/lib/access.uc', { raw_mode: tr
 let firmware = loadfile('/usr/share/parkeze/console/lib/firmware.uc', { raw_mode: true })();
 let bluetooth = loadfile('/usr/share/parkeze/console/lib/bluetooth.uc', { raw_mode: true })();
 let lan = loadfile('/usr/share/parkeze/console/lib/lan.uc', { raw_mode: true })();
+let dns = loadfile('/usr/share/parkeze/console/lib/dns.uc', { raw_mode: true })();
+let uplinks = loadfile('/usr/share/parkeze/console/lib/uplinks.uc', { raw_mode: true })();
 // What changes the gateway, shared with the terminal UI; see actions.uc.
 let actions = loadfile('/usr/share/parkeze/console/lib/actions.uc', { raw_mode: true })();
 
@@ -381,6 +383,36 @@ const ROUTES = {
         return result.error ? error(400, result.error) : respond(200, result);
     },
 
+    // ── dns: the resolver, see lib/dns.uc ───────────────────────────────────
+    'GET  /api/dns/status':    () => respond(200, dns.status()),
+    'POST /api/dns/upstream':  (env, req, s) => {
+        const result = actions.setDnsUpstream(req, s);
+        return result.error ? error(400, result.error) : respond(200, result);
+    },
+    'POST /api/dns/host':      (env, req, s) => {
+        const result = actions.setDnsHost(req, s);
+        return result.error ? error(400, result.error) : respond(200, result);
+    },
+    'POST /api/dns/rebind':    (env, req, s) => {
+        const result = actions.setDnsRebind(req, s);
+        return result.error ? error(400, result.error) : respond(200, result);
+    },
+
+    // ── uplinks: order and failover, see lib/uplinks.uc ─────────────────────
+    'GET  /api/uplinks/status':   () => respond(200, uplinks.status()),
+    'POST /api/uplinks/order':    (env, req, s) => {
+        const result = actions.setUplinkOrder(req, s);
+        return result.error ? error(400, result.error) : respond(200, result);
+    },
+    'POST /api/uplinks/track':    (env, req, s) => {
+        const result = actions.setUplinkTrack(req, s);
+        return result.error ? error(400, result.error) : respond(200, result);
+    },
+    'POST /api/uplinks/tracking': (env, req, s) => {
+        const result = actions.setUplinkTracking(req, s);
+        return result.error ? error(400, result.error) : respond(200, result);
+    },
+
     // ── io ──────────────────────────────────────────────────────────────────
     'GET  /api/io/status': () => respond(200, io.status()),
     'POST /api/io/test':   (env, req, s) => respond(200, actions.ioTest(req, s)),
@@ -430,6 +462,8 @@ const FEATURE_PREFIXES = [
     ['/api/access/ap',         'wifi'],
     ['/api/access/key',        'wifi'],
     ['/api/lan/',              'lan'],
+    ['/api/dns/',              'dns'],
+    ['/api/uplinks/',          'failover'],
 ];
 
 function featureOf(path) {

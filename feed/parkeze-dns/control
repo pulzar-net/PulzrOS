@@ -1,0 +1,9 @@
+Package: parkeze-dns
+Depends: ucode, ucode-mod-fs, ucode-mod-uci, dnsmasq-full
+Maintainer: Joseph Telaak <joseph@parkeze.com>
+Architecture: all
+Description: The gateway's resolver, as the site sets it.
+ Upstream servers in place of the uplink's, local names the LAN resolves,
+ and rebind protection with the domains allowed past it. Refuses names
+ under Parkeze's domains and a server list that cannot resolve Parkeze.
+ For boards with the dns feature; see boards/common/board.conf.

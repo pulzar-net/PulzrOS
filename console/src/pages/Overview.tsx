@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/services/api';
-import type { BackhaulStatus, LanStatus, LorawanStatus, SystemHistory, SystemSummary } from '@/types';
+import type { BackhaulStatus, LanStatus, LorawanStatus, SystemHistory, SystemSummary, UplinkIface, UplinksStatus } from '@/types';
 import Section from '@/components/ui/Section';
 import Badge, { type Tone } from '@/components/ui/Badge';
 import Fact, { FactList } from '@/components/Fact';
@@ -56,6 +56,14 @@ export default function Overview() {
     queryFn: () => api.get<LanStatus>('/lan/status'),
     refetchInterval: 15_000,
     enabled: features.has('lan'),
+  });
+  // With failover the order is the site's, so which uplink carries traffic is
+  // parkeze-uplinks' answer, not Ethernet-then-WiFi-then-cellular.
+  const order = useQuery({
+    queryKey: ['uplinks'],
+    queryFn: () => api.get<UplinksStatus>('/uplinks/status'),
+    refetchInterval: 15_000,
+    enabled: features.has('failover'),
   });
   // The same query System > Resources makes for its day view, so the two
   // share one fetch.
@@ -117,7 +125,7 @@ export default function Overview() {
 
       <Section title="Status">
         <FactList>
-          <StatusRow label="Uplink" row={uplink(paths)} />
+          <StatusRow label="Uplink" row={uplink(paths, features.has('failover') ? order.data : undefined)} />
           <StatusRow label="Management tunnel" row={tunnel(paths)} />
           {features.has('cellular') && <StatusRow label="Cellular" row={cellular(paths)} />}
           {features.has('lorawan') && <StatusRow label="LoRaWAN" row={loraRow(lora)} />}
@@ -210,10 +218,12 @@ function join(...parts: (string | null | undefined)[]) {
   return parts.filter(Boolean).join(', ') || null;
 }
 
-function uplink(paths: BackhaulStatus | undefined): Row {
+function uplink(paths: BackhaulStatus | undefined, order?: UplinksStatus): Row {
   if (!paths) return { tone: 'neutral', badge: 'Reading' };
   const { wired, wifi, cellular } = paths;
-  if (wired.up) {
+  const carrying = (iface: UplinkIface, up: boolean | undefined) =>
+    order ? order.active === iface || (iface === 'wwan' && order.active === 'usbwan') : !!up;
+  if (carrying('wan', wired.up)) {
     const how = wired.proto === 'static' ? 'static' : wired.proto === 'dhcp' ? 'by DHCP' : null;
     return {
       tone: 'success', badge: 'Ethernet',
@@ -222,13 +232,13 @@ function uplink(paths: BackhaulStatus | undefined): Row {
       to: '/backhaul/ethernet', page: 'Ethernet',
     };
   }
-  if (wifi?.up) {
+  if (carrying('wwifi', wifi?.up)) {
     return {
-      tone: 'success', badge: 'WiFi', text: wifi.device, detail: wifi.address?.split('/')[0],
+      tone: 'success', badge: 'WiFi', text: wifi?.device, detail: wifi?.address?.split('/')[0],
       to: '/backhaul/wifi', page: 'WiFi',
     };
   }
-  if (cellular.up) {
+  if (carrying('wwan', cellular.up)) {
     return {
       tone: 'warning', badge: 'Cellular', text: cellular.modem?.model ?? cellular.device,
       detail: 'metered', to: '/backhaul/cellular', page: 'Cellular',
