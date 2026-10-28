@@ -142,6 +142,7 @@ jobs:
           ./scripts/test-claim.sh
           ./scripts/test-ssh-setup.sh
           ./scripts/test-cellular-watchdog.sh
+          ./scripts/test-firmware-stash.sh
 
       # The RAK hardware descriptor (never letting its passwords out), the
       # named reset lines, and /dev/lora<n> following a card across resets.

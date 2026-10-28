@@ -139,6 +139,9 @@ pending)
             [ -f "${old}" ] || continue
             [ "${old}" = "${stashed}" ] && continue
             [ "${old}" = "${from_image}" ] && continue
+            # The console stages its upload in this same directory, and
+            # sysupgrade has yet to read it.
+            [ "${old}" = "${image}" ] && continue
             rm -f "${old}" 2>/dev/null
         done
     fi
