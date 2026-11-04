@@ -26,7 +26,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BOARDS_DIR="${ROOT_DIR}/boards"
 OUT_DIR="${ROOT_DIR}/out"
-REPO="parkezesolutions/ParkezeOS"
+REPO="Pulzr/PulzrOS"
 
 log()  { printf '\033[36m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[33m warn\033[0m %s\n' "$*" >&2; }
@@ -271,7 +271,7 @@ install_method="$(board_field "${BOARD}" BOARD_INSTALL)"
 if [ "${install_method}" != sdcard ]; then
   die "${BOARD} does not install from an SD card (BOARD_INSTALL=${install_method}).
        It boots from soldered flash and is updated through its own upgrade
-       path — see https://github.com/parkeze/openwrt-device-template."
+       path — see https://github.com/Pulzr/openwrt-device-template."
 fi
 
 [ "${DOWNLOAD}" = 1 ] && download_image "${BOARD}"

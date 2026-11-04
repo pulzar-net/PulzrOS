@@ -134,7 +134,7 @@ docs/             the design decisions worth writing down
 - [`docs/rak-power.md`](docs/rak-power.md) — the RAK7289CV2's power board: the
   watchdog that keeps a DC-powered unit on, the battery pack, and what about
   them is still unverified on hardware.
-- [`openwrt-device-template`](https://github.com/parkeze/openwrt-device-template) — porting a board OpenWrt does not
+- [`openwrt-device-template`](https://github.com/Pulzr/openwrt-device-template) — porting a board OpenWrt does not
   support, and why the flash layout has to come off the hardware rather than a
   datasheet.
 
