@@ -19,7 +19,7 @@ return {
         recoveryVerify: (sig, addr) => sig == 'bad' ? { error: 'That signature does not verify.' } : { session: sessionFor('recovery', 'recovery', 1800) },
         // Approved on the third ask, as if somebody took a moment to find
         // their phone.
-        terminalStart: () => { asks = 0; return { code: 'K7M2-QP4X', url: 'https://net.parkeze.com/gateway-access#signin=K7M2-QP4X', expiresIn: 600, interval: 3 }; },
+        terminalStart: () => { asks = 0; return { code: 'K7M2-QP4X', url: 'https://app.pulzr.net/gateway-access#signin=K7M2-QP4X', expiresIn: 600, interval: 3 }; },
         terminalCollect: (code, addr) => ++asks < 3 ? { pending: true } : { session: sessionFor('ops@parkeze.com', 'sso', 3600) },
         readSession: (t) => ({ ok: true }),
         destroySession: (t) => null,
@@ -68,7 +68,7 @@ return {
     claim: {
         isAdopted: () => adopted,
         reclaiming: () => false,
-        status: () => ({ claimId: 'K7M2-QP4X-9RTB', adoption: adopted ? 'adopted' : 'unadopted', registered: true, online: true, url: 'https://net.parkeze.com/c/K7M2', org: null }),
+        status: () => ({ claimId: 'K7M2-QP4X-9RTB', adoption: adopted ? 'adopted' : 'unadopted', registered: true, online: true, url: 'https://app.pulzr.net/c/K7M2', org: null }),
         adoptionCheckResult: () => ({ checking: false, checked: true, adopted: true }),
     },
     io: { status: () => ({ leds: [ { logical: 'power', physical: 'PWR', present: true }, { logical: 'status', physical: 'ACT', present: true }, { logical: 'lora', physical: null, present: false } ], available: [ 'PWR', 'ACT', 'mmc0' ], button: { reset: null, holdSeconds: 10 } }) },

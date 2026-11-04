@@ -106,7 +106,7 @@ below are for when that has not happened.
 | **Serial** | 115200 8N1 on the GPIO header. The banner prints the console address and the initial password. |
 
 All three show the same claim code. Scan it or enter it at
-`https://parkeze.net/adopt`, pick the organization, and the gateway finishes
+`https://app.pulzr.net/adopt`, pick the organization, and the gateway finishes
 adopting itself — see [`provisioning.md`](provisioning.md).
 
 The console will not let you past the initial password without changing it.

@@ -93,7 +93,7 @@ STATE="${PARKEZE_CLAIM_DIR:-/etc/parkeze/claim}"
 # The claim waiting to replace a revoked one. Inside STATE so keep.d carries it
 # across an upgrade with the rest.
 NEXT="${STATE}/next"
-NET_URL="${PARKEZE_NET_URL:-https://net.parkeze.com}"
+NET_URL="${PARKEZE_NET_URL:-https://app.pulzr.net}"
 
 # How far apart the two revoked answers must be. See the header.
 REVOKED_CONFIRM=60

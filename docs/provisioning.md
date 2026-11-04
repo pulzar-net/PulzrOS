@@ -51,7 +51,7 @@ configured on a bench before it is installed.
 The QR carries the gateway's identity inline instead of just a claim id:
 
 ```
-https://parkeze.net/adopt#o1.<claim_id>.<eui>.<commitment[:24]>.<board>
+https://app.pulzr.net/adopt#o1.<claim_id>.<eui>.<commitment[:24]>.<board>
 ```
 
 parkeze.net builds the pending claim from the scan alone. From there:

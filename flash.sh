@@ -341,6 +341,6 @@ $(printf '\033[32m==>\033[0m') Done. Put the card in the ${BOARD} and power it o
               address and the one-time password
 
   The gateway shows a claim code on all three. Scan it, or enter it at
-  https://parkeze.net/adopt to adopt the gateway — it finishes on its own.
+  https://app.pulzr.net/adopt to adopt the gateway — it finishes on its own.
 
 EOF

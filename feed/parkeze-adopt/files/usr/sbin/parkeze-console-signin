@@ -20,7 +20,7 @@
 . /etc/parkeze/board.conf
 
 STATE=/etc/parkeze/claim
-NET_URL="${PARKEZE_NET_URL:-https://net.parkeze.com}"
+NET_URL="${PARKEZE_NET_URL:-https://app.pulzr.net}"
 
 fail() { printf '{"error":"%s"}\n' "$1"; exit 1; }
 

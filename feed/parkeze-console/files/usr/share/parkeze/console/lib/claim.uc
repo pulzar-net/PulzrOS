@@ -81,7 +81,7 @@ adoptionCheckResult = function() {
 // something typeable rather than a link.
 platformUrl = function() {
     const url = trim(run("sed -n \"s/^PARKEZE_NET_URL='\\(.*\\)'$/\\1/p\" /etc/parkeze/board.conf") ?? '');
-    const base = length(url) ? url : 'https://net.parkeze.com';
+    const base = length(url) ? url : 'https://app.pulzr.net';
     let host = base;
     host = replace(host, /^https?:\/\//, '');
     host = replace(host, /\/.*$/, '');

@@ -14,7 +14,7 @@
 
 . /etc/parkeze/board.conf
 
-NET_URL="${PARKEZE_NET_URL:-https://net.parkeze.com}"
+NET_URL="${PARKEZE_NET_URL:-https://app.pulzr.net}"
 CLAIM=/etc/parkeze/claim
 DIR=/etc/parkeze/wireguard
 TUNNEL="${DIR}/tunnel.json"

@@ -367,7 +367,7 @@ backhaulUp = function() {
 platformUrl = function() {
     const conf = readfile('/etc/parkeze/board.conf') ?? '';
     const m = match(conf, /PARKEZE_NET_URL='([^']*)'/);
-    return (m && length(m[1])) ? m[1] : 'https://net.parkeze.com';
+    return (m && length(m[1])) ? m[1] : 'https://app.pulzr.net';
 };
 
 // What the login page should offer.

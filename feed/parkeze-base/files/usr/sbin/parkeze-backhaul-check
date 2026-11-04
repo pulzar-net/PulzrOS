@@ -62,7 +62,7 @@ tunnel_state() {
 # makes that true of the probe as well, so the next move is still one line.
 _net_host="${PARKEZE_NET_URL#*://}"
 CHECK_HOST="${PARKEZE_HEALTH_HOST:-${_net_host%%/*}}"
-CHECK_HOST="${CHECK_HOST:-net.parkeze.com}"
+CHECK_HOST="${CHECK_HOST:-app.pulzr.net}"
 CHECK_PORT="${PARKEZE_HEALTH_PORT:-443}"
 
 # time_connect is 0 unless the TCP handshake completed, whatever curl does

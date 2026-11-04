@@ -65,7 +65,7 @@ claim secret, as `/report` does. The code on the screen is an address, not a
 key; seeing it lets you ask somebody to approve, and collect nothing. No token
 is stored on parkeze.net while a sign-in waits — it is minted when the gateway
 collects it. Online only; offline, recovery is the way in. A QR that will not
-scan: the code typed at `net.parkeze.com/gateway-access` works the same.
+scan: the code typed at `app.pulzr.net/gateway-access` works the same.
 
 The server half is `net-api/plugins/gateway_ops/console_signin.py` in
 parkeze.net; the gateway half is `parkeze-console-signin` and `auth.uc`.
