@@ -135,4 +135,7 @@ of the box has a password nobody has read off the serial console yet — and
   secret went with the overlay, and leaving it would be a second live door.
 - The poll backs off: 5s for two minutes, 30s to fifteen, 5m to an hour, then
   hourly. The first window is sized for a human standing there; the last is
-  sized for a SIM's data allowance.
+  sized for a SIM's data allowance, so it applies only on cellular: with the
+  wired port or a WiFi uplink up, the poll stays at 30s for as long as the
+  gateway is unadopted, and an adoption is picked up within half a minute
+  however long after power-on it happens.

@@ -7,11 +7,29 @@ log() { logger -t claim -p daemon.info "$*"; }
 
 started="$(date +%s)"
 
+# Whether the gateway has a way out that costs nothing per byte: the wired
+# port or a WiFi uplink with an address. Read from netifd, so asking sends
+# nothing.
+unmetered() {
+    local iface
+    for iface in wan wwifi; do
+        ubus call "network.interface.${iface}" status 2>/dev/null \
+            | jsonfilter -e '@["ipv4-address"][0].address' >/dev/null 2>&1 && return 0
+    done
+    return 1
+}
+
 interval_for() {
     # Seconds since start -> how long to wait before the next poll.
+    #
+    # The backoff is for the SIM: a cellular-only gateway nobody adopts would
+    # otherwise spend its data asking all day. On a wired or WiFi uplink there
+    # is nothing to save, and backing off there is what made an Opal adopted
+    # an hour after it booted wait up to another hour to notice, listed as a
+    # LoRaWAN gateway with no tunnel and no SSH the whole time.
     local elapsed="$1"
     if   [ "${elapsed}" -lt 120 ];  then echo 5
-    elif [ "${elapsed}" -lt 900 ];  then echo 30
+    elif [ "${elapsed}" -lt 900 ] || unmetered; then echo 30
     elif [ "${elapsed}" -lt 3600 ]; then echo 300
     else echo 3600
     fi
