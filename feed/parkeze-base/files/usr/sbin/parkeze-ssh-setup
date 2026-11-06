@@ -209,8 +209,12 @@ trusts_ca() {
     [ "$(cat "${PRINCIPALS}/root" 2>/dev/null)" = "${eui}" ] || return 1
     pidof sshd >/dev/null 2>&1 || return 1
     conf="$(sshd -T -f "${SSH}/sshd_config" 2>/dev/null)" || return 1
-    printf '%s\n' "${conf}" | grep -qx "trustedusercakeys ${CA}" || return 1
-    printf '%s\n' "${conf}" | grep -qx "authorizedprincipalsfile ${PRINCIPALS}/%u"
+    # Without regard to case: OpenSSH 9 prints `sshd -T` keywords in lower
+    # case and OpenSSH 10 in their documented case, and an exact match made
+    # every gateway on OpenWrt 25.12 report that it trusts no CA, so the front
+    # door refused them all.
+    printf '%s\n' "${conf}" | grep -qix "trustedusercakeys ${CA}" || return 1
+    printf '%s\n' "${conf}" | grep -qix "authorizedprincipalsfile ${PRINCIPALS}/%u"
 }
 
 case "${1:-}" in

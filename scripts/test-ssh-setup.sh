@@ -80,13 +80,19 @@ cat > "${STUBS}/pidof" <<'EOF'
 EOF
 
 # sshd -T -f <config>: the effective values, as sshd prints them, from the
-# Included conf files. Lowercased keywords, as the real one does.
+# Included conf files. Lowercased keywords, as OpenSSH 9 prints them; with
+# SSHD_KEYWORD_CASE=documented, as OpenSSH 10 (OpenWrt 25.12) does.
 cat > "${STUBS}/sshd" <<'EOF'
 #!/bin/sh
 [ "$1" = "-T" ] || exit 1
 dir="$(dirname "$3")"
-cat "${dir}"/sshd_config.d/*.conf 2>/dev/null | awk '{ print tolower($1)" "$2 }'
-echo "port 22"
+if [ "${SSHD_KEYWORD_CASE:-lower}" = documented ]; then
+    cat "${dir}"/sshd_config.d/*.conf 2>/dev/null | awk '{ print $1" "$2 }'
+    echo "Port 22"
+else
+    cat "${dir}"/sshd_config.d/*.conf 2>/dev/null | awk '{ print tolower($1)" "$2 }'
+    echo "port 22"
+fi
 EOF
 
 chmod +x "${STUBS}"/*
@@ -170,6 +176,8 @@ check "an existing sshd host key is kept" grep -q "dropbear ed25519 key" "${SSH}
 check "not while sshd is down" not setup --trusts-ca
 export SSHD_RUNNING=1
 check "yes once sshd runs with it" setup --trusts-ca
+check "yes from OpenSSH 10, which prints keywords in their documented case" \
+    env SSHD_KEYWORD_CASE=documented bash "${SETUP}" --trusts-ca
 echo "0000000000000000" > "${SSH}/auth_principals/root"
 check "not when the principal is another gateway's" not setup --trusts-ca
 setup
