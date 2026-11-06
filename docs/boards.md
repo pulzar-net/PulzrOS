@@ -114,7 +114,7 @@ run of the full `24.10.0-1` ParkezeOS image confirmed it boots as
 silkscreen LoRa1/LoRa2 order left to confirm on a Pro with both cards.
 `gl-sft1200` is the GL.iNet Opal, the first board that is a router rather
 than a LoRa gateway: one WAN port and two LAN ports on a MaxLinear GSW150
-switch, with Wi-Fi off. Its target is source-only in 25.12 and has no GSW150
+switch, and Siflower's two radios on their GPLv2 driver (`kmod-siwifi`). Its target is source-only in 25.12 and has no GSW150
 driver on 6.12, so [Pulzr/openwrt-gl-sft1200](https://github.com/Pulzr/openwrt-gl-sft1200)
 builds the 25.12.6 tree with siflower's 6.18 kernel grafted in, and an
 ImageBuilder that carries the kernel, every kmod and the target's own
