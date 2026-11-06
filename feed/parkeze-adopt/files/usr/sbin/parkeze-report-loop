@@ -28,6 +28,13 @@ sleep 30
 # before anything is done about it. See parkeze-claim's header.
 CONFIRM=60
 
+# A report that does not get through is tried again after five minutes,
+# doubling to the interval. The first one goes out while the tunnel is still
+# enrolling, and when it failed parkeze.net heard nothing for six hours: an
+# Opal adopted that way was listed as a LoRaWAN gateway until the next one.
+RETRY=300
+retry="${RETRY}"
+
 last=0
 while :; do
     if [ "$(uci -q get parkeze.adoption.state)" != "adopted" ]; then
@@ -55,9 +62,18 @@ while :; do
 
     last="${now}"
     parkeze-claim report >/dev/null 2>&1
-    if [ "$?" = 3 ]; then
-        sleep "${CONFIRM}"
-        continue
-    fi
-    sleep "${INTERVAL}"
+    case "$?" in
+        0)
+            retry="${RETRY}"
+            sleep "${INTERVAL}"
+            ;;
+        3)
+            sleep "${CONFIRM}"
+            ;;
+        *)
+            sleep "${retry}"
+            retry=$((retry * 2))
+            [ "${retry}" -gt "${INTERVAL}" ] && retry="${INTERVAL}"
+            ;;
+    esac
 done

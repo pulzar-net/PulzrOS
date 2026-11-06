@@ -41,13 +41,18 @@ wwan="$(addr wwan)"; [ -n "${wwan}" ]  && echo "cellular_ip=${wwan}"
 tunnel="$(jsonfilter -i /etc/parkeze/wireguard/tunnel.json -e '@.address' 2>/dev/null)"
 [ -n "${tunnel}" ] && echo "tunnel_ip=${tunnel%/*}"
 
-# absent on a build without the lorawan feature: there is nothing to detect,
-# and parkeze.net reads a ParkezeOS gateway with no concentrator as a router.
+# absent on a build without the lorawan feature: there is nothing to detect.
 if [ -x /usr/sbin/parkeze-concentrator-detect ]; then
     echo "concentrator=$(uci -q get parkeze.concentrator.status || echo unknown)"
 else
     echo "concentrator=absent"
 fi
+
+# What this image was built to be. parkeze.net used to infer a router from a
+# missing concentrator and an LNS that had never heard the gateway, so until
+# that inference had its facts an Opal was listed as a LoRaWAN gateway. A Pi
+# built for LoRaWAN whose concentrator has died is still one.
+echo "features=$(echo ${PARKEZE_FEATURES})"
 
 # The unit as its maker recorded it, where it did (parkeze-hwdesc): which of
 # a model's builds this is, the serial on its label, and its capabilities.
