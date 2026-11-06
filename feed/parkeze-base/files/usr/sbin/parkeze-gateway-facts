@@ -52,7 +52,9 @@ fi
 # missing concentrator and an LNS that had never heard the gateway, so until
 # that inference had its facts an Opal was listed as a LoRaWAN gateway. A Pi
 # built for LoRaWAN whose concentrator has died is still one.
-echo "features=$(echo ${PARKEZE_FEATURES})"
+# Comma-separated: a report keeps only a safe character set, and spaces are
+# not in it.
+echo "features=$(echo ${PARKEZE_FEATURES} | tr ' ' ',')"
 
 # The unit as its maker recorded it, where it did (parkeze-hwdesc): which of
 # a model's builds this is, the serial on its label, and its capabilities.

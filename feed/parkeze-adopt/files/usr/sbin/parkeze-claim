@@ -606,7 +606,7 @@ system_facts() {
     local out="" key value
     while IFS='=' read -r key value; do
         case "${key}" in ''|*[!a-z_]*) continue ;; esac
-        value="$(printf '%s' "${value}" | tr -cd 'A-Za-z0-9._:/+-')"
+        value="$(printf '%s' "${value}" | tr -cd 'A-Za-z0-9._:/+,-')"
         out="${out}${out:+,}\"${key}\":\"${value}\""
     done <<EOF
 $(parkeze-gateway-facts 2>/dev/null)
