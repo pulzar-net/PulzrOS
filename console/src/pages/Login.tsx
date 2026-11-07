@@ -55,6 +55,7 @@ function readHandoff(): Handoff | null {
 export default function Login() {
   const [mode, setMode] = useState<'password' | 'recovery' | 'parkeze' | null>(null);
   const [handoffToken, setHandoffToken] = useState(readHandoff);
+  const [unreachable, setUnreachable] = useState(false);
   const presented = useRef<string | null>(null);
   const { signIn } = useSession();
 
@@ -153,12 +154,17 @@ export default function Login() {
           <Recovery
             canGoBack={available.local || available.sso}
             onBack={() => setMode(available.local ? 'password' : 'parkeze')}
+            notice={unreachable ? 'This browser cannot reach Pulzar.' : null}
           />
         ) : effective === 'parkeze' ? (
           <ParkezeSignIn
             methods={available}
             error={ssoError}
             onRecovery={() => setMode('recovery')}
+            onUnreachable={() => {
+              setUnreachable(true);
+              setMode('recovery');
+            }}
           />
         ) : (
           <PasswordForm methods={available} onRecovery={() => setMode('recovery')} />
@@ -169,27 +175,60 @@ export default function Login() {
 }
 
 /**
- * Sign in with a Parkeze account.
+ * Sign in with a Pulzar account.
  *
- * Sends the browser to parkeze.net, which names this gateway, asks the person
+ * Sends the browser to the platform, which names this gateway, asks the person
  * to confirm, and returns a short-lived token this gateway verifies offline.
- * Only the browser needs internet — the gateway does not talk to Parkeze for
- * any of it — so this works on a site where the gateway's own uplink is down
- * but the technician's laptop is on a phone hotspot.
+ * Only the browser needs internet — the gateway does not talk to the platform
+ * for any of it — so this works on a site where the gateway's own uplink is
+ * down but the technician's phone or laptop has data of its own.
+ *
+ * Whether it has is asked before leaving, because the answer otherwise is the
+ * browser's own error page, with this screen and the way to recovery behind
+ * the back button. An opaque no-cors request cannot read anything, and does not
+ * need to: it resolves if the platform answered and rejects if nothing did.
+ *
+ * The platform only returns a token to a console at a private IP, since a name
+ * proves nothing about where it leads. So a browser that came by mDNS is
+ * returned to the address the request arrived on. That is a different origin,
+ * which is one more certificate warning and nothing else: nothing is signed in
+ * yet.
  */
 function ParkezeSignIn({
   methods,
   error,
   onRecovery,
+  onUnreachable,
 }: {
   methods: LoginMethods;
   error: string | null;
   onRecovery: () => void;
+  onUnreachable: () => void;
 }) {
+  const [checking, setChecking] = useState(false);
+  const { hostname, origin } = window.location;
+  const returnTo =
+    methods.address && /\.local$|^[^.]+$/.test(hostname) ? `https://${methods.address}` : origin;
   const target = methods.platform && methods.deviceId
     ? `${methods.platform.replace(/\/$/, '')}/gateway-access#gw=${methods.deviceId}` +
-      `&ret=${encodeURIComponent(window.location.origin)}`
+      `&ret=${encodeURIComponent(returnTo)}`
     : null;
+
+  const go = async () => {
+    if (!target || !methods.platform) return;
+    setChecking(true);
+    const abort = new AbortController();
+    const timer = window.setTimeout(() => abort.abort(), 5000);
+    try {
+      await fetch(methods.platform, { mode: 'no-cors', cache: 'no-store', signal: abort.signal });
+      window.location.assign(target);
+    } catch {
+      setChecking(false);
+      onUnreachable();
+    } finally {
+      window.clearTimeout(timer);
+    }
+  };
 
   return (
     <>
@@ -199,10 +238,11 @@ function ParkezeSignIn({
         <Button
           variant="primary"
           disabled={!target}
-          onClick={() => target && window.location.assign(target)}
+          loading={checking}
+          onClick={() => void go()}
         >
           <LogIn size={14} strokeWidth={2} />
-          Sign in with Parkeze
+          Sign in with Pulzar
         </Button>
         <div className={styles.spacer} />
         {methods.recovery && (

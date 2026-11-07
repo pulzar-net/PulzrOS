@@ -370,8 +370,10 @@ platformUrl = function() {
     return (m && length(m[1])) ? m[1] : 'https://app.pulzr.net';
 };
 
-// What the login page should offer.
-loginMethods = function() {
+// What the login page should offer. `addr` is the address this request came in
+// on: the platform only sends a token back to a console at a private IP, and a
+// browser that came here by parkeze.local has only that name to offer.
+loginMethods = function(addr) {
     const cfg = config();
 
     if (!cfg.adopted) {
@@ -403,6 +405,7 @@ loginMethods = function() {
         // the platform address is in board.conf for anyone who can read it.
         platform: platformUrl(),
         deviceId: cfg.deviceId,
+        address: addr,
         note: cfg.localEnabled
             ? 'Local sign-in is on. That is not the default.'
             : null,
@@ -420,7 +423,7 @@ loginLocal = function(username, password, addr) {
     const cfg = config();
     if (cfg.adopted && !cfg.localEnabled)
         return { error: 'Local sign-in is disabled on this gateway. Sign in '
-                      + 'through Parkeze, or use recovery access if it is '
+                      + 'through Pulzar, or use recovery access if it is '
                       + 'unreachable.', status: 403 };
 
     const stored = trim(readfile(STATE_DIR + '/password') ?? '');

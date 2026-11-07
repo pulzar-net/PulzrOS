@@ -63,8 +63,22 @@ anything. See [`tui.md`](tui.md).
 ### 3. Adopted and offline
 
 The interesting case. Local login stays refused, because the credential a thief
-could extract must not be a way in. Instead: an Ed25519 challenge-response
-against a key the gateway only ever holds the **public** half of.
+could extract must not be a way in. Both ways in end in a signature the gateway
+checks with a key it only ever holds the **public** half of, so neither needs the
+gateway to reach anything:
+
+| The browser | Way in |
+|---|---|
+| reaches the platform | **Sign in with Pulzar**, exactly as online. The browser carries the token. |
+| does not | **Recovery access**, with the code carried on a second device. |
+
+The sign-in button asks first whether the browser can reach the platform, and
+goes to recovery with a notice if it cannot. The platform returns a token only to
+a private IP, so a browser that came by `parkeze.local` is returned to the
+address the request reached the gateway on (`address` in `/api/auth/methods`).
+
+The same holds from a LAN port and from the setup AP. See
+[`access.md`](access.md) for which of them leaves a phone its own data.
 
 ### On the bench: a LAN window
 

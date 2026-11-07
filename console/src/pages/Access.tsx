@@ -101,6 +101,9 @@ function ApCard({ state, onChange }: { state: AccessStatus; onChange: () => void
     >
       <FactList>
         <Fact label="Network" value={ap.ssid} mono />
+        {ap.address && (
+          <Fact label="Console address" value={<span className="mono">https://{ap.address}</span>} />
+        )}
         <Fact
           label="Security"
           value={
@@ -112,6 +115,7 @@ function ApCard({ state, onChange }: { state: AccessStatus; onChange: () => void
           }
         />
         <Fact label="Connected" value={ap.clients ? `${ap.clients} device(s)` : 'Nobody'} />
+        {ap.raisedByButton && <Fact label="Raised by" value="Reset button" />}
         {ap.up && (ap.remainingSeconds ?? 0) > 0 && (
           <Fact label="Comes down in" value={duration(ap.remainingSeconds)} />
         )}
@@ -154,6 +158,12 @@ function ApCard({ state, onChange }: { state: AccessStatus; onChange: () => void
         checked={ap.fallback ?? false}
         disabled={!ap.enabled}
         onChange={(event) => configure.mutate({ fallback: event.target.checked })}
+      />
+
+      <CheckboxField
+        label="Raise it with four presses of the reset button"
+        checked={ap.button ?? false}
+        onChange={(event) => configure.mutate({ button: event.target.checked })}
       />
 
       <div className={styles.actions}>
@@ -257,6 +267,9 @@ function PortCard({ state }: { state: AccessStatus }) {
           label="Console address"
           value={<span className="mono">https://{port.console}</span>}
         />
+        {state.lan && (
+          <Fact label="From a LAN port" value={<span className="mono">https://{state.lan}</span>} />
+        )}
         <Fact
           label="Uplink"
           value={

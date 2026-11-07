@@ -8,6 +8,10 @@
 #   parkeze-backhaul-check --cellular  exit 0 if parkeze.net answers out of
 #                                   the cellular device itself, whatever
 #                                   the wired path is doing
+#   parkeze-backhaul-check --any    exit 0 and print which uplink, if any of
+#                                   them really works: tunnel, wired, wifi or
+#                                   cellular. For a person at the gateway,
+#                                   not for a loop: see below
 #
 # BUDGET
 #
@@ -84,6 +88,38 @@ if [ "$1" = "--cellular" ]; then
     dev="$(cellular_device)"
     [ -n "${dev}" ] && connects "${dev}"
     exit
+fi
+
+# ── any uplink at all ───────────────────────────────────────────────────────
+# Asked when somebody presses the reset button for setup mode, and once a
+# minute while that AP stands. The default answer below is the wrong one for
+# that. It is about whether parkeze.net can manage this gateway, so a wired
+# lease from a network that goes nowhere counts as up until there is a tunnel,
+# and WiFi with a dead tunnel counts as down. Those are the two cases a moved
+# gateway is most likely to be in.
+#
+# So each uplink is tried out of its own device. WiFi takes
+# parkeze-wifi-uplink's word instead of a connection, because a guest network
+# will complete a TCP handshake to anything and answer with its sign-in page.
+if [ "$1" = "--any" ]; then
+    [ "$(tunnel_state)" = up ] && { echo tunnel; exit 0; }
+
+    network_flush_cache
+    if network_is_up wan && network_get_gateway _gw wan && [ -n "${_gw}" ] \
+       && network_get_device _dev wan && connects "${_dev}"; then
+        echo wired
+        exit 0
+    fi
+    if network_is_up wwifi && parkeze-wifi-uplink usable; then
+        echo wifi
+        exit 0
+    fi
+    _dev="$(cellular_device)"
+    if [ -n "${_dev}" ] && connects "${_dev}"; then
+        echo cellular
+        exit 0
+    fi
+    exit 1
 fi
 
 # ── wired ───────────────────────────────────────────────────────────────────

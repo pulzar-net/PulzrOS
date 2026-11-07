@@ -112,6 +112,10 @@ export default function Panel() {
           <FactList>
             <Fact label="Short press" value="Reports whether the gateway is manageable, on the cloud LED. Harmless." />
             <Fact
+              label="Four short presses"
+              value="Raises the setup AP. With a working uplink, refuses and flashes every light."
+            />
+            <Fact
               label={`Held ${state.button.holdSeconds}s`}
               value="Factory reset: releases the gateway locally, wipes the overlay, and reboots."
             />

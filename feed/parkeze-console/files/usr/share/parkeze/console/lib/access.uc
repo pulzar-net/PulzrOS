@@ -60,7 +60,9 @@ security = function(encryption) {
 status = function() {
     const uci = cursor();
     const ap = runJson('/usr/sbin/parkeze-ap status') || { capable: false };
-    const portal = runJson('/usr/sbin/parkeze-portal status') || { up: false };
+    // Where the console is from the AP. It hands out no DNS, so this is the
+    // address to open, and the same on every gateway.
+    ap.address = uci.get('network', 'setup', 'ipaddr') || null;
 
     // The ethernet port does not have a role to report. It holds every
     // address at once — a DHCP lease for the backhaul, the fixed console
@@ -72,7 +74,6 @@ status = function() {
 
     return {
         ap: ap,
-        portal: portal,
         port: {
             iface: uci.get('network', 'wan', 'device') || 'eth0',
             // Where to point a browser. Both always work; the link-local name
@@ -96,6 +97,9 @@ status = function() {
         // console. Null on a board without one. As thin as the rest of this:
         // an address that is the same on every gateway, and nothing else.
         usb: runJson('[ -x /usr/sbin/parkeze-usb-gadget ] && /usr/sbin/parkeze-usb-gadget status'),
+        // The LAN ports' address, where a laptop on one finds the console.
+        // Null on a board without them. The same on every gateway.
+        lan: uci.get('network', 'devlan', 'ipaddr') || null,
         adopted: uci.get('parkeze', 'adoption', 'state') == 'adopted',
         // The WiFi uplink, if one has been joined. Distinct from `ap` above:
         // that is the radio serving a setup network, this is the radio using
@@ -168,6 +172,9 @@ setAp = function(req) {
 
     if (req.fallback != null)
         uci.set('parkeze', 'ap', 'fallback', req.fallback ? '1' : '0');
+
+    if (req.button != null)
+        uci.set('parkeze', 'ap', 'button', req.button ? '1' : '0');
 
     if (req.fallbackAfter != null) {
         const seconds = int(req.fallbackAfter);

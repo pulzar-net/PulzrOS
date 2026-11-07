@@ -1,0 +1,22 @@
+#!/bin/sh
+#
+# Answer parkeze.local on the LAN ports.
+#
+# Apart from 25-parkeze-lan because 30-parkeze-console rewrites umdns's whole
+# config, so this has to come after it. Only ever this gateway on the end of
+# these ports, which is the condition 30-parkeze-console sets for the alias.
+
+# OpenWrt's prepare_rootfs runs every uci-defaults script during image
+# assembly, with IPKG_INSTROOT set and absolute paths resolving to the build
+# host. Everything below belongs to the device, so defer it to first boot.
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+
+. /etc/parkeze/board.conf
+
+[ -n "${PARKEZE_LAN_PORTS}" ] || exit 0
+
+uci -q del_list umdns.@umdns[0].network='devlan'
+uci -q add_list umdns.@umdns[0].network='devlan'
+uci commit umdns
+
+exit 0

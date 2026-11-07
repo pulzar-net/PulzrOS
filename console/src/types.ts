@@ -23,10 +23,12 @@ export interface LoginMethods {
   recovery: boolean;
   state: 'unadopted' | 'adopted';
   online?: boolean;
-  /** Where "Sign in with Parkeze" sends the browser. Adopted gateways only. */
+  /** Where "Sign in with Pulzar" sends the browser. Adopted gateways only. */
   platform?: string;
   /** This gateway's EUI, for the same link. */
   deviceId?: string;
+  /** The address this request reached the gateway on. */
+  address?: string;
   /** Null when there is nothing worth saying. */
   note: string | null;
 }
@@ -418,6 +420,12 @@ export interface ApStatus {
   clients?: number;
   remainingSeconds?: number;
   fallback?: boolean;
+  /** Whether four presses of the reset button may raise it. */
+  button?: boolean;
+  /** It is up because somebody pressed the button. */
+  raisedByButton?: boolean;
+  /** The console's address from the AP. */
+  address?: string | null;
   fallbackAfter?: number;
 }
 
@@ -454,10 +462,11 @@ export interface UsbPort {
 
 export interface AccessStatus {
   ap: ApStatus;
-  portal: { up: boolean; address?: string };
   port: EthernetPort;
   /** Null on a board with no USB device port. */
   usb: UsbPort | null;
+  /** The gateway's address on its LAN ports. Null on a board without them. */
+  lan: string | null;
   adopted: boolean;
   wifi:
     | { configured: false }

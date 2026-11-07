@@ -571,9 +571,25 @@ facts() {
     board_id="${BOARD_ID:-unknown}"
     version="${PARKEZE_VERSION:-0.0.0}"
 
-    printf '{"board":"%s","osVersion":"%s","modemPresent":%s,"modemModel":"%s","modemKind":"%s","simIccid":"%s","sshHostKey":"%s","wiredUsable":%s,"tunnelVia":"%s","tunnelState":"%s","wifiUplink":"%s","consolePort":443,"consoleScheme":"https","sshPort":22,"sshCa":%s,"system":%s,"rakPower":%s}' \
+    printf '{"board":"%s","osVersion":"%s","modemPresent":%s,"modemModel":"%s","modemKind":"%s","simIccid":"%s","sshHostKey":"%s","wiredUsable":%s,"tunnelVia":"%s","tunnelState":"%s","wifiUplink":"%s","consolePort":443,"consoleScheme":"https","sshPort":22,"sshCa":%s,"system":%s,"rakPower":%s,"setupAp":%s}' \
         "${board_id}" "${version}" "${modem_present}" "${modem_model:-}" "${modem_kind:-}" "${iccid:-}" \
-        "${host_key:-}" "${wired_usable}" "${tunnel_via:-none}" "${tunnel:-none}" "${wifi_uplink:-unchecked}" "${ssh_ca}" "$(system_facts)" "$(rak_power_facts)"
+        "${host_key:-}" "${wired_usable}" "${tunnel_via:-none}" "${tunnel:-none}" "${wifi_uplink:-unchecked}" "${ssh_ca}" "$(system_facts)" "$(rak_power_facts)" "$(setup_ap_facts)"
+}
+
+# The setup AP's name and passphrase, so the platform can give them to an admin
+# of this gateway's organization who is standing at it. See parkeze-ap's report.
+# Checked for the same reason as rak_power_facts: a configured SSID is anybody's
+# text. The platform takes only the fields it names, so one that does not know
+# this field drops it rather than keeping a secret somewhere it would show.
+setup_ap_facts() {
+    local out
+    command -v parkeze-ap >/dev/null 2>&1 || { echo null; return; }
+    out="$(parkeze-ap report 2>/dev/null)"
+    if [ -n "${out}" ] && echo "${out}" | jsonfilter -e '@' >/dev/null 2>&1; then
+        echo "${out}"
+    else
+        echo null
+    fi
 }
 
 # The RAK power board's watchdog and battery pack, as parkeze-rak-power last

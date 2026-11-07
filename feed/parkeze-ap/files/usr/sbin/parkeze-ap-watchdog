@@ -23,6 +23,14 @@
 #     gateway is next online — a gateway whose AP keeps appearing is telling
 #     you something, whether that is a flaky SIM or somebody standing in the
 #     car park with a jammer.
+#
+# An AP raised by the reset button is not the fallback, and the two switches
+# above do not apply to it: it was asked for by a finger on the unit, with the
+# master switch off by default (see parkeze-ap). The window and "down when an
+# uplink returns" do, and it is the one case that asks about every uplink. An
+# unattended fallback only wants to know that it can be managed; somebody who
+# has just joined WiFi from the AP wants it gone the moment that WiFi works,
+# and the tunnel may be minutes behind.
 
 . /etc/parkeze/board.conf
 
@@ -43,14 +51,22 @@ while :; do
     after="$(uci -q get parkeze.ap.fallback_after || echo 900)"
     window="$(uci -q get parkeze.ap.window || echo 1800)"
 
+    button=0
+    check=""
+    if [ -f "${STATE}/button" ]; then
+        button=1
+        check=--any
+        /usr/sbin/parkeze-ap station-check
+    fi
+
     # The master switch is off: never raise, and take down anything already up.
-    if [ "${enabled}" = "0" ]; then
+    if [ "${enabled}" = "0" ] && [ "${button}" = 0 ]; then
         [ -f "${STATE}/raised" ] && /usr/sbin/parkeze-ap down
         offline_since=0
         continue
     fi
 
-    if parkeze-backhaul-check >/dev/null 2>&1; then
+    if parkeze-backhaul-check ${check} >/dev/null 2>&1; then
         # Reachable. Nothing needs an AP.
         if [ -f "${STATE}/raised" ] && [ "$(cat "${STATE}/manual" 2>/dev/null)" != "1" ]; then
             log "backhaul is back; dropping the fallback AP"
@@ -78,6 +94,7 @@ while :; do
         continue
     fi
 
+    [ "${enabled}" = "0" ] && continue
     [ "${fallback}" = "0" ] && continue
     [ $(( now - offline_since )) -ge "${after}" ] || continue
 

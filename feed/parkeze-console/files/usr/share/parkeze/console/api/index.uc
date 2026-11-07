@@ -212,7 +212,7 @@ function clientAddr(env) {
 const ROUTES = {
     'GET  /api/health': () => respond(200, { ok: true }),
 
-    'GET  /api/auth/methods': () => respond(200, auth.loginMethods()),
+    'GET  /api/auth/methods': (env) => respond(200, auth.loginMethods(env.SERVER_ADDR)),
 
     'POST /api/auth/login': (env, req) => {
         const result = auth.loginLocal(req.username, req.password, clientAddr(env));

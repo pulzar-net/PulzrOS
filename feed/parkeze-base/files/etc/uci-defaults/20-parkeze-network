@@ -321,7 +321,7 @@ EOF
 #
 # Nothing needs it to listen anywhere else: this gateway serves no DHCP and has
 # no DNS clients. It resolves for itself, over 127.0.0.1. parkeze-ap adds
-# br-setup to this list when the captive portal is switched on, and only then.
+# br-setup to this list for the setup AP's DHCP, and parkeze-lan its own bridge.
 uci -q batch <<EOF
 set dhcp.@dnsmasq[0].localservice='1'
 set dhcp.@dnsmasq[0].interface='lo'

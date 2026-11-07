@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
+import { Check, Copy } from 'lucide-react';
 import { api } from '@/services/api';
 import { useSession } from '@/contexts/SessionContext';
 import type { RecoveryChallenge, Session } from '@/types';
@@ -35,13 +36,16 @@ import styles from './Login.module.css';
 export default function Recovery({
   canGoBack,
   onBack,
+  notice,
 }: {
   canGoBack: boolean;
   onBack: () => void;
+  notice: string | null;
 }) {
   const { signIn } = useSession();
   const [signature, setSignature] = useState('');
   const [checking, setChecking] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   // "Is this gateway still adopted?"
   //
@@ -100,6 +104,7 @@ export default function Recovery({
   return (
     <>
       <h1 className={styles.title}>Recovery access</h1>
+      {notice && <Notice tone="warning">{notice}</Notice>}
       {challenge.isLoading && <Spinner label="Preparing a challenge" />}
 
       {challenge.isError && (
@@ -109,8 +114,23 @@ export default function Recovery({
       {challenge.data && (
         <>
           <div className={styles.step}>
-            <span className={styles.stepLabel}>1. Give this code to Parkeze</span>
+            <span className={styles.stepLabel}>1. Give this code to Pulzar</span>
             <code className={styles.code}>{challenge.data.challenge.code}</code>
+            {/* Fifty-odd characters, usually on the phone that carries them.
+                No clipboard on a page the browser will not trust: the code is
+                still there to select. */}
+            {navigator.clipboard && (
+              <Button
+                onClick={() =>
+                  void navigator.clipboard
+                    .writeText(challenge.data.challenge.code)
+                    .then(() => setCopied(true))
+                }
+              >
+                {copied ? <Check size={14} strokeWidth={2} /> : <Copy size={14} strokeWidth={2} />}
+                {copied ? 'Copied' : 'Copy'}
+              </Button>
+            )}
             <p className={styles.hint}>
               Expires in {Math.max(0, Math.round(challenge.data.challenge.expiresIn / 60))}{' '}
               minutes.
@@ -119,7 +139,7 @@ export default function Recovery({
 
           <TextAreaField
             label="2. Paste the signature it gives you back"
-            placeholder="Base64 signature from Parkeze"
+            placeholder="Base64 signature from Pulzar"
             spellCheck={false}
             autoCapitalize="off"
             autoCorrect="off"
@@ -149,12 +169,12 @@ export default function Recovery({
               loading={start.isPending || (checking && result?.checking !== false)}
               onClick={() => start.mutate()}
             >
-              Check with Parkeze
+              Check with Pulzar
             </Button>
             {result?.checked === false && result.reason && (
               <p className={styles.hint}>
                 {result.reason === 'unreachable'
-                  ? 'Could not reach Parkeze. Nothing changed.'
+                  ? 'Could not reach Pulzar. Nothing changed.'
                   : `No answer: ${result.reason}. Nothing changed.`}
               </p>
             )}

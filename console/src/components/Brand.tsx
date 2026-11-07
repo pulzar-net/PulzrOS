@@ -37,7 +37,7 @@ export default function Brand({
       />
       <div className={styles.text}>
         <div className={styles.name} style={{ fontSize: s.name }}>
-          Parkeze
+          Pulzar
         </div>
         {sub && (
           <div className={styles.sub} style={{ fontSize: s.sub }}>

@@ -1,9 +1,15 @@
 #!/bin/sh
-# Register the board's buttons with OpenWrt's button handler.
+# Hand the board's reset button to /usr/libexec/parkeze-reset-button.
 #
-# `handler` points at our own script rather than us shipping
-# /etc/rc.button/reset, which belongs to base-files — two packages claiming one
-# path is a file clash that fails the image build outright.
+# procd runs /etc/rc.button/<button> and only that, so the link goes there.
+# Made here at first boot rather than shipped, because /etc/rc.button/reset
+# belongs to base-files and two packages claiming one path is a file clash that
+# fails the image build outright. In the overlay it sits over the stock file,
+# and this runs again after every sysupgrade and factory reset.
+#
+# Before 0.3.6 this wrote a `button` section into /etc/config/system. Nothing
+# reads those, so every gateway was on the stock handler. See
+# parkeze-reset-button.
 #
 # The LEDs need no UCI: parkeze-io-daemon drives them directly through sysfs,
 # because their states are derived from things (concentrator status, which
@@ -16,14 +22,11 @@
 
 . /etc/parkeze/board.conf
 
-[ -n "${PARKEZE_BUTTON_RESET}" ] && uci -q batch <<EOF
-set system.reset_button=button
-set system.reset_button.button='${PARKEZE_BUTTON_RESET}'
-set system.reset_button.action='released'
-set system.reset_button.handler='/usr/libexec/parkeze-reset-button'
-set system.reset_button.min='0'
-set system.reset_button.max='60'
-EOF
-
+# The section an earlier release left behind, so nobody reads it and believes it.
+uci -q delete system.reset_button
 uci -q commit system
+
+[ -n "${PARKEZE_BUTTON_RESET}" ] \
+    && ln -sf /usr/libexec/parkeze-reset-button "/etc/rc.button/${PARKEZE_BUTTON_RESET}"
+
 exit 0

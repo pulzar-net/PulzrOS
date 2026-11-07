@@ -144,6 +144,11 @@ jobs:
           ./scripts/test-cellular-watchdog.sh
           ./scripts/test-firmware-stash.sh
 
+      # The reset button, the setup AP and which uplinks count: shell that
+      # otherwise only runs on a gateway, behind a physical button.
+      - name: Reset button and setup mode
+        run: ./scripts/test-setup-mode.sh
+
       # The RAK hardware descriptor (never letting its passwords out), the
       # named reset lines, and /dev/lora<n> following a card across resets.
       - name: Hardware descriptor and lines

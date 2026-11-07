@@ -17,8 +17,9 @@ The two failure modes are not symmetric:
 The local way in is **the ethernet port**, not WiFi. It costs nothing to leave
 available — a cable is physical access, which is a boundary we were never
 defending anyway — and it works in a car park basement where a radio does not.
-The setup AP still exists for the case the port cannot be reached, and it is
-off until somebody turns it on.
+On a board with LAN ports it is any of those as well (below). The setup AP still
+exists for the case a port cannot be reached, and it is off until somebody turns
+it on or presses the reset button four times.
 
 So the design does not pick a point between them. It makes the recovery path
 useless to anyone who is not already authorized.
@@ -31,11 +32,11 @@ useless to anyone who is not already authorized.
 |---|---|---|
 | Holds credentials | no | yes: tunnel key, MQTT password, org identity |
 | Setup AP | **open** | **WPA2, per-device key** |
-| Portal can | claim the gateway | nothing, without a parkeze.net signature |
-| Raised at boot | yes | no — only on fallback, or on request |
+| Console offers | claim the gateway, the local password | nothing, without a platform signature |
+| Raised at boot | no, unless `parkeze.ap.onboarding` is on | no — only on fallback, or on request |
 
 An unadopted gateway is a brick with a radio. There is nothing on it worth
-stealing, and the only useful thing anybody can do through the portal is claim
+stealing, and the only useful thing anybody can do through the console is claim
 it — which requires a Parkeze login and is audited. Giving that away costs
 nothing and is what makes the out-of-box experience one tap.
 
@@ -45,8 +46,8 @@ An adopted gateway is different, and gets two independent factors:
    boot — *not* from the serial or MAC, which are printed on the case and
    broadcast in beacon frames. Deriving the key from those would mean anyone who
    can see the network can compute the way onto it.
-2. **The offline recovery signature.** The portal still refuses to change
-   anything without one. Same Ed25519 challenge-response as
+2. **A signature from the platform.** The console still refuses to change
+   anything without one: sign-in or recovery. Same Ed25519 challenge-response as
    [`auth.md`](auth.md) — the gateway holds only a public key, so nothing
    extractable from its flash is a way in.
 
@@ -58,7 +59,7 @@ gateway gives up and raises its AP.
 It works. It is also useless:
 
 - the AP is WPA2 with a key the attacker does not have;
-- the portal behind it wants a signature from parkeze.net;
+- the console behind it wants a signature from the platform;
 - and every raise is journalled and reported the moment the gateway is back
   online — a gateway whose AP keeps appearing is telling you something, whether
   that is a flaky SIM or somebody in the car park with a jammer.
@@ -86,17 +87,96 @@ also forwarded traffic would be a free, anonymous internet connection attached
 to a customer's site — somebody else's incident to explain, and ours to have
 caused.
 
-## The captive portal
+## No captive portal
 
-Two pieces and nothing more:
+The setup AP hands out an address and nothing else: no router and no DNS server,
+as the USB port does. Open `https://192.168.62.1`. The console then decides what
+to show based on adoption state.
 
-1. dnsmasq answers every name on `br-setup` with the gateway's own address, so
-   whatever a phone probes to detect a portal resolves here.
-2. A firewall redirect sends HTTP on the setup interface to the console.
+There was a portal. It never worked: dnsmasq was never told to read the catch-all
+config it wrote, and its firewall redirect sent port 80 to port 443, so a phone's
+plain-HTTP probe arrived at a TLS listener. Fixing it would have bought less than
+removing it did:
 
-The console then decides what to show based on adoption state. The portal is
-not a separate application — it is the same React console, which is why there
-is no second UI to keep in step.
+- A phone's portal sheet is a stripped browser that meets a self-signed
+  certificate, and on iOS has nowhere to go from there.
+- A default route is what makes a phone probe at all, and it is the wrong thing
+  to give it. With a route to a gateway that has no uplink, the phone sends
+  everything there and loses its own data. Without one it keeps cellular for
+  everything but this subnet, so **Sign in with Pulzar** works from the phone on
+  the AP, while the gateway has no internet at all.
+
+That last part is an iPhone's behaviour. An Android phone may ask whether to stay
+on a network with no internet, and once it stays it can use that network alone.
+Recovery with a second device, or leaving the AP to fetch the signature and
+coming back, still works; the challenge waits ten minutes.
+
+## Setup mode: four presses of the reset button
+
+For somebody who has moved a gateway and has no cable to it. Four short presses,
+then leave the button alone for three seconds.
+
+- **No uplink works:** the setup AP comes up for `parkeze.ap.window` (30 minutes).
+  The status light flashes once a second, or the RGB light breathes green.
+  Join `Pulzar-<six hex>`, open `https://192.168.62.1`, sign in, Backhaul > WiFi.
+- **An uplink works:** nothing is raised. Every light flashes fast for six
+  seconds, or the RGB light breathes red. There is no reason for a radio on a
+  site that is already connected, and the console is reachable the usual way.
+
+| Press | Result |
+|---|---|
+| One, under 2s | status on the cloud LED, or the status LED without one |
+| Four, under 2s each, no more than 2.5s apart | setup mode |
+| Any other count | nothing |
+| Held 2s up to the threshold | nothing |
+| Held past the threshold (10s; every light comes on) | factory reset |
+
+No way of tapping becomes a hold: a press in a sequence is under 2 seconds and a
+factory reset is one continuous 10. Nothing is read while the button is down,
+and a press of 2 seconds or more discards the count, so four presses followed by
+a hold is a hold. The checks are in `scripts/test-setup-mode.sh`.
+
+**How the button reaches this.** procd runs `/etc/rc.button/<button>` and nothing
+else, so `50-parkeze-io` links that to `parkeze-reset-button`. Before 0.3.6 it
+wrote a `button` section into `/etc/config/system`, which nothing reads, so on
+every gateway a press under a second rebooted and five seconds factory reset
+without releasing the gateway. Those gateways keep that behaviour until they run
+0.3.6.
+
+**What counts as an uplink.** `parkeze-backhaul-check --any`: a live tunnel, or
+the platform answering out of the wired or cellular device, or
+`parkeze-wifi-uplink` saying WiFi is `open`. Not a lease alone, and not WiFi
+waiting at a sign-in page, which are both what a moved gateway tends to have.
+
+**The master switch does not apply.** `parkeze.ap.enabled` is off by default and
+is about raising a radio unasked. With it in charge the gesture would do nothing
+on any gateway out of the box. `parkeze.ap.button=0` (Access page) is the switch
+for this, for a site that would rather have the truck roll.
+
+**The old network.** While a station is enabled on a radio, hostapd holds an AP on
+that radio down until the station associates, and a moved gateway's old network
+is not in range. So setup mode takes the station off the radio and gives it back
+when the AP comes down. A join from the console turns it on, which moves the AP to
+the new network's channel and drops the phone for a moment. If it has not
+associated two minutes later, `station-check` gives the radio back to the AP so
+the WiFi page can say why. The AP comes down once an uplink works, or when its
+window ends. A power cut in the middle is cleaned up at boot.
+
+**The passphrase on an adopted gateway.** The AP is WPA2 and the gateway has no
+screen, so the passphrase has to reach the person some other way. The report
+carries it to the platform while there is an uplink (`setupAp`), for an admin of
+the organization to read off the gateway's page. The platform takes named fields
+only, so one that does not know this field drops it. Until it does, or for a
+gateway that never reported from 0.3.6, the only place to read the passphrase is
+the gateway's own Access page, and the way in to an adopted gateway with no uplink
+is a cable.
+The passphrase survives upgrades from 0.3.6 (`keep.d/parkeze-ap`). Before that
+each upgrade changed it.
+
+**Where the feedback goes on an Opal.** Nowhere yet. Its light is an ET6326 on I2C
+and its kernel has no I2C driver, so `parkeze-led` has nothing to drive. The SSID
+appearing is the only sign that it worked, and the log (`logread | grep button`)
+the only sign that it did not.
 
 ## Signing the gateway in to a WiFi portal
 
@@ -136,7 +216,16 @@ registration: the WiFi page shows the station's MAC for exactly that.
 
 ## The ethernet port
 
-A Pi has one ethernet socket. It is the uplink **and** the console port, at the
+A board with LAN ports (the Opal; a Pi with a USB adapter) has a simpler answer
+for a laptop: plug into a LAN port. It gets an address from the gateway and the
+console is at `https://192.168.64.1`, or `https://parkeze.local`. These ports
+reach the console, not SSH; see [`lan.md`](lan.md). Their DHCP is a device's and
+carries a default route, so a laptop on one may stop using its own WiFi for
+internet while the gateway has no uplink: then sign in with recovery, from a
+phone.
+
+The uplink port works on those boards too, as it does on every other. A Pi has
+one ethernet socket. It is the uplink **and** the console port, at the
 same time, permanently. It holds three addresses:
 
 | | Address | What it is for |
@@ -290,9 +379,10 @@ exactly why it has to work with zero configuration rather than merely work.
 
 Both mechanisms are switchable from the console and from parkeze.net:
 
-- `parkeze.ap.enabled=0` — never raise a radio, including on fallback. **This
-  is the default.** The AP is opt-in: field setup does not use WiFi, and a
+- `parkeze.ap.enabled=0` — never raise a radio unasked, including on fallback.
+  **This is the default.** The AP is opt-in: field setup does not use WiFi, and a
   radio standing on a customer site is something we are responsible for.
+- `parkeze.ap.button=0` — four presses of the reset button do nothing.
 
 There is no switch for DHCP, because it is never served, and none for the
 ethernet port's console addresses, because switching them off would remove the

@@ -47,7 +47,8 @@ switch; the gateway never sees that traffic.
 | NTP, UDP 123 | yes | yes |
 | DNS, on the gateway | yes | yes |
 | Anything else out an uplink | no | yes |
-| The console, SSH, anything else on the gateway | no | no |
+| The console's sign-in, TCP 80, 443 and 8443 | yes | yes |
+| SSH, anything else on the gateway | no | no |
 | Other LAN devices | no | no |
 | The management tunnel | no | no |
 
@@ -56,6 +57,10 @@ switch; the gateway never sees that traffic.
 an nftables set, so the rule follows a move without anybody changing it. A
 device that ignores the gateway's DNS and asks its own resolver reaches none
 of Parkeze.
+
+The console is open here so a laptop on a LAN port can configure the gateway,
+at `https://<the gateway's address here>`, or `https://parkeze.local` over mDNS.
+What a device reaches is the sign-in page; see [auth.md](auth.md).
 
 The zone rejects rather than drops: this is our network, and a device refused
 gives up in a second where one dropped retries for a minute.

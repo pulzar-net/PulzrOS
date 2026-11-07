@@ -2,11 +2,11 @@ Package: parkeze-ap
 Depends: ucode, ucode-mod-uci, wpad-openssl, iw, dnsmasq-full, jsonfilter
 Maintainer: Joseph Telaak <joseph@parkeze.com>
 Architecture: all
-Description: Setup access point and captive portal.
+Description: Setup access point.
  Raises a self-titled access point so a gateway can be reconfigured when it has
- dropped off the network, with a captive portal that joins a WiFi network or
- hands the unit back to LAN configuration. Open only while the gateway has no
- credentials to lose; WPA2 with a per-device key once it is adopted.
+ dropped off the network, from the console, or from four presses of the reset
+ button. Open only while the gateway has no credentials to lose; WPA2 with a
+ per-device key once it is adopted.
  .
  Depends on wpad rather than hostapd and wpa-supplicant separately: wpad IS
  both daemons in one binary and CONFLICTS with each of them, so asking for

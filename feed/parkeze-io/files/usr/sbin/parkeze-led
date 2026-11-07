@@ -5,6 +5,9 @@
 #   parkeze-led <name> on|off|blink <ms-on> <ms-off>|flash|heartbeat
 #   parkeze-led <name> path wired|cellular|none     which backhaul is carrying us
 #   parkeze-led <name> breathe|solid <r|g|b|y|w>    RGB LEDs; plain ones just light
+#   parkeze-led <name> setup|alert     setup mode is on; the gateway said no
+#   parkeze-led --hold <seconds>       keep parkeze-io-daemon off the lights
+#   parkeze-led --held                 exit 0 while something holds them
 #   parkeze-led --has <name>           exit 0 if that logical LED is really there
 #   parkeze-led --list                 what this board actually has
 #   parkeze-led --test                 walk every LED, for bring-up
@@ -139,6 +142,9 @@ rgb_state() {
         on)      rgb_show steady w ;;
         off)     rgb_show steady off ;;
         blink|flash|heartbeat) rgb_show breathe w ;;
+        # Colours nothing else uses, on the one light a RAK7268 has.
+        setup) rgb_show breathe g ;;
+        alert) rgb_show breathe r ;;
         *) echo "unknown LED state '$1'" >&2; return 2 ;;
     esac
 }
@@ -148,7 +154,33 @@ rgb_state() {
 # lands in the log anyway. Silencing has to wrap the whole command.
 put()     { { echo "$1" > "$2"; } 2>/dev/null; }
 
+# Held by uptime, not by a process: whatever asked may be killed, and a light
+# the daemon has stopped driving must not stay that way. The wall clock would
+# jump when NTP lands on a board with no RTC.
+HOLD_FILE="${PARKEZE_LED_CACHE:-/var/run/parkeze}/led-hold"
+UPTIME="${PARKEZE_UPTIME:-/proc/uptime}"
+
+uptime_seconds() {
+    local up
+    read -r up _ < "${UPTIME}"
+    echo "${up%.*}"
+}
+
 case "${1:-}" in
+    --hold)
+        mkdir -p "$(dirname "${HOLD_FILE}")" 2>/dev/null
+        if [ "${2:-0}" -gt 0 ]; then
+            echo "$(( $(uptime_seconds) + $2 ))" > "${HOLD_FILE}"
+        else
+            rm -f "${HOLD_FILE}"
+        fi
+        exit 0
+        ;;
+    --held)
+        read -r until < "${HOLD_FILE}" 2>/dev/null || exit 1
+        [ "$(uptime_seconds)" -lt "${until:-0}" ]
+        exit $?
+        ;;
     --has)
         # For the console, which sees one directory per LED and an RGB light
         # as three of them.
@@ -244,6 +276,18 @@ case "${STATE}" in
             cellular) trigger timer; put 1000 "${path}/delay_on"; put 1000 "${path}/delay_off" ;;
             *)        trigger none; bright 0 ;;
         esac
+        ;;
+    setup)
+        # One short flash a second: not a code anything else here uses, and
+        # readable across a room from a light that can only blink.
+        trigger timer
+        put 200 "${path}/delay_on"
+        put 800 "${path}/delay_off"
+        ;;
+    alert)
+        trigger timer
+        put 100 "${path}/delay_on"
+        put 100 "${path}/delay_off"
         ;;
     breathe|solid)
         # Colour and fading are the RGB LED's; a plain one can only be lit.

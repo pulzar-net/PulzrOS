@@ -35,6 +35,8 @@ carried over.
 - **A way back in** — one ethernet port that is the uplink and the console port
   at the same time, reachable at `parkeze-<serial>.local` from a laptop and a
   cable with nothing configured, and reachable from a site network not at all.
+  LAN ports reach the console too, and four presses of the reset button raise
+  the setup AP on a gateway with no working uplink.
 
 ## Quick start
 
@@ -99,14 +101,15 @@ feed/             the Parkeze OpenWrt package feed
   chirpstack-gateway    ChirpStack's gateway binaries, per architecture
   parkeze-adopt         one-touch provisioning and adoption
   parkeze-io            front-panel LEDs and buttons
-  parkeze-ap            setup AP and captive portal (opt-in, off by default)
+  parkeze-ap            setup AP (off by default; four presses of reset raise it)
   parkeze-tui           the console in a terminal, on every board
   parkeze-display       the TUI on a Pi's own screen, when it has one
   parkeze-usb-gadget    the USB-C port as a network and a serial console
   parkeze-rak-power     the RAK7289CV2 power board: watchdog, battery pack
 scripts/          build-feed.sh, check-ucode.sh, ucode stubs, run-tui.sh,
                   test-claim.sh and test-ssh-setup.sh (device shell, stubbed),
-                  test-rak-power.sh (against a simulated power board)
+                  test-rak-power.sh (against a simulated power board),
+                  test-setup-mode.sh (the reset button and the setup AP)
 docs/             the design decisions worth writing down
 ```
 

@@ -4,15 +4,38 @@
 #
 #   parkeze-ap status              JSON
 #   parkeze-ap up [--window N]     raise it, for N seconds (0 = until told)
+#   parkeze-ap button              the reset button's four presses: raise it
+#                                  unless an uplink works (exit codes below)
 #   parkeze-ap down                take it down
 #   parkeze-ap key                 print this unit's AP passphrase
 #   parkeze-ap ssid                print this unit's SSID
+#   parkeze-ap report              the SSID and passphrase, as JSON, for
+#                                  parkeze.net. null on an unadopted gateway
+#   parkeze-ap station-check       the watchdog's: see station_check below
 #
 # ── WHAT THIS IS FOR ───────────────────────────────────────────────────────
 #
 # A gateway on a pole that has dropped off the network is otherwise a ladder
-# and a laptop. The AP is the way back in: associate, get a captive portal,
-# either give it WiFi credentials or hand it back to LAN configuration.
+# and a laptop. The AP is the way back in: associate, open the console at the
+# setup address, sign in, give it WiFi credentials.
+#
+# ── THE BUTTON ─────────────────────────────────────────────────────────────
+#
+# Four presses of reset (parkeze-reset-button) raise this for somebody who has
+# moved a gateway. Separate from parkeze.ap.enabled, which is off by default
+# and is about raising a radio without anybody asking: a finger on the unit is
+# asking, and with the master switch off the gesture would do nothing on any
+# gateway out of the box. parkeze.ap.button='0' turns it off.
+#
+# It refuses while an uplink works, so a press cannot put a radio on a site
+# that does not need one. Nothing it opens is new: the same AP, on the same
+# terms below, for parkeze.ap.window seconds.
+#
+#   exit 0   raised, or it was up and its window starts again
+#   exit 1   could not raise it
+#   exit 2   an uplink works; prints which
+#   exit 3   no WiFi radio
+#   exit 4   parkeze.ap.button is off
 #
 # ── THE SECURITY PROBLEM, AND HOW IT IS RESOLVED ───────────────────────────
 #
@@ -27,7 +50,7 @@
 #   UNADOPTED   The device holds no credentials: no tunnel, no MQTT
 #               password, no organisation. There is nothing to steal, and the
 #               only useful thing anybody can do is claim it — which needs a
-#               Parkeze login and is audited. So the AP is OPEN and the portal
+#               Parkeze login and is audited. So the AP is OPEN and the console
 #               is the provisioning flow. This is the out-of-box experience and
 #               it costs nothing to give away.
 #
@@ -36,8 +59,8 @@
 #                   own secret — different on every gateway, printed on the
 #                   MOTD and readable from the console by anyone already
 #                   authorised;
-#                 * and the portal STILL demands the offline recovery
-#                   signature before it will change anything.
+#                 * and the console behind it STILL demands a signature from
+#                   parkeze.net before it will change anything.
 #
 #               Two independent factors, and neither is guessable from the
 #               street. See docs/access.md.
@@ -46,7 +69,7 @@
 #
 # The obvious attack on a fallback like this is to cut or jam the uplink until
 # the gateway raises its AP. That works — and is useless, because an adopted
-# gateway's AP is WPA2 with a key the attacker does not have, and the portal
+# gateway's AP is WPA2 with a key the attacker does not have, and the console
 # behind it wants a signature from parkeze.net. All the attacker achieves is a
 # log line that gets reported the moment the gateway is back.
 
@@ -55,6 +78,14 @@ set -e
 . /etc/parkeze/board.conf
 
 STATE=/var/run/parkeze/ap
+# On flash, unlike the rest: a power cut with the station held must not leave
+# it off for good. The init script puts it back at boot.
+HELD=/etc/parkeze/ap/sta-held
+JOURNAL=/etc/parkeze/ap/raises.log
+# How long a station given a network gets to associate before the AP takes the
+# radio back. See station_check.
+JOIN_GRACE=120
+
 log() { logger -t ap -p daemon.notice "$*"; }
 
 adopted() { [ "$(uci -q get parkeze.adoption.state)" = "adopted" ]; }
@@ -72,15 +103,17 @@ radio() {
 
 ssid() {
     local configured mac
-    configured="$(uci -q get parkeze.ap.ssid)"
+    # `|| true`: unset is the normal case, and under `set -e` a failed
+    # assignment ended this function, so every caller got an empty name.
+    configured="$(uci -q get parkeze.ap.ssid)" || true
     [ -n "${configured}" ] && { echo "${configured}"; return; }
 
-    # parkeze_<last six of the MAC>. Per-unit, so a van full of gateways being
+    # Pulzar-<last six of the MAC>. Per-unit, so a van full of gateways being
     # staged does not present six identically-named networks, and stable across
     # reflashes because it comes from hardware.
     mac="$(cat /sys/class/net/eth0/address 2>/dev/null | tr -d ':' | tr 'A-Z' 'a-z')"
     [ -n "${mac}" ] || mac="$(uci -q get parkeze.identity.serial | tail -c7)"
-    echo "parkeze_$(echo "${mac}" | tail -c7)"
+    echo "Pulzar-$(echo "${mac}" | tail -c7)"
 }
 
 key() {
@@ -110,6 +143,64 @@ ensure_secret() {
     log "generated AP secret"
 }
 
+# ── the station on the same radio ───────────────────────────────────────────
+#
+# One radio has one channel, and a station decides it: while a station section
+# is enabled, hostapd holds the AP down until the station has associated. The
+# network of a gateway that has been moved is by definition not in range, so
+# the AP would never come up for exactly the person it is for.
+#
+# So setup mode takes the station off the radio, and gives it back when the AP
+# comes down. A join from the console turns it on again, which is the point,
+# and station_check takes it off once more if that join goes nowhere.
+
+hold_station() {
+    local dev="$1"
+    [ "$(uci -q get wireless.parkeze_sta.device)" = "${dev}" ] || return 0
+    [ "$(uci -q get wireless.parkeze_sta.disabled)" != "1" ] || return 0
+    uci -q set wireless.parkeze_sta.disabled='1'
+    mkdir -p "${HELD%/*}"
+    : > "${HELD}"
+    log "station off the radio for setup mode"
+}
+
+release_station() {
+    [ -e "${HELD}" ] || return 0
+    rm -f "${HELD}"
+    [ -n "$(uci -q get wireless.parkeze_sta.ssid)" ] || return 0
+    uci -q set wireless.parkeze_sta.disabled='0'
+}
+
+# Once a minute from the watchdog, in setup mode. A station that was given a
+# network and has not associated keeps the AP down, and the person with the
+# wrong password has no way back to the console to fix it: the radio returns to
+# the AP, where the WiFi page says why it failed. An association is left alone
+# whether or not it reaches the internet, since it may be waiting at a sign-in
+# page that the console opens.
+station_check() {
+    local dev now since
+    dev="$(radio)"
+    if [ -z "${dev}" ] || [ "$(uci -q get wireless.parkeze_sta.device)" != "${dev}" ] \
+       || [ "$(uci -q get wireless.parkeze_sta.disabled)" = "1" ] \
+       || ubus call network.interface.wwifi status 2>/dev/null \
+            | jsonfilter -e '@.up' 2>/dev/null | grep -qx true; then
+        rm -f "${STATE}/joining"
+        return 0
+    fi
+    now="$(date +%s)"
+    if [ ! -f "${STATE}/joining" ]; then
+        echo "${now}" > "${STATE}/joining"
+        return 0
+    fi
+    since="$(cat "${STATE}/joining")"
+    [ $(( now - since )) -ge "${JOIN_GRACE}" ] || return 0
+    log "station has not joined after $(( now - since ))s; the radio goes back to the AP"
+    rm -f "${STATE}/joining"
+    hold_station "${dev}"
+    uci commit wireless
+    wifi reload >/dev/null 2>&1 || true
+}
+
 # ── bringing it up ──────────────────────────────────────────────────────────
 
 up() {
@@ -117,7 +208,8 @@ up() {
     local dev; dev="$(radio)"
 
     [ -n "${dev}" ] || { log "no wifi radio on this board"; return 0; }
-    enabled || { log "AP is disabled in configuration; refusing to raise it"; return 1; }
+    [ -f "${STATE}/button" ] || enabled \
+        || { log "AP is disabled in configuration; refusing to raise it"; return 1; }
 
     ensure_secret
     local net_ssid net_key encryption
@@ -140,6 +232,8 @@ up() {
     for iface in $(uci -q show wireless | sed -n 's/^wireless\.\([^.=]*\)=wifi-iface$/\1/p'); do
         case "${iface}" in parkeze_*) ;; *) uci -q delete "wireless.${iface}" ;; esac
     done
+
+    if [ -f "${STATE}/button" ]; then hold_station "${dev}"; fi
 
     uci -q batch <<EOF
 set wireless.${dev}.disabled='0'
@@ -165,21 +259,69 @@ EOF
     date +%s > "${STATE}/raised"
     [ -n "${window}" ] && echo "${window}" > "${STATE}/window"
 
-    /usr/sbin/parkeze-portal on
-    /usr/sbin/parkeze-led status blink 200 800 2>/dev/null || true
+    /usr/sbin/parkeze-led status setup 2>/dev/null || true
     return 0
+}
+
+button() {
+    local via window
+
+    [ -n "$(radio)" ] || { echo "no radio"; return 3; }
+    if [ "$(uci -q get parkeze.ap.button)" = "0" ]; then
+        log "reset button: the setup AP is turned off for the button"
+        echo "turned off"
+        return 4
+    fi
+
+    # Up already: somebody wants longer.
+    if [ -f "${STATE}/raised" ]; then
+        date +%s > "${STATE}/raised"
+        echo "raised"
+        return 0
+    fi
+
+    if via="$(/usr/sbin/parkeze-backhaul-check --any 2>/dev/null)"; then
+        log "reset button: ${via} works, so no setup AP"
+        echo "${via}"
+        return 2
+    fi
+
+    window="$(uci -q get parkeze.ap.window || echo 1800)"
+    mkdir -p "${STATE}"
+    : > "${STATE}/button"
+    if ! up "${window}"; then
+        rm -f "${STATE}/button"
+        return 1
+    fi
+
+    # Read back by parkeze.net with the fallback's raises: a gateway whose AP
+    # keeps appearing is telling you something.
+    mkdir -p "${JOURNAL%/*}"
+    printf '{"at":%s,"reason":"button"}\n' "$(date +%s)" >> "${JOURNAL}"
+    echo "raised"
+}
+
+# What somebody standing at this gateway needs to get onto its AP, for
+# parkeze.net to give them. The gateway cannot show it: it has no screen, and
+# the console that would is behind the AP. So it goes up on the report while
+# there is an uplink, ahead of the day there is not.
+report() {
+    adopted || { echo null; return 0; }
+    ensure_secret
+    printf '{"ssid":"%s","key":"%s"}\n' "$(ssid)" "$(key)"
 }
 
 down() {
     local dev; dev="$(radio)"
     [ -n "${dev}" ] || return 0
 
-    uci -q delete wireless.parkeze_ap
+    uci -q delete wireless.parkeze_ap || true
+    release_station
     uci commit wireless
-    wifi reload >/dev/null 2>&1
+    wifi reload >/dev/null 2>&1 || true
 
-    rm -f "${STATE}/raised" "${STATE}/window"
-    /usr/sbin/parkeze-portal off
+    rm -f "${STATE}/raised" "${STATE}/window" "${STATE}/button" \
+          "${STATE}/manual" "${STATE}/joining"
     log "AP down"
     return 0
 }
@@ -217,7 +359,7 @@ status() {
         ''|*[!0-9]*) clients=0 ;;
     esac
 
-    printf '{"capable":true,"enabled":%s,"up":%s,"ssid":"%s","secured":%s,"clients":%s,"remainingSeconds":%s,"fallback":%s,"fallbackAfter":%s}\n' \
+    printf '{"capable":true,"enabled":%s,"up":%s,"ssid":"%s","secured":%s,"clients":%s,"remainingSeconds":%s,"fallback":%s,"fallbackAfter":%s,"button":%s,"raisedByButton":%s}\n' \
         "$(enabled && echo true || echo false)" \
         "$([ -n "${raised}" ] && echo true || echo false)" \
         "$(ssid)" \
@@ -225,14 +367,19 @@ status() {
         "${clients:-0}" \
         "${remaining}" \
         "$([ "$(uci -q get parkeze.ap.fallback)" != "0" ] && echo true || echo false)" \
-        "$(uci -q get parkeze.ap.fallback_after || echo 900)"
+        "$(uci -q get parkeze.ap.fallback_after || echo 900)" \
+        "$([ "$(uci -q get parkeze.ap.button)" != "0" ] && echo true || echo false)" \
+        "$([ -f "${STATE}/button" ] && echo true || echo false)"
 }
 
 case "${1:-status}" in
     status) status ;;
     up)     shift; [ "${1:-}" = "--window" ] && shift; up "${1:-}" ;;
+    button) button ;;
     down)   down ;;
+    report) report ;;
+    station-check) station_check ;;
     key)    key || { echo "no AP secret yet" >&2; exit 1; } ;;
     ssid)   ssid ;;
-    *) echo "usage: parkeze-ap {status|up|down|key|ssid}" >&2; exit 2 ;;
+    *) echo "usage: parkeze-ap {status|up|button|down|key|ssid|report|station-check}" >&2; exit 2 ;;
 esac
