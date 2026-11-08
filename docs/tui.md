@@ -136,9 +136,10 @@ rows of half-block cells, sixteen pixels high. The login banner draws it beside
 the wordmark, as does the TUI's sign-in screen, and Overview on a screen tall
 enough to spare the rows.
 
-`scripts/render-logo.py` makes the grid from `console/public/logo.png`. The
-shape is drawn by hand there — at sixteen pixels a downsample keeps the pin and
-loses the Z — and only the colours come from the image. On the Pi's framebuffer
+`scripts/render-logo.py` makes the grid from `console/public/icon.svg`, the
+Pulzar mark app.pulzr.net also uses. The shape is drawn by hand there — at
+sixteen pixels a downsample smears the links and the orbit ring — and only the
+colours come from the SVG. On the Pi's framebuffer
 console the kernel folds 256-colour codes to its own sixteen by thresholding,
 which turns the whole mark cyan, so on that console the mark picks its own.
 

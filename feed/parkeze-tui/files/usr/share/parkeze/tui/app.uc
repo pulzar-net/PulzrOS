@@ -285,10 +285,10 @@ banner = function(width) {
     const cols = length(mark) ? logo.width(env) : 0;
     let text = [];
     if (width >= cols + 3 + 39) {
-        const p = _m_fs.popen('/usr/sbin/parkeze-figlet -f /usr/share/parkeze/fonts/slant.flf -- Parkeze 2>/dev/null', 'r');
+        const p = _m_fs.popen('/usr/sbin/parkeze-figlet -f /usr/share/parkeze/fonts/slant.flf -- Pulzar 2>/dev/null', 'r');
         if (p) { text = filter(split(p.read('all') ?? '', '\n'), (l) => length(trim(l))); p.close(); }
     }
-    text = length(text) ? map(text, (l) => ui.style(l, 'bold')) : [ ui.style('Parkeze', 'accent') ];
+    text = length(text) ? map(text, (l) => ui.style(l, 'bold')) : [ ui.style('Pulzar', 'accent') ];
     bannerCache[width] = length(mark) ? logo.beside(mark, text, cols) : text;
     return bannerCache[width];
 };
@@ -692,7 +692,7 @@ navEntries = function() {
 };
 
 drawHeader = function(width) {
-    let left = ' ' + ui.style('Parkeze', 'accent');
+    let left = ' ' + ui.style('Pulzar', 'accent');
     let host = '';
     try { host = trim(_m_fs.readfile('/proc/sys/kernel/hostname') ?? ''); } catch (e) {}
     if (length(host)) left += '  ' + ui.style(host, 'dim');

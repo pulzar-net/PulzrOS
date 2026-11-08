@@ -1,10 +1,9 @@
 import styles from './Brand.module.css';
 
 /**
- * The Parkeze mark, in one place.
+ * The Pulzar mark and wordmark, in one place.
  *
- * It was previously a letter "P" on a colored square, duplicated in three
- * files with three slightly different sizes. This is the real logo, shipped
+ * The same two files app.pulzr.net draws (icon.svg and wordmark.png), shipped
  * with the firmware rather than fetched: a gateway console has to render with
  * no internet at all, which is most of the point of it existing.
  */
@@ -27,7 +26,7 @@ export default function Brand({
     <div className={styles.brand}>
       <img
         className={styles.mark}
-        src="/logo.png"
+        src="/icon.svg"
         width={s.mark}
         height={s.mark}
         alt=""
@@ -36,9 +35,9 @@ export default function Brand({
         aria-hidden
       />
       <div className={styles.text}>
-        <div className={styles.name} style={{ fontSize: s.name }}>
-          Pulzar
-        </div>
+        {/* The wordmark is a mask filled with the text colour, so it follows
+            the light and dark themes as the name in text did. */}
+        <div className={styles.name} style={{ fontSize: s.name }} role="img" aria-label="Pulzar" />
         {sub && (
           <div className={styles.sub} style={{ fontSize: s.sub }}>
             {sub}

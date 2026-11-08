@@ -30,7 +30,7 @@ export default function Maintenance() {
       <Section title="Firmware" icon={PackageCheck}>
         <FactList>
           <Fact
-            label="ParkezeOS"
+            label="PulzrOS"
             value={
               system.firmware.version
                 ? `${system.firmware.version} (build ${system.firmware.build})`

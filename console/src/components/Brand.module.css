@@ -8,9 +8,8 @@
 .mark {
   flex: 0 0 auto;
   display: block;
-  /* The logo is a transparent PNG with its own color. No plate behind it and
-     no tint over it: it is the only piece of Parkeze identity on the device,
-     and a brand mark that changes shade per surface stops reading as one. */
+  /* The mark carries its own colours, and its own dark-scheme ones (icon.svg's
+     prefers-color-scheme block). No plate behind it and no tint over it. */
   object-fit: contain;
 }
 
@@ -18,15 +17,16 @@
   min-width: 0;
 }
 
+/* wordmark.png is a 429x96 mask; font-size (set per size) scales it. */
 .name {
-  font-family: Outfit, system-ui, sans-serif;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  color: var(--text);
-  line-height: 1.15;
+  height: 0.95em;
+  aspect-ratio: 429 / 96;
+  background: var(--text-primary);
+  mask: url('/wordmark.png') left center / contain no-repeat;
+  -webkit-mask: url('/wordmark.png') left center / contain no-repeat;
 }
 
 .sub {
-  color: var(--text-dim);
+  color: var(--text-secondary);
   line-height: 1.2;
 }

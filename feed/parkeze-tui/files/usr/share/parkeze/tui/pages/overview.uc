@@ -54,7 +54,7 @@ return function(ctx) {
                 : { badge: 'Not adopted', tone: 'warning' } });
 
             push(out, { t: 'section', title: 'Firmware' });
-            push(out, { t: 'fact', label: 'ParkezeOS', value: fw.version ? sprintf('%s (%s)', fw.version, fw.commit) : null });
+            push(out, { t: 'fact', label: 'PulzrOS', value: fw.version ? sprintf('%s (%s)', fw.version, fw.commit) : null });
             push(out, { t: 'fact', label: 'OpenWrt', value: fw.openwrt });
             push(out, { t: 'fact', label: 'Kernel', value: fw.kernel });
             push(out, { t: 'fact', label: 'Uptime', value: fmt.duration(health.uptime) });

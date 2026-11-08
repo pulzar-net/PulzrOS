@@ -23,7 +23,7 @@
 
 WIDTH="${COLUMNS:-80}"
 FONT="${PARKEZE_MOTD_FONT:-/usr/share/parkeze/fonts/slant.flf}"
-WORDMARK="${PARKEZE_MOTD_WORDMARK:-Parkeze}"
+WORDMARK="${PARKEZE_MOTD_WORDMARK:-Pulzar}"
 LOGO=1
 [ "$1" = "--no-logo" ] && LOGO=0
 
@@ -135,7 +135,7 @@ else
 fi
 
 say "  ${DIM}%s${OFF}\n\n" \
-    "ParkezeOS ${PARKEZE_VERSION:-dev} · ${BOARD_NAME:-unknown board}"
+    "PulzrOS ${PARKEZE_VERSION:-dev} · ${BOARD_NAME:-unknown board}"
 
 say "  ${DIM}Host${OFF}         %s\n" "$(uci -q get parkeze.identity.hostname || cat /proc/sys/kernel/hostname)"
 say "  ${DIM}Gateway EUI${OFF}  %s\n" "$(uci -q get parkeze.identity.gateway_eui || echo unknown)"

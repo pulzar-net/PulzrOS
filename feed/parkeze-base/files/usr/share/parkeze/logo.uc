@@ -1,7 +1,7 @@
-// The Parkeze mark, drawn in a terminal.
+// The Pulzar mark, drawn in a terminal.
 //
 // Eight rows of half-block cells, read from logo.txt — a pixel grid that
-// scripts/render-logo.py derives from the console's own logo.png. The motd
+// scripts/render-logo.py derives from the console's own icon.svg. The motd
 // and the TUI both draw it through here, so there is one picture of the mark
 // on the gateway and not two that drift.
 //

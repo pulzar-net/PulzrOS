@@ -173,7 +173,7 @@ export default function Overview() {
           <Section title="Firmware" icon={PackageCheck}>
             <FactList>
               <Fact
-                label="ParkezeOS"
+                label="PulzrOS"
                 value={
                   system.firmware.version
                     ? `${system.firmware.version} (${system.firmware.commit})`
