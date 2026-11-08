@@ -571,9 +571,33 @@ facts() {
     board_id="${BOARD_ID:-unknown}"
     version="${PARKEZE_VERSION:-0.0.0}"
 
-    printf '{"board":"%s","osVersion":"%s","modemPresent":%s,"modemModel":"%s","modemKind":"%s","simIccid":"%s","sshHostKey":"%s","wiredUsable":%s,"tunnelVia":"%s","tunnelState":"%s","wifiUplink":"%s","consolePort":443,"consoleScheme":"https","tunnelConsolePort":8080,"sshPort":22,"sshCa":%s,"system":%s,"rakPower":%s,"setupAp":%s}' \
+    printf '{"board":"%s","osVersion":"%s","modemPresent":%s,"modemModel":"%s","modemKind":"%s","simIccid":"%s","sshHostKey":"%s","wiredUsable":%s,"tunnelVia":"%s","tunnelState":"%s","wifiUplink":"%s","consolePort":443,"consoleScheme":"https","tunnelConsolePort":8080,"sshPort":22,"sshCa":%s,"system":%s,"rakPower":%s,"setupAp":%s,"consoleCertificate":%s%s}' \
         "${board_id}" "${version}" "${modem_present}" "${modem_model:-}" "${modem_kind:-}" "${iccid:-}" \
-        "${host_key:-}" "${wired_usable}" "${tunnel_via:-none}" "${tunnel:-none}" "${wifi_uplink:-unchecked}" "${ssh_ca}" "$(system_facts)" "$(rak_power_facts)" "$(setup_ap_facts)"
+        "${host_key:-}" "${wired_usable}" "${tunnel_via:-none}" "${tunnel:-none}" "${wifi_uplink:-unchecked}" "${ssh_ca}" "$(system_facts)" "$(rak_power_facts)" "$(setup_ap_facts)" \
+        "$(console_cert_facts)" "$(console_csr_field)"
+}
+
+# The console's certificate from the console CA (parkeze-console-cert): its
+# fingerprint, or null. Valid JSON whatever happens, as every fact here must be.
+console_cert_facts() {
+    local out
+    out="$(parkeze-console-cert facts 2>/dev/null)" || true
+    if [ -n "${out}" ] && echo "${out}" | jsonfilter -e '@' >/dev/null 2>&1; then
+        echo "${out}"
+    else
+        echo null
+    fi
+}
+
+# A request for one, when the console has none or it lapses within a month:
+# a field of its own, so a gateway that needs nothing sends nothing.
+console_csr_field() {
+    local csr
+    csr="$(parkeze-console-cert csr 2>/dev/null)" || true
+    case "${csr}" in
+        ''|*[!A-Za-z0-9+/=]*) ;;
+        *) printf ',"consoleCsr":"%s"' "${csr}" ;;
+    esac
 }
 
 # The setup AP's name and passphrase, so the platform can give them to an admin
@@ -658,6 +682,18 @@ report() {
             log "claim $(claim_id) is accepted again; the claim waiting to replace it is dropped"
         fi
         log "reported: backhaul=$(echo "${response}" | jsonfilter -e '@.backhaul' 2>/dev/null || true)"
+        # The console certificate the cloud signed for this report's request.
+        # Reported once more straight away, so it is held to the certificate
+        # now rather than six hours from now.
+        local signed
+        signed="$(echo "${response}" | jsonfilter -e '@.consoleCertificate' 2>/dev/null)" || true
+        if [ -n "${signed}" ] && [ -z "${PARKEZE_CLAIM_REPORTED_CERT:-}" ]; then
+            if parkeze-console-cert install "${signed}"; then
+                PARKEZE_CLAIM_REPORTED_CERT=1 report
+            else
+                log "the console certificate from the cloud did not install"
+            fi
+        fi
         return 0
     fi
 

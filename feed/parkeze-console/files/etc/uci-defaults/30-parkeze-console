@@ -33,6 +33,15 @@ chmod 0700 "${STATE}"
 # The stock `main` instance is replaced wholesale rather than added to: it
 # serves /www with the LuCI CGI handler on plain HTTP, and leaving it alongside
 # ours would mean two ways in with two different auth stories.
+# The console's certificate: the one Pulzr Net's console CA signed, when this
+# gateway has it (parkeze-console-cert, kept across upgrades with the rest of
+# ${STATE}), or the one it made for itself below until then.
+if [ -s "${STATE}/signed.pem" ] && [ -s "${STATE}/signed.key" ]; then
+    CERT="${STATE}/signed.pem" KEY="${STATE}/signed.key"
+else
+    CERT="${STATE}/cert.pem" KEY="${STATE}/key.pem"
+fi
+
 uci -q delete uhttpd.main
 uci -q batch <<EOF
 set uhttpd.main=uhttpd
@@ -77,8 +86,8 @@ add_list uhttpd.main.ucode_prefix='/api=/usr/share/parkeze/console/api/index.uc'
 # too, not only the compressed one.
 add_list uhttpd.main.ucode_prefix='/assets=/usr/share/parkeze/console/assets.uc'
 
-set uhttpd.main.cert='${STATE}/cert.pem'
-set uhttpd.main.key='${STATE}/key.pem'
+set uhttpd.main.cert='${CERT}'
+set uhttpd.main.key='${KEY}'
 
 # Everything that is not a real file is the SPA's entry point, so a deep link
 # like /network survives a page reload instead of 404ing.
@@ -155,8 +164,8 @@ add_list uhttpd.signin.listen_https='0.0.0.0:8443'
 set uhttpd.signin.home='/www/parkeze-signin'
 set uhttpd.signin.cgi_prefix=''
 add_list uhttpd.signin.ucode_prefix='/signin=/usr/share/parkeze/console/signin.uc'
-set uhttpd.signin.cert='${STATE}/cert.pem'
-set uhttpd.signin.key='${STATE}/key.pem'
+set uhttpd.signin.cert='${CERT}'
+set uhttpd.signin.key='${KEY}'
 set uhttpd.signin.rfc1918_filter='0'
 set uhttpd.signin.max_requests='8'
 set uhttpd.signin.max_connections='32'
