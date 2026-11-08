@@ -1,35 +1,51 @@
+/* A card. These were cards once, then rules and whitespace, which read as a
+   page of loose text with nothing holding it together; on a full-width page a
+   section needs an edge to say where it ends. Flat, a hairline and the
+   lightest shadow, so a configuration screen still does not read like a
+   dashboard of tiles. */
 .section {
   min-width: 0;
-  /* The rule is above the section, not under its heading: it separates one
-     part of the page from the next, which is the job a box used to do. */
-  border-top: 1px solid var(--border-primary);
-  padding-top: 16px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--card-shadow);
+  padding: 14px 16px 16px;
 }
 
-/* Adjacent-sibling rather than a bottom margin: a section inside a grid gets
-   its spacing from the grid, and a trailing margin under the last one is dead
-   space at the foot of every page. */
+/* Spacing between stacked cards. A page that lays its cards out in a grid
+   sets --section-gap to 0, because the grid's gap does this job there and a
+   margin on one item would push it out of line with its row. */
 .section + .section {
-  margin-top: 28px;
+  margin-top: var(--section-gap, 16px);
 }
 
-/* The first section on a page needs no rule above it: what is above it is the
-   top bar, a tab row or a notice, each of which already ends the space above.
-   first-of-type, not first-child, so a notice in front does not count. */
-.section:first-of-type {
-  border-top: none;
-  padding-top: 0;
+/* The width of the page, for a table or a chart. */
+.wide {
+  grid-column: 1 / -1;
 }
 
 .header {
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-height: 28px;
+  gap: 9px;
+  min-height: 26px;
+}
+
+.icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-subtle);
+  color: var(--accent);
 }
 
 .title {
-  font-size: 14.5px;
+  margin: 0;
+  font-size: 13.5px;
   font-weight: 600;
   color: var(--text-primary);
 }
@@ -47,5 +63,10 @@
 }
 
 .body {
-  padding-top: 10px;
+  padding-top: 12px;
+}
+
+/* A card with no heading starts with its content. */
+.section > .body:first-child {
+  padding-top: 0;
 }

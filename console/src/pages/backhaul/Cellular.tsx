@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { SignalHigh } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/services/api';
 import type { NetworkStatus } from '@/types';
@@ -68,7 +69,7 @@ export default function Cellular() {
         </FactList>
       </Section>
 
-      <Section title="Connection">
+      <Section title="Connection" icon={SignalHigh}>
         <div className={styles.form}>
           {!usbEthernet && (
             <TextField

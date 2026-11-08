@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Inbox, Map } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/services/api';
 import type { ConcentratorView, LorawanStatus } from '@/types';
@@ -54,7 +55,7 @@ function Region({ region, onSaved }: { region: string; onSaved: () => void }) {
   });
 
   return (
-    <Section title="Region Plan">
+    <Section title="Region Plan" icon={Map}>
       <div className={styles.form}>
         <SelectField
           label="Region"
@@ -110,7 +111,7 @@ function Delivery({ lora }: { lora: LorawanStatus }) {
   const brokerMissing = holding && !(buffer?.running ?? false);
 
   return (
-    <Section title="Uplink Delivery">
+    <Section title="Uplink Delivery" icon={Inbox}>
       {wanted && !holding && (
         <Notice tone="warning">No SD card. Uplinks are not being held.</Notice>
       )}

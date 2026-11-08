@@ -2,13 +2,17 @@
    moves out of here; this is for one-line grid and row utilities that would be
    silly as components. */
 
-/* Each side is wrapped in its own element, so the spacing Section puts
-   between consecutive sections does not push the right-hand one down. */
+/* Two cards that belong side by side. On an ordinary page it gives up its
+   box and the cards take their place in the page's own columns (see
+   Layout.module.css); anywhere else it is a grid of its own. */
 .grid2 {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
-  gap: 28px 40px;
-  margin-bottom: 28px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+  gap: 16px;
+}
+
+:global(.fade-in) > .grid2 {
+  display: contents;
 }
 
 .row {
@@ -175,10 +179,3 @@
 
 .go:hover { text-decoration: underline; }
 
-/* A grid of sections after other sections: the rule a Section would draw
-   above itself, drawn once across the row instead. */
-.ruled {
-  border-top: 1px solid var(--border-primary);
-  padding-top: 16px;
-  margin-top: 28px;
-}

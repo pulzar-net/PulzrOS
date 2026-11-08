@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Globe, ShieldAlert, Tags } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createColumnHelper, getCoreRowModel, useReactTable } from '@tanstack/react-table';
 import { api } from '@/services/api';
@@ -75,7 +76,7 @@ function Upstream({ state, onApplied }: { state: DnsStatus; onApplied: () => voi
   });
 
   return (
-    <Section title="Upstream">
+    <Section title="Upstream" icon={Globe}>
       <Segmented aria-label="Upstream servers" value={mode} options={[...UPSTREAM]} onChange={setMode} />
 
       {mode === 'auto' ? (
@@ -140,7 +141,9 @@ function Names({ hosts, onChanged }: { hosts: Host[]; onChanged: () => void }) {
 
   return (
     <Section
-      title="Local names"
+      title="Local Names"
+      icon={Tags}
+      wide
       note={hosts.length ? String(hosts.length) : undefined}
       actions={<Button onClick={() => setEditing('new')}>Add</Button>}
     >
@@ -235,7 +238,7 @@ function Rebind({ state, onApplied }: { state: DnsStatus; onApplied: () => void 
   });
 
   return (
-    <Section title="Rebind protection">
+    <Section title="Rebind Protection" icon={ShieldAlert}>
       <Segmented aria-label="Rebind protection" value={on} options={[...SWITCH]} onChange={setOn} />
 
       {on === 'on' && (

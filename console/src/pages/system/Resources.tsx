@@ -1,4 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react';
+import { Cpu, HardDrive, ListTree, Thermometer, Zap } from 'lucide-react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { api } from '@/services/api';
 import type { SystemHistory, SystemStats } from '@/types';
@@ -154,7 +155,7 @@ export default function Resources() {
         </Panel>
       </div>
 
-      <Section title="Storage">
+      <Section title="Storage" icon={HardDrive}>
         <div className={styles.donuts}>
           {storage.map((mount) => (
             <Donut
@@ -174,7 +175,7 @@ export default function Resources() {
       </Section>
 
       {temperatures.length > 0 && (
-        <Section title="Temperature">
+        <Section title="Temperature" icon={Thermometer}>
           <FactList>
             {temperatures.map((sensor, index) => (
               <Fact key={`${sensor.name}-${index}`} label={sensor.name} value={`${sensor.celsius.toFixed(1)} °C`} />
@@ -184,7 +185,7 @@ export default function Resources() {
       )}
 
       {power.length > 0 && (
-        <Section title="Power">
+        <Section title="Power" icon={Zap}>
           <FactList>
             {power.map((supply) => (
               <Fact
@@ -206,7 +207,7 @@ export default function Resources() {
 
       <div className={styles.pair}>
         <div>
-          <Section title="Processor">
+          <Section title="Processor" icon={Cpu}>
             <FactList>
               <Fact label="Chip" value={cpu.model} />
               <Fact label="Core" value={cpu.cores > 1 ? `${cpu.core} × ${cpu.cores}` : cpu.core} />
@@ -219,6 +220,7 @@ export default function Resources() {
         <div>
           <Section
             title="Processes"
+            icon={ListTree}
             actions={<Button onClick={() => setShowProcesses(true)}>All processes</Button>}
           >
             <FactList>

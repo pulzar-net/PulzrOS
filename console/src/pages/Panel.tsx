@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Lightbulb } from 'lucide-react';
+import { Lightbulb, RotateCcw, Sparkles } from 'lucide-react';
 import { api } from '@/services/api';
 import type { IoStatus } from '@/types';
 import Section from '@/components/ui/Section';
@@ -62,6 +62,7 @@ export default function Panel() {
 
       <Section
         title="LEDs"
+        icon={Lightbulb}
         actions={
           <Button loading={test.isPending} onClick={() => test.mutate()}>
             <Lightbulb size={14} strokeWidth={2} />
@@ -95,7 +96,7 @@ export default function Panel() {
         )}
       </Section>
 
-      <Section title="Blink Codes">
+      <Section title="Blink Codes" icon={Sparkles}>
         <FactList>
           {BLINK_CODES.map((code) => (
             <Fact
@@ -107,7 +108,7 @@ export default function Panel() {
         </FactList>
       </Section>
 
-      <Section title="Reset Button">
+      <Section title="Reset Button" icon={RotateCcw}>
         {state.button.reset ? (
           <FactList>
             <Fact label="Short press" value="Reports whether the gateway is manageable, on the cloud LED. Harmless." />

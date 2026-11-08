@@ -126,19 +126,39 @@
 }
 .topbarActions { display: flex; gap: 8px; }
 
-/* A column, not the full window: label/value rows and form fields stretched
-   across a wide screen leave the value a long way from its label. */
+/* The whole window, not a column down the middle of it. A 920px column on a
+   1440px screen left a third of the window blank on each side and stacked
+   every section under the last, so a page of four short cards scrolled.
+   Sections are cards now, and an ordinary page lays them out in as many
+   columns as the window holds; a card stays narrow enough that a value sits
+   near its label. A wide page (a table that wants every column) stacks
+   its sections at full width instead. */
 .content {
   flex: 1;
   width: 100%;
-  max-width: 920px;
-  margin: 0 auto;
-  padding: 32px 40px 64px;
+  min-width: 0;
+  padding: 20px 24px 40px;
+}
+
+.content:not(.wide) > :global(.fade-in) {
+  --section-gap: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+/* Anything that is not a card (a notice, tabs, a toolbar) is a row of its
+   own. Pages.module.css's grid2 gives up its own box, so the cards in it
+   join the page's columns instead of forming a second grid inside one. */
+.content:not(.wide) > :global(.fade-in) > :not(section) {
+  grid-column: 1 / -1;
+  margin-top: 0;
+  margin-bottom: 0;
 }
 
 .wide {
-  max-width: none;
-  padding: 20px 24px;
+  --section-gap: 16px;
 }
 
 /* Phone: the sidebar becomes a scrolling tab strip across the top. A 210px
@@ -160,7 +180,7 @@
   .navItem { white-space: nowrap; }
   .foot { display: none; }
   .topbarTitle { display: none; }
-  .content { padding: 14px; }
+  .content { padding: 12px; }
 }
 
 /* Same shape as the recovery banner: a strip under the topbar rather than a

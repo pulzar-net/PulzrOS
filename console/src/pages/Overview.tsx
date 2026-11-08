@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { Activity, ArrowDownUp, Fingerprint, PackageCheck } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/services/api';
@@ -123,7 +124,7 @@ export default function Overview() {
         </Notice>
       )}
 
-      <Section title="Status">
+      <Section title="Status" icon={Activity}>
         <FactList>
           <StatusRow label="Uplink" row={uplink(paths, features.has('failover') ? order.data : undefined)} />
           <StatusRow label="Management tunnel" row={tunnel(paths)} />
@@ -134,14 +135,14 @@ export default function Overview() {
       </Section>
 
       {traffic.length > 0 && (
-        <Section title="Uplink traffic" note="24 h">
+        <Section title="Uplink Traffic" icon={ArrowDownUp} note="24 h">
           <TimeChart times={points.map((p) => p.t)} format={trafficUnit.format} series={traffic} />
         </Section>
       )}
 
-      <div className={`${styles.grid2} ${styles.ruled}`}>
+      <div className={styles.grid2}>
         <div>
-          <Section title="Identity">
+          <Section title="Identity" icon={Fingerprint}>
             <FactList>
               <Fact label="Gateway EUI" value={system.identity.gatewayEui} mono />
               <Fact label="Serial" value={system.identity.serial} mono />
@@ -169,7 +170,7 @@ export default function Overview() {
           </Section>
         </div>
         <div>
-          <Section title="Firmware">
+          <Section title="Firmware" icon={PackageCheck}>
             <FactList>
               <Fact
                 label="ParkezeOS"

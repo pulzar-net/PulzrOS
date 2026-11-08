@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Network } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/services/api';
 import type { NetworkStatus } from '@/types';
@@ -78,7 +79,7 @@ function Addressing({ state, onApplied }: { state: NetworkStatus; onApplied: () 
   });
 
   return (
-    <Section title="Addressing">
+    <Section title="Addressing" icon={Network}>
       <div className={styles.row}>
         <Button variant={mode === 'dhcp' ? 'primary' : undefined} onClick={() => setMode('dhcp')}>
           DHCP

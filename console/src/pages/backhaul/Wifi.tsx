@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Lock, Unlock } from 'lucide-react';
+import { Lock, Unlock, Wifi as WifiIcon } from 'lucide-react';
 import { api } from '@/services/api';
 import type { AccessStatus } from '@/types';
 import Section from '@/components/ui/Section';
@@ -205,7 +205,7 @@ export default function Wifi() {
       )}
 
       {others.length > 0 && (
-        <Section title="Saved Networks">
+        <Section title="Saved Networks" icon={WifiIcon}>
           <ul className={styles.list}>
             {others.map((network) => (
               <li key={network.ssid} className={styles.savedRow}>

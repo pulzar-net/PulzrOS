@@ -1,6 +1,14 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Eye, EyeOff, Radio } from 'lucide-react';
+import {
+  Cable,
+  Eye,
+  EyeOff,
+  Radio,
+  Router,
+  ShieldCheck,
+  Usb,
+} from 'lucide-react';
 import { api } from '@/services/api';
 import type { AccessStatus, BackhaulStatus, UsbPort } from '@/types';
 import Section from '@/components/ui/Section';
@@ -80,7 +88,7 @@ function ApCard({ state, onChange }: { state: AccessStatus; onChange: () => void
 
   if (!ap.capable) {
     return (
-      <Section title="Setup Access Point">
+      <Section title="Setup Access Point" icon={Router}>
         <Notice tone="info">{ap.reason ?? 'This board has no WiFi radio.'}</Notice>
       </Section>
     );
@@ -89,6 +97,7 @@ function ApCard({ state, onChange }: { state: AccessStatus; onChange: () => void
   return (
     <Section
       title="Setup Access Point"
+      icon={Router}
       note={
         ap.up ? (
           <Badge tone="warning">Broadcasting</Badge>
@@ -199,7 +208,7 @@ function Tunnel() {
   const tunnel = paths.data?.tunnel;
 
   return (
-    <Section title="Management Tunnel">
+    <Section title="Management Tunnel" icon={ShieldCheck}>
       <FactList>
         <Fact
           label="State"
@@ -250,6 +259,7 @@ function PortCard({ state }: { state: AccessStatus }) {
   return (
     <Section
       title="Ethernet Port"
+      icon={Cable}
       note={
         port.uplink ? (
           <Badge tone="success">Uplink up</Badge>
@@ -290,6 +300,7 @@ function UsbCard({ usb }: { usb: UsbPort }) {
   return (
     <Section
       title="USB Port"
+      icon={Usb}
       note={
         usb.connected ? (
           <Badge tone="success">Connected</Badge>

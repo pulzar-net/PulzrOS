@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { ArrowRightLeft, Cable, MonitorSmartphone } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   createColumnHelper,
@@ -176,7 +177,7 @@ export default function Lan() {
 
   return (
     <div className="fade-in">
-      <Section title="LAN">
+      <Section title="LAN" icon={Cable}>
         <FactList>
           <Fact label="Gateway" value={state.address} mono />
           {links.map((link) => (
@@ -201,7 +202,7 @@ export default function Lan() {
         </FactList>
       </Section>
 
-      <Section title="Clients" note={`${online} online, ${clients.length} known`}>
+      <Section title="Clients" icon={MonitorSmartphone} note={`${online} online, ${clients.length} known`}>
         {policy.isError && <Notice tone="error">{(policy.error as Error).message}</Notice>}
         <DataTable table={table} fill="reserve" />
       </Section>
@@ -217,7 +218,7 @@ export default function Lan() {
 // has no way to open one, so "Parkeze Net" is always who.
 function Forwards({ forwards, nameOf }: { forwards: LanForward[]; nameOf: (ip: string) => string | null | undefined }) {
   return (
-    <Section title="Tunnel forwards">
+    <Section title="Tunnel Forwards" icon={ArrowRightLeft}>
       <FactList>
         {forwards.length === 0 ? (
           <Fact label="Open" value="None" />

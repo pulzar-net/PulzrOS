@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { MapPin, RotateCw } from 'lucide-react';
+import { MapPin, RotateCw, Satellite } from 'lucide-react';
 import { api } from '@/services/api';
 import type { GnssSource, GpsStatus } from '@/types';
 import Section from '@/components/ui/Section';
@@ -168,7 +168,7 @@ function SourcePicker({ state, onApplied }: { state: GpsStatus; onApplied: () =>
   ];
 
   return (
-    <Section title="Source">
+    <Section title="Source" icon={Satellite}>
       <div className={styles.choices} role="radiogroup">
         {options.map((option) => (
           <label

@@ -8,11 +8,19 @@
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
-  gap: 22px 28px;
-  margin-bottom: 26px;
+  gap: 16px;
+  margin-bottom: 16px;
 }
 
-.panel { min-width: 0; }
+/* A chart is a card, as a Section is. */
+.panel {
+  min-width: 0;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--card-shadow);
+  padding: 14px 16px 12px;
+}
 
 .panelHead {
   display: flex;
@@ -22,8 +30,7 @@
 }
 
 .panelTitle {
-  font-family: Outfit, Inter, -apple-system, BlinkMacSystemFont, sans-serif;
-  font-size: 14.5px;
+  font-size: 13.5px;
   font-weight: 600;
   color: var(--text-primary);
 }
@@ -40,12 +47,8 @@
 .pair {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: 0 28px;
-  margin-top: 26px;
-  padding-top: 16px;
-  /* One rule over both columns. Each section sits in its own wrapper, so
-     neither draws its own and the two headings line up. */
-  border-top: 1px solid var(--border-primary);
+  gap: 16px;
+  margin-top: 16px;
 }
 
 .donuts {

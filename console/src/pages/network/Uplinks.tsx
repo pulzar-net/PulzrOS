@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createColumnHelper, getCoreRowModel, useReactTable } from '@tanstack/react-table';
-import { ArrowDown, ArrowUp } from 'lucide-react';
+import { ArrowDown, ArrowUp, ListOrdered, Radar } from 'lucide-react';
 import { api } from '@/services/api';
 import type { Uplink, UplinkIface, UplinksStatus } from '@/types';
 import Section from '@/components/ui/Section';
@@ -163,7 +163,7 @@ export default function Uplinks() {
     <div className="fade-in">
       {!state.active && <Notice tone="error">No uplink is up.</Notice>}
 
-      <Section title="Order">
+      <Section title="Order" icon={ListOrdered} wide>
         {mutationError && <Notice tone="error">{mutationError.message}</Notice>}
         <DataTable table={table} fill="state" />
       </Section>
@@ -208,7 +208,7 @@ function Tracking({ state, onApplied }: { state: UplinksStatus; onApplied: () =>
   });
 
   return (
-    <Section title="Tracking">
+    <Section title="Tracking" icon={Radar}>
       <div className={styles.form}>
         <TextField label="Ping" mono value={ips} placeholder="1.1.1.1, 8.8.8.8"
                    onChange={(event) => setIps(event.target.value)} />

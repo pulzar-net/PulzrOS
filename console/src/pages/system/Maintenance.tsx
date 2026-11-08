@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Power, Upload } from 'lucide-react';
+import { KeyRound, PackageCheck, Power, Upload } from 'lucide-react';
 import { api, upload } from '@/services/api';
 import type { SystemSummary } from '@/types';
 import Section from '@/components/ui/Section';
@@ -27,7 +27,7 @@ export default function Maintenance() {
     <div className="fade-in">
       <PasswordCard />
 
-      <Section title="Firmware">
+      <Section title="Firmware" icon={PackageCheck}>
         <FactList>
           <Fact
             label="ParkezeOS"
@@ -66,7 +66,7 @@ function PasswordCard() {
   });
 
   return (
-    <Section title="Local Password">
+    <Section title="Local Password" icon={KeyRound}>
       <TextField
         label="New password"
         type="password"
@@ -193,7 +193,7 @@ function RebootCard() {
 
   if (reboot.isSuccess) {
     return (
-      <Section title="Power">
+      <Section title="Power" icon={Power}>
         <Notice tone="info">
           Rebooting. Reload in a minute.
         </Notice>
@@ -202,7 +202,7 @@ function RebootCard() {
   }
 
   return (
-    <Section title="Power">
+    <Section title="Power" icon={Power}>
       {reboot.isError && <Notice tone="error">{(reboot.error as Error).message}</Notice>}
 
       <div className={styles.row}>

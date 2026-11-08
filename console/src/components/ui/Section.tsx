@@ -1,34 +1,40 @@
 import type { ReactNode } from 'react';
+import type { LucideIcon } from 'lucide-react';
 import styles from './Section.module.css';
 
 /**
- * A titled part of a page: a heading with a rule under it, then its content.
- *
- * Not a box. These were bordered cards with shadows, which made every page a
- * stack of tiles and a configuration screen read like a dashboard. A rule and
- * whitespace separate sections well enough, including the side-by-side pairs
- * that the boxes were originally kept for.
+ * A titled part of a page, as a card. See Section.module.css for why it is a
+ * card again, and Layout.module.css for how a page lays its cards out.
  */
 export default function Section({
   title,
+  icon: Icon,
   actions,
   note,
+  wide,
   children,
 }: {
   title?: string;
+  /** Marks the card at a glance, beside its title. */
+  icon?: LucideIcon;
   /** Controls for this section, at the end of the heading row. */
   actions?: ReactNode;
   /** Small print at the end of the heading row — a count, a state. */
   note?: ReactNode;
+  /** The full width of the page: a table or a chart. */
+  wide?: boolean;
   children: ReactNode;
 }) {
   return (
-    <section className={styles.section}>
+    <section className={`${styles.section} ${wide ? styles.wide : ''}`}>
       {(title || actions || note) && (
         <header className={styles.header}>
-          {title && (
-            <h2 className={styles.title}>{title}</h2>
+          {Icon && (
+            <span className={styles.icon}>
+              <Icon size={15} strokeWidth={2} />
+            </span>
           )}
+          {title && <h2 className={styles.title}>{title}</h2>}
           {note && <span className={styles.note}>{note}</span>}
           {actions && <div className={styles.actions}>{actions}</div>}
         </header>

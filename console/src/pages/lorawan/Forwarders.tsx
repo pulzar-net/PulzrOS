@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Navigate, useParams } from 'react-router-dom';
-import { RotateCw } from 'lucide-react';
+import { Cpu, RotateCw } from 'lucide-react';
 import { api } from '@/services/api';
 import type { ConcentratorView, Forwarder, ForwardersView, Slot } from '@/types';
 import Section from '@/components/ui/Section';
@@ -340,7 +340,7 @@ function Concentrator({ slot }: { slot: Slot }) {
       </Section>
 
       {configurable && (
-        <Section title="Hardware">
+        <Section title="Hardware" icon={Cpu}>
           <div className={styles.form}>
             <SelectField
               label="Part"
