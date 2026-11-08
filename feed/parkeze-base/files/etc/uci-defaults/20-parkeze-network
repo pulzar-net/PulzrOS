@@ -250,6 +250,10 @@ EOF
 # 8443 is the WiFi sign-in proxy (signin.uc in parkeze-console), on a port of
 # its own so a portal's page never shares an origin with the console. It is
 # opened wherever the console is, because it is reached the same ways.
+#
+# 8080 is the console in plain HTTP (30-parkeze-console), opened here and
+# nowhere else: WireGuard is already the encryption on this path, and TLS
+# inside it was the cost of every connection the cloud opened.
 uci -q batch <<EOF
 set firewall.mgmt=zone
 set firewall.mgmt.name='mgmt'
@@ -262,7 +266,7 @@ set firewall.mgmt_console=rule
 set firewall.mgmt_console.name='Allow-management-tunnel'
 set firewall.mgmt_console.src='mgmt'
 set firewall.mgmt_console.proto='tcp'
-set firewall.mgmt_console.dest_port='22 80 443 8443'
+set firewall.mgmt_console.dest_port='22 80 443 8080 8443'
 set firewall.mgmt_console.target='ACCEPT'
 EOF
 
