@@ -12,6 +12,7 @@ export default function Section({
   actions,
   note,
   wide,
+  fill,
   children,
 }: {
   title?: string;
@@ -23,10 +24,12 @@ export default function Section({
   note?: ReactNode;
   /** The full width of the page: a table or a chart. */
   wide?: boolean;
+  /** Its content takes the card's whole height: a chart, in a row of taller cards. */
+  fill?: boolean;
   children: ReactNode;
 }) {
   return (
-    <section className={`${styles.section} ${wide ? styles.wide : ''}`}>
+    <section className={`${styles.section} ${wide ? styles.wide : ''} ${fill ? styles.fill : ''}`}>
       {(title || actions || note) && (
         <header className={styles.header}>
           {Icon && (

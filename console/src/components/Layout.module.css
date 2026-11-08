@@ -145,7 +145,9 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr));
   gap: 16px;
-  align-items: start;
+  /* Cards in a row are one height, so their edges line up across the page;
+     a chart card turns the extra height into plot. */
+  align-items: stretch;
 }
 
 /* Anything that is not a card (a notice, tabs, a toolbar) is a row of its

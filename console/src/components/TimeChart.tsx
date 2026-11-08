@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import uPlot from 'uplot';
+import 'uplot/dist/uPlot.min.css';
 import styles from './TimeChart.module.css';
 
 export interface Series {
@@ -8,17 +10,30 @@ export interface Series {
   values: (number | null)[];
 }
 
-const HEIGHT = 168;
-const PAD = { top: 10, right: 12, bottom: 22 };
+/** The shortest a chart draws; in a card it grows to fill the card. */
+const MIN_HEIGHT = 168;
 
 /**
- * A line chart over time, drawn as plain SVG.
+ * Every chart's value axis is this wide, whatever its labels. Sized to its
+ * own labels, "0.4" left a 28px gutter and "112.9 MB" a 62px one, so the
+ * plots in a column of cards started at different x and nothing lined up.
+ */
+const AXIS_WIDTH = 64;
+
+/**
+ * A line chart over time, by uPlot.
  *
- * Its own rather than a charting library: the console ships on a 16MB flash
- * with a bundle budget, and this needs four things a library would bring
- * hundreds of kilobytes for — an axis, a line, a wash under it, and a
- * crosshair. Mark specs follow the dataviz skill: 2px lines, a 10% area for a
- * single series, hairline solid gridlines, an end dot ringed in the surface.
+ * A library now, not hand-drawn SVG: uPlot is about 20KB gzipped, which the
+ * flash can carry, and it brings what the SVG did not — a crosshair shared by
+ * every chart on a page (`sync`), canvas drawing that stays smooth at a day of
+ * 20-second samples, and axes laid out the same way everywhere. Mark specs
+ * follow the dataviz skill: 2px lines, a 10% wash under a single series,
+ * hairline gridlines.
+ *
+ * It fills its container's width and height (never less than MIN_HEIGHT), so
+ * a card that a grid row stretches gets a taller plot rather than a gap.
+ * Multi-series charts draw no legend of their own: the card header carries
+ * one (`Legend`), so the plot in every card starts at the same height.
  */
 export default function TimeChart({
   times,
@@ -26,6 +41,7 @@ export default function TimeChart({
   format,
   max,
   stale,
+  sync,
 }: {
   /** Seconds since the epoch, one per sample. */
   times: number[];
@@ -36,180 +52,132 @@ export default function TimeChart({
   max?: number;
   /** Held at reduced opacity while a refetch is in flight. */
   stale?: boolean;
+  /** Charts with the same key share one crosshair. */
+  sync?: string;
 }) {
   const box = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(0);
-  const [hover, setHover] = useState<number | null>(null);
+  const plot = useRef<uPlot | null>(null);
+  const [size, setSize] = useState({ width: 0, height: 0 });
+  const [hover, setHover] = useState<{ index: number; left: number } | null>(null);
+  const dark = useDarkMode();
 
   useEffect(() => {
     const element = box.current;
     if (!element) return;
-    const observer = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width));
+    const observer = new ResizeObserver(([entry]) =>
+      setSize({ width: Math.floor(entry.contentRect.width), height: Math.floor(entry.contentRect.height) }));
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
 
-  const geometry = useMemo(() => {
-    if (!width || times.length < 2) return null;
-    const plotH = HEIGHT - PAD.top - PAD.bottom;
-    const t0 = times[0];
-    const t1 = times[times.length - 1];
-    const peak = Math.max(
-      max ?? 0,
-      ...series.flatMap((s) => s.values.filter((v): v is number => v != null)),
-    );
+  const top = useMemo(() => {
+    const peak = Math.max(max ?? 0, ...series.flatMap((s) => s.values.filter((v): v is number => v != null)));
     const ticks = niceTicks(max ?? peak);
-    const top = ticks[ticks.length - 1] || 1;
-    // As wide as the widest tick label needs, measured rather than fixed: a
-    // fixed gutter clipped "120 MB" to "0 MB".
-    const left = Math.max(28, Math.max(...ticks.map((t) => format(t).length)) * 6.2 + 12);
-    const plotW = width - left - PAD.right;
-    const x = (t: number) => left + ((t - t0) / Math.max(1, t1 - t0)) * plotW;
-    const y = (v: number) => PAD.top + plotH - (v / top) * plotH;
-    return { left, plotW, plotH, t0, t1, ticks, x, y };
-  }, [width, times, series, max, format]);
+    return ticks[ticks.length - 1] || 1;
+  }, [series, max]);
 
-  const paths = useMemo(() => {
-    if (!geometry) return [];
-    return series.map((s) => {
-      let line = '';
-      let started = false;
-      s.values.forEach((value, i) => {
-        if (value == null) {
-          started = false;
-          return;
-        }
-        line += `${started ? 'L' : 'M'}${geometry.x(times[i]).toFixed(1)},${geometry.y(value).toFixed(1)}`;
-        started = true;
-      });
-      const base = geometry.y(0).toFixed(1);
-      const first = s.values.findIndex((v) => v != null);
-      const last = s.values.length - 1 - [...s.values].reverse().findIndex((v) => v != null);
-      const area =
-        first >= 0 && series.length === 1
-          ? `${line}L${geometry.x(times[last]).toFixed(1)},${base}L${geometry.x(times[first]).toFixed(1)},${base}Z`
-          : null;
-      return { line, area, last };
-    });
-  }, [geometry, series, times]);
+  // A new chart when what it draws changes shape; new data alone is setData.
+  const shape = `${series.map((s) => `${s.name}:${s.color}`).join('|')}/${top}/${dark}/${sync ?? ''}`;
+  const enough = times.length >= 2;
 
-  const onMove = (event: React.PointerEvent<SVGSVGElement>) => {
-    if (!geometry) return;
-    const rect = event.currentTarget.getBoundingClientRect();
-    const px = event.clientX - rect.left;
-    const t = geometry.t0 + ((px - geometry.left) / geometry.plotW) * (geometry.t1 - geometry.t0);
-    // Snap to the nearest sample: readers aim at a time, not at a 2px line.
-    let nearest = 0;
-    for (let i = 1; i < times.length; i++) {
-      if (Math.abs(times[i] - t) < Math.abs(times[nearest] - t)) nearest = i;
-    }
-    setHover(nearest);
-  };
+  useEffect(() => {
+    const element = box.current;
+    if (!element || !enough || !size.width) return;
+    const css = getComputedStyle(element);
+    const token = (value: string) =>
+      value.startsWith('var(') ? css.getPropertyValue(value.slice(4, -1)).trim() || '#888' : value;
+    const axisColor = css.getPropertyValue('--text-tertiary').trim();
+    const gridColor = css.getPropertyValue('--chart-grid').trim();
+    const surface = css.getPropertyValue('--card-bg').trim();
+    const axisFont = '10.5px Inter, -apple-system, BlinkMacSystemFont, sans-serif';
+    const axis = {
+      stroke: axisColor,
+      font: axisFont,
+      grid: { stroke: gridColor, width: 1 },
+      ticks: { show: false },
+    };
+    const options: uPlot.Options = {
+      width: size.width,
+      height: Math.max(MIN_HEIGHT, size.height),
+      padding: [10, 12, 0, 0],
+      legend: { show: false },
+      cursor: {
+        sync: sync ? { key: sync } : undefined,
+        // A vertical line only: a horizontal one, carried into the other
+        // synced charts at the same height, marks nothing in them.
+        y: false,
+        points: { size: 8, width: 2, stroke: surface },
+        drag: { x: false, y: false },
+      },
+      scales: { x: { time: true }, y: { range: [0, top] } },
+      axes: [
+        {
+          ...axis,
+          grid: { show: false },
+          size: 26,
+          space: 110,
+          // One line per tick. uPlot's default adds the date under the first
+          // label, which a 26px axis draws on top of the time.
+          values: (_u, splits) => splits.map((t) => clock(t, times[times.length - 1] - times[0] > 86400)),
+        },
+        {
+          ...axis,
+          size: AXIS_WIDTH,
+          splits: () => niceTicks(top),
+          values: (_u, splits) => splits.map((v) => format(v)),
+        },
+      ],
+      series: [
+        {},
+        ...series.map((s) => {
+          const color = token(s.color);
+          return {
+            label: s.name,
+            stroke: color,
+            width: 2,
+            fill: series.length === 1 ? withAlpha(color, 0.1) : undefined,
+            points: { show: false },
+            spanGaps: false,
+          };
+        }),
+      ],
+      hooks: {
+        setCursor: [
+          (u) => {
+            const index = u.cursor.idx;
+            setHover(index == null ? null : { index, left: u.valToPos(u.data[0][index], 'x') + u.bbox.left / devicePixelRatio });
+          },
+        ],
+      },
+    };
+    plot.current = new uPlot(options, [times, ...series.map((s) => s.values)] as uPlot.AlignedData, element);
+    return () => {
+      plot.current?.destroy();
+      plot.current = null;
+    };
+    // Data and size are applied below without rebuilding.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shape, enough, size.width > 0]);
 
-  const hoverX = geometry && hover != null ? geometry.x(times[hover]) : null;
+  useEffect(() => {
+    plot.current?.setData([times, ...series.map((s) => s.values)] as uPlot.AlignedData);
+  }, [times, series]);
+
+  useEffect(() => {
+    if (size.width) plot.current?.setSize({ width: size.width, height: Math.max(MIN_HEIGHT, size.height) });
+  }, [size]);
 
   return (
-    <div className={`${styles.chart} ${stale ? styles.stale : ''}`} ref={box}>
-      {series.length > 1 && (
-        <div className={styles.legend}>
-          {series.map((s) => (
-            <span key={s.name} className={styles.key}>
-              <span className={styles.swatch} style={{ background: s.color }} />
-              {s.name}
-            </span>
-          ))}
-        </div>
-      )}
+    <div className={`${styles.chart} ${stale ? styles.stale : ''}`} ref={box} onPointerLeave={() => setHover(null)}>
+      {!enough && <div className={styles.empty}>Collecting samples</div>}
 
-      {!geometry ? (
-        <div className={styles.empty} style={{ height: HEIGHT }}>
-          {times.length < 2 ? 'Collecting samples' : ''}
-        </div>
-      ) : (
-        <svg
-          width={width}
-          height={HEIGHT}
-          role="img"
-          aria-hidden
-          onPointerMove={onMove}
-          onPointerLeave={() => setHover(null)}
-        >
-          {geometry.ticks.map((tick) => (
-            <g key={tick}>
-              <line
-                className={styles.grid}
-                x1={geometry.left}
-                x2={width - PAD.right}
-                y1={geometry.y(tick)}
-                y2={geometry.y(tick)}
-              />
-              <text className={styles.axis} x={geometry.left - 8} y={geometry.y(tick)} dy="0.32em" textAnchor="end">
-                {format(tick)}
-              </text>
-            </g>
-          ))}
-
-          {timeTicks(geometry.t0, geometry.t1, geometry.plotW).map((t) => (
-            <text key={t} className={styles.axis} x={geometry.x(t)} y={HEIGHT - 6} textAnchor="middle">
-              {clock(t, geometry.t1 - geometry.t0)}
-            </text>
-          ))}
-
-          {paths.map((p, i) => (
-            <g key={series[i].name}>
-              {p.area && <path d={p.area} fill={series[i].color} opacity={0.1} />}
-              <path
-                d={p.line}
-                fill="none"
-                stroke={series[i].color}
-                strokeWidth={2}
-                strokeLinejoin="round"
-                strokeLinecap="round"
-              />
-            </g>
-          ))}
-
-          {hoverX == null &&
-            paths.map((p, i) => {
-              const value = series[i].values[p.last];
-              return value == null ? null : (
-                <circle
-                  key={series[i].name}
-                  className={styles.dot}
-                  cx={geometry.x(times[p.last])}
-                  cy={geometry.y(value)}
-                  r={4}
-                  fill={series[i].color}
-                />
-              );
-            })}
-
-          {hoverX != null && (
-            <>
-              <line className={styles.crosshair} x1={hoverX} x2={hoverX} y1={PAD.top} y2={PAD.top + geometry.plotH} />
-              {series.map((s) => {
-                const value = s.values[hover!];
-                return value == null ? null : (
-                  <circle key={s.name} className={styles.dot} cx={hoverX} cy={geometry.y(value)} r={4} fill={s.color} />
-                );
-              })}
-            </>
-          )}
-        </svg>
-      )}
-
-      {geometry && hover != null && hoverX != null && (
-        <div
-          className={styles.tooltip}
-          style={{
-            left: Math.min(Math.max(hoverX, 70), width - 70),
-          }}
-        >
-          <div className={styles.when}>{clock(times[hover], 0, true)}</div>
+      {enough && hover && (
+        <div className={styles.tooltip} style={{ left: Math.min(Math.max(hover.left, 70), size.width - 70) }}>
+          <div className={styles.when}>{moment(times[hover.index])}</div>
           {series.map((s) => (
             <div key={s.name} className={styles.row}>
               <span className={styles.lineKey} style={{ background: s.color }} />
-              <strong>{s.values[hover] == null ? '—' : format(s.values[hover]!)}</strong>
+              <strong>{s.values[hover.index] == null ? '—' : format(s.values[hover.index]!)}</strong>
               {series.length > 1 && <span className={styles.name}>{s.name}</span>}
             </div>
           ))}
@@ -229,7 +197,7 @@ export default function TimeChart({
         <tbody>
           {times.map((t, i) => (
             <tr key={t}>
-              <td>{clock(t, 0, true)}</td>
+              <td>{moment(t)}</td>
               {series.map((s) => (
                 <td key={s.name}>{s.values[i] == null ? '—' : format(s.values[i]!)}</td>
               ))}
@@ -239,6 +207,40 @@ export default function TimeChart({
       </table>
     </div>
   );
+}
+
+/** The key to a multi-series chart, for its card's header. */
+export function Legend({ series }: { series: Pick<Series, 'name' | 'color'>[] }) {
+  return (
+    <span className={styles.legend}>
+      {series.map((s) => (
+        <span key={s.name} className={styles.key}>
+          <span className={styles.swatch} style={{ background: s.color }} />
+          {s.name}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/** Canvas cannot read CSS variables, so the chart is rebuilt when the theme flips. */
+function useDarkMode() {
+  const query = '(prefers-color-scheme: dark)';
+  const [dark, setDark] = useState(() => window.matchMedia(query).matches);
+  useEffect(() => {
+    const media = window.matchMedia(query);
+    const change = () => setDark(media.matches);
+    media.addEventListener('change', change);
+    return () => media.removeEventListener('change', change);
+  }, []);
+  return dark;
+}
+
+function withAlpha(color: string, alpha: number): string {
+  const hex = color.match(/^#([0-9a-f]{6})$/i);
+  if (!hex) return color;
+  const n = parseInt(hex[1], 16);
+  return `rgba(${n >> 16}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
 }
 
 /** Four clean ticks from zero: 0, 25, 50, 75, 100 rather than 0, 23.7, 47.4. */
@@ -253,22 +255,12 @@ function niceTicks(peak: number): number[] {
   return ticks;
 }
 
-/** Round clock times across the span, about one per 110px. */
-function timeTicks(t0: number, t1: number, plotW: number): number[] {
-  const count = Math.max(2, Math.floor(plotW / 110));
-  const raw = (t1 - t0) / count;
-  const step = [60, 300, 600, 900, 1800, 3600, 7200, 10800, 21600].find((s) => s >= raw) ?? 21600;
-  const ticks: number[] = [];
-  for (let t = Math.ceil(t0 / step) * step; t <= t1; t += step) ticks.push(t);
-  return ticks;
+function clock(t: number, dated = false): string {
+  const date = new Date(t * 1000);
+  const time = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return dated ? `${date.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${time}` : time;
 }
 
-function clock(t: number, span: number, seconds = false): string {
-  const date = new Date(t * 1000);
-  const time = date.toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: seconds ? '2-digit' : undefined,
-  });
-  return span > 86400 ? `${date.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${time}` : time;
+function moment(t: number): string {
+  return new Date(t * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }

@@ -1,42 +1,29 @@
+/* Sized by the card, never by the plot: uPlot's canvas sits absolutely
+   inside, so a card a grid row stretches gives the chart its height, and a
+   card that shrinks back is not held open by the canvas it drew. */
 .chart {
   position: relative;
+  flex: 1 1 auto;
   width: 100%;
+  min-height: 168px;
   transition: opacity 0.2s;
 }
+
+.chart > :global(.uplot) {
+  position: absolute;
+  inset: 0;
+  font-family: inherit;
+}
+
+.chart :global(.u-over) { touch-action: none; }
 
 /* Refetch keeps the frame: the last render stays, dimmed, rather than a
    skeleton or a jump. */
 .stale { opacity: 0.6; }
 
-.chart svg {
-  display: block;
-  touch-action: none;
-}
-
-.grid {
-  stroke: var(--chart-grid);
-  stroke-width: 1;
-}
-
-.axis {
-  fill: var(--text-tertiary);
-  font-size: 10.5px;
-  font-variant-numeric: tabular-nums;
-}
-
-.crosshair {
-  stroke: var(--text-tertiary);
-  stroke-width: 1;
-}
-
-/* The ring in the surface colour keeps the dot legible where it sits on the
-   line or another dot. */
-.dot {
-  stroke: var(--bg-primary);
-  stroke-width: 2;
-}
-
 .empty {
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -45,10 +32,10 @@
 }
 
 .legend {
-  display: flex;
-  gap: 14px;
-  margin-bottom: 6px;
+  display: inline-flex;
+  gap: 12px;
   font-size: 12px;
+  font-weight: 400;
   color: var(--text-secondary);
 }
 
@@ -72,6 +59,7 @@
   pointer-events: none;
   min-width: 112px;
   padding: 7px 9px;
+  white-space: nowrap;
   border-radius: var(--radius-md);
   background: var(--bg-elevated);
   border: 1px solid var(--border-primary);

@@ -19,6 +19,19 @@
   margin-top: var(--section-gap, 16px);
 }
 
+/* A chart's card: the body takes whatever height the row gives the card,
+   and the chart in it grows to match (TimeChart.module.css). */
+.fill {
+  display: flex;
+  flex-direction: column;
+}
+
+.fill > .body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+}
+
 /* The width of the page, for a table or a chart. */
 .wide {
   grid-column: 1 / -1;

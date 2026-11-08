@@ -20,12 +20,17 @@
   border-radius: var(--radius-lg);
   box-shadow: var(--card-shadow);
   padding: 14px 16px 12px;
+  display: flex;
+  flex-direction: column;
 }
 
 .panelHead {
   display: flex;
   align-items: center;
   gap: 10px;
+  /* One height whether or not the head holds a select, so every plot below
+     starts at the same line. */
+  height: 28px;
   margin-bottom: 8px;
 }
 
@@ -37,6 +42,9 @@
 
 /* The latest value, beside its chart: the one number a glance is for. */
 .panelValue {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
   margin-left: auto;
   font-size: 13px;
   font-weight: 600;
@@ -56,4 +64,17 @@
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   gap: 20px;
   padding: 4px 0;
+}
+
+/* A value with its series' line key, so the number is the legend. */
+.keyed {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.keyed > i {
+  width: 12px;
+  height: 2px;
+  border-radius: 1px;
 }

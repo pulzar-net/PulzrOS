@@ -10,7 +10,7 @@ import Fact, { FactList } from '@/components/Fact';
 import Notice from '@/components/ui/Notice';
 import Spinner from '@/components/ui/Spinner';
 import ErrorState from '@/components/ErrorState';
-import TimeChart, { type Series } from '@/components/TimeChart';
+import TimeChart, { Legend, type Series } from '@/components/TimeChart';
 import { duration, inUnit, modemKind } from '@/lib/format';
 import { useFeatures } from '@/hooks/useFeatures';
 import styles from './Pages.module.css';
@@ -135,7 +135,13 @@ export default function Overview() {
       </Section>
 
       {traffic.length > 0 && (
-        <Section title="Uplink Traffic" icon={ArrowDownUp} note="24 h">
+        <Section
+          title="Uplink Traffic"
+          icon={ArrowDownUp}
+          note="24 h"
+          actions={traffic.length > 1 ? <Legend series={traffic} /> : undefined}
+          fill
+        >
           <TimeChart times={points.map((p) => p.t)} format={trafficUnit.format} series={traffic} />
         </Section>
       )}

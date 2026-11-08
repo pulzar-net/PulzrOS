@@ -97,6 +97,7 @@ export default function Resources() {
             max={100}
             format={percent}
             stale={stale}
+            sync="resources"
             series={[{ name: 'CPU', color: 'var(--chart-1)', values: points.map((p) => p.cpu) }]}
           />
         </Panel>
@@ -107,6 +108,7 @@ export default function Resources() {
             max={memUnit.scale(memTotal)!}
             format={memUnit.format}
             stale={stale}
+            sync="resources"
             series={[{ name: 'Memory', color: 'var(--chart-1)', values: points.map((p) => memUnit.scale(p.mem)) }]}
           />
         </Panel>
@@ -116,6 +118,7 @@ export default function Resources() {
             times={times}
             format={(v) => v.toFixed(1)}
             stale={stale}
+            sync="resources"
             series={[{ name: 'Load', color: 'var(--chart-1)', values: points.map((p) => p.load) }]}
           />
         </Panel>
@@ -123,9 +126,16 @@ export default function Resources() {
         <Panel
           title="Network"
           value={
-            last && shown && last.net[shown]
-              ? `↓ ${rate(last.net[shown][0])}  ↑ ${rate(last.net[shown][1])}`
-              : null
+            last && shown && last.net[shown] ? (
+              <>
+                <span className={styles.keyed}>
+                  <i style={{ background: 'var(--chart-down)' }} />↓ {rate(last.net[shown][0])}
+                </span>
+                <span className={styles.keyed}>
+                  <i style={{ background: 'var(--chart-up)' }} />↑ {rate(last.net[shown][1])}
+                </span>
+              </>
+            ) : null
           }
           control={
             interfaces.length > 1 && shown ? (
@@ -143,6 +153,7 @@ export default function Resources() {
             times={times}
             format={netUnit.format}
             stale={stale}
+            sync="resources"
             series={
               shown
                 ? [
@@ -244,7 +255,7 @@ function Panel({
   children,
 }: {
   title: string;
-  value: string | null;
+  value: ReactNode;
   control?: ReactNode;
   children: ReactNode;
 }) {
