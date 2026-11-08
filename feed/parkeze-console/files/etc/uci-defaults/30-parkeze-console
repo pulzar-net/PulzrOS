@@ -90,7 +90,11 @@ set uhttpd.main.max_requests='16'
 set uhttpd.main.max_connections='64'
 set uhttpd.main.script_timeout='600'
 set uhttpd.main.network_timeout='30'
-set uhttpd.main.http_keepalive='20'
+# Two minutes, not twenty seconds. Through the cloud every new connection is
+# a TLS handshake on this CPU, about 100ms each and one at a time, and
+# gateway-link keeps four open per gateway; at twenty seconds they were gone
+# by the time somebody clicked to the next page.
+set uhttpd.main.http_keepalive='120'
 set uhttpd.main.tcp_keepalive='1'
 
 # No directory listings, ever. The console's asset directory is not a thing to
