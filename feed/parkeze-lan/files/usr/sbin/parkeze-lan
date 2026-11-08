@@ -246,6 +246,31 @@ let online = () => {
     return out;
 };
 
+// The port each client is behind, from the bridge's own forwarding table.
+//
+// Not `bridge fdb show`: that also dumps every DSA port's hardware table, and
+// on the GL-SFT1200 the mxl-gsw1xx switch answers over MDIO at about six
+// seconds a port, holding RTNL the whole time. The console's LAN page took
+// twelve seconds, and every request that touched the network behind it (wg,
+// ubus network) waited too. The bridge learns the same client addresses in
+// software from the frames that reach the CPU, which is every client that has
+// asked for a lease, and brforward hands that table over without touching the
+// switch: 16 bytes an entry, the MAC, then the port number, then is_local.
+let ports = () => {
+    let out = {}, dev = bridge(), byNumber = {};
+    let dir = sprintf('/sys/class/net/%s/brif', dev);
+    for (let name in fs.lsdir(dir) ?? [])
+        byNumber[int(trim(fs.readfile(sprintf('%s/%s/port_no', dir, name)) ?? ''), 16)] = name;
+    let table = fs.readfile(sprintf('/sys/class/net/%s/brforward', dev)) ?? '';
+    for (let at = 0; at + 16 <= length(table); at += 16) {
+        if (ord(table, at + 7)) continue;
+        let number = ord(table, at + 6) | (ord(table, at + 12) << 8);
+        let mac = join(':', map([0, 1, 2, 3, 4, 5], (i) => sprintf('%02x', ord(table, at + i))));
+        if (byNumber[number]) out[mac] ??= byNumber[number];
+    }
+    return out;
+};
+
 // Device to the logical uplink it carries, so traffic reads "wan", "wwan"
 // and "wwifi" rather than eth0 and phy0-sta0. The uplink port also carries
 // the console and link-local interfaces, so the one with a default route
@@ -349,6 +374,10 @@ let status = () => {
         c.ip ??= now[mac];
         c.lastSeen = time();
     }
+
+    let behind = ports();
+    for (let mac in keys(clients))
+        clients[mac].port = behind[mac] ?? null;
 
     let names = uplinkNames();
     let up = counters('usage_up', names), down = counters('usage_down', names);

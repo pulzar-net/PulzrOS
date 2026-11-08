@@ -108,7 +108,7 @@ to stay under the agent's 8KB answer.
   "configured": true, "address": "192.168.64.1", "ports": ["eth1", "eth2"],
   "clients": [{
     "mac": "c2:6c:1d:d1:f7:b3", "ip": "192.168.64.50", "hostname": "plc-1",
-    "reserved": "192.168.64.50", "policy": "parkeze", "online": true,
+    "reserved": "192.168.64.50", "policy": "parkeze", "online": true, "port": "eth1",
     "firstSeen": 1793051334, "lastSeen": 1793051821, "leaseExpires": 1793094533,
     "traffic": { "wan": { "txBytes": 6169, "rxBytes": 22131 },
                  "tunnel": { "txBytes": 2109, "rxBytes": 927 } }
@@ -119,6 +119,10 @@ to stay under the agent's 8KB answer.
 }
 ```
 
+- `port` is the LAN port the client is behind, from the bridge's software
+  table (`brforward`), never `bridge fdb show`: on a DSA switch that dumps the
+  hardware table too, which on the GL-SFT1200 takes six seconds a port under
+  RTNL. Null until the client has sent something through the bridge.
 - `firstSeen` and `lastSeen` are DHCP contact, kept across reboots and
   upgrades. A device answering ARP right now is `online`, and its `lastSeen`
   is now.
