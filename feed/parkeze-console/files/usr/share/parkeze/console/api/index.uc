@@ -478,7 +478,20 @@ function routeKey(method, path) {
     return sprintf('%-4s %s', method, path);
 }
 
+// The tunnel's plain-HTTP console (8080, see 30-parkeze-console) answers the
+// hub and nothing else. The firewall opens 8080 only on wg0, and WireGuard
+// admits only the hub's address there; this still holds if either is changed.
+// Without it, one rule opening 8080 on a LAN would put the sign-in on that
+// LAN in clear text.
+function fromHub(env) {
+    if (env.SERVER_PORT != '8080') return true;
+    let tunnel = null;
+    try { tunnel = json(readfile('/etc/parkeze/wireguard/tunnel.json') ?? 'null'); } catch (e) { }
+    return !!(tunnel && tunnel.hubAddress && env.REMOTE_ADDR == tunnel.hubAddress);
+}
+
 function route(env) {
+    if (!fromHub(env)) return respond(403, { error: 'Not from the management hub.' });
     const method = env.REQUEST_METHOD;
     // SCRIPT_NAME + PATH_INFO, not PATH_INFO alone. uhttpd mounts this handler
     // at a prefix and strips it: a request for /api/auth/methods arrives with
