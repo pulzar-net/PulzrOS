@@ -163,6 +163,33 @@ would have on a first boot.
 
 ## Upgrading a running gateway
 
+### From a Mac, through Pulzr Net
+
+An adopted gateway anywhere, including one on a Wi-Fi uplink in a field:
+
+```
+scripts/upgrade-gateway.sh "Cigar Curer" 0.3.6       # a release, by gateway name or id
+scripts/upgrade-gateway.sh --check "Cigar Curer" 0.3.6   # stage and check only
+scripts/upgrade-gateway.sh <gateway> ./my-image.bin  # a local build
+```
+
+It needs `kubectl` access to the cluster and, for a release, `gh` signed in. It
+reaches the gateway over its management tunnel from the gateway-link pod and
+does what the console's firmware page does: stage the image (on the card when
+there is one), compare its sha256, `sysupgrade -T`, `parkeze-firmware verify`
+the signature, `parkeze-firmware pending`, then `sysupgrade` keeping settings.
+It then waits for the gateway's first report after the upgrade and prints the
+version in it.
+
+**A GL-SFT1200 has no card and 128MB of RAM,** with about 20MB free on a
+running gateway against a 15.6MB image (0.3.6). The console's 16MB of headroom
+refuses that, so pass `--low-memory`, which leaves 4MB. The image cannot be
+staged on flash instead: NAND sysupgrade deletes and recreates `rootfs_data`
+while it writes, and only `/tmp` survives into the RAM root it runs from
+(OpenWrt's `nand.sh` and `stage2`).
+
+### By hand
+
 Root over SSH takes the fleet key or a parkeze.net certificate, or on a
 development image a key in `boards/common/ssh/dev/`; root has no password
 ([`auth.md`](auth.md), "Who gets root"). Anywhere else, upgrade from the
