@@ -623,11 +623,12 @@ let ifaceState = (name) => {
     let out = capture(['ubus', 'call', 'network.interface.' + name, 'status']);
     let s = null;
     try { s = out ? json(out) : null; } catch (e) { s = null; }
-    if (!s) return { up: false, address: null, gateway: null };
+    if (!s) return { up: false, address: null, gateway: null, dns: [] };
     let address = null, gateway = null;
     for (let a in s['ipv4-address'] ?? []) address = sprintf('%s/%d', a.address, a.mask);
     for (let r in s.route ?? []) if (r.target == '0.0.0.0' && r.mask == 0) gateway = r.nexthop;
-    return { up: !!s.up, address, gateway, device: s.l3_device ?? null };
+    // What a lease handed out, so Ethernet's "Make static" keeps it.
+    return { up: !!s.up, address, gateway, dns: s['dns-server'] ?? [], device: s.l3_device ?? null };
 };
 
 let status = () => {

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ArrowRightLeft, Cable, MonitorSmartphone } from 'lucide-react';
+import { ArrowRightLeft, Cable, Globe, MonitorSmartphone } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   createColumnHelper,
@@ -9,14 +9,14 @@ import {
   type SortingState,
 } from '@tanstack/react-table';
 import { api } from '@/services/api';
-import type { LanClient, LanForward, LanStatus, LanTraffic } from '@/types';
+import type { LanClient, LanExposed, LanForward, LanStatus, LanTraffic } from '@/types';
 import Section from '@/components/ui/Section';
 import Badge from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
 import Dialog from '@/components/ui/Dialog';
 import Notice from '@/components/ui/Notice';
 import Segmented from '@/components/ui/Segmented';
-import { TextField } from '@/components/ui/Field';
+import { SelectField, TextField } from '@/components/ui/Field';
 import Fact, { FactList } from '@/components/Fact';
 import DataTable from '@/components/DataTable';
 import Spinner from '@/components/ui/Spinner';
@@ -29,11 +29,12 @@ import own from './Lan.module.css';
  * The devlan zone: who is on the LAN ports, what each may reach, and which
  * tunnel forwards are open.
  *
- * Two things change here, both per MAC: the policy (parkeze or internet) and
- * the reservation. Forwards are listed and never opened: the only way into
- * the LAN is the one net-api asks for (lan-forward), so a button for it here
- * would be a second. Everything set here is in parkeze-lan's state, which is
- * what parkeze.net's `lan` op reads.
+ * Per MAC: the policy (parkeze or internet), the reservation and the cellular
+ * rule. Tunnel forwards are listed and never opened here: they are net-api's
+ * (lan-forward). Exposed ports are opened here, because they are the site's:
+ * a port on the wired or WiFi uplink to a reserved client, never over the
+ * tunnel or cellular (parkeze-lan). Everything set here is in parkeze-lan's
+ * state, which is what parkeze.net's `lan` op reads.
  */
 
 const POLICIES: { value: LanClient['policy']; label: string }[] = [
@@ -129,7 +130,14 @@ export default function Lan() {
         header: 'Cellular',
         size: 82,
         meta: { numeric: true },
-        cell: (info) => bytes(info.getValue()),
+        cell: (info) => (
+          <>
+            {bytes(info.getValue())}{' '}
+            {info.row.original.cellular === 'block'
+              ? <Badge tone="neutral">Blocked</Badge>
+              : (info.row.original.cellularBlock ?? []).length > 0 && <Badge tone="neutral">Limited</Badge>}
+          </>
+        ),
       }),
       // Online is a client answering ARP now; otherwise its last DHCP contact.
       column.accessor((c) => (c.online ? Number.MAX_SAFE_INTEGER : (c.lastSeen ?? 0)), {
@@ -212,11 +220,121 @@ export default function Lan() {
                    cellClassName={(id) => (id === 'reserve' ? own.reserve : own.cell)} />
       </Section>
 
+      <Exposed state={state} clients={clients} nameOf={nameOf} />
+
       <Forwards forwards={state.forwards ?? []} nameOf={nameOf} />
 
       {editing && <ReserveDialog client={editing} onClose={() => setEditing(null)} />}
     </div>
   );
+}
+
+const PROTOS = [
+  { value: 'tcp', label: 'TCP' },
+  { value: 'udp', label: 'UDP' },
+] as const;
+
+// Ports on the wired and WiFi uplinks, forwarded to a reserved client. The
+// one notice is where they answer: nowhere with no uplink up, and only
+// through the site's router when the uplink's address is a private one.
+function Exposed({
+  state, clients, nameOf,
+}: {
+  state: LanStatus;
+  clients: LanClient[];
+  nameOf: (ip: string) => string | null | undefined;
+}) {
+  const queryClient = useQueryClient();
+  const reserved = clients.filter((c) => c.reserved);
+  const [proto, setProto] = useState<LanExposed['proto']>('tcp');
+  const [port, setPort] = useState('');
+  const [ip, setIp] = useState(reserved[0]?.reserved ?? '');
+  const [dport, setDport] = useState('');
+
+  const save = useMutation({
+    mutationFn: (body: { proto: string; port: number; ip?: string; dport?: number }) =>
+      api.post('/lan/expose', body),
+    onSuccess: (_, body) => {
+      if (body.ip) { setPort(''); setDport(''); }
+      queryClient.invalidateQueries({ queryKey: ['lan'] });
+    },
+  });
+
+  const exposed = state.exposed ?? [];
+  const on = state.exposedOn ?? [];
+  const behind = on.filter((o) => isPrivate(o.address));
+  const target = ip || reserved[0]?.reserved || '';
+
+  return (
+    <Section title="Exposed ports" icon={Globe}>
+      {exposed.length > 0 && on.length === 0 && (
+        <Notice tone="warning">No wired or WiFi uplink is up. Exposed ports answer nowhere.</Notice>
+      )}
+      {exposed.length > 0 && behind.length > 0 && (
+        <Notice tone="info">
+          Behind another router at {behind.map((o) => o.address).join(', ')}. Forward these ports to it there.
+        </Notice>
+      )}
+      {save.isError && <Notice tone="error">{(save.error as Error).message}</Notice>}
+
+      <FactList>
+        {exposed.map((e) => (
+          <Fact
+            key={`${e.proto}-${e.port}`}
+            label={`${e.proto.toUpperCase()} ${e.port}`}
+            value={
+              <span className={styles.status}>
+                <span className="mono">{[nameOf(e.ip), `${e.ip}:${e.dport}`].filter(Boolean).join(' ')}</span>
+                <Button variant="danger" disabled={save.isPending}
+                        onClick={() => save.mutate({ proto: e.proto, port: e.port })}>
+                  Remove
+                </Button>
+              </span>
+            }
+          />
+        ))}
+      </FactList>
+
+      {reserved.length === 0 ? (
+        exposed.length === 0 && <Notice tone="info">No reserved clients.</Notice>
+      ) : (
+        <>
+          <div className={styles.options}>
+            <Segmented aria-label="Protocol" value={proto} options={[...PROTOS]} onChange={setProto} />
+          </div>
+          <div className={styles.form}>
+            <TextField label="Port" mono inputMode="numeric" value={port} placeholder="8080"
+                       onChange={(event) => setPort(event.target.value)} />
+            <SelectField
+              label="Client"
+              value={target}
+              onChange={setIp}
+              options={reserved.map((c) => ({ value: c.reserved!, label: [c.hostname, c.reserved].filter(Boolean).join(' ') }))}
+            />
+            <TextField label="Client port" mono inputMode="numeric" value={dport} placeholder={port || '80'}
+                       onChange={(event) => setDport(event.target.value)} />
+          </div>
+          <div className={styles.actions}>
+            <Button
+              variant="primary"
+              loading={save.isPending}
+              disabled={!Number(port) || !target}
+              onClick={() => save.mutate({ proto, port: Number(port), ip: target, dport: Number(dport) || undefined })}
+            >
+              Expose
+            </Button>
+          </div>
+        </>
+      )}
+    </Section>
+  );
+}
+
+// RFC 1918 and the carrier-grade NAT range: an address a site router or a
+// carrier hands out, which the internet cannot reach without a forward.
+function isPrivate(address: string) {
+  const [a, b] = address.split('.').map(Number);
+  return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127);
 }
 
 // Every forward is one net-api opened over MQTT (lan-forward); the console
@@ -294,7 +412,47 @@ function ReserveDialog({ client, onClose }: { client: LanClient; onClose: () => 
       {save.isError && <Notice tone="error">{(save.error as Error).message}</Notice>}
       <TextField label="Address" mono value={ip} onChange={(e) => setIp(e.target.value)} />
       <TextField label="Name" value={name} onChange={(e) => setName(e.target.value)} />
+      <Cellular client={client} />
     </Dialog>
+  );
+}
+
+const CELLULAR = [
+  { value: 'allow', label: 'Cellular allowed' },
+  { value: 'block', label: 'Cellular blocked' },
+] as const;
+
+// Whether this client may use cellular when it carries traffic, and which
+// ports it may not use there: a camera's stream, say, while its alarms go out.
+function Cellular({ client }: { client: LanClient }) {
+  const queryClient = useQueryClient();
+  const [mode, setMode] = useState<'allow' | 'block'>(client.cellular ?? 'allow');
+  const [blocks, setBlocks] = useState((client.cellularBlock ?? []).join(', '));
+  const list = blocks.split(/[\s,]+/).map((b) => b.trim().toLowerCase()).filter(Boolean);
+  const changed = mode !== (client.cellular ?? 'allow')
+    || (mode === 'allow' && list.join(',') !== (client.cellularBlock ?? []).join(','));
+
+  const save = useMutation({
+    mutationFn: () => api.post('/lan/cellular', { mac: client.mac, mode, blocks: mode === 'allow' ? list : [] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['lan'] }),
+  });
+
+  return (
+    <>
+      <div className={styles.options}>
+        <Segmented aria-label={`Cellular for ${client.mac}`} value={mode} options={[...CELLULAR]} onChange={setMode} />
+      </div>
+      {mode === 'allow' && (
+        <TextField label="Blocked on cellular" mono value={blocks} placeholder="tcp:554, udp:5000-5010"
+                   onChange={(e) => setBlocks(e.target.value)} />
+      )}
+      {save.isError && <Notice tone="error">{(save.error as Error).message}</Notice>}
+      <div className={styles.actions}>
+        <Button loading={save.isPending} disabled={!changed} onClick={() => save.mutate()}>
+          Apply cellular
+        </Button>
+      </div>
+    </>
   );
 }
 

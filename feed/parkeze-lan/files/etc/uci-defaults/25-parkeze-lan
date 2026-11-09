@@ -151,6 +151,13 @@ set firewall.lan_forward.type='nftables'
 set firewall.lan_forward.path='/usr/share/parkeze/lan/mgmt-forward.nft'
 set firewall.lan_forward.position='chain-pre'
 set firewall.lan_forward.chain='forward_mgmt'
+
+delete firewall.lan_expose
+set firewall.lan_expose=include
+set firewall.lan_expose.type='nftables'
+set firewall.lan_expose.path='/usr/share/parkeze/lan/wan-forward.nft'
+set firewall.lan_expose.position='chain-pre'
+set firewall.lan_expose.chain='forward_wan'
 EOF
 
 # The default policy, per uplink zone: Parkeze over HTTPS and MQTT, and NTP.

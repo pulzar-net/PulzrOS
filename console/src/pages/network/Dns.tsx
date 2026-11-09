@@ -1,19 +1,20 @@
 import { useMemo, useState } from 'react';
-import { Globe, ShieldAlert, Tags } from 'lucide-react';
+import { Globe, RefreshCw, ShieldAlert, Tags } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createColumnHelper, getCoreRowModel, useReactTable } from '@tanstack/react-table';
 import { api } from '@/services/api';
-import type { DnsStatus } from '@/types';
+import type { DdnsStatus, DnsStatus } from '@/types';
 import Section from '@/components/ui/Section';
 import Button from '@/components/ui/Button';
 import Dialog from '@/components/ui/Dialog';
 import Notice from '@/components/ui/Notice';
 import Segmented from '@/components/ui/Segmented';
-import { TextField } from '@/components/ui/Field';
+import { SelectField, TextField } from '@/components/ui/Field';
 import Fact, { FactList } from '@/components/Fact';
 import DataTable from '@/components/DataTable';
 import Spinner from '@/components/ui/Spinner';
 import ErrorState from '@/components/ErrorState';
+import { duration, uplinkName } from '@/lib/format';
 import styles from '../Pages.module.css';
 
 /**
@@ -24,6 +25,10 @@ import styles from '../Pages.module.css';
  * parkeze-dns refuses a name under a Parkeze domain and a server list that
  * cannot resolve Parkeze; its message is shown as it comes. Everything here is
  * in UCI dhcp, which is what parkeze.net's `dns` op reads.
+ *
+ * Dynamic DNS is the customer's own name in their own Cloudflare zone, for
+ * ports exposed on the LAN page. The token is write-only here: the gateway
+ * says whether one is set and never what it is.
  */
 
 type Host = DnsStatus['hosts'][number];
@@ -59,6 +64,7 @@ export default function Dns() {
       <Upstream state={state} onApplied={refresh} />
       <Names hosts={state.hosts} onChanged={refresh} />
       <Rebind state={state} onApplied={refresh} />
+      {state.ddns && <Ddns ddns={state.ddns} onApplied={refresh} />}
     </div>
   );
 }
@@ -253,6 +259,67 @@ function Rebind({ state, onApplied }: { state: DnsStatus; onApplied: () => void 
 
       <div className={styles.actions}>
         <Button variant="primary" loading={apply.isPending} onClick={() => apply.mutate()}>
+          Apply
+        </Button>
+      </div>
+    </Section>
+  );
+}
+
+function Ddns({ ddns, onApplied }: { ddns: DdnsStatus; onApplied: () => void }) {
+  const [on, setOn] = useState<'on' | 'off'>(ddns.enabled ? 'on' : 'off');
+  const [name, setName] = useState(ddns.name ?? '');
+  const [zone, setZone] = useState(ddns.zone ?? '');
+  const [uplink, setUplink] = useState(ddns.uplink ?? ddns.uplinks[0] ?? '');
+  const [token, setToken] = useState('');
+
+  const apply = useMutation({
+    mutationFn: () =>
+      api.post('/dns/ddns', on === 'off'
+        ? { enabled: false }
+        : { name: name.trim(), zone: zone.trim(), uplink, token: token.trim() || undefined }),
+    onSuccess: () => { setToken(''); onApplied(); },
+  });
+
+  return (
+    <Section title="Dynamic DNS" icon={RefreshCw}>
+      {ddns.enabled && ddns.error && <Notice tone="error">{ddns.error}</Notice>}
+      {ddns.enabled && (
+        <FactList>
+          <Fact label="Address" value={ddns.address ?? 'Not registered'} mono />
+          <Fact label="Updated"
+                value={ddns.updated ? `${duration(Math.floor(Date.now() / 1000) - ddns.updated)} ago` : '—'} />
+        </FactList>
+      )}
+
+      <div className={styles.options}>
+        <Segmented aria-label="Dynamic DNS" value={on} options={[...SWITCH]} onChange={setOn} />
+      </div>
+
+      {on === 'on' && (
+        <div className={styles.form}>
+          <TextField label="Name" mono value={name} placeholder="cameras.example.com"
+                     onChange={(event) => setName(event.target.value)} />
+          <TextField label="Zone" mono value={zone} placeholder="example.com"
+                     onChange={(event) => setZone(event.target.value)} />
+          <SelectField label="Uplink" value={uplink} onChange={setUplink}
+                       options={ddns.uplinks.map((u) => ({ value: u, label: uplinkName(u) }))} />
+          <TextField label="Cloudflare API token" mono type="password" autoComplete="off" value={token}
+                     placeholder={ddns.tokenSet ? 'Set' : ''}
+                     onChange={(event) => setToken(event.target.value)} />
+        </div>
+      )}
+
+      {apply.isError && <Notice tone="error">{(apply.error as Error).message}</Notice>}
+      {apply.isSuccess && <Notice tone="success">Applied.</Notice>}
+
+      <div className={styles.actions}>
+        <Button
+          variant="primary"
+          loading={apply.isPending}
+          disabled={on === 'on' && (!name.trim() || !zone.trim() || !uplink || (!ddns.tokenSet && !token.trim()))}
+          onClick={() => apply.mutate()}
+        >
           Apply
         </Button>
       </div>

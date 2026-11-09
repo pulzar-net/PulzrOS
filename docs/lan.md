@@ -74,6 +74,19 @@ Traffic out over cellular is billed like anything else on the SIM. The
 `internet` policy is for devices that need it; the traffic report below says
 which device spent what, on which uplink.
 
+## Cellular, per device
+
+Each device is allowed onto cellular (the default), blocked from it, or
+allowed except some ports: `tcp:554` or `udp:5000-5010`, at most sixteen.
+It holds whatever the policy allows, and only on the cellular devices (`wwan`,
+`usbwan`): over a wired or WiFi uplink the device reaches what its policy
+says. A camera on `internet` with its stream blocked on cellular keeps
+sending alarms through a failover and stops spending the SIM on video.
+Refused, not dropped, as the zone does.
+
+Matched by MAC in parkeze-lan's own table, on the cellular devices netifd
+has now (the `cellular_if` set, reloaded on each uplink's hotplug).
+
 ## Managing it
 
 On the gateway:
@@ -83,15 +96,21 @@ parkeze-lan status                          everything below, as JSON
 parkeze-lan policy <mac> parkeze|internet
 parkeze-lan reserve <mac> <ip> [<name>]     <name> also resolves, as <name>.lan
 parkeze-lan unreserve <mac>
+parkeze-lan cellular <mac> allow|block [tcp:<port>[-<port>] udp:...]
 parkeze-lan forward <ip> <port> <seconds>
 parkeze-lan unforward <tunnel port>
+parkeze-lan expose tcp|udp <port> <ip> [<client port>]
+parkeze-lan unexpose tcp|udp <port>
+parkeze-lan links                           reload the uplinks' devices and addresses
 ```
 
 In the console, Network > LAN (`lib/lan.uc`, `pages/network/Lan.tsx`): the
-clients, each one's policy and reservation, and the open forwards. It sets a
-policy and a reservation through the commands above, audited as `lan.policy`
-and `lan.reserve`, so the `lan` op reports them like any other. It never opens
-or closes a forward: that is net-api's, over MQTT.
+clients, each one's policy, reservation and cellular rule, the exposed ports,
+and the open tunnel forwards. It sets the first four through the commands
+above, audited as `lan.policy`, `lan.reserve`, `lan.cellular` and
+`lan.expose`, so the `lan` op reports them like any other. It never opens or
+closes a tunnel forward: that is net-api's, over MQTT. net-api opens no
+exposed port: that is the site's, made at the gateway.
 
 Over MQTT (`parkeze/gateway/<eui>/mgmt/request`, see `parkeze-mqtt-agent`):
 
@@ -114,11 +133,14 @@ to stay under the agent's 8KB answer.
   "clients": [{
     "mac": "c2:6c:1d:d1:f7:b3", "ip": "192.168.64.50", "hostname": "plc-1",
     "reserved": "192.168.64.50", "policy": "parkeze", "online": true, "port": "eth1",
+    "cellular": "allow", "cellularBlock": ["tcp:554"],
     "firstSeen": 1793051334, "lastSeen": 1793051821, "leaseExpires": 1793094533,
     "traffic": { "wan": { "txBytes": 6169, "rxBytes": 22131 },
                  "tunnel": { "txBytes": 2109, "rxBytes": 927 } }
   }],
   "forwards": [{ "port": 40000, "ip": "192.168.64.50", "dport": 8080, "expiresIn": 3598 }],
+  "exposed": [{ "proto": "tcp", "port": 8080, "ip": "192.168.64.50", "dport": 80 }],
+  "exposedOn": [{ "uplink": "wwifi", "address": "192.168.1.40" }],
   "journal": [{ "at": 1793051648, "op": "open", "port": 40000, "ip": "192.168.64.50",
                 "dport": 8080, "seconds": 3600, "id": "<request id>" }]
 }
@@ -136,7 +158,10 @@ to stay under the agent's 8KB answer.
   console's Cellular column is `wwan` and `usbwan` together. Counted after the
   firewall, so a refused attempt is not traffic, and since boot. It lives in
   ParkezeOS's own nftables table, so a firewall reload does not zero it.
-- `journal` is the last twenty forwards opened and closed.
+- `exposedOn` is where exposed ports answer now: each wired and WiFi
+  uplink's address. A private one is behind a site router.
+- `journal` is the last twenty forwards opened and closed, and ports exposed
+  and removed (`op` `expose`, `unexpose`).
 
 ## The tunnel forward
 
@@ -166,3 +191,33 @@ address, the site network or anything else reaches nothing.
 
 The table and the reasoning for keeping it out of fw4's are in the header of
 `/usr/sbin/parkeze-lan`.
+
+## Exposed ports
+
+A port on a wired or WiFi uplink's own address, forwarded to one device for
+good: a camera or a PLC the customer serves to the internet, through their
+own router's forward to the gateway and their own name (Network > DNS,
+Dynamic DNS; [features.md](features.md)). TCP or UDP, at most 32.
+
+- **Wired and WiFi only.** Matched on the uplink's device and its address
+  together (`uplink_in`: `wan`, `wan_<device>`, `wwifi`). Not on fw4's `wan`
+  zone, which also holds `usbwan`, a cellular dongle, and the console's
+  addresses on the same port. The tunnel and the SIM never reach one.
+- **Never out cellular.** A connection through an exposed port is dropped
+  rather than forwarded to a cellular device, so a failover does not carry
+  a customer's stream on our SIM.
+- **To a reserved address.** The device has to hold a reservation, and keeps
+  it while exposed: moving or releasing it is refused until the port goes,
+  or the port would follow whatever leased the address next.
+- **Not the gateway's own ports**: TCP 22, 80, 443 and 8443, UDP 67 and 68.
+- **Kept**, in UCI (`parkeze.expose_<proto>_<port>`), across reboots and
+  upgrades; each one made and removed is in the journal.
+- **Behind a site router**, the uplink's address is private and the page
+  says so: the site router forwards the same port to the gateway's address,
+  which Backhaul > Ethernet can make static from its lease.
+
+The device sees the caller's real address: nothing is masqueraded. Replies
+follow the main routing table, so an exposed port answers on whichever
+uplink carries the default route; see the header of `/usr/sbin/parkeze-lan`.
+fw4's `wan` zone forwards nothing, so `wan-forward.nft` adds one rule to it,
+accepting what this table's DNAT marked.

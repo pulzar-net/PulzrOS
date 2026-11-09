@@ -1,9 +1,11 @@
-// The devlan zone, through parkeze-lan: what the console reads and the two
-// things it may change, a client's policy and its reservation.
+// The devlan zone, through parkeze-lan: what the console reads and what it
+// may change per client (policy, reservation, cellular rule), and the ports
+// exposed on the wired and WiFi uplinks.
 //
-// Forwards are not here. The one way into the LAN is the tunnel forward
-// net-api opens over MQTT (lan-forward), and a console that could open one
-// would be a second; it reads the open ones in status and nothing more.
+// Tunnel forwards are not here: they are net-api's, opened over MQTT
+// (lan-forward), and the console reads the open ones in status and nothing
+// more. An exposed port is the site's, made at the gateway by somebody
+// standing at it, and never reaches the tunnel (see parkeze-lan).
 //
 // Everything changed here lands in parkeze-lan's own state (UCI dhcp and
 // parkeze), which `parkeze-lan status` reads back, so parkeze.net's `lan` op
@@ -14,7 +16,7 @@ let readfile = _m_fs.readfile;
 let _m_util = loadfile('/usr/share/parkeze/console/lib/util.uc', { raw_mode: true })();
 
 // ucode does not hoist function declarations; see util.uc.
-let lan, links, status, setPolicy, reserve;
+let lan, links, status, setPolicy, reserve, setCellular, expose;
 
 let runJson = _m_util.runJson;
 
@@ -64,4 +66,25 @@ reserve = function(req) {
     return lan(args);
 };
 
-return { reserve, setPolicy, status };
+// allow with no ports is the default; allow with ports blocks those on
+// cellular; block keeps the client off cellular altogether.
+setCellular = function(req) {
+    const mac = req.mac ?? '';
+    if (!match(mac, MAC)) return { error: 'A MAC address, like 00:11:22:33:44:55.' };
+    if (req.mode != 'allow' && req.mode != 'block') return { error: 'Cellular is allow or block.' };
+    const blocks = type(req.blocks) == 'array' ? req.blocks : [];
+    return lan(['cellular', mac, req.mode, ...(req.mode == 'allow' ? blocks : [])]);
+};
+
+// No ip removes it.
+expose = function(req) {
+    const proto = req.proto ?? '', port = sprintf('%d', int(req.port ?? 0));
+    if (proto != 'tcp' && proto != 'udp') return { error: 'TCP or UDP.' };
+    if (req.ip == null || req.ip == '') return lan(['unexpose', proto, port]);
+    if (!match(req.ip, IPV4)) return { error: 'An IPv4 address on the LAN.' };
+    const args = ['expose', proto, port, req.ip];
+    if (req.dport) push(args, sprintf('%d', int(req.dport)));
+    return lan(args);
+};
+
+return { expose, reserve, setCellular, setPolicy, status };

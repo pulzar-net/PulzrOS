@@ -1,9 +1,11 @@
 Package: parkeze-dns
-Depends: ucode, ucode-mod-fs, ucode-mod-uci, dnsmasq-full
+Depends: ucode, ucode-mod-fs, ucode-mod-uci, dnsmasq-full, ddns-scripts, ddns-scripts-cloudflare, curl
 Maintainer: Joseph Telaak <joseph@parkeze.com>
 Architecture: all
 Description: The gateway's resolver, as the site sets it.
  Upstream servers in place of the uplink's, local names the LAN resolves,
  and rebind protection with the domains allowed past it. Refuses names
  under Parkeze's domains and a server list that cannot resolve Parkeze.
+ Dynamic DNS for the customer's own Cloudflare zone, over a wired or WiFi
+ uplink, for ports exposed with parkeze-lan.
  For boards with the dns feature; see boards/common/board.conf.

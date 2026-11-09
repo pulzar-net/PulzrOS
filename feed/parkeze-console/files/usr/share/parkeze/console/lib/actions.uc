@@ -104,6 +104,12 @@ const ACTIONS = {
     setLanReserve: (req, s) => audited('lan.reserve',
         { by: s.subject, mac: req.mac, ip: req.ip || null, name: req.name || null },
         lan.reserve(req)),
+    setLanCellular: (req, s) => audited('lan.cellular',
+        { by: s.subject, mac: req.mac, mode: req.mode, blocks: req.blocks ?? [] },
+        lan.setCellular(req)),
+    setLanExpose: (req, s) => audited('lan.expose',
+        { by: s.subject, proto: req.proto, port: req.port, ip: req.ip || null, dport: req.dport || null },
+        lan.expose(req)),
 
     // ── dns ─────────────────────────────────────────────────────────────────
     setDnsUpstream: (req, s) => audited('dns.upstream', { by: s.subject, servers: req.servers ?? [] },
@@ -113,6 +119,10 @@ const ACTIONS = {
     setDnsRebind: (req, s) => audited('dns.rebind',
         { by: s.subject, protection: !!req.protection, allowed: req.allowed ?? [] },
         dns.setRebind(req)),
+    setDnsDdns: (req, s) => audited('dns.ddns',
+        { by: s.subject, enabled: req.enabled !== false, name: req.name, zone: req.zone,
+          uplink: req.uplink, token: req.token ? 'replaced' : 'kept' },
+        dns.setDdns(req)),
 
     // ── uplinks ─────────────────────────────────────────────────────────────
     setUplinkOrder: (req, s) => audited('uplinks.order', { by: s.subject, order: req.order ?? [] },

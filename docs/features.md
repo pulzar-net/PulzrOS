@@ -123,12 +123,20 @@ The Opal is a Parkeze Net gateway like any other, and the devices on its LAN
 are listed under it (logbook `docs/plans/connected-devices.md`, section 9).
 Three rules follow, and every router page keeps them:
 
-- **One way in.** Nothing opens a path from outside into the LAN except the
-  tunnel forward net-api asks for (`lan-forward`, [lan.md](lan.md)). So there
-  is no uplink port forward, no DMZ, no site VPN that reaches the LAN, and no
-  firewall rule editor.
-- **Policy is per MAC**: `parkeze` or `internet`, through `parkeze-lan policy`.
-  No blocklist, no allowlist, no per-client speed limit.
+- **Two ways in, kept apart.** The tunnel forward net-api asks for
+  (`lan-forward`) is ours: from `wg0`, bounded in time. An exposed port
+  (`parkeze-lan expose`) is the site's: from a wired or WiFi uplink's own
+  address to one reserved client, opened at the gateway, for a customer who
+  serves something to the internet through their own router and their own
+  DNS name. Neither reaches the other's path: an exposed port never answers
+  on `wg0` or a cellular device, and a connection through one is dropped
+  rather than leave on cellular. Customer traffic does not ride our tunnel
+  or our SIM. See [lan.md](lan.md). Still no DMZ, no site VPN that reaches
+  the LAN, and no firewall rule editor.
+- **Policy is per MAC**: `parkeze` or `internet`, through `parkeze-lan policy`,
+  and a cellular rule beside it: allowed, blocked, or allowed but for some
+  ports (`parkeze-lan cellular`). No blocklist, no allowlist, no per-client
+  speed limit.
 - **Local is reported.** A setting changed at the gateway (a reservation, an
   upstream DNS server, the uplink order) is in the gateway's report to Parkeze
   Net, as the LAN's state already is (`parkeze-lan status`).
@@ -151,6 +159,15 @@ that client any address. So is a reservation's name, which parkeze-lan already
 serves. Rebind protection stays on unless somebody turns it off, with the
 domains allowed past it listed.
 
+**Dynamic DNS** is the customer's name in the customer's Cloudflare zone,
+kept on the site's public address by ddns-scripts (service `pulzr` in UCI
+`ddns`), for exposed ports. Pulzr hosts no name and holds no account. The
+address is asked of Cloudflare's own echo (`ip_source web`, because behind a
+site router the uplink's address is private), and the question and the
+update both leave on the wired or WiFi uplink chosen (`bind_network`), never
+cellular. The API token goes in on stdin (`parkeze-dns ddns-token`), lives in
+`/etc/config/ddns` at mode 600, and `status` says only whether one is set.
+
 **Uplinks** sets each uplink's route metric from the order: 10, 20, 30, 40.
 Tracking pings out of each tracked uplink's own device and, after `down`
 misses, moves it behind the others (100 plus its step); `up` answers bring it
@@ -160,7 +177,8 @@ asks `parkeze-uplinks usable wan`, so it leaves a dead cable too. See
 [backhaul.md](backhaul.md), "Failover".
 
 Neither opens anything: a name and a metric reach nothing that was not
-reachable before.
+reachable before. Dynamic DNS names an address; the exposed ports behind it
+are the LAN page's.
 
 ### On parkeze.net
 
@@ -188,17 +206,20 @@ paragraph explaining itself, which this console does not do.
 | Port roles, VLANs, a second WAN | Network > Ports, on every board ([ports.md](ports.md)): each port an uplink, a LAN port or unused, tagged VLANs with roles of their own, applied and undone unless confirmed |
 | Internet: Repeater | Backhaul > WiFi (`wifi`) |
 | Internet: Cellular | Backhaul > Cellular (`cellular`) |
-| Clients, LAN, DHCP, address reservation | Network > LAN (`lan`), built: `parkeze-lan status`, reserve, per-MAC policy, the open tunnel forwards read-only |
+| Clients, LAN, DHCP, address reservation | Network > LAN (`lan`), built: `parkeze-lan status`, reserve, per-MAC policy and cellular rule, the open tunnel forwards read-only |
+| Port forwarding | Network > LAN (`lan`), Exposed ports: wired and WiFi uplinks only, to reserved clients |
 | Multi-WAN: priority, tracking, failover | Network > Uplinks (`failover`), built: the order, per-uplink tracking, the ping targets and thresholds; failover only, no load balance |
 | DNS: hosts, upstream, rebind protection | Network > DNS (`dns`), built: automatic or custom upstream, local names, rebind protection and its allowed domains |
+| DDNS | Network > DNS (`dns`), Dynamic DNS: the customer's own Cloudflare zone, not a vendor domain |
 | Management Control | Access, already |
 | Overview, Upgrade, Log, Time zone | System and Logs, already |
 
-Left out, because each is a way into the LAN: port forwarding and DMZ,
-WireGuard and OpenVPN servers and clients, LuCI's firewall rules. Left out
+Left out, because each is a way into the LAN: DMZ, WireGuard and OpenVPN
+servers and clients, LuCI's firewall rules. Port forwarding came in later as
+exposed ports, and GL's DDNS as the customer's own (above). Left out
 because nothing here needs them: guest network, network mode, drop-in
 gateway, IGMP snooping, hardware acceleration, NAT mode, tethering, plug-ins,
-NAS, GL's DDNS, GoodCloud and AstroWarp (parkeze.net is the fleet manager).
+NAS, GoodCloud and AstroWarp (parkeze.net is the fleet manager).
 
 The management tunnel is the organization's when the organization has a hub
 of its own; see [backhaul.md](backhaul.md), "Which hub". An Opal enrols the

@@ -1,0 +1,1 @@
+ct status dnat ct mark 0x5045 oifname "br-devlan" accept

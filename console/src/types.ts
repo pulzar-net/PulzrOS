@@ -582,6 +582,10 @@ export interface LanClient {
   traffic: LanTraffic;
   /** The LAN port it is behind, from the bridge's forwarding table. */
   port?: string | null;
+  /** Whether it may use cellular when that carries traffic. */
+  cellular?: 'allow' | 'block';
+  /** Ports refused on cellular while allowed: "tcp:554", "udp:5000-5010". */
+  cellularBlock?: string[];
 }
 
 export interface LanLink {
@@ -607,6 +611,17 @@ export interface LanStatus {
   links?: LanLink[];
   clients?: LanClient[];
   forwards?: LanForward[];
+  exposed?: LanExposed[];
+  /** The wired and WiFi uplink addresses exposed ports answer on now. */
+  exposedOn?: { uplink: string; address: string }[];
+}
+
+/** A port on the uplinks forwarded to a client for good (parkeze-lan expose). */
+export interface LanExposed {
+  proto: 'tcp' | 'udp';
+  port: number;
+  ip: string;
+  dport: number;
 }
 
 // ── dns ─────────────────────────────────────────────────────────────────────
@@ -624,6 +639,24 @@ export interface DnsStatus {
     /** Domains allowed to answer with a private address. */
     allowed: string[];
   };
+  /** The customer's own name on Cloudflare, kept on this site's address. */
+  ddns?: DdnsStatus;
+}
+
+export interface DdnsStatus {
+  enabled: boolean;
+  name?: string | null;
+  zone?: string | null;
+  /** The wired or WiFi uplink it follows: wan, wan_<device>, wwifi. */
+  uplink?: string | null;
+  tokenSet?: boolean;
+  /** What Cloudflare was last told. */
+  address?: string | null;
+  /** Unix seconds of that update. */
+  updated?: number | null;
+  /** ddns-scripts' last error, while nothing is registered. */
+  error?: string | null;
+  uplinks: string[];
 }
 
 // ── uplinks ─────────────────────────────────────────────────────────────────
@@ -674,7 +707,7 @@ export interface PortUplink {
   role: 'uplink';
   iface: string;
   addressing: Addressing;
-  state: { up: boolean; address: string | null; gateway: string | null };
+  state: { up: boolean; address: string | null; gateway: string | null; dns?: string[] };
   /** The router at the end of it: its MAC from the ARP table, its maker as
       Pulzr Net named it on the last report. */
   router: { address: string; mac: string | null; maker: string | null } | null;

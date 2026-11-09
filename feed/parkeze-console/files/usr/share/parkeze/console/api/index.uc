@@ -391,8 +391,16 @@ const ROUTES = {
         return respond(200, result);
     },
 
-    // ── lan: the devlan zone; no forwards, see lib/lan.uc ──────────────────
+    // ── lan: the devlan zone; no tunnel forwards, see lib/lan.uc ───────────
     'GET  /api/lan/status':  () => respond(200, lan.status()),
+    'POST /api/lan/cellular': (env, req, s) => {
+        const result = actions.setLanCellular(req, s);
+        return result.error ? error(400, result.error) : respond(200, result);
+    },
+    'POST /api/lan/expose':  (env, req, s) => {
+        const result = actions.setLanExpose(req, s);
+        return result.error ? error(400, result.error) : respond(200, result);
+    },
     'POST /api/lan/policy':  (env, req, s) => {
         const result = actions.setLanPolicy(req, s);
         return result.error ? error(400, result.error) : respond(200, result);
@@ -414,6 +422,10 @@ const ROUTES = {
     },
     'POST /api/dns/rebind':    (env, req, s) => {
         const result = actions.setDnsRebind(req, s);
+        return result.error ? error(400, result.error) : respond(200, result);
+    },
+    'POST /api/dns/ddns':      (env, req, s) => {
+        const result = actions.setDnsDdns(req, s);
         return result.error ? error(400, result.error) : respond(200, result);
     },
 

@@ -9,15 +9,18 @@
 //   parkeze-lan unreserve <mac>
 //   parkeze-lan forward <ip> <port> <seconds> [<request id>]
 //   parkeze-lan unforward <tunnel port> [<request id>]
+//   parkeze-lan expose tcp|udp <port> <ip> [<client port>]
+//   parkeze-lan unexpose tcp|udp <port>
+//   parkeze-lan cellular <mac> allow|block [tcp:<port>[-<port>] udp:...]
+//   parkeze-lan links                          which devices are which uplink
 //   parkeze-lan seen <mac> <ip>                from a DHCP event
 //   parkeze-lan isolate                        port isolation on every member
 //
-// ── THE ONE FORWARD ────────────────────────────────────────────────────────
+// ── THE TUNNEL FORWARD ─────────────────────────────────────────────────────
 //
-// A gateway makes exactly one kind of forward: from the management tunnel to
-// one client's TCP port, for a bounded time. That is how somebody at
-// parkeze.net opens a PLC's own interface without the PLC holding a second
-// connection or the site opening anything.
+// From the management tunnel to one client's TCP port, for a bounded time.
+// That is how somebody at parkeze.net opens a PLC's own interface without the
+// PLC holding a second connection or the site opening anything.
 //
 // It lives in a table of our own, inet parkeze_lan, not in fw4's. fw4 rebuilds
 // its table on every reload, which would close a forward somebody is using
@@ -36,6 +39,42 @@
 // Every open and close is journalled to /etc/parkeze/lan/forwards.log, as a
 // setup AP raise is, and `status` carries the recent entries to parkeze.net.
 //
+// ── EXPOSED PORTS ──────────────────────────────────────────────────────────
+//
+// A port on the uplink's own address, forwarded to one client for good: a
+// camera or a PLC a customer serves to the internet themselves, through their
+// own router's forward to this gateway and their own DNS name (parkeze-dns's
+// ddns). Kept in UCI (parkeze.expose_*), loaded into this table by apply.
+//
+// Only the wired uplinks and the WiFi uplink. Matched on device AND address
+// (uplink_in), not on fw4's wan zone, because that zone also holds usbwan, a
+// cellular dongle, and the console's addresses on the same port. The tunnel
+// never reaches an exposed port, and a connection through one is dropped
+// rather than leave on cellular. That is the line: a customer's traffic
+// never rides our tunnel or our SIM.
+//
+// The client must hold a reservation, and keeps it while it is exposed: an
+// exposed port to a dynamic address lands on whatever device leases it next.
+// Ports the gateway itself answers on its uplink (RESERVED) are refused.
+//
+// ponytail: replies follow the main routing table. An exposed port answers on
+// whichever wired or WiFi uplink carries the default route; arriving on
+// another, the reply leaves the wrong way and the connection fails. Mark the
+// connection with its uplink and route the reply by mark if a site ever
+// needs more than one at once.
+//
+// fw4's wan zone forwards nothing, so one rule is added to it
+// (/usr/share/parkeze/lan/wan-forward.nft), as for the tunnel's.
+//
+// ── CELLULAR ───────────────────────────────────────────────────────────────
+//
+// Per client: allowed onto cellular, blocked from it, or allowed except some
+// ports. A camera on the internet policy otherwise fails over onto the SIM
+// with everything else and spends its data in a day. Matched on the cellular
+// devices (wwan, usbwan) by MAC, before fw4 sees the packet, so it holds
+// whatever the policy allows. REJECT, as the zone does: a client refused
+// fails at once rather than retrying into a link it may not use.
+//
 // ── COUNTING ───────────────────────────────────────────────────────────────
 //
 // Per client and per uplink, by nftables: a dynamic set keyed on the client's
@@ -49,6 +88,17 @@ let uci = require('uci');
 
 const TABLE = 'parkeze_lan';
 const MARK = 0x504b;
+const EXPOSE_MARK = 0x5045;
+// What the gateway answers on its own uplink address: DHCP renewals, and the
+// console, its WiFi sign-in proxy and SSH, which a site may reach it on.
+const RESERVED = { tcp: [22, 80, 443, 8443], udp: [67, 68] };
+const MAX_EXPOSED = 32;
+const MAX_BLOCKS = 16;
+// Which netifd interfaces are which, as /usr/share/parkeze/wired.sh and
+// cellular.sh have them: wan and wan_<device> are wired (parkeze-ports),
+// wwifi the WiFi uplink, wwan the modem and usbwan a dongle or a phone.
+const CELLULAR_UPLINKS = ['wwan', 'usbwan'];
+let exposeUplink = (name) => name == 'wwifi' || name == 'wan' || index(name, 'wan_') == 0;
 // The tunnel-side ports a forward is reached on. Sixteen at once is far more
 // than anybody opens; a full range is refused rather than grown.
 const FIRST_PORT = 40000;
@@ -141,10 +191,17 @@ table inet ${TABLE} {
 	set usage_down { type ipv4_addr . ifname; flags dynamic; counter; }
 	set forward_open { type inet_service; flags timeout; }
 	map forward_to { type inet_service : ipv4_addr . inet_service; flags timeout; }
+	set uplink_in { type ifname . ipv4_addr; }
+	set cellular_if { type ifname; }
+	set expose_open { type inet_proto . inet_service; }
+	map expose_to { type inet_proto . inet_service : ipv4_addr . inet_service; }
+	set cell_deny { type ether_addr; }
+	set cell_block { type ether_addr . inet_proto . inet_service; flags interval; }
 
 	chain dstnat {
 		type nat hook prerouting priority dstnat - 5; policy accept;
 		iifname "wg0" tcp dport @forward_open ct mark set 0x%x dnat ip to tcp dport map @forward_to
+		iifname . ip daddr @uplink_in meta l4proto . th dport @expose_open ct mark set 0x%x dnat ip to meta l4proto . th dport map @expose_to
 	}
 	chain srcnat {
 		type nat hook postrouting priority srcnat - 5; policy accept;
@@ -153,6 +210,10 @@ table inet ${TABLE} {
 	chain guard {
 		type filter hook forward priority filter - 5; policy accept;
 		ct mark 0x%x ct original proto-dst != @forward_open drop
+		ct mark 0x%x meta l4proto . ct original proto-dst != @expose_open drop
+		ct mark 0x%x oifname @cellular_if drop
+		iifname "%s" oifname @cellular_if ether saddr @cell_deny reject
+		iifname "%s" oifname @cellular_if ether saddr . meta l4proto . th dport @cell_block reject
 	}
 	chain account {
 		type filter hook forward priority filter + 10; policy accept;
@@ -160,10 +221,16 @@ table inet ${TABLE} {
 		oifname "%s" update @usage_down { ip daddr . iifname }
 	}
 }
-`, MARK, MARK, bridge(), MARK, bridge(), bridge());
+`, MARK, EXPOSE_MARK, MARK, bridge(), MARK, EXPOSE_MARK, EXPOSE_MARK,
+   bridge(), bridge(), bridge(), bridge());
 
+// A table from before exposed ports has none of their sets. A gateway gets a
+// new one at the reboot an upgrade brings; this is for a package swapped in
+// by hand, and it closes any tunnel forward open at the time.
 let ensureTable = () => {
-    if (length(capture(['nft', 'list', 'table', 'inet', TABLE]))) return true;
+    if (length(capture(['nft', 'list', 'set', 'inet', TABLE, 'uplink_in']))) return true;
+    if (length(capture(['nft', 'list', 'table', 'inet', TABLE])))
+        system(['nft', 'delete', 'table', 'inet', TABLE]);
     return nftScript(table());
 };
 
@@ -211,6 +278,95 @@ let applyPolicy = () => {
         system('/etc/init.d/firewall reload >/dev/null 2>&1', 30000);
     }
     return changed;
+};
+
+// A client's section holds its policy and its cellular rules; it goes when
+// neither differs from the default.
+let saveClient = (mac, set) => {
+    let name = 'lan_' + macId(mac);
+    let s = cursor.get_all('parkeze', name) ?? {};
+    set(s);
+    if (s.policy != 'internet' && s.cellular != 'block' && !length(s.cellular_block ?? [])) {
+        cursor.delete('parkeze', name);
+    } else {
+        cursor.set('parkeze', name, 'lan_client');
+        cursor.set('parkeze', name, 'mac', mac);
+        for (let opt in ['policy', 'cellular', 'cellular_block']) {
+            if (s[opt] == null || (type(s[opt]) == 'array' && !length(s[opt])))
+                cursor.delete('parkeze', name, opt);
+            else
+                cursor.set('parkeze', name, opt, s[opt]);
+        }
+    }
+    cursor.commit('parkeze');
+};
+
+// "tcp:554" or "udp:5000-5010" as nft writes it, or null.
+let blockEntry = (text) => {
+    let m = match(text ?? '', /^(tcp|udp):([0-9]{1,5})(-([0-9]{1,5}))?$/);
+    if (!m) return null;
+    let lo = int(m[2]), hi = m[4] ? int(m[4]) : lo;
+    if (lo < 1 || hi > 65535 || hi < lo) return null;
+    return { proto: m[1], ports: lo == hi ? sprintf('%d', lo) : sprintf('%d-%d', lo, hi) };
+};
+
+let exposed = () => {
+    let out = [];
+    cursor.foreach('parkeze', 'lan_expose', (s) =>
+        push(out, { proto: s.proto, port: int(s.port), ip: s.ip, dport: int(s.dport) }));
+    return sort(out, (a, b) => a.port - b.port || (a.proto < b.proto ? -1 : 1));
+};
+
+// The uplinks by role, from netifd: the wired and WiFi uplinks' devices and
+// addresses, which exposed ports answer on, and the cellular devices.
+let links = () => {
+    let out = { expose: [], cellular: [] };
+    let dump = captureJson(['ubus', 'call', 'network.interface', 'dump']);
+    for (let ifc in dump?.interface ?? []) {
+        let dev = ifc.l3_device;
+        if (!ifc.up || !dev) continue;
+        if (exposeUplink(ifc.interface))
+            for (let a in ifc['ipv4-address'] ?? [])
+                push(out.expose, { uplink: ifc.interface, device: dev, address: a.address });
+        if (ifc.interface in CELLULAR_UPLINKS)
+            push(out.cellular, dev);
+    }
+    return out;
+};
+
+// Every set this table loads from state, in one transaction: a flush and its
+// refill are atomic, so nothing is ever briefly open or briefly unguarded.
+let loadSets = () => {
+    let l = links(), lines = [];
+    let fill = (set, elems) => {
+        push(lines, sprintf('flush set inet %s %s', TABLE, set));
+        if (length(elems)) push(lines, sprintf('add element inet %s %s { %s }', TABLE, set, join(', ', elems)));
+    };
+    fill('uplink_in', map(l.expose, (e) => sprintf('"%s" . %s', e.device, e.address)));
+    fill('cellular_if', map(uniq(l.cellular), (d) => sprintf('"%s"', d)));
+
+    let open = [], to = [];
+    for (let e in exposed()) {
+        push(open, sprintf('%s . %d', e.proto, e.port));
+        push(to, sprintf('%s . %d : %s . %d', e.proto, e.port, e.ip, e.dport));
+    }
+    fill('expose_open', open);
+    push(lines, sprintf('flush map inet %s expose_to', TABLE));
+    if (length(to)) push(lines, sprintf('add element inet %s expose_to { %s }', TABLE, join(', ', to)));
+
+    let deny = [], block = [];
+    cursor.foreach('parkeze', 'lan_client', (s) => {
+        let mac = normalMac(s.mac);
+        if (!mac) return;
+        if (s.cellular == 'block') push(deny, mac);
+        else for (let text in s.cellular_block ?? []) {
+            let b = blockEntry(text);
+            if (b) push(block, sprintf('%s . %s . %s', mac, b.proto, b.ports));
+        }
+    });
+    fill('cell_deny', deny);
+    fill('cell_block', block);
+    return nftScript(join('\n', lines) + '\n');
 };
 
 // ── what a client is ──────────────────────────────────────────────────────
@@ -340,7 +496,8 @@ let status = () => {
 
     let clients = {};
     let client = (mac) => (clients[mac] ??= { mac, ip: null, hostname: null, reserved: null,
-                                              policy: 'parkeze', online: false,
+                                              policy: 'parkeze', cellular: 'allow', cellularBlock: [],
+                                              online: false,
                                               firstSeen: null, lastSeen: null, traffic: {} });
 
     for (let l in leases()) {
@@ -360,7 +517,11 @@ let status = () => {
     });
     cursor.foreach('parkeze', 'lan_client', (s) => {
         let mac = normalMac(s.mac);
-        if (mac && s.policy == 'internet') client(mac).policy = 'internet';
+        if (!mac) return;
+        let c = client(mac);
+        if (s.policy == 'internet') c.policy = 'internet';
+        if (s.cellular == 'block') c.cellular = 'block';
+        c.cellularBlock = filter(s.cellular_block ?? [], (t) => blockEntry(t));
     });
     let seen = readSeen(), now = online();
     for (let mac in keys(seen)) {
@@ -395,6 +556,11 @@ let status = () => {
         ports: cursor.get('network', 'devlan_dev', 'ports') ?? [],
         clients: sort(values(clients), (a, b) => (a.ip ?? '') < (b.ip ?? '') ? -1 : 1),
         forwards: forwards(),
+        exposed: exposed(),
+        // Where exposed ports answer now: the wired and WiFi uplinks'
+        // addresses. A private one is behind a site router, which has to
+        // forward to it as well.
+        exposedOn: map(links().expose, (e) => ({ uplink: e.uplink, address: e.address })),
         journal: journalTail(),
     };
 };
@@ -410,35 +576,97 @@ let isolate = () => {
     }
 };
 
+// A reservation an exposed port points at stays where it is: moved or
+// released, the port would follow whatever leases the address next.
+let keepExposed = (was, now) => {
+    if (!was || was == now) return;
+    for (let e in exposed())
+        if (e.ip == was) die(sprintf('%s has exposed ports; remove them first', was), 3);
+};
+
 // ── commands ──────────────────────────────────────────────────────────────
 
 let commands = {
     apply: () => {
         if (!lanNet()) die('no LAN on this gateway');
         ensureTable() || die('could not load the nftables table');
+        loadSets() || die('could not load the exposed ports and cellular rules');
         applyPolicy();
         isolate();
     },
 
     isolate: () => isolate(),
 
+    // An uplink came up, went down or changed address (hotplug).
+    links: () => {
+        if (!lanNet()) exit(0);
+        (ensureTable() && loadSets()) || die('could not load the uplinks');
+    },
+
     status: () => printf('%J\n', status()),
 
     policy: (mac, policy) => {
         mac = normalMac(mac) ?? die('a MAC address, like 00:11:22:33:44:55', 2);
         (policy == 'parkeze' || policy == 'internet') || die('policy is parkeze or internet', 2);
-        let name = 'lan_' + macId(mac);
-        if (policy == 'parkeze') {
-            cursor.delete('parkeze', name);
-        } else {
-            cursor.set('parkeze', name, 'lan_client');
-            cursor.set('parkeze', name, 'mac', mac);
-            cursor.set('parkeze', name, 'policy', policy);
-        }
-        cursor.commit('parkeze');
+        saveClient(mac, (s) => s.policy = policy == 'internet' ? policy : null);
         applyPolicy();
         log(sprintf('%s policy %s', mac, policy));
         printf('%J\n', { mac, policy });
+    },
+
+    cellular: (mac, mode, ...blocks) => {
+        mac = normalMac(mac) ?? die('a MAC address, like 00:11:22:33:44:55', 2);
+        (mode == 'allow' || mode == 'block') || die('cellular is allow or block', 2);
+        (length(blocks) <= MAX_BLOCKS) || die(sprintf('at most %d blocked ports', MAX_BLOCKS), 2);
+        for (let b in blocks)
+            blockEntry(b) || die(sprintf('%s is not tcp:<port> or udp:<port>-<port>', b), 2);
+        blocks = mode == 'allow' ? uniq(blocks) : [];
+        saveClient(mac, (s) => {
+            s.cellular = mode == 'block' ? 'block' : null;
+            s.cellular_block = blocks;
+        });
+        ensureTable() && loadSets() || die('could not load the cellular rules');
+        log(sprintf('%s cellular %s%s', mac, mode, length(blocks) ? ' except ' + join(' ', blocks) : ''));
+        printf('%J\n', { mac, cellular: mode, cellularBlock: blocks });
+    },
+
+    expose: (proto, port, ip, dport) => {
+        (proto == 'tcp' || proto == 'udp') || die('tcp or udp', 2);
+        port = match(port ?? '', /^[0-9]{1,5}$/) ? int(port) : 0;
+        (port >= 1 && port <= 65535) || die('a port from 1 to 65535', 2);
+        (port in RESERVED[proto]) && die(sprintf('%s %d is the gateway\'s own', proto, port), 3);
+        clientIp(ip) || die('an address on the LAN, other than the gateway', 2);
+        dport = dport == null ? port : (match(dport, /^[0-9]{1,5}$/) ? int(dport) : 0);
+        (dport >= 1 && dport <= 65535) || die('a client port from 1 to 65535', 2);
+        let reserved = false;
+        cursor.foreach('dhcp', 'host', (s) => {
+            if (s.ip == ip && index(s['.name'], 'lan_') == 0) reserved = true;
+        });
+        reserved || die(sprintf('reserve %s first', ip), 3);
+        let name = sprintf('expose_%s_%d', proto, port);
+        (cursor.get('parkeze', name) || length(exposed()) < MAX_EXPOSED)
+            || die(sprintf('at most %d exposed ports', MAX_EXPOSED), 3);
+        cursor.set('parkeze', name, 'lan_expose');
+        cursor.set('parkeze', name, 'proto', proto);
+        cursor.set('parkeze', name, 'port', sprintf('%d', port));
+        cursor.set('parkeze', name, 'ip', ip);
+        cursor.set('parkeze', name, 'dport', sprintf('%d', dport));
+        cursor.commit('parkeze');
+        ensureTable() && loadSets() || die('could not load the exposed ports');
+        journal({ at: time(), op: 'expose', proto, port, ip, dport });
+        log(sprintf('exposed %s %d -> %s:%d', proto, port, ip, dport));
+        printf('%J\n', { proto, port, ip, dport });
+    },
+
+    unexpose: (proto, port) => {
+        let name = sprintf('expose_%s_%d', proto ?? '', int(port ?? 0));
+        let found = cursor.get_all('parkeze', name) ?? die('nothing exposed on that port', 3);
+        cursor.delete('parkeze', name);
+        cursor.commit('parkeze');
+        ensureTable() && loadSets() || die('could not load the exposed ports');
+        journal({ at: time(), op: 'unexpose', proto, port: int(port), ip: found.ip, dport: int(found.dport) });
+        log(sprintf('unexposed %s %d', proto, int(port)));
+        printf('%J\n', { proto, port: int(port), closed: true });
     },
 
     reserve: (mac, ip, name) => {
@@ -446,6 +674,7 @@ let commands = {
         clientIp(ip) || die('an address on the LAN, other than the gateway', 2);
         (name == null || match(name, /^[A-Za-z0-9-]{1,63}$/)) || die('a name is letters, digits and hyphens', 2);
         let section = 'lan_' + macId(mac);
+        keepExposed(cursor.get('dhcp', section, 'ip'), ip);
         let taken = null;
         cursor.foreach('dhcp', 'host', (s) => {
             if (s.ip == ip && s['.name'] != section) taken = s['.name'];
@@ -469,6 +698,7 @@ let commands = {
 
     unreserve: (mac) => {
         mac = normalMac(mac) ?? die('a MAC address, like 00:11:22:33:44:55', 2);
+        keepExposed(cursor.get('dhcp', 'lan_' + macId(mac), 'ip'), null);
         cursor.delete('dhcp', 'lan_' + macId(mac));
         cursor.commit('dhcp');
         system('/etc/init.d/dnsmasq reload >/dev/null 2>&1', 30000);
@@ -532,5 +762,5 @@ let commands = {
 };
 
 let cmd = commands[ARGV[0] ?? 'status'];
-cmd ?? die('usage: parkeze-lan {apply|status|policy|reserve|unreserve|forward|unforward|seen|isolate}', 2);
+cmd ?? die('usage: parkeze-lan {apply|status|policy|cellular|reserve|unreserve|forward|unforward|expose|unexpose|links|seen|isolate}', 2);
 call(cmd, null, null, ...slice(ARGV, 1));

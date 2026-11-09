@@ -7,6 +7,9 @@
 //   parkeze-dns unhost <name>
 //   parkeze-dns rebind on|off [<domain>...]    and the domains allowed to
 //                                              answer with a private address
+//   parkeze-dns ddns <name> <zone> <uplink>    keep <name> on this site's
+//   parkeze-dns ddns off                       address, on Cloudflare
+//   parkeze-dns ddns-token                     the API token, on stdin
 //
 // ── WHAT A NAME MAY NOT BE ─────────────────────────────────────────────────
 //
@@ -35,8 +38,25 @@
 // naming the client's own network. A site with an internal DNS zone needs
 // that zone listed, or turns it off.
 //
-// Everything is in UCI dhcp, and `status` is what the MQTT agent's `dns` op
-// sends parkeze.net, so a server set at the gateway is one parkeze.net sees.
+// ── DYNAMIC DNS ────────────────────────────────────────────────────────────
+//
+// The customer's own name, in their own Cloudflare zone, kept on the address
+// the site's internet has: for ports exposed on the uplinks (parkeze-lan),
+// reached through the site router's forward. Pulzr hosts no name and holds no
+// account for it; the token is theirs, scoped to their zone.
+//
+// ddns-scripts does the work (service `pulzr` in UCI ddns). The address is
+// asked of the web, because behind a site router the uplink's own address is
+// a private one, and both that question and the update leave on the uplink
+// named here (bind_network): never cellular, where the answer would be the
+// carrier's address, and never the tunnel.
+//
+// The token goes in on stdin, so it is never on a command line, and
+// /etc/config/ddns is root's alone. `status` says whether one is set and nothing more: it is
+// what the MQTT agent's `dns` op sends parkeze.net.
+//
+// Everything else is in UCI dhcp, and `status` is what the MQTT agent's `dns`
+// op sends parkeze.net, so a server set at the gateway is one parkeze.net sees.
 
 let fs = require('fs');
 let uci = require('uci');
@@ -51,6 +71,12 @@ const IPV4 = /^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$/;
 // inside a repeated group is a large automaton for musl's TRE to build on
 // every call, for a rule this states plainly.
 const LABEL = /^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?$/;
+const DDNS = 'pulzr';
+const DDNS_CONFIG = '/etc/config/ddns';
+const DDNS_RUN = '/var/run/ddns/';
+const DDNS_LOG = '/var/log/ddns/';
+// A Cloudflare API token: 40 characters today, of these.
+const TOKEN = /^[A-Za-z0-9_-]{20,128}$/;
 
 let cursor = uci.cursor();
 
@@ -123,6 +149,51 @@ let reload = () => system('/etc/init.d/dnsmasq reload >/dev/null 2>&1', 30000);
 // underscore, so this is one-to-one: a-b and a.b stay two names.
 let hostSection = (name) => 'dns_' + replace(replace(lc(name), /-/g, '_h'), /\./g, '_d');
 
+// The uplinks a name may follow: wired (wan, wan_<device>, parkeze-ports)
+// and WiFi. Not cellular.
+let ddnsUplinks = () => {
+    let out = [];
+    cursor.foreach('network', 'interface', (i) => {
+        let n = i['.name'];
+        if ((n == 'wan' || index(n, 'wan_') == 0 || n == 'wwifi') && i.disabled != '1') push(out, n);
+    });
+    return sort(out);
+};
+
+let ddnsStatus = () => {
+    let s = cursor.get_all('ddns', DDNS);
+    if (!s) return { enabled: false, uplinks: ddnsUplinks() };
+    let address = trim(fs.readfile(DDNS_RUN + DDNS + '.ip') ?? '') || null;
+    // ddns-scripts keeps the uptime of the last update, not the time.
+    let since = int(trim(fs.readfile(DDNS_RUN + DDNS + '.update') ?? '0'));
+    let uptime = int(split(fs.readfile('/proc/uptime') ?? '0', ' ')[0]);
+    let updated = since > 0 && uptime >= since ? time() - (uptime - since) : null;
+    // The last thing ddns-scripts gave up on, while nothing has been
+    // registered: once an address is, an old error is history.
+    let error = null;
+    if (!address)
+        for (let line in split(fs.readfile(DDNS_LOG + DDNS + '.log') ?? '', '\n')) {
+            let m = match(line, /ERROR *: *(.*)$/);
+            if (m) error = trim(m[1]);
+        }
+    let at = index(s.domain ?? '', '@');
+    return {
+        enabled: s.enabled == '1',
+        name: s.lookup_host ?? null,
+        zone: at >= 0 ? substr(s.domain, at + 1) : null,
+        uplink: s.bind_network ?? null,
+        tokenSet: length(s.password ?? '') > 0,
+        address, updated, error,
+        uplinks: ddnsUplinks(),
+    };
+};
+
+let ddnsCommit = () => {
+    cursor.commit('ddns');
+    system(['chmod', '600', DDNS_CONFIG]);
+    system('/etc/init.d/ddns enable >/dev/null 2>&1; /etc/init.d/ddns restart >/dev/null 2>&1', 30000);
+};
+
 let status = () => {
     let s = section();
     let servers = filter(list(cursor.get('dhcp', s, 'server')), ipv4);
@@ -142,6 +213,7 @@ let status = () => {
             protection: cursor.get('dhcp', s, 'rebind_protection') != '0',
             allowed: list(cursor.get('dhcp', s, 'rebind_domain')),
         },
+        ddns: ddnsStatus(),
     };
 };
 
@@ -224,6 +296,60 @@ let commands = {
     },
 };
 
+commands.ddns = (name, zone, uplink) => {
+    fs.access(DDNS_CONFIG) || die('ddns-scripts is not on this gateway');
+    if (name == 'off') {
+        cursor.get('ddns', DDNS) || die('no dynamic DNS is set', 3);
+        cursor.set('ddns', DDNS, 'enabled', '0');
+        ddnsCommit();
+        log('ddns off');
+        return printf('%J\n', ddnsStatus());
+    }
+    name = lc(name ?? ''); zone = lc(zone ?? '');
+    hostname(name) || die('a name is letters, digits, hyphens and dots', 2);
+    (hostname(zone) && index(zone, '.') > 0) || die('a zone is a domain, like example.com', 2);
+    (name == zone || substr(name, -length(zone) - 1) == '.' + zone) || die(sprintf('%s is not in %s', name, zone), 2);
+    let theirs = parkezeName(zone);
+    theirs && die(sprintf('names under %s are Pulzr\'s', theirs), 2);
+    (uplink in ddnsUplinks()) || die('the uplink is a wired one or the WiFi', 2);
+    length(cursor.get('ddns', DDNS, 'password') ?? '') || die('set the API token first', 3);
+
+    // Cloudflare's script takes host@zone, and @zone for the zone's own name.
+    let host = name == zone ? '' : substr(name, 0, length(name) - length(zone) - 1);
+    let set = {
+        enabled: '1', service_name: 'cloudflare.com-v4', lookup_host: name, domain: host + '@' + zone,
+        username: 'Bearer', use_ipv6: '0', force_ipversion: '1', interface: uplink, bind_network: uplink,
+        // Cloudflare's own echo, the provider the customer already chose. It
+        // lists the address after the host, which holds no IPv4 address.
+        ip_source: 'web', ip_url: 'https://www.cloudflare.com/cdn-cgi/trace',
+        use_https: '1', cacert: '/etc/ssl/certs', check_interval: '5', check_unit: 'minutes',
+        force_interval: '24', force_unit: 'hours', retry_interval: '60', retry_unit: 'seconds',
+    };
+    cursor.get('ddns', DDNS) || cursor.set('ddns', DDNS, 'service');
+    for (let k in keys(set)) cursor.set('ddns', DDNS, k, set[k]);
+    // curl, for --interface: the update and the address question both leave
+    // on the uplink named, and Cloudflare's script needs curl anyway.
+    cursor.get('ddns', 'global') && cursor.set('ddns', 'global', 'use_curl', '1');
+    ddnsCommit();
+    log(sprintf('ddns %s on %s', name, uplink));
+    printf('%J\n', ddnsStatus());
+};
+
+// On stdin, so a token is never in a process listing.
+commands['ddns-token'] = () => {
+    fs.access(DDNS_CONFIG) || die('ddns-scripts is not on this gateway');
+    let token = trim(fs.stdin.read('all') ?? '');
+    match(token, TOKEN) || die('that is not a Cloudflare API token', 2);
+    if (!cursor.get('ddns', DDNS)) {
+        cursor.set('ddns', DDNS, 'service');
+        cursor.set('ddns', DDNS, 'enabled', '0');
+    }
+    cursor.set('ddns', DDNS, 'password', token);
+    ddnsCommit();
+    log('ddns token set');
+    printf('%J\n', { tokenSet: true });
+};
+
 let cmd = commands[ARGV[0] ?? 'status'];
-cmd ?? die('usage: parkeze-dns {status|upstream|host|unhost|rebind}', 2);
+cmd ?? die('usage: parkeze-dns {status|upstream|host|unhost|rebind|ddns|ddns-token}', 2);
 call(cmd, null, null, ...slice(ARGV, 1));

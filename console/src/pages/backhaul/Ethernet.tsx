@@ -103,6 +103,9 @@ function Uplink({
   const changed = mode !== a.mode || (mode === 'static' && (
     address !== (a.address ?? '') || netmask !== (a.netmask ?? '255.255.255.0')
     || gateway !== (a.gateway ?? '') || dnsList.join(',') !== (a.dns ?? []).join(',')));
+  // The lease as it stands, kept as a static address: what a site router's
+  // forward needs, since it points at one address for good.
+  const lease = a.mode === 'dhcp' && mode === 'dhcp' ? leaseOf(wired.uplink.state) : null;
 
   return (
     <Section title={wired.label} icon={EthernetPort} note={<StatusBadge ok={wired.uplink.state.up} />}>
@@ -133,6 +136,11 @@ function Uplink({
       )}
 
       <div className={styles.actions}>
+        {lease && (
+          <Button disabled={disabled} onClick={() => onApply(lease)}>
+            Make {lease.address} static
+          </Button>
+        )}
         <Button
           variant="primary"
           disabled={disabled || !changed}
@@ -143,6 +151,17 @@ function Uplink({
       </div>
     </Section>
   );
+}
+
+// "10.0.0.50/24" and its route as static addressing; null when the lease is
+// missing a part.
+function leaseOf(state: PortUplink['state']): Addressing | null {
+  const [address, bits] = (state.address ?? '').split('/');
+  const prefix = Number(bits);
+  if (!state.up || !address || !state.gateway || !(prefix >= 1 && prefix <= 30)) return null;
+  const mask = (0xffffffff << (32 - prefix)) >>> 0;
+  const netmask = [24, 16, 8, 0].map((shift) => (mask >>> shift) & 255).join('.');
+  return { mode: 'static', address, netmask, gateway: state.gateway, dns: (state.dns ?? []).slice(0, 3) };
 }
 
 function speed(mbps: number) {
