@@ -24,7 +24,11 @@
 }
 
 .jack:hover { border-color: var(--border-secondary); background: var(--bg-tertiary); }
-.jack.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.jack.selected { border-color: var(--tone, var(--accent)); box-shadow: 0 0 0 1px var(--tone, var(--accent)); }
+.jack.lit {
+  border-color: var(--tone, var(--accent));
+  background: color-mix(in srgb, var(--tone, var(--accent)) 10%, var(--bg-secondary));
+}
 
 .socket {
   display: grid;
@@ -60,6 +64,10 @@
 /* ── the table ─────────────────────────────────────────────────────────── */
 .cell { vertical-align: middle; }
 .row { cursor: pointer; }
+
+/* The rows of the port the strip points at, or the one being edited: the
+   strip and the table say the same port at once. */
+.litRow td { background: color-mix(in srgb, var(--tone, var(--accent)) 10%, transparent) !important; }
 
 .port {
   display: flex;

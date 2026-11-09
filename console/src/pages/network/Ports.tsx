@@ -91,6 +91,9 @@ export default function Ports() {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [dirty, setDirty] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
+  // The port under the pointer, on the strip or in the table: both show it.
+  const [hovered, setHovered] = useState<string | null>(null);
+  const lit = (name: string) => name === hovered || name === editing;
 
   // The page's copy follows the gateway until somebody edits it.
   useEffect(() => {
@@ -243,8 +246,10 @@ export default function Ports() {
                 key={port.name}
                 type="button"
                 role="listitem"
-                className={`${styles.jack} ${tier(port)} ${editing === port.name ? styles.selected : ''}`}
+                className={`${styles.jack} ${tier(port)} ${editing === port.name ? styles.selected : ''} ${hovered === port.name ? styles.lit : ''}`}
                 onClick={() => setEditing(port.name)}
+                onMouseEnter={() => setHovered(port.name)}
+                onMouseLeave={() => setHovered(null)}
                 aria-label={`${port.label}, ${ROLE_NAMES[role]}`}
               >
                 <span className={styles.jackRole}>{ROLE_NAMES[role]}</span>
@@ -259,7 +264,8 @@ export default function Ports() {
         <DataTable
           table={table}
           fill="connected"
-          rowClassName={() => styles.row}
+          rowClassName={(row) => `${styles.row} ${lit(row.original.port.name) ? styles.litRow : ''}`}
+          onRowHover={(row) => setHovered(row?.original.port.name ?? null)}
           cellClassName={() => styles.cell}
           onRowClick={(row) => setEditing(row.original.port.name)}
           minWidth={880}

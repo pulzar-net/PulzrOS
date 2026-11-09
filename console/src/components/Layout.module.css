@@ -43,7 +43,13 @@
 }
 
 .navItem:hover { background: var(--bg-tertiary); color: var(--text-primary); }
-.active, .active:hover { background: var(--accent-subtle); color: var(--accent); }
+/* Each area's icon in its hue, always: the sidebar reads as places, not a
+   list. The open one is washed in it. */
+.navItem svg { color: var(--tone, var(--accent)); }
+.active, .active:hover {
+  background: color-mix(in srgb, var(--tone, var(--accent)) 12%, transparent);
+  color: var(--text-primary);
+}
 
 /* A section's pages, under it while you are inside it. A rule down the left
    ties them to their parent without another level of icons. */

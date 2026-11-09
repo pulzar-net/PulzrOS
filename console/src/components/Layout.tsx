@@ -1,11 +1,11 @@
-import { Suspense } from 'react';
+import { Suspense, type CSSProperties } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { LogOut, Network, RefreshCw, ShieldAlert } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/services/api';
 import type { SystemSummary } from '@/types';
 import { useSession } from '@/contexts/SessionContext';
-import { NAV } from '@/nav';
+import { NAV, type Tone } from '@/nav';
 import RecoveryBanner from './RecoveryBanner';
 import { useSessionCountdown } from '@/hooks/useSessionCountdown';
 import { useFeatures } from '@/hooks/useFeatures';
@@ -46,7 +46,7 @@ export default function Layout({
         </div>
 
         <nav className={styles.nav}>
-          {nav.map(({ path, label, icon: Icon, children }) => {
+          {nav.map(({ path, label, icon: Icon, tone, children }) => {
             const inside = path !== '/' && location.pathname.startsWith(path);
             return (
               <div key={path}>
@@ -56,6 +56,7 @@ export default function Layout({
                   className={({ isActive }) =>
                     `${styles.navItem} ${isActive || inside ? styles.active : ''}`
                   }
+                  style={{ '--tone': `var(--hue-${tone})` } as CSSProperties}
                 >
                   <Icon size={15} strokeWidth={2} />
                   {label}
@@ -122,6 +123,8 @@ export default function Layout({
         </div>
 
         <main
+          // The area's hue, for its cards' icons and its tables' headers.
+          style={{ '--tone': `var(--hue-${areaTone(location.pathname)})` } as CSSProperties}
           className={`${styles.content} ${
             NAV.flatMap((entry) => [entry, ...(entry.children ?? [])]).some(
               (entry) => entry.wide && location.pathname.startsWith(entry.path),
@@ -211,4 +214,12 @@ function UnadoptedBanner() {
       </Link>
     </div>
   );
+}
+
+/** The hue of the area a path is in: the longest nav path it starts with. */
+function areaTone(pathname: string): Tone {
+  const entry = [...NAV]
+    .filter((e) => e.path === '/' ? pathname === '/' : pathname.startsWith(e.path))
+    .sort((a, b) => b.path.length - a.path.length)[0];
+  return entry?.tone ?? 'green';
 }

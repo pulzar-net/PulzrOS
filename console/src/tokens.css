@@ -78,6 +78,21 @@
   --chart-down:  #2a78d6;
   --chart-up:    #eb6834;
   --chart-grid:  #edf1f5;
+
+  /* ---- hues ----
+     One per area of the console (nav.ts `tone`): its sidebar icon, its cards'
+     icon chips and its tables' headers carry it, so Backhaul reads blue and
+     Network violet at a glance. Status keeps its own colours; the brand green
+     stays the accent for actions. */
+  --hue-green:  #059669;
+  --hue-blue:   #2563eb;
+  --hue-violet: #7c3aed;
+  --hue-teal:   #0d9488;
+  --hue-amber:  #d97706;
+  --hue-rose:   #e11d48;
+  --hue-sky:    #0284c7;
+  --hue-indigo: #4f46e5;
+  --hue-slate:  #64748b;
 }
 
 /* The same values parkeze.net hangs on html.dark, keyed to the OS instead.
@@ -125,5 +140,15 @@
     --chart-down:  #3987e5;
     --chart-up:    #d95926;
     --chart-grid:  #1f2738;
+
+    --hue-green:  #34d399;
+    --hue-blue:   #60a5fa;
+    --hue-violet: #a78bfa;
+    --hue-teal:   #2dd4bf;
+    --hue-amber:  #fbbf24;
+    --hue-rose:   #fb7185;
+    --hue-sky:    #38bdf8;
+    --hue-indigo: #818cf8;
+    --hue-slate:  #94a3b8;
   }
 }

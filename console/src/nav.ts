@@ -34,10 +34,14 @@ export interface NavChild {
   feature?: Feature;
 }
 
+/** An area's hue (tokens.css --hue-*): its icon, cards and table headers. */
+export type Tone = 'green' | 'blue' | 'violet' | 'teal' | 'amber' | 'rose' | 'sky' | 'indigo' | 'slate';
+
 export interface NavEntry {
   path: string;
   label: string;
   icon: LucideIcon;
+  tone: Tone;
   feature?: Feature;
   children?: NavChild[];
   /** Uses the whole window rather than the reading column — a table that
@@ -46,11 +50,11 @@ export interface NavEntry {
 }
 
 export const NAV: NavEntry[] = [
-  { path: '/', label: 'Overview', icon: Gauge },
+  { path: '/', label: 'Overview', icon: Gauge, tone: 'green' },
   {
     path: '/backhaul',
     label: 'Backhaul',
-    icon: Network,
+    icon: Network, tone: 'blue',
     children: [
       { path: '/backhaul/ethernet', label: 'Ethernet' },
       { path: '/backhaul/cellular', label: 'Cellular', feature: 'cellular' },
@@ -60,7 +64,7 @@ export const NAV: NavEntry[] = [
   {
     path: '/lorawan',
     label: 'LoRaWAN',
-    icon: Radio,
+    icon: Radio, tone: 'teal',
     feature: 'lorawan',
     children: [
       { path: '/lorawan/forwarders', label: 'Forwarders' },
@@ -70,7 +74,7 @@ export const NAV: NavEntry[] = [
   {
     path: '/network',
     label: 'Network',
-    icon: Router,
+    icon: Router, tone: 'violet',
     children: [
       { path: '/network/ports', label: 'Ports', wide: true },
       { path: '/network/lan', label: 'LAN', feature: 'lan', wide: true },
@@ -79,15 +83,15 @@ export const NAV: NavEntry[] = [
       { path: '/network/speed', label: 'Speed Test', feature: 'speedtest' },
     ],
   },
-  { path: '/gnss', label: 'GNSS', icon: Satellite, feature: 'gnss' },
-  { path: '/bluetooth', label: 'Bluetooth', icon: Bluetooth, feature: 'bluetooth' },
-  { path: '/access', label: 'Access', icon: KeyRound },
-  { path: '/io', label: 'Panel', icon: Lightbulb },
-  { path: '/logs', label: 'Logs', icon: ScrollText, wide: true },
+  { path: '/gnss', label: 'GNSS', icon: Satellite, tone: 'sky', feature: 'gnss' },
+  { path: '/bluetooth', label: 'Bluetooth', icon: Bluetooth, tone: 'indigo', feature: 'bluetooth' },
+  { path: '/access', label: 'Access', icon: KeyRound, tone: 'amber' },
+  { path: '/io', label: 'Panel', icon: Lightbulb, tone: 'rose' },
+  { path: '/logs', label: 'Logs', icon: ScrollText, tone: 'slate', wide: true },
   {
     path: '/system',
     label: 'System',
-    icon: Settings2,
+    icon: Settings2, tone: 'sky',
     children: [
       { path: '/system/resources', label: 'Resources', wide: true },
       { path: '/system/maintenance', label: 'Maintenance' },

@@ -14,6 +14,7 @@ export default function DataTable<T>({
   rowClassName,
   cellClassName,
   onRowClick,
+  onRowHover,
   minWidth,
 }: {
   table: Table<T>;
@@ -23,6 +24,9 @@ export default function DataTable<T>({
   cellClassName?: (columnId: string) => string | undefined;
   /** A row that opens something: the whole row is the target. */
   onRowClick?: (row: Row<T>) => void;
+  /** The row under the pointer, and null when it leaves the table: for a
+      page that highlights the same thing elsewhere. */
+  onRowHover?: (row: Row<T> | null) => void;
   /** Below this the table scrolls sideways rather than squeezing its fill
       column to nothing. */
   minWidth?: number;
@@ -62,7 +66,9 @@ export default function DataTable<T>({
         <tbody>
           {rows.map((row) => (
             <tr key={row.id} className={rowClassName?.(row)}
-                onClick={onRowClick ? () => onRowClick(row) : undefined}>
+                onClick={onRowClick ? () => onRowClick(row) : undefined}
+                onMouseEnter={onRowHover ? () => onRowHover(row) : undefined}
+                onMouseLeave={onRowHover ? () => onRowHover(null) : undefined}>
               {row.getVisibleCells().map((cell) => (
                 <td
                   key={cell.id}

@@ -52,8 +52,10 @@
   width: 26px;
   height: 26px;
   border-radius: var(--radius-sm);
-  background: var(--accent-subtle);
-  color: var(--accent);
+  /* The area's hue (Layout sets --tone): a Network card is violet, a
+     Backhaul one blue. */
+  background: color-mix(in srgb, var(--tone, var(--accent)) 14%, transparent);
+  color: var(--tone, var(--accent));
 }
 
 .title {
