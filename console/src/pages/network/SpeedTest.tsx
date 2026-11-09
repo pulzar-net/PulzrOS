@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createColumnHelper, getCoreRowModel, useReactTable } from '@tanstack/react-table';
-import { ArrowDownUp, Gauge, History } from 'lucide-react';
+import { ArrowDown, ArrowDownUp, ArrowUp, Gauge, History, type LucideIcon } from 'lucide-react';
 import { api } from '@/services/api';
 import type { SpeedResult, SpeedtestStatus } from '@/types';
 import Section from '@/components/ui/Section';
@@ -9,13 +9,13 @@ import Badge from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
 import Notice from '@/components/ui/Notice';
 import Segmented from '@/components/ui/Segmented';
-import Fact, { FactList } from '@/components/Fact';
 import DataTable from '@/components/DataTable';
 import TimeChart, { Legend, type Series } from '@/components/TimeChart';
 import Spinner from '@/components/ui/Spinner';
 import ErrorState from '@/components/ErrorState';
 import { uplinkName } from '@/lib/format';
 import styles from '../Pages.module.css';
+import own from './SpeedTest.module.css';
 
 /**
  * Speed tests (parkeze-speedtest): each free uplink straight to the nearest
@@ -118,29 +118,32 @@ export default function SpeedTest() {
       {!state.running && !state.uplinks.length && <Notice tone="info">No wired or WiFi uplink to test.</Notice>}
       {mutationError && <Notice tone="error">{mutationError.message}</Notice>}
 
-      {latest.map((r) => (
-        <Section key={r.test === 'tunnel' ? 'tunnel' : r.iface!} title={name(r)} icon={r.test === 'tunnel' ? ArrowDownUp : Gauge}
-                 note={<span className={styles.dim}>{when(r.at)}</span>}>
-          {r.error ? <Notice tone="error">{r.error}</Notice> : (
-            <FactList>
-              <Fact label="Down" value={mbps(r.downloadMbps)} />
-              <Fact label="Up" value={mbps(r.uploadMbps)} />
-              <Fact label="Ping" value={r.pingMs == null ? null : `${Math.round(r.pingMs)} ms`} />
-              <Fact label={r.test === 'tunnel' ? 'Over' : 'Server'}
-                    value={r.test === 'tunnel' ? uplinkName(r.iface ?? (r.via === 'wifi' ? 'wwifi' : 'wan'), r.device) : r.server} />
-            </FactList>
-          )}
-        </Section>
-      ))}
+      {/* The last result of each, as a speed test app leads: the two
+          numbers large, everything else small under them. */}
+      {latest.length > 0 && (
+        <div className={own.tiles}>
+          {latest.map((r) => (
+            <Result key={r.test === 'tunnel' ? 'tunnel' : r.iface!} result={r} />
+          ))}
+        </div>
+      )}
 
-      <Section title="Schedule" icon={History}
+      {/* The line beside the tunnel, on one scale: where they differ, the
+          tunnel is the slow part, not the site's internet. */}
+      {latest.filter((r) => !r.error).length > 1 && (
+        <Section title="Line and Tunnel" icon={ArrowDownUp} wide>
+          <Compare results={latest.filter((r) => !r.error)} />
+        </Section>
+      )}
+
+      <Section title="Schedule" icon={History} wide
                actions={<Button variant="primary" loading={run.isPending} disabled={!!state.running || !state.uplinks.length}
                                 onClick={() => run.mutate()}>Run Now</Button>}>
-        <Segmented aria-label="Speed test schedule" value={state.schedule.every} options={[...SCHEDULES]}
-                   disabled={schedule.isPending} onChange={(every) => schedule.mutate(every)} />
-        <FactList>
-          <Fact label="At" value={state.schedule.every === 'off' ? null : state.schedule.at} />
-        </FactList>
+        <div className={own.schedule}>
+          <Segmented aria-label="Speed test schedule" value={state.schedule.every} options={[...SCHEDULES]}
+                     disabled={schedule.isPending} onChange={(every) => schedule.mutate(every)} />
+          {state.schedule.every !== 'off' && <span className={styles.dim}>at {state.schedule.at}</span>}
+        </div>
       </Section>
 
       {chart.times.length >= 2 && (
@@ -156,9 +159,77 @@ export default function SpeedTest() {
 
       {rows.length > 0 && (
         <Section title="History" icon={History} wide>
-          <DataTable table={table} fill="server" />
+          <DataTable table={table} fill="server" cellClassName={() => own.cell} />
         </Section>
       )}
+    </div>
+  );
+}
+
+/** One test's latest result: down and up large, ping and where small. */
+function Result({ result: r }: { result: SpeedResult }) {
+  const Icon = r.test === 'tunnel' ? ArrowDownUp : Gauge;
+  const where = r.test === 'tunnel'
+    ? `over ${uplinkName(r.iface ?? (r.via === 'wifi' ? 'wwifi' : 'wan'), r.device)}`
+    : r.server;
+  return (
+    <div className={own.tile}>
+      <div className={own.tileHead}>
+        <span className={own.tileIcon}><Icon size={14} strokeWidth={2} /></span>
+        <span className={own.tileName}>{name(r)}</span>
+        <span className={own.tileWhen}>{when(r.at)}</span>
+      </div>
+      {r.error ? <Notice tone="error">{r.error}</Notice> : (
+        <>
+          <div className={own.figures}>
+            <Figure icon={ArrowDown} label="Down" value={r.downloadMbps} tone="down" />
+            <Figure icon={ArrowUp} label="Up" value={r.uploadMbps} tone="up" />
+          </div>
+          <div className={own.tileFoot}>
+            {[r.pingMs == null ? null : `${Math.round(r.pingMs)} ms ping`,
+              r.jitterMs == null ? null : `${r.jitterMs.toFixed(1)} ms jitter`,
+              where].filter(Boolean).join(' · ')}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function Figure({ icon: Icon, label, value, tone }: {
+  icon: LucideIcon; label: string; value: number | undefined; tone: 'down' | 'up';
+}) {
+  return (
+    <div className={own.figure}>
+      <span className={`${own.figureLabel} ${own[tone]}`}><Icon size={13} strokeWidth={2.2} />{label}</span>
+      <span className={own.figureValue}>
+        {value == null ? '—' : value >= 100 ? value.toFixed(0) : value.toFixed(1)}
+        <span className={own.unit}>Mb/s</span>
+      </span>
+    </div>
+  );
+}
+
+/** Each result's down and up as bars on one scale. */
+function Compare({ results }: { results: SpeedResult[] }) {
+  const top = Math.max(1, ...results.flatMap((r) => [r.downloadMbps ?? 0, r.uploadMbps ?? 0]));
+  return (
+    <div className={own.compare}>
+      {(['downloadMbps', 'uploadMbps'] as const).map((key) => (
+        <div key={key} className={own.compareGroup}>
+          <div className={own.compareTitle}>{key === 'downloadMbps' ? 'Down' : 'Up'}</div>
+          {results.map((r) => (
+            <div key={`${key}:${r.test}:${r.iface}`} className={own.bar}>
+              <span className={own.barName}>{name(r)}</span>
+              <span className={own.barTrack}>
+                <span className={`${own.barFill} ${r.test === 'tunnel' ? own.tunnel : ''}`}
+                      style={{ width: `${Math.max(2, ((r[key] ?? 0) / top) * 100)}%` }} />
+              </span>
+              <span className={own.barValue}>{mbps(r[key])}</span>
+            </div>
+          ))}
+        </div>
+      ))}
     </div>
   );
 }

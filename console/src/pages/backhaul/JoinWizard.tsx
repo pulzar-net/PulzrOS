@@ -220,18 +220,21 @@ export default function JoinWizard({
   const name = ssid.trim();
   const title =
     step === 'network'
-      ? 'Join a network'
+      ? 'Join a Network'
       : step === 'certificate'
         ? `Trust ${name}?`
         : step === 'joining'
           ? name
-          : name ? `Join ${name}` : 'Join a network';
+          : name ? `Join ${name}` : 'Join a Network';
 
   let body: ReactNode = null;
   let footer: ReactNode = null;
 
   if (step === 'network') {
-    const networks = (scan.data?.networks ?? []).slice().sort((a, b) => b.quality - a.quality);
+    // The one connected now first, then strongest first.
+    const current = wifi.configured && wifi.up ? wifi.ssid : null;
+    const networks = (scan.data?.networks ?? []).slice()
+      .sort((a, b) => Number(b.ssid === current) - Number(a.ssid === current) || b.signal - a.signal);
     body = scan.data && !scan.data.capable ? (
       <Notice tone="info">This board has no WiFi radio.</Notice>
     ) : (

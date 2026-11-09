@@ -12,6 +12,7 @@ import Notice from '@/components/ui/Notice';
 import Segmented from '@/components/ui/Segmented';
 import { TextField } from '@/components/ui/Field';
 import DataTable from '@/components/DataTable';
+import Fact, { FactList } from '@/components/Fact';
 import Spinner from '@/components/ui/Spinner';
 import ErrorState from '@/components/ErrorState';
 import PortsChangeNotice from '@/components/PortsChangeNotice';
@@ -301,6 +302,8 @@ export default function Ports() {
       {editPort && (
         <PortEditor
           port={editPort}
+          clients={(clients ?? []).filter((c) => c.online && (c.port === editPort.name || c.port?.startsWith(`${editPort.name}.`)))}
+          consoleAddress={state!.console === editPort.name ? state!.consoleAddress : null}
           draft={draft.find((p) => p.name === editPort.name)!}
           devices={state!.devices}
           disabled={busy}
@@ -317,9 +320,12 @@ export default function Ports() {
 }
 
 function PortEditor({
-  port, draft, devices, disabled, onClose, onChange,
+  port, clients, consoleAddress, draft, devices, disabled, onClose, onChange,
 }: {
   port: Port;
+  /** Online LAN clients behind this port or one of its VLANs. */
+  clients: LanClient[];
+  consoleAddress: string | null;
   draft: DraftPort;
   devices: boolean;
   disabled: boolean;
@@ -341,9 +347,12 @@ function PortEditor({
     && !draft.vlans.some((v) => v.vid === number) && draft.vlans.length < 8;
 
   return (
-    <Dialog open size="compact" onClose={onClose} title={port.label}
+    <Dialog open onClose={onClose} title={port.label}
             footer={<Button variant="primary" onClick={onClose}>Done</Button>}>
       <div className={styles.editor}>
+        <PortDetails port={port} clients={clients} consoleAddress={consoleAddress} />
+
+        <div className={styles.heading}>Settings</div>
         <div>
           <div className={styles.label}>Untagged</div>
           <Segmented
@@ -406,5 +415,78 @@ function PortEditor({
         </div>
       </div>
     </Dialog>
+  );
+}
+
+/** Everything known about a port: its link, the uplink on it and the router
+    at the end of that, the devices behind it, and whatever announced itself. */
+function PortDetails({ port, clients, consoleAddress }: {
+  port: Port;
+  clients: LanClient[];
+  consoleAddress: string | null;
+}) {
+  const uplinks = [
+    ...(port.uplink ? [{ label: 'Untagged', uplink: port.uplink }] : []),
+    ...port.vlans.filter((v) => v.uplink).map((v) => ({ label: `VLAN ${v.vid}`, uplink: v.uplink! })),
+  ];
+  return (
+    <>
+      <div className={styles.detailGrid}>
+        <div>
+          <div className={styles.heading}>Link</div>
+          <FactList>
+            <Fact label="State" value={port.link.up ? (speed(port.link.speed) ?? 'Up') : 'No cable'} />
+            <Fact label="MAC" value={port.link.mac} mono />
+            {consoleAddress && <Fact label="Console" value={consoleAddress} mono />}
+          </FactList>
+        </div>
+
+        {uplinks.map(({ label, uplink }) => (
+          <div key={label}>
+            <div className={styles.heading}>Uplink{uplinks.length > 1 || label !== 'Untagged' ? `, ${label}` : ''}</div>
+            <FactList>
+              <Fact label="Address" value={uplink.state.address} mono />
+              <Fact label="Addressing" value={uplink.addressing.mode === 'static' ? 'Static' : 'DHCP'} />
+              <Fact label="Router" value={uplink.router ? [uplink.router.maker, uplink.router.address].filter(Boolean).join(' · ') : null} />
+              {uplink.router?.mac && <Fact label="Router MAC" value={uplink.router.mac} mono />}
+              {uplink.internet?.provider?.name && <Fact label="Provider" value={uplink.internet.provider.name} />}
+              {uplink.internet?.address && <Fact label="Public address" value={uplink.internet.address} mono />}
+            </FactList>
+          </div>
+        ))}
+      </div>
+
+      {clients.length > 0 && (
+        <div>
+          <div className={styles.heading}>Devices</div>
+          <FactList>
+            {clients.map((c) => (
+              <Fact key={c.mac} label={c.hostname ?? c.mac}
+                    value={[c.ip, c.port?.includes('.') ? `VLAN ${c.port.split('.')[1]}` : null, c.mac].filter(Boolean).join(' · ')} mono />
+            ))}
+          </FactList>
+        </div>
+      )}
+
+      {(port.neighbors ?? []).map((n, i) => (
+        <div key={i}>
+          <div className={styles.heading}>Announced over {n.protocol ?? 'LLDP'}</div>
+          <FactList>
+            {/* Only what it said: most equipment fills in a few of these. */}
+            {([
+              ['Name', n.name ?? (n.maker ? `${n.maker} device` : null), false],
+              ['Maker', n.maker && n.name ? n.maker : null, false],
+              ['Description', n.description, false],
+              ['Its port', [n.port !== n.chassis ? n.port : null, n.portDescription].filter(Boolean).join(', ') || null, false],
+              ['Management', n.managementAddress, true],
+              ['Capabilities', n.capabilities.length ? n.capabilities.join(', ') : null, false],
+              ['Chassis', n.chassis, true],
+            ] as [string, string | null, boolean][]).filter(([, value]) => value).map(([label, value, mono]) => (
+              <Fact key={label} label={label} value={value} mono={mono} />
+            ))}
+          </FactList>
+        </div>
+      ))}
+    </>
   );
 }

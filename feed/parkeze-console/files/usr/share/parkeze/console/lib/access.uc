@@ -241,28 +241,45 @@ scan = function() {
     const radio = run("uci -q show wireless | sed -n 's/^wireless\\.\\([^.]*\\)=wifi-device$/\\1/p' | head -n1");
     if (!radio) return { capable: false, networks: [] };
 
-    // The phy, not an interface on it. A radio with no interface up — which is
-    // every radio until the AP is raised or a network joined, since OpenWrt
-    // ships them disabled — has no wlan0 to scan from, and this used to report
-    // that as the radio being busy with an AP that was not even on. iwinfo
-    // scans a bare phy by bringing up a temporary interface of its own.
-    const phy = run('ls /sys/class/ieee80211 2>/dev/null | head -n1');
-    const raw = phy ? runJson(sprintf('ubus call iwinfo scan \'{"device":"%s"}\'', phy)) : null;
-    if (!raw) return { capable: true, networks: [],
-                       error: 'The scan returned nothing.' };
-
-    const seen = {};
-    const networks = [];
-    for (let entry in (raw.results || [])) {
-        if (!entry.ssid || seen[entry.ssid]) continue;
-        seen[entry.ssid] = true;
-        networks[length(networks)] = {
-            ssid: entry.ssid,
-            signal: entry.signal,
-            quality: entry.quality,
-            encryption: security(entry.encryption),
-        };
+    // Every radio, each through an interface it already has when it has one.
+    //
+    // The phy alone used to be scanned, the first one: iwinfo scans a bare
+    // phy by bringing up a temporary interface of its own, which is what a
+    // radio with nothing up (every radio until the AP is raised or a network
+    // joined) needs. But on a radio already joined to a network that scan
+    // came back empty, and on the Opal the first radio is the one joined, so
+    // the wizard listed nothing while seventeen networks were in range; the
+    // station interface on that radio scans fine. And the first radio only
+    // ever saw one band: the Opal's second one is the 5 GHz one.
+    const ifaceOf = {};
+    for (let dev in (_m_fs.lsdir('/sys/class/net') ?? [])) {
+        const phy = trim(readfile(sprintf('/sys/class/net/%s/phy80211/name', dev)) ?? '');
+        if (length(phy) && !ifaceOf[phy]) ifaceOf[phy] = dev;
     }
+    const best = {};
+    let answered = false;
+    for (let phy in (_m_fs.lsdir('/sys/class/ieee80211') ?? [])) {
+        const device = ifaceOf[phy] ?? phy;
+        if (!match(device, /^[A-Za-z0-9._-]{1,32}$/)) continue;
+        const raw = runJson(sprintf('ubus call iwinfo scan \'{"device":"%s"}\'', device));
+        if (!raw) continue;
+        answered = true;
+        for (let entry in (raw.results || [])) {
+            if (!entry.ssid) continue;
+            // One row a network, at its strongest: the same SSID on both
+            // bands, or from several access points, is one choice.
+            if (best[entry.ssid] && best[entry.ssid].signal >= entry.signal) continue;
+            best[entry.ssid] = {
+                ssid: entry.ssid,
+                signal: entry.signal,
+                quality: entry.quality,
+                encryption: security(entry.encryption),
+            };
+        }
+    }
+    if (!answered) return { capable: true, networks: [],
+                            error: 'The scan returned nothing.' };
+    const networks = map(keys(best), (k) => best[k]);
     return { capable: true, networks: networks };
 };
 
