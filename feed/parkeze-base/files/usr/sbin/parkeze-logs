@@ -19,7 +19,7 @@ pattern() {
 	wifi)     echo 'wpa_supplicant|hostapd|phy[0-9]-|wwifi|parkeze-wifi' ;;
 	cellular) echo 'ModemManager|modemmanager|wwan|parkeze-cell|qmi|mbim' ;;
 	# Not wwan: a wired line names wan after a quote or a space.
-	wired)    echo "eth[0-9]|br-lan|netifd: .*[ '\"(]wan[ '\").:]|netifd: .*[ '\"(]lan[ '\").:]" ;;
+	wired)    echo "eth[0-9]|br-lan|netifd: .*[ '\"(]wan(_[A-Za-z0-9_]+)?[ '\").:]|netifd: .*[ '\"(]lan[ '\").:]|ports:" ;;
 	tunnel)   echo 'wireguard|wg[0-9]|tailscale' ;;
 	lorawan)  echo 'chirpstack|concentratord|lora|sx130|mosquitto' ;;
 	ble)      echo 'bluetooth|bluez|hci[0-9]|parkeze-ble|btattach' ;;

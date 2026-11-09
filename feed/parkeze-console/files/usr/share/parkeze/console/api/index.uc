@@ -50,6 +50,8 @@ let bluetooth = loadfile('/usr/share/parkeze/console/lib/bluetooth.uc', { raw_mo
 let lan = loadfile('/usr/share/parkeze/console/lib/lan.uc', { raw_mode: true })();
 let dns = loadfile('/usr/share/parkeze/console/lib/dns.uc', { raw_mode: true })();
 let uplinks = loadfile('/usr/share/parkeze/console/lib/uplinks.uc', { raw_mode: true })();
+let ports = loadfile('/usr/share/parkeze/console/lib/ports.uc', { raw_mode: true })();
+let speedtest = loadfile('/usr/share/parkeze/console/lib/speedtest.uc', { raw_mode: true })();
 // What changes the gateway, shared with the terminal UI; see actions.uc.
 let actions = loadfile('/usr/share/parkeze/console/lib/actions.uc', { raw_mode: true })();
 
@@ -321,10 +323,27 @@ const ROUTES = {
     'GET  /api/network/status':   () => respond(200, network.status()),
     'GET  /api/network/backhaul': () => respond(200, network.backhaul()),
     'POST /api/network/cellular': (env, req, s) => respond(200, actions.setCellular(req, s)),
-    'POST /api/network/ethernet': (env, req, s) => {
-        const result = actions.setEthernet(req, s);
-        if (result.error) return error(400, result.error);
-        return respond(200, result);
+
+    // ── ports: roles, VLANs and each uplink's addressing, see lib/ports.uc ──
+    //
+    // A change is undone unless `confirm` follows within its window: the
+    // page confirms once it reaches the gateway again afterwards.
+    'GET  /api/ports/status':     () => respond(200, ports.status()),
+    'POST /api/ports':            (env, req, s) => {
+        const result = actions.setPorts(req, s);
+        return result.error ? error(400, result.error) : respond(200, result);
+    },
+    'POST /api/ports/addressing': (env, req, s) => {
+        const result = actions.setUplinkAddressing(req, s);
+        return result.error ? error(400, result.error) : respond(200, result);
+    },
+    'POST /api/ports/confirm':    (env, req, s) => {
+        const result = actions.confirmPorts(req, s);
+        return result.error ? error(409, result.error) : respond(200, result);
+    },
+    'POST /api/ports/revert':     (env, req, s) => {
+        const result = actions.revertPorts(req, s);
+        return result.error ? error(409, result.error) : respond(200, result);
     },
 
     // ── provisioning ────────────────────────────────────────────────────────
@@ -413,6 +432,17 @@ const ROUTES = {
         return result.error ? error(400, result.error) : respond(200, result);
     },
 
+    // ── speed tests, see lib/speedtest.uc ──────────────────────────────────
+    'GET  /api/speedtest/status':   () => respond(200, speedtest.status()),
+    'POST /api/speedtest/run':      (env, req, s) => {
+        const result = actions.startSpeedtest(req, s);
+        return result.error ? error(409, result.error) : respond(202, result);
+    },
+    'POST /api/speedtest/schedule': (env, req, s) => {
+        const result = actions.setSpeedtestSchedule(req, s);
+        return result.error ? error(400, result.error) : respond(200, result);
+    },
+
     // ── io ──────────────────────────────────────────────────────────────────
     'GET  /api/io/status': () => respond(200, io.status()),
     'POST /api/io/test':   (env, req, s) => respond(200, actions.ioTest(req, s)),
@@ -464,6 +494,7 @@ const FEATURE_PREFIXES = [
     ['/api/lan/',              'lan'],
     ['/api/dns/',              'dns'],
     ['/api/uplinks/',          'failover'],
+    ['/api/speedtest/',        'speedtest'],
 ];
 
 function featureOf(path) {
@@ -490,8 +521,57 @@ function fromHub(env) {
     return !!(tunnel && tunnel.hubAddress && env.REMOTE_ADDR == tunnel.hubAddress);
 }
 
+// ── the tunnel's speed, measured from Pulzr Net's end ──────────────────────
+//
+// gateway-link takes bytes from `source` and sends them to `sink` over the
+// WireGuard tunnel, and times both (parkeze-speedtest's tunnel test). On the
+// tunnel port only, so only the hub ever reaches them (fromHub), and without
+// a session: they answer with nothing but filler and a byte count. Capped, so
+// a caller cannot hold the uplink for longer than a test.
+const TUNNEL_MAX_BYTES = 268435456;
+let tunnelChunk = null;
+
+function tunnelSource(env) {
+    const m = match(env.QUERY_STRING ?? '', /(^|&)bytes=([0-9]{1,10})(&|$)/);
+    let bytes = m ? int(m[2]) : 0;
+    if (bytes < 1 || bytes > TUNNEL_MAX_BYTES) return error(400, 'bytes is 1 to 268435456.');
+    if (!tunnelChunk) {
+        tunnelChunk = 'x';
+        while (length(tunnelChunk) < 65536) tunnelChunk += tunnelChunk;
+    }
+    uhttpd.send(sprintf('Status: 200 OK\r\nContent-Type: application/octet-stream\r\n' +
+                        'Cache-Control: no-store\r\nContent-Length: %d\r\n\r\n', bytes));
+    while (bytes > 0) {
+        const n = bytes < 65536 ? bytes : 65536;
+        // false once the far end has gone: gateway-link closes when its
+        // time is up, well before the byte count runs out.
+        if (uhttpd.send(n == 65536 ? tunnelChunk : substr(tunnelChunk, 0, n)) === false) break;
+        bytes -= n;
+    }
+    return { streamed: true };
+}
+
+function tunnelSink(env) {
+    const len = int(env.CONTENT_LENGTH ?? 0);
+    if (len < 1 || len > TUNNEL_MAX_BYTES) return error(400, 'A body of 1 to 268435456 bytes.');
+    const started = clock();
+    let received = 0;
+    while (received < len) {
+        const chunk = uhttpd.recv(len - received < 65536 ? len - received : 65536);
+        if (chunk == null || !length(chunk)) break;
+        received += length(chunk);
+    }
+    const t = clock();
+    return respond(200, { received, seconds: (t[0] - started[0]) + (t[1] - started[1]) / 1e9 });
+}
+
 function route(env) {
     if (!fromHub(env)) return respond(403, { error: 'Not from the management hub.' });
+    if (env.SERVER_PORT == '8080' && 'speedtest' in system.features()) {
+        const tpath = (env.SCRIPT_NAME ?? '') + (env.PATH_INFO ?? '/');
+        if (env.REQUEST_METHOD == 'GET' && tpath == '/api/speedtest/tunnel/source') return tunnelSource(env);
+        if (env.REQUEST_METHOD == 'POST' && tpath == '/api/speedtest/tunnel/sink') return tunnelSink(env);
+    }
     const method = env.REQUEST_METHOD;
     // SCRIPT_NAME + PATH_INFO, not PATH_INFO alone. uhttpd mounts this handler
     // at a prefix and strips it: a request for /api/auth/methods arrives with
@@ -576,6 +656,8 @@ handle_request = function(env) {
 	// keep the detail out of the body.
 	try {
 		r = route(env);
+		// Already written to the client: the tunnel test's source.
+		if (r?.streamed) return;
 	}
 	catch (e) {
 		warn(sprintf('parkeze-console: %s\n%s\n', e.message ?? e, e.stacktrace ?? ''));

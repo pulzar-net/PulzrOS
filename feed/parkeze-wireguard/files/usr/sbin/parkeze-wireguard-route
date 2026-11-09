@@ -73,11 +73,13 @@ set -e
 # which is an Ethernet device on DHCP like the wired uplink and billed like
 # the SIM. Asking for wwan alone let the tunnel onto a phone's data plan.
 . /usr/share/parkeze/cellular.sh
+# wired_gateway: the first usable wired uplink, of however many parkeze-ports
+# made.
+. /usr/share/parkeze/wired.sh
 
 TABLE_ID="${PARKEZE_WIREGUARD_TABLE:-97}"
 MARK="${PARKEZE_WIREGUARD_MARK:-0x9700}"
 MASK="0xff00"
-WIRED_IFACE="${PARKEZE_WAN_ETH_IFACE:-wan}"
 WIFI_IFACE="${PARKEZE_WAN_WIFI_IFACE:-wwifi}"
 # Where the last-applied egress is remembered, purely to notice a change.
 # tmpfs: forgetting it across a reboot means one extra report at most, not a
@@ -104,17 +106,6 @@ iface_gateway() {
   network_get_device dev "$1" || return 1
   [ -n "${gw}" ] && [ -n "${dev}" ] || return 1
   echo "${gw} ${dev}"
-}
-
-# The wired lease, unless parkeze-uplinks has seen it carry nothing: a cable
-# to a router whose own internet is gone keeps its lease, and the tunnel
-# pinned to it would wait there instead of moving to the WiFi. It re-runs
-# `apply` when its answer changes.
-wired_gateway() {
-  if [ -x /usr/sbin/parkeze-uplinks ]; then
-    /usr/sbin/parkeze-uplinks usable "${WIRED_IFACE}" 2>/dev/null || return 1
-  fi
-  iface_gateway "${WIRED_IFACE}"
 }
 
 # The WiFi's lease, only once parkeze-wifi-uplink has seen it reach the
@@ -146,6 +137,7 @@ apply() {
 
   if spec="$(wired_gateway)"; then
     via=wired
+    spec="${spec% *}"
   # WiFi counts as wired here, and that is not an oversight. The reason the
   # tunnel is kept off cellular is the bill — see the header — and joining
   # somebody's WiFi does not produce one. A gateway backhauled over WiFi with
@@ -209,8 +201,11 @@ status() {
   local wired_spec cell_spec wired_usable="false" cell_usable="false"
   local wgw wdev cgw cdev via="none" wifi_usable="false"
 
+  local wiface=""
   if wired_spec="$(wired_gateway)"; then
-    wired_usable="true"; wgw="${wired_spec% *}"; wdev="${wired_spec#* }"
+    wired_usable="true"
+    set -- ${wired_spec}
+    wgw="$1"; wdev="$2"; wiface="$3"
     via=wired
   fi
   # The same order apply() pins the tunnel in: wired, then WiFi, then
@@ -227,7 +222,7 @@ status() {
   fi
 
   printf '{"wiredUsable":%s,"iface":"%s","gateway":"%s","device":"%s","reason":"%s",' \
-    "${wired_usable}" "${WIRED_IFACE}" "${wgw:-}" "${wdev:-}" \
+    "${wired_usable}" "${wiface}" "${wgw:-}" "${wdev:-}" \
     "$([ "${wired_usable}" = "true" ] && echo "" || echo "wired WAN is down")"
   printf '"wifiUsable":%s,"cellularUsable":%s,"via":"%s"}\n' \
     "${wifi_usable}" "${cell_usable}" "${via}"

@@ -72,3 +72,33 @@ const MODEM_KINDS: Record<ModemKind, string> = {
 export function modemKind(kind: ModemKind | null | undefined): string | null {
   return kind ? MODEM_KINDS[kind] : null;
 }
+
+/** What a technician reads on the case for a port or a VLAN on one, the way
+    parkeze-ports labels them: lan1 is "LAN 1", wan.20 "WAN VLAN 20", a Pi's
+    eth0 "Ethernet". */
+export function portLabel(device: string | null | undefined): string {
+  if (!device) return 'Ethernet';
+  const [port, vid] = device.split('.');
+  let name = port;
+  const named = /^(wan|lan)(\d*)$/.exec(port);
+  const eth = /^eth(\d+)$/.exec(port);
+  if (named) name = named[1].toUpperCase() + (named[2] ? ` ${named[2]}` : '');
+  else if (eth) name = Number(eth[1]) === 0 ? 'Ethernet' : `Ethernet ${Number(eth[1]) + 1}`;
+  return vid ? `${name} VLAN ${vid}` : name;
+}
+
+/** A wired uplink: wan, or wan_<device> for another port or a VLAN. */
+export function isWiredIface(iface: string | null | undefined): boolean {
+  return iface === 'wan' || !!iface?.startsWith('wan_');
+}
+
+const UPLINK_NAMES: Record<string, string> = { wwifi: 'WiFi', wwan: 'Cellular', usbwan: 'USB cellular' };
+
+/** An uplink by name, a wired one by its port: wan_lan1 is "LAN 1". */
+export function uplinkName(iface: string, device?: string | null): string {
+  if (UPLINK_NAMES[iface]) return UPLINK_NAMES[iface];
+  if (device) return portLabel(device);
+  if (iface === 'wan') return 'Ethernet';
+  // wan_wan_20 back to wan.20, wan_lan1 to lan1.
+  return portLabel(iface.replace(/^wan_/, '').replace(/_(\d+)$/, '.$1'));
+}

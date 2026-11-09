@@ -1,0 +1,14 @@
+#!/bin/sh
+#
+# Write the port layout over the defaults 20-parkeze-network and
+# 25-parkeze-lan just built: which ports are uplinks, which serve devices,
+# the VLANs, each uplink's addressing. See parkeze-ports.
+
+# OpenWrt's prepare_rootfs runs every uci-defaults script during image
+# assembly, with IPKG_INSTROOT set and absolute paths resolving to the build
+# host. Everything below belongs to the device, so defer it to first boot.
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+
+/usr/sbin/parkeze-ports render
+/etc/init.d/parkeze-ports enable
+exit 0

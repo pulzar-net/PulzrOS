@@ -24,6 +24,7 @@ that could only fail.
 | `lan` | `PACKAGES_LAN`: parkeze-lan | Network > LAN | `/api/lan/` | `PARKEZE_LAN_PORTS` |
 | `dns` | `PACKAGES_DNS`: parkeze-dns | Network > DNS | `/api/dns/` | |
 | `failover` | `PACKAGES_FAILOVER`: parkeze-uplinks | Network > Uplinks; Overview's Uplink row follows its order | `/api/uplinks/` | `cellular` or `wifi` |
+| `speedtest` | `PACKAGES_SPEEDTEST`: parkeze-speedtest, librespeed-cli | Network > Speed Test ([speedtest.md](speedtest.md)) | `/api/speedtest/` | not `PARKEZE_FLASH_CONSTRAINED` |
 
 Always present, on every board: Overview, Backhaul > Ethernet, Access, Panel,
 Logs, System, the management tunnel, adoption, MQTT and the TUI.
@@ -51,10 +52,10 @@ in the image and a missing binary otherwise surfaces as a 500.
 
 | Board | Features |
 |---|---|
-| `rpi3`, `rpi4`, `rpi5` | `lorawan cellular wifi gnss bluetooth` |
+| `rpi3`, `rpi4`, `rpi5` | `lorawan cellular wifi gnss bluetooth speedtest` |
 | `rak7268c`, `rak7289cv2` | `lorawan cellular wifi gnss` |
 | `rak7268cv2` | `lorawan cellular wifi` (no GNSS) |
-| `gl-sft1200` | `cellular wifi lan dns failover` |
+| `gl-sft1200` | `cellular wifi lan dns failover speedtest` |
 
 The Pi and RAK images were package-for-package what they were before the
 feature list existed; the list only named what they already carried. The Pis
@@ -183,7 +184,8 @@ paragraph explaining itself, which this console does not do.
 
 | GL.iNet | ParkezeOS |
 |---|---|
-| Internet: the Ethernet card (DHCP / static / PPPoE, VLAN, MTU) | Backhaul > Ethernet, on every board |
+| Internet: the Ethernet card (DHCP / static / PPPoE, VLAN, MTU) | Backhaul > Ethernet, one card per wired uplink, on every board |
+| Port roles, VLANs, a second WAN | Network > Ports, on every board ([ports.md](ports.md)): each port an uplink, a LAN port or unused, tagged VLANs with roles of their own, applied and undone unless confirmed |
 | Internet: Repeater | Backhaul > WiFi (`wifi`) |
 | Internet: Cellular | Backhaul > Cellular (`cellular`) |
 | Clients, LAN, DHCP, address reservation | Network > LAN (`lan`), built: `parkeze-lan status`, reserve, per-MAC policy, the open tunnel forwards read-only |

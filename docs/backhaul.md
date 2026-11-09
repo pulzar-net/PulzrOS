@@ -97,23 +97,35 @@ Ethernet is the wired backhaul. It comes up on DHCP, it is the path the
 WireGuard management tunnel rides, and it is how a wired site is managed. It is
 on by default.
 
-The console can set it to DHCP or to a static address, gateway and DNS. This
-used to be read-only, on the reasoning that the uplink was parkeze.net's to
-decide. That broke the one case it mattered for: a site whose network needs a
-static address is a site where the gateway cannot reach parkeze.net at all until
-somebody standing there says so, and that person had no way to.
+There can be more than one. Any port, or a VLAN on one, can be an uplink
+([ports.md](ports.md)): `wan` for the board's uplink port, `wan_<device>` for
+any other. Each takes the place in parkeze-uplinks' order its wired kind
+does, is tracked as `wan` always was, and the tunnel and LoRa routing take
+the first usable one (`/usr/share/parkeze/wired.sh`).
+
+Backhaul > Ethernet sets each one to DHCP or to a static address, gateway and
+DNS. This used to be read-only, on the reasoning that the uplink was
+parkeze.net's to decide. That broke the one case it mattered for: a site whose
+network needs a static address is a site where the gateway cannot reach
+parkeze.net at all until somebody standing there says so, and that person had
+no way to.
 
 Two properties make it safe to offer:
 
-- **It never cuts off the person making the change.** Only `network.wan` is
-  touched. The console (`192.168.61.1`) and link-local addresses are separate
-  interfaces on the same port, so a wrong static address costs the uplink, not
-  the page. A static address inside either of those subnets is refused. That is
-  also why there is no timed rollback: the person who can fix it is still
-  connected.
-- **The tunnel follows on its own.** Bringing `wan` up fires the tunnel's
-  hotplug handler, which restarts it over the new route, and the report, which
-  tells parkeze.net the gateway is wired.
+- **A change that cuts somebody off comes back.** Addressing is applied the
+  way a port change is, through `parkeze-ports set`: kept only once the page
+  reaches the gateway again, undone after 90 seconds otherwise. Somebody
+  working through Pulzr Net on the uplink the tunnel rides is the one a wrong
+  static address would have stranded. A static address inside the console's,
+  link-local, the LAN's, the setup AP's or the USB port's subnet is refused,
+  as are two uplinks on one subnet.
+- **The tunnel follows on its own.** Bringing a wired uplink up fires the
+  tunnel's hotplug handler, which restarts it over the new route, and the
+  report, which tells parkeze.net the gateway is wired.
+
+The addressing is kept with the port in `/etc/config/parkeze`, not only in
+`network.<iface>`, so a sysupgrade, which rebuilds `network.wan` as DHCP,
+no longer drops a static address.
 
 > An earlier version shipped ethernet *disabled* by default, on the reasoning
 > that a gateway should not put itself on an unassessed network. That was the

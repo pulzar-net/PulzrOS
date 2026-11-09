@@ -1,0 +1,35 @@
+.vlans {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.vlan {
+  display: grid;
+  grid-template-columns: 84px 1fr auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.vlanName {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.add {
+  display: grid;
+  grid-template-columns: 120px auto;
+  align-items: end;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.facts {
+  margin-top: 14px;
+}
+
+.bar {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}

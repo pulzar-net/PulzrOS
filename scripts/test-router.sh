@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# parkeze-uplinks and parkeze-dns against a JSON-backed uci, a fake netifd
+# parkeze-uplinks, parkeze-dns and parkeze-ports against a JSON-backed uci, a fake netifd
 # and a ping that answers out of the devices it is told to.
 #
 #   UCODE=/path/to/ucode scripts/test-router.sh
@@ -195,5 +195,98 @@ check "rebind: on, with allowed domains" '{"protection":true,"allowed":["corp.lo
     "$(dns status | jq -c .rebind)"
 dns rebind off >/dev/null
 check "rebind: off, allowed cleared" '{"protection":false,"allowed":[]}' "$(dns status | jq -c .rebind)"
+
+# ── ports ───────────────────────────────────────────────────────────────────
+#
+# The layout written into network, firewall, dhcp and the uplink order. The
+# undo window's timer and snapshot are the gateway's (start-stop-daemon,
+# /etc/config); here only what a layout renders to, what is refused, and that
+# a confirm too soon is refused.
+
+sed -e "s#/etc/parkeze/board.conf#${T}/board.conf#" \
+    -e "s#'/etc/parkeze/ports'#'${T}/ports'#" \
+    -e "s#'/etc/config/'#'${T}/config/'#" \
+    "${ROOT}/feed/parkeze-base/files/usr/sbin/parkeze-ports" > "${T}/ports.uc"
+grep -q "${T}/ports'" "${T}/ports.uc" || { echo "FAIL parkeze-ports' state path moved; update this script" >&2; exit 1; }
+mkdir -p "${T}/ports" "${T}/config"
+ports() { "${UCODE}" -R -L "${ROOT}/scripts/router-fixture/*.uc" -L "${MODULES}" "${T}/ports.uc" "$@"; }
+
+printf 'PARKEZE_PORT_IFACE="wan"\nPARKEZE_LAN_PORTS="lan1 lan2"\nPARKEZE_DEVLAN_IPADDR="192.168.64.1"\n' > "${T}/board.conf"
+cat > "${UCI_JSON}" <<'EOF'
+{"network": {"wan": {".type": "interface", ".name": "wan", "device": "wan", "proto": "static",
+                     "ipaddr": "10.0.0.50", "netmask": "255.255.255.0", "gateway": "10.0.0.1", "metric": "10"},
+             "console": {".type": "interface", ".name": "console", "device": "wan", "ipaddr": "192.168.61.1"},
+             "linklocal": {".type": "interface", ".name": "linklocal", "device": "wan"},
+             "wwan": {".type": "interface", ".name": "wwan", "metric": "20"},
+             "devlan_dev": {".type": "device", ".name": "devlan_dev", "name": "br-devlan", "type": "bridge",
+                            "ports": ["lan1", "lan2"]},
+             "devlan": {".type": "interface", ".name": "devlan", "device": "br-devlan"}},
+ "firewall": {"wan": {".type": "zone", ".name": "wan", "network": "wan console linklocal wwifi"}},
+ "dhcp": {"cfg01": {".type": "dnsmasq", ".name": "cfg01", "notinterface": "wan"}},
+ "parkeze": {"uplinks": {".type": "uplinks", ".name": "uplinks", "track": ["wan"], "order": ["wan", "wwan"]}}}
+EOF
+
+ports seed
+check "seed: the board's shape, keeping wan's static address" \
+    '[["wan","uplink","static"],["lan1","devices","dhcp"],["lan2","devices","dhcp"]]' \
+    "$(ports status | jq -c '[.ports[] | [.name, .role, .addressing.mode]]')"
+ports seed
+check "seed: a kept layout is left alone" '3' "$(jq '[.parkeze[] | select(.[".type"] == "port")] | length' "${UCI_JSON}")"
+
+cat > "${T}/layout.json" <<'EOF'
+{"ports": [{"name": "wan", "role": "devices"},
+           {"name": "lan1", "role": "uplink"},
+           {"name": "lan2", "role": "uplink", "vlans": [
+               {"vid": 20, "role": "uplink", "addressing": {"mode": "static", "address": "10.9.0.2",
+                                                            "netmask": "255.255.255.0", "gateway": "10.9.0.1"}},
+               {"vid": 30, "role": "devices"}]}]}
+EOF
+: > "${T}/events"
+ports set "${T}/layout.json" tester >/dev/null
+check "set: an uplink per link, named by device" '["wan_lan1","wan_lan2","wan_lan2_20"]' \
+    "$(jq -c '[.network | to_entries[] | select(.value[".type"] == "interface" and (.key | test("^wan"))) | .key] | sort' "${UCI_JSON}")"
+check "set: VLAN 20 static on lan2.20" '["lan2.20","static","10.9.0.2"]' \
+    "$(jq -c '.network.wan_lan2_20 | [.device, .proto, .ipaddr]' "${UCI_JSON}")"
+check "set: VLAN devices" '["lan2.20","lan2.30"]' \
+    "$(jq -c '[.network | to_entries[] | select(.value.type == "8021q") | .value.name] | sort' "${UCI_JSON}")"
+check "set: the bridge holds the LAN links" '["wan","lan2.30"]' "$(jq -c .network.devlan_dev.ports "${UCI_JSON}")"
+check "set: the console moves to the first uplink port" '"lan1"' "$(jq -c .network.console.device "${UCI_JSON}")"
+check "set: the wan zone, WiFi kept" '"wan_lan1 wan_lan2 wan_lan2_20 console linklocal wwifi"' \
+    "$(jq -c .firewall.wan.network "${UCI_JSON}")"
+check "set: dnsmasq stays off every uplink" '["lan1","lan2","lan2.20"]' "$(jq -c .dhcp.cfg01.notinterface "${UCI_JSON}")"
+check "set: new uplinks tracked, wan gone" '["wan_lan1","wan_lan2","wan_lan2_20"]' "$(jq -c .parkeze.uplinks.track "${UCI_JSON}")"
+check "set: new uplinks ordered ahead of cellular" '["wan_lan1","wan_lan2","wan_lan2_20","wwan"]' \
+    "$(jq -c .parkeze.uplinks.order "${UCI_JSON}")"
+check "set: pending, by whom" 'tester' "$(ports status | jq -r .pending.by)"
+check "set: logged, then reloaded" 'reload' "$(grep -x reload "${T}/events" | head -n1)"
+ports confirm >/dev/null 2>&1 && r=0 || r=$?
+check "confirm: refused while the change settles" '3' "${r}"
+echo '{"wan_lan1": {"up": true, "l3_device": "lan1"}, "wwan": {"up": true, "l3_device": "wwan0"}}' > "${NET_JSON}"
+check "uplinks: the wired ones by kind, in order" \
+    '[["wan_lan1","ethernet"],["wan_lan2","ethernet"],["wan_lan2_20","ethernet"],["wwan","cellular"]]' \
+    "$(up status | jq -c '[.uplinks[] | [.iface, .kind]]')"
+
+refuse() {
+    local what="$1" body="$2" out r
+    echo "${body}" > "${T}/bad.json"
+    out="$(ports set "${T}/bad.json" 2>&1)" && r=0 || r=$?
+    check "refuses: ${what}" "2" "${r}"
+}
+refuse "every port unused" '{"ports": [{"name": "wan", "role": "none"}, {"name": "lan1", "role": "none"}, {"name": "lan2", "role": "none"}]}'
+refuse "a port the board lacks" '{"ports": [{"name": "lan9", "role": "uplink"}]}'
+refuse "a VLAN ID of 5000" '{"ports": [{"name": "wan", "role": "uplink", "vlans": [{"vid": 5000, "role": "uplink"}]}]}'
+refuse "a VLAN twice" '{"ports": [{"name": "wan", "role": "uplink", "vlans": [{"vid": 7, "role": "uplink"}, {"vid": 7, "role": "devices"}]}]}'
+refuse "a static address in the console network" '{"ports": [{"name": "wan", "role": "uplink", "addressing": {"mode": "static", "address": "192.168.61.9", "netmask": "255.255.255.0", "gateway": "192.168.61.1"}}]}'
+refuse "a static address in the LAN" '{"ports": [{"name": "wan", "role": "uplink", "addressing": {"mode": "static", "address": "192.168.64.9", "netmask": "255.255.0.0", "gateway": "192.168.1.1"}}]}'
+refuse "a gateway off the subnet" '{"ports": [{"name": "wan", "role": "uplink", "addressing": {"mode": "static", "address": "10.0.0.9", "netmask": "255.255.255.0", "gateway": "10.0.1.1"}}]}'
+refuse "two uplinks on one subnet" '{"ports": [{"name": "wan", "role": "uplink", "addressing": {"mode": "static", "address": "10.0.0.9", "netmask": "255.255.255.0", "gateway": "10.0.0.1"}}, {"name": "lan1", "role": "uplink", "addressing": {"mode": "static", "address": "10.0.0.10", "netmask": "255.255.255.0", "gateway": "10.0.0.1"}}]}'
+refuse "not JSON" 'ports'
+
+echo '{"ports": [{"name": "wan", "role": "uplink"}, {"name": "lan1", "role": "devices"}, {"name": "lan2", "role": "devices"}]}' > "${T}/layout.json"
+ports set "${T}/layout.json" >/dev/null
+check "back: wan is wan again, the board's port" '["wan","dhcp"]' "$(jq -c '.network.wan | [.device, .proto]' "${UCI_JSON}")"
+check "back: VLAN devices gone" '0' "$(jq '[.network[] | select(.type == "8021q")] | length' "${UCI_JSON}")"
+check "back: the console on wan" '"wan"' "$(jq -c .network.console.device "${UCI_JSON}")"
+check "back: uplinks that went are out of the order" '["wan","wwan"]' "$(jq -c .parkeze.uplinks.order "${UCI_JSON}")"
 
 exit "${fail}"

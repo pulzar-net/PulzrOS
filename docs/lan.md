@@ -26,6 +26,11 @@ Pi the adapter is `eth1`.
 the board says otherwise. The first boot builds the rest
 (`feed/parkeze-lan/files/etc/uci-defaults/25-parkeze-lan`).
 
+Those are the ports a gateway starts with. Which ports, and which VLANs,
+serve devices after that is Network > Ports ([ports.md](ports.md)): any port
+can be moved in or out of `br-devlan`, and a tagged VLAN can serve devices
+behind a managed switch.
+
 ## What a device gets
 
 | | |

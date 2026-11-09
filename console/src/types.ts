@@ -56,7 +56,8 @@ export type Feature =
   | 'wifi'
   | 'lan'
   | 'dns'
-  | 'failover';
+  | 'failover'
+  | 'speedtest';
 
 export interface SystemSummary {
   identity: {
@@ -124,21 +125,11 @@ export interface Modem {
 }
 
 export interface NetworkStatus {
-  /** The fixed console address on the shared ethernet port. */
+  /** The fixed console address, on the port parkeze-ports puts it on. */
   console: InterfaceStatus;
   /** The link-local address on the same port, for a laptop plugged straight
       in. Up independently of whether the uplink has a lease. */
   linkLocal: InterfaceStatus;
-  wan: InterfaceStatus & {
-    manageable: boolean;
-    reason: string | null;
-    enabled: boolean;
-    mode: 'dhcp' | 'static';
-    staticAddress: string | null;
-    staticNetmask: string | null;
-    staticGateway: string | null;
-    dns: string[];
-  };
   cellular: InterfaceStatus & {
     manageable: boolean;
     enabled: boolean;
@@ -150,6 +141,8 @@ export interface NetworkStatus {
 export interface BackhaulStatus {
   wired: {
     up: boolean;
+    /** The wired uplink the tunnel would take: wan, or wan_<device>. */
+    iface?: string | null;
     device: string | null;
     gateway: string | null;
     address?: string | null;
@@ -635,8 +628,9 @@ export interface DnsStatus {
 
 // ── uplinks ─────────────────────────────────────────────────────────────────
 
-/** A netifd uplink interface. */
-export type UplinkIface = 'wan' | 'wwifi' | 'wwan' | 'usbwan';
+/** A netifd uplink interface: wwifi, wwan, usbwan, or a wired one,
+    wan or wan_<device> (parkeze-ports). */
+export type UplinkIface = string;
 
 export interface Uplink {
   iface: UplinkIface;
@@ -661,4 +655,98 @@ export interface UplinksStatus {
   active: UplinkIface | null;
   tracking: { ips: string[]; interval: number; down: number; up: number };
   uplinks: Uplink[];
+}
+
+// ── ports ───────────────────────────────────────────────────────────────────
+
+export type PortRole = 'uplink' | 'devices' | 'none';
+
+export interface Addressing {
+  mode: 'dhcp' | 'static';
+  address?: string | null;
+  netmask?: string | null;
+  gateway?: string | null;
+  dns?: string[];
+}
+
+/** An uplink link as netifd has it now. */
+export interface PortUplink {
+  role: 'uplink';
+  iface: string;
+  addressing: Addressing;
+  state: { up: boolean; address: string | null; gateway: string | null };
+}
+
+export interface PortVlan {
+  vid: number;
+  role: Exclude<PortRole, 'none'>;
+  addressing: Addressing;
+  uplink: PortUplink | null;
+}
+
+export interface Port {
+  name: string;
+  /** What the case says: WAN, LAN 1, Ethernet. */
+  label: string;
+  /** The board's own uplink port. */
+  primary: boolean;
+  link: { present: boolean; up?: boolean; speed?: number | null; mac?: string | null };
+  role: PortRole;
+  addressing: Addressing;
+  uplink: PortUplink | null;
+  vlans: PortVlan[];
+}
+
+/** `parkeze-ports status`. */
+export interface PortsStatus {
+  ports: Port[];
+  /** The port the console's fixed addresses are on, or null. */
+  console: string | null;
+  consoleAddress: string | null;
+  /** Whether this gateway has a LAN to put devices on. */
+  devices: boolean;
+  /** A change applied and not yet confirmed: undone at `until` (Unix s). */
+  pending: { until: number; in: number; by: string | null; confirmableIn: number } | null;
+  /** Seconds a change has to be confirmed in. */
+  window: number;
+  /** Seconds after a change before a confirm counts. */
+  settle: number;
+}
+
+/** What `POST /ports` takes: the whole layout. */
+export interface PortsLayout {
+  ports: { name: string; role: PortRole; addressing: Addressing; vlans: { vid: number; role: Exclude<PortRole, 'none'>; addressing: Addressing }[] }[];
+}
+
+// ── speed tests ─────────────────────────────────────────────────────────────
+
+/** One test: `direct` on one uplink to a LibreSpeed server, or `tunnel`,
+    measured by Pulzr Net over WireGuard. */
+export interface SpeedResult {
+  at: number;
+  test: 'direct' | 'tunnel';
+  iface?: string | null;
+  kind?: 'ethernet' | 'wifi';
+  device?: string | null;
+  /** The tunnel's path: wired or wifi. */
+  via?: string;
+  server?: string | null;
+  /** Whether the LibreSpeed server was reached over HTTPS. */
+  secure?: boolean;
+  downloadMbps?: number;
+  uploadMbps?: number;
+  pingMs?: number;
+  jitterMs?: number;
+  bytesReceived?: number;
+  bytesSent?: number;
+  error?: string;
+}
+
+/** `parkeze-speedtest status`. */
+export interface SpeedtestStatus {
+  schedule: { every: 'off' | 'daily' | 'weekly'; at: string; duration: number };
+  running: { startedAt: number } | null;
+  /** The uplinks a run would test now. */
+  uplinks: { iface: string; kind: string; device: string }[];
+  history: SpeedResult[];
 }

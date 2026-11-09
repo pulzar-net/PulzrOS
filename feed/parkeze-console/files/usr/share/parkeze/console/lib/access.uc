@@ -68,14 +68,26 @@ status = function() {
     // address at once — a DHCP lease for the backhaul, the fixed console
     // address, and a link-local address for a directly-connected laptop — so
     // what the console shows is simply which of those are currently up.
-    const lease = runJson('ubus call network.interface.wan status') || {};
+    //
+    // Which port that is, parkeze-ports decides: the board's uplink port
+    // while it is an uplink, else the first port that is one. The lease is
+    // the uplink's on that same port, untagged.
+    const port = uci.get('network', 'console', 'device') || 'eth0';
+    let uplinkIface = null;
+    uci.foreach('network', 'interface', (s) => {
+        if (!uplinkIface && match(s['.name'], /^wan(_[A-Za-z0-9_]+)?$/) && s.device == port)
+            uplinkIface = s['.name'];
+    });
+    const lease = uplinkIface ? (runJson(sprintf('ubus call network.interface.%s status', uplinkIface)) || {}) : {};
     const wired = lease['ipv4-address'] && length(lease['ipv4-address'])
                   ? lease['ipv4-address'][0].address : null;
 
     return {
         ap: ap,
         port: {
-            iface: uci.get('network', 'wan', 'device') || 'eth0',
+            iface: port,
+            // Off when no port is an uplink: a LAN port answers instead.
+            enabled: uci.get('network', 'console', 'disabled') != '1',
             // Where to point a browser. Both always work; the link-local name
             // is the one to read out to somebody with a laptop and a cable,
             // because it needs nothing configured at either end.

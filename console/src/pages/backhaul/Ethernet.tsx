@@ -1,112 +1,139 @@
 import { useState } from 'react';
-import { Network } from 'lucide-react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { EthernetPort } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import { api } from '@/services/api';
-import type { NetworkStatus } from '@/types';
+import type { Addressing, NetworkStatus, Port, PortUplink, PortsStatus } from '@/types';
 import Section from '@/components/ui/Section';
 import { StatusBadge } from '@/components/ui/Badge';
 import Fact, { FactList } from '@/components/Fact';
 import Notice from '@/components/ui/Notice';
 import Button from '@/components/ui/Button';
+import Segmented from '@/components/ui/Segmented';
 import { TextField } from '@/components/ui/Field';
 import Spinner from '@/components/ui/Spinner';
 import ErrorState from '@/components/ErrorState';
+import PortsChangeNotice from '@/components/PortsChangeNotice';
+import { usePortsChange } from '@/hooks/usePortsChange';
 import styles from '../Pages.module.css';
 
 /**
- * The wired uplink: DHCP, or a static address for a site that needs one.
+ * Every wired uplink, one card each: a port, or a VLAN on one, that
+ * parkeze-ports has as an uplink. Each one's addressing is DHCP or static.
  *
- * Changing it never cuts off the person doing it. The console address lives on
- * the same port as a separate interface and is not touched, so a wrong static
- * address costs the uplink, not this page — which is also why there is no
- * timed rollback. The management tunnel follows on its own once the uplink
- * comes up.
+ * Applied like a port change, because it is one: a wrong static address on
+ * the uplink the tunnel rides takes the gateway away from somebody working
+ * through Pulzr Net, and the change is undone unless this page reaches the
+ * gateway again afterwards.
  */
+
+interface Wired {
+  key: string;
+  label: string;
+  port: Port;
+  vid: number | null;
+  uplink: PortUplink;
+}
+
+const MODES = [
+  { value: 'dhcp', label: 'DHCP' },
+  { value: 'static', label: 'Static' },
+] as const;
+
 export default function Ethernet() {
-  const queryClient = useQueryClient();
+  const ports = useQuery({
+    queryKey: ['ports'],
+    queryFn: () => api.get<PortsStatus>('/ports/status'),
+    refetchInterval: 10_000,
+  });
   const network = useQuery({
     queryKey: ['network-status'],
     queryFn: () => api.get<NetworkStatus>('/network/status'),
   });
+  const change = usePortsChange();
 
-  if (network.isLoading) return <Spinner label="Reading network state" />;
-  if (network.isError) return <ErrorState error={network.error} onRetry={network.refetch} />;
+  if (ports.isLoading) return <Spinner label="Reading the uplinks" />;
+  if (ports.isError) return <ErrorState error={ports.error} onRetry={ports.refetch} />;
 
-  const state = network.data!;
-  const wan = state.wan;
+  const state = ports.data!;
+  const wired: Wired[] = [];
+  for (const port of state.ports) {
+    if (port.role === 'uplink' && port.uplink)
+      wired.push({ key: port.name, label: port.label, port, vid: null, uplink: port.uplink });
+    for (const v of port.vlans)
+      if (v.role === 'uplink' && v.uplink)
+        wired.push({ key: `${port.name}.${v.vid}`, label: `${port.label} VLAN ${v.vid}`, port, vid: v.vid, uplink: v.uplink });
+  }
+  const busy = change.applying || change.phase === 'confirming';
 
   return (
     <div className="fade-in">
-      <Section>
-        <FactList>
-          <Fact label="State" value={<StatusBadge ok={wan.up === true} />} />
-          <Fact label="Address" value={wan.address} mono />
-          <Fact label="Gateway" value={wan.gateway} mono />
-          <Fact label="Console address" value={state.console.address} mono />
-          <Fact label="Link-local" value={state.linkLocal.address} mono />
-        </FactList>
-      </Section>
-
-      <Addressing
-        state={state}
-        onApplied={() => {
-          queryClient.invalidateQueries({ queryKey: ['network-status'] });
-          queryClient.invalidateQueries({ queryKey: ['backhaul'] });
-        }}
-      />
+      <PortsChangeNotice change={change} />
+      {!wired.length && <Notice tone="info">No port is an uplink.</Notice>}
+      {wired.map((w) => (
+        <Uplink
+          key={w.key}
+          wired={w}
+          console={state.console === w.port.name && w.vid == null ? network.data : undefined}
+          disabled={busy}
+          onApply={(addressing) => change.apply('/ports/addressing', { port: w.port.name, vid: w.vid, addressing })}
+        />
+      ))}
     </div>
   );
 }
 
-function Addressing({ state, onApplied }: { state: NetworkStatus; onApplied: () => void }) {
-  const wan = state.wan;
-  const [mode, setMode] = useState<'dhcp' | 'static'>(wan.mode);
-  const [address, setAddress] = useState(wan.staticAddress ?? '');
-  const [netmask, setNetmask] = useState(wan.staticNetmask ?? '255.255.255.0');
-  const [gateway, setGateway] = useState(wan.staticGateway ?? '');
-  const [dns, setDns] = useState((wan.dns ?? []).join(', '));
-
-  const apply = useMutation({
-    mutationFn: () =>
-      api.post('/network/ethernet', {
-        mode,
-        address,
-        netmask,
-        gateway,
-        dns: dns.split(',').map((server) => server.trim()).filter(Boolean),
-      }),
-    onSuccess: onApplied,
-  });
+function Uplink({
+  wired, console: net, disabled, onApply,
+}: {
+  wired: Wired;
+  console?: NetworkStatus;
+  disabled: boolean;
+  onApply: (addressing: Addressing) => void;
+}) {
+  const a = wired.uplink.addressing;
+  const [mode, setMode] = useState<'dhcp' | 'static'>(a.mode);
+  const [address, setAddress] = useState(a.address ?? '');
+  const [netmask, setNetmask] = useState(a.netmask ?? '255.255.255.0');
+  const [gateway, setGateway] = useState(a.gateway ?? '');
+  const [dns, setDns] = useState((a.dns ?? []).join(', '));
+  const link = wired.port.link;
 
   return (
-    <Section title="Addressing" icon={Network}>
-      <div className={styles.row}>
-        <Button variant={mode === 'dhcp' ? 'primary' : undefined} onClick={() => setMode('dhcp')}>
-          DHCP
-        </Button>
-        <Button variant={mode === 'static' ? 'primary' : undefined} onClick={() => setMode('static')}>
-          Static
-        </Button>
+    <Section title={wired.label} icon={EthernetPort} note={<StatusBadge ok={wired.uplink.state.up} />}>
+      <FactList>
+        <Fact label="Address" value={wired.uplink.state.address} mono />
+        <Fact label="Gateway" value={wired.uplink.state.gateway} mono />
+        <Fact label="Link" value={link.up ? (link.speed ? `${link.speed} Mb/s` : 'Up') : 'No cable'} />
+        {net && <Fact label="Console address" value={net.console.address} mono />}
+        {net && <Fact label="Link-local" value={net.linkLocal.address} mono />}
+      </FactList>
+
+      <div className={styles.options}>
+        <Segmented aria-label={`${wired.label} addressing`} value={mode} options={[...MODES]}
+                   disabled={disabled} onChange={setMode} />
       </div>
 
       {mode === 'static' && (
         <div className={styles.form}>
-          <TextField label="Address" value={address} placeholder="10.0.0.50"
+          <TextField label="Address" mono value={address} placeholder="10.0.0.50"
                      onChange={(event) => setAddress(event.target.value)} />
-          <TextField label="Netmask" value={netmask}
+          <TextField label="Netmask" mono value={netmask}
                      onChange={(event) => setNetmask(event.target.value)} />
-          <TextField label="Gateway" value={gateway} placeholder="10.0.0.1"
+          <TextField label="Gateway" mono value={gateway} placeholder="10.0.0.1"
                      onChange={(event) => setGateway(event.target.value)} />
-          <TextField label="DNS" value={dns} placeholder="1.1.1.1, 8.8.8.8"
+          <TextField label="DNS" mono value={dns} placeholder="1.1.1.1, 8.8.8.8"
                      onChange={(event) => setDns(event.target.value)} />
         </div>
       )}
 
-      {apply.isError && <Notice tone="error">{(apply.error as Error).message}</Notice>}
-      {apply.isSuccess && <Notice tone="success">Applied.</Notice>}
-
       <div className={styles.actions}>
-        <Button variant="primary" loading={apply.isPending} onClick={() => apply.mutate()}>
+        <Button
+          variant="primary"
+          disabled={disabled}
+          onClick={() => onApply(mode === 'static'
+            ? { mode, address, netmask, gateway, dns: dns.split(',').map((s) => s.trim()).filter(Boolean) }
+            : { mode })}
+        >
           Apply
         </Button>
       </div>

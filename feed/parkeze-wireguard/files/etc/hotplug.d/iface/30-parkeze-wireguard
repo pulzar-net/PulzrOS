@@ -17,11 +17,14 @@
 
 [ "${PARKEZE_WIREGUARD_ENABLED:-1}" = "1" ] || exit 0
 
-WIRED="${PARKEZE_WAN_ETH_IFACE:-wan}"
 CELL="${PARKEZE_WAN_CELL_IFACE:-wwan}"
 WIFI="${PARKEZE_WAN_WIFI_IFACE:-wwifi}"
 
-if [ "${INTERFACE}" = "${WIRED}" ]; then
+# Any wired uplink: wan, or wan_<device> for another port or a VLAN
+# (parkeze-ports).
+case "${INTERFACE}" in wan|wan_*) WIRED="${INTERFACE}" ;; *) WIRED="" ;; esac
+
+if [ -n "${WIRED}" ]; then
     case "${ACTION}" in
         ifup)   /etc/init.d/parkeze-wireguard restart ;;
         ifdown) /usr/sbin/parkeze-wireguard-route apply ;;

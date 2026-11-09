@@ -26,6 +26,9 @@
 # it comes from the image, so that rotating it is a firmware upgrade rather
 # than a visit. See parkeze-fleet-keys.
 /etc/parkeze/site-keys
+# Speed test history (parkeze-speedtest), so its chart does not start over at
+# every upgrade.
+/etc/parkeze/speedtest/
 # SSH host keys. parkeze.net pins the one a gateway reports, so a new key after
 # an upgrade is a gateway nobody can open a shell on until it reports again.
 # dropbear's as well as sshd's: they are the same keys (see parkeze-ssh-setup),

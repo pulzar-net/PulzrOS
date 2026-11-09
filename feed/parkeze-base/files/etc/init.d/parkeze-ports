@@ -1,0 +1,19 @@
+#!/bin/sh /etc/rc.common
+#
+# Undo a port change that was never confirmed, before the network starts.
+#
+# parkeze-ports set keeps the configuration it replaced on flash until the
+# change is confirmed. A reboot inside that window, a power cut or somebody
+# pulling the plug because the change cut them off, would otherwise boot
+# straight into the layout nobody confirmed. After uci-defaults (10), before
+# network (20).
+
+START=11
+
+boot() {
+	/usr/sbin/parkeze-ports boot
+}
+
+start() {
+	:
+}

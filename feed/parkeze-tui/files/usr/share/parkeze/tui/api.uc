@@ -11,6 +11,7 @@ return {
     auth: load('auth'),
     system: load('system'),
     network: load('network'),
+    ports: load('ports'),
     lorawan: load('lorawan'),
     claim: load('claim'),
     io: load('io'),

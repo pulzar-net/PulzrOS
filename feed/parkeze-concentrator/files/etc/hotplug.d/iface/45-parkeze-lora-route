@@ -11,7 +11,7 @@
 [ "${ACTION}" = "ifup" ] || [ "${ACTION}" = "ifdown" ] || exit 0
 
 case "${INTERFACE}" in
-    wan|wwifi|wwan|usbwan) ;;
+    wan|wan_*|wwifi|wwan|usbwan) ;;
     *) exit 0 ;;
 esac
 

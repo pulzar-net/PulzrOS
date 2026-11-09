@@ -56,9 +56,12 @@ let fs = require('fs');
 let uci = require('uci');
 
 const STATE = '/var/run/parkeze/uplinks.json';
-const KNOWN = ['wan', 'wwifi', 'wwan', 'usbwan'];
-const KIND = { wan: 'ethernet', wwifi: 'wifi', wwan: 'cellular', usbwan: 'usb-cellular' };
+// The wired ones are whatever parkeze-ports made: wan, and wan_<device>
+// for any other port or VLAN that is an uplink (see wired.sh).
+const KNOWN = ['wwifi', 'wwan', 'usbwan'];
+const KIND = { wwifi: 'wifi', wwan: 'cellular', usbwan: 'usb-cellular' };
 const METERED = { wwan: true, usbwan: true };
+const WIRED = /^wan(_[A-Za-z0-9_]+)?$/;
 const HEALTHY = 10;
 const FAILED = 100;
 const STEP = 10;
@@ -98,7 +101,17 @@ let iface = (name) => {
 // The uplinks this gateway has: the ones netifd has a section for. wwifi
 // exists once a network has been joined, usbwan on a board that can take a
 // USB adapter.
-let present = (cur) => filter(KNOWN, (name) => cur.get('network', name) == 'interface');
+let wired = (name) => !!match(name ?? '', WIRED);
+
+let kind = (name) => wired(name) ? 'ethernet' : KIND[name];
+
+let present = (cur) => {
+    let out = [];
+    cur.foreach('network', 'interface', (s) => {
+        if (wired(s['.name']) && s.disabled != '1') push(out, s['.name']);
+    });
+    return [...sort(out), ...filter(KNOWN, (name) => cur.get('network', name) == 'interface')];
+};
 
 let config = () => {
     let cur = uci.cursor();
@@ -106,13 +119,24 @@ let config = () => {
     let s = cur.get_all('parkeze', 'uplinks') ?? {};
     let list = (v) => type(v) == 'array' ? v : (v != null ? [v] : []);
 
+    // An uplink the order does not name yet goes in by kind: a wired one
+    // after the last wired one, rather than behind the SIM.
     let order = filter(uniq(list(s.order)), (n) => n in have);
-    for (let n in have) if (!(n in order)) push(order, n);
+    for (let n in have) {
+        if (n in order) continue;
+        let at = length(order);
+        if (wired(n)) {
+            at = 0;
+            for (let i = 0; i < length(order); i++) if (wired(order[i])) at = i + 1;
+        }
+        splice(order, at, 0, n);
+    }
 
     let ips = filter(list(s.track_ip), ipv4);
     return {
         order,
-        track: filter(uniq(list(s.track ?? 'wan')), (n) => n in have && n != 'wwifi'),
+        // With nothing set, every wired uplink is tracked, as wan was.
+        track: filter(uniq(s.track == null ? filter(have, wired) : list(s.track)), (n) => n in have && n != 'wwifi'),
         ips: length(ips) ? ips : ['1.1.1.1', '8.8.8.8'],
         interval: number(s.interval, 5, 300) ?? 10,
         down: number(s.down, 1, 10) ?? 3,
@@ -189,7 +213,7 @@ let status = () => {
         else st = s.state ?? 'unchecked';
         push(uplinks, {
             iface: n,
-            kind: KIND[n],
+            kind: kind(n),
             metered: !!METERED[n],
             up: link.up,
             device: link.device,

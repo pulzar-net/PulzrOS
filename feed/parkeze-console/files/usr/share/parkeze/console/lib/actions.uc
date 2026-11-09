@@ -25,6 +25,8 @@ let signin = loadfile('/usr/share/parkeze/console/lib/signin.uc', { raw_mode: tr
 let lan = loadfile('/usr/share/parkeze/console/lib/lan.uc', { raw_mode: true })();
 let dns = loadfile('/usr/share/parkeze/console/lib/dns.uc', { raw_mode: true })();
 let uplinks = loadfile('/usr/share/parkeze/console/lib/uplinks.uc', { raw_mode: true })();
+let ports = loadfile('/usr/share/parkeze/console/lib/ports.uc', { raw_mode: true })();
+let speedtest = loadfile('/usr/share/parkeze/console/lib/speedtest.uc', { raw_mode: true })();
 
 // ucode does not hoist function declarations; see util.uc.
 let audited;
@@ -58,9 +60,20 @@ const ACTIONS = {
     setBluetooth: (req, s) => audited('bluetooth.set', { by: s.subject, enabled: req.enabled },
                                       bluetooth.set(req)),
     setCellular: (req, s) => network.setCellular(req, s),
-    setEthernet: (req, s) => audited('network.ethernet',
-        { by: s.subject, mode: req.mode, address: req.address, gateway: req.gateway },
-        network.setEthernet(req, s)),
+
+    // ── ports: roles, VLANs, each uplink's addressing; see lib/ports.uc ─────
+    setPorts: (req, s) => audited('ports.set', { by: s.subject, ports: req.ports }, ports.set(req, s)),
+    setUplinkAddressing: (req, s) => audited('ports.addressing',
+        { by: s.subject, port: req.port, vid: req.vid, mode: req.addressing?.mode,
+          address: req.addressing?.address, gateway: req.addressing?.gateway },
+        ports.setAddressing(req, s)),
+    confirmPorts: (req, s) => ports.confirm(),
+
+    // ── speed tests; see lib/speedtest.uc ──────────────────────────────────
+    startSpeedtest: (req, s) => audited('speedtest.run', { by: s.subject }, speedtest.start()),
+    setSpeedtestSchedule: (req, s) => audited('speedtest.schedule', { by: s.subject, every: req.every },
+                                              speedtest.setSchedule(req)),
+    revertPorts: (req, s) => audited('ports.revert', { by: s.subject }, ports.revert()),
 
     // ── provisioning ────────────────────────────────────────────────────────
     claimPoll: (req, s) => claim.poll(),

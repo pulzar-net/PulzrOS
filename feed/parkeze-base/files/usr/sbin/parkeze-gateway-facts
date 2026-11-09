@@ -32,7 +32,13 @@ echo "openwrt=${OPENWRT_VERSION}"
 echo "board=${BOARD_ID}"
 echo "uptime=$(cut -d. -f1 /proc/uptime)"
 
-wan="$(addr wan)";   [ -n "${wan}" ]   && echo "wan_ip=${wan}"
+# The wired uplink the routes put first: wan, or another port's or VLAN's
+# when parkeze-ports made more than one, or made the wan port a LAN port.
+. /usr/share/parkeze/wired.sh
+for iface in $(wired_ifaces); do
+    wan="$(addr "${iface}")"
+    [ -n "${wan}" ] && { echo "wan_ip=${wan}"; break; }
+done
 # wwan only. usbwan's address is the one a HiLink dongle or a phone handed out
 # behind its own NAT, which reaches nothing; parkeze.net reaching it would be
 # a wrong turn, not a missing fact.

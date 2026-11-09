@@ -13,7 +13,7 @@ import { TextField } from '@/components/ui/Field';
 import DataTable from '@/components/DataTable';
 import Spinner from '@/components/ui/Spinner';
 import ErrorState from '@/components/ErrorState';
-import { duration } from '@/lib/format';
+import { duration, uplinkName } from '@/lib/format';
 import styles from '../Pages.module.css';
 
 /**
@@ -26,13 +26,6 @@ import styles from '../Pages.module.css';
  * every ping is billed. The order and tracking are in parkeze-uplinks' state,
  * which is what parkeze.net's `uplinks` op reads.
  */
-
-const NAMES: Record<UplinkIface, string> = {
-  wan: 'Ethernet',
-  wwifi: 'WiFi',
-  wwan: 'Cellular',
-  usbwan: 'USB cellular',
-};
 
 const SWITCH = [
   { value: 'on', label: 'On' },
@@ -91,7 +84,7 @@ export default function Uplinks() {
         size: 210,
         cell: (info) => (
           <span className={styles.status}>
-            <span>{NAMES[info.getValue()]}</span>
+            <span>{uplinkName(info.getValue(), info.row.original.device)}</span>
             {info.row.original.device && <span className={`mono ${styles.dim}`}>{info.row.original.device}</span>}
             {info.row.original.metered && <Badge tone="neutral">Metered</Badge>}
           </span>
@@ -111,7 +104,7 @@ export default function Uplinks() {
           if (u.iface === 'wwifi') return 'Portal check';
           return (
             <Segmented
-              aria-label={`Tracking for ${NAMES[u.iface]}`}
+              aria-label={`Tracking for ${uplinkName(u.iface, u.device)}`}
               value={u.tracked ? 'on' : 'off'}
               options={[...SWITCH]}
               disabled={pending}
@@ -127,14 +120,14 @@ export default function Uplinks() {
         cell: (info) => (
           <div className={styles.pair}>
             <Button
-              aria-label={`Move ${NAMES[info.row.original.iface]} up`}
+              aria-label={`Move ${uplinkName(info.row.original.iface, info.row.original.device)} up`}
               disabled={pending || info.row.index === 0}
               onClick={() => move(info.row.original.iface, -1)}
             >
               <ArrowUp size={14} strokeWidth={2} />
             </Button>
             <Button
-              aria-label={`Move ${NAMES[info.row.original.iface]} down`}
+              aria-label={`Move ${uplinkName(info.row.original.iface, info.row.original.device)} down`}
               disabled={pending || info.row.index === (current?.length ?? 0) - 1}
               onClick={() => move(info.row.original.iface, 1)}
             >

@@ -11,7 +11,7 @@ import Notice from '@/components/ui/Notice';
 import Spinner from '@/components/ui/Spinner';
 import ErrorState from '@/components/ErrorState';
 import TimeChart, { Legend, type Series } from '@/components/TimeChart';
-import { duration, inUnit, modemKind } from '@/lib/format';
+import { duration, inUnit, isWiredIface, modemKind, portLabel } from '@/lib/format';
 import { useFeatures } from '@/hooks/useFeatures';
 import styles from './Pages.module.css';
 
@@ -230,11 +230,13 @@ function uplink(paths: BackhaulStatus | undefined, order?: UplinksStatus): Row {
   const { wired, wifi, cellular } = paths;
   const carrying = (iface: UplinkIface, up: boolean | undefined) =>
     order ? order.active === iface || (iface === 'wwan' && order.active === 'usbwan') : !!up;
-  if (carrying('wan', wired.up)) {
+  // Any wired uplink: there can be several (parkeze-ports).
+  if (order ? isWiredIface(order.active) : wired.up) {
     const how = wired.proto === 'static' ? 'static' : wired.proto === 'dhcp' ? 'by DHCP' : null;
+    const device = order?.uplinks.find((u) => u.iface === order.active)?.device ?? wired.device;
     return {
       tone: 'success', badge: 'Ethernet',
-      text: join(wired.device, speed(wired.speed)),
+      text: join(device ? portLabel(device) : null, speed(wired.speed)),
       detail: [wired.address?.split('/')[0], how].filter(Boolean).join(' ') || null,
       to: '/backhaul/ethernet', page: 'Ethernet',
     };
