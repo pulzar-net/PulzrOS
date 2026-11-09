@@ -273,11 +273,13 @@ let lastRun = () => {
 
 let due = (cfg) => {
     if (cfg.every == 'off') return false;
-    let since = time() - lastRun();
-    if (since < EVERY[cfg.every] - 7200) return false;
+    let last = lastRun(), since = time() - last;
+    if (last && since < EVERY[cfg.every] - 7200) return false;
     let now = localSeconds(), at = slot();
     // Within half an hour after this gateway's slot, or overdue by a day.
-    return (now >= at && now < at + 1800) || since > EVERY[cfg.every] + 86400;
+    // Never run counts as waiting for the slot, not as overdue: a fleet
+    // upgraded at once would otherwise test at once, at noon.
+    return (now >= at && now < at + 1800) || (last && since > EVERY[cfg.every] + 86400);
 };
 
 let status = () => {

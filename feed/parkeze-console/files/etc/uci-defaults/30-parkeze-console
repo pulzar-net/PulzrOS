@@ -157,11 +157,15 @@ uci commit uhttpd
 # from the console's origin — see lib/signin.uc. It shares the console's
 # certificate and nothing else: no /api, and no static files beyond a page
 # that points at /signin/.
+#
+# That page lives with the package. Its home used to be /www/parkeze-signin,
+# which no image ever had: /www is the console build's output, so uhttpd
+# refused the instance ("Invalid directory") and 8443 never answered.
 uci -q delete uhttpd.signin
 uci -q batch <<EOF
 set uhttpd.signin=uhttpd
 add_list uhttpd.signin.listen_https='0.0.0.0:8443'
-set uhttpd.signin.home='/www/parkeze-signin'
+set uhttpd.signin.home='/usr/share/parkeze/signin-home'
 set uhttpd.signin.cgi_prefix=''
 add_list uhttpd.signin.ucode_prefix='/signin=/usr/share/parkeze/console/signin.uc'
 set uhttpd.signin.cert='${CERT}'
