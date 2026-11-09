@@ -301,6 +301,7 @@ let latest = () => {
     return map(sort(keys(by)), (k) => {
         let r = by[k];
         return { at: r.at, test: r.test, iface: r.iface ?? null, kind: r.kind ?? null, via: r.via ?? null,
+                 device: r.device ?? null,
                  downloadMbps: r.downloadMbps ?? null, uploadMbps: r.uploadMbps ?? null,
                  pingMs: r.pingMs ?? null, server: r.server ?? null, error: r.error ?? null };
     });
@@ -315,7 +316,7 @@ let commands = {
         let st = status(), h = st.history;
         st.history = map(length(h) > 30 ? slice(h, length(h) - 30) : h, (r) => ({
             at: r.at, test: r.test, iface: r.iface ?? null, kind: r.kind ?? null, via: r.via ?? null,
-            downloadMbps: r.downloadMbps ?? null, uploadMbps: r.uploadMbps ?? null, pingMs: r.pingMs ?? null,
+            device: r.device ?? null, downloadMbps: r.downloadMbps ?? null, uploadMbps: r.uploadMbps ?? null, pingMs: r.pingMs ?? null,
             server: r.server ? substr(r.server, 0, 40) : null, error: r.error ?? null,
         }));
         printf('%J\n', st);
