@@ -97,13 +97,19 @@ function Uplink({
   const [gateway, setGateway] = useState(a.gateway ?? '');
   const [dns, setDns] = useState((a.dns ?? []).join(', '));
   const link = wired.port.link;
+  const dnsList = dns.split(',').map((x) => x.trim()).filter(Boolean);
+  // Applying what is already set would reload the network and open an undo
+  // window for nothing.
+  const changed = mode !== a.mode || (mode === 'static' && (
+    address !== (a.address ?? '') || netmask !== (a.netmask ?? '255.255.255.0')
+    || gateway !== (a.gateway ?? '') || dnsList.join(',') !== (a.dns ?? []).join(',')));
 
   return (
     <Section title={wired.label} icon={EthernetPort} note={<StatusBadge ok={wired.uplink.state.up} />}>
       <FactList>
         <Fact label="Address" value={wired.uplink.state.address} mono />
         <Fact label="Gateway" value={wired.uplink.state.gateway} mono />
-        <Fact label="Link" value={link.up ? (link.speed ? `${link.speed} Mb/s` : 'Up') : 'No cable'} />
+        <Fact label="Link" value={link.up ? (link.speed ? speed(link.speed) : 'Up') : 'No cable'} />
         {net && <Fact label="Console address" value={net.console.address} mono />}
         {net && <Fact label="Link-local" value={net.linkLocal.address} mono />}
       </FactList>
@@ -129,14 +135,16 @@ function Uplink({
       <div className={styles.actions}>
         <Button
           variant="primary"
-          disabled={disabled}
-          onClick={() => onApply(mode === 'static'
-            ? { mode, address, netmask, gateway, dns: dns.split(',').map((s) => s.trim()).filter(Boolean) }
-            : { mode })}
+          disabled={disabled || !changed}
+          onClick={() => onApply(mode === 'static' ? { mode, address, netmask, gateway, dns: dnsList } : { mode })}
         >
           Apply
         </Button>
       </div>
     </Section>
   );
+}
+
+function speed(mbps: number) {
+  return mbps >= 1000 ? `${mbps / 1000} Gb/s` : `${mbps} Mb/s`;
 }

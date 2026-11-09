@@ -7,6 +7,28 @@ import App from './App';
 import './index.css';
 
 /**
+ * A page left open across a firmware upgrade, or an index.html a browser kept,
+ * asks for chunks the new image no longer has: every asset name is a hash of
+ * its content. uhttpd can put no Cache-Control on index.html (gateway-link
+ * marks it no-cache on the Pulzr Net path, but a laptop on a LAN port talks to
+ * uhttpd directly), so the page reloads itself once, which fetches the
+ * current index.html, rather than showing a page of errors. Once a minute at
+ * most, so a chunk that is really missing does not loop.
+ */
+window.addEventListener('vite:preloadError', (event) => {
+  const key = 'pulzr-reloaded-for-assets';
+  try {
+    const last = Number(sessionStorage.getItem(key) ?? 0);
+    if (Date.now() - last < 60_000) return;
+    sessionStorage.setItem(key, String(Date.now()));
+  } catch {
+    return;
+  }
+  event.preventDefault();
+  window.location.reload();
+});
+
+/**
  * Query defaults, tuned for a device rather than a web app.
  *
  * The gateway is on the other side of a LAN cable or a proxied tunnel, and it

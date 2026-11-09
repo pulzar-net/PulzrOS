@@ -13,7 +13,7 @@ import { TextField } from '@/components/ui/Field';
 import DataTable from '@/components/DataTable';
 import Spinner from '@/components/ui/Spinner';
 import ErrorState from '@/components/ErrorState';
-import { duration, uplinkName } from '@/lib/format';
+import { duration, isWiredIface, uplinkName } from '@/lib/format';
 import styles from '../Pages.module.css';
 
 /**
@@ -85,7 +85,9 @@ export default function Uplinks() {
         cell: (info) => (
           <span className={styles.status}>
             <span>{uplinkName(info.getValue(), info.row.original.device)}</span>
-            {info.row.original.device && <span className={`mono ${styles.dim}`}>{info.row.original.device}</span>}
+            {/* A wired uplink is named by its device already (WAN, LAN 2 VLAN 30). */}
+            {info.row.original.device && !isWiredIface(info.getValue())
+              && <span className={`mono ${styles.dim}`}>{info.row.original.device}</span>}
             {info.row.original.metered && <Badge tone="neutral">Metered</Badge>}
           </span>
         ),

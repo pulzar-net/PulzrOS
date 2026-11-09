@@ -86,6 +86,7 @@ export default function Ports() {
         />
       ))}
 
+      {(dirty || busy) && (
       <Section wide>
         <div className={styles.bar}>
           <Button disabled={!dirty || busy} onClick={() => { setDirty(false); setDraft(toDraft(state)); }}>
@@ -104,6 +105,7 @@ export default function Ports() {
           </Button>
         </div>
       </Section>
+      )}
     </div>
   );
 }
@@ -170,6 +172,7 @@ function PortCard({
                 }))}
               />
               <Button
+                className={styles.remove}
                 aria-label={`Remove VLAN ${v.vid}`}
                 disabled={disabled}
                 onClick={() => onChange((p) => ({ ...p, vlans: p.vlans.filter((x) => x.vid !== v.vid) }))}
@@ -182,8 +185,10 @@ function PortCard({
       )}
 
       <div className={styles.add}>
-        <TextField label="VLAN ID" inputMode="numeric" value={vid} placeholder="20"
-                   onChange={(event) => setVid(event.target.value.trim())} />
+        <div className={styles.vid}>
+          <TextField label="VLAN ID" inputMode="numeric" value={vid} placeholder="20"
+                     onChange={(event) => setVid(event.target.value.trim())} />
+        </div>
         <Button
           disabled={disabled || !canAdd}
           onClick={() => {
