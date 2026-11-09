@@ -72,7 +72,7 @@ export const NAV: NavEntry[] = [
     label: 'Network',
     icon: Router,
     children: [
-      { path: '/network/ports', label: 'Ports' },
+      { path: '/network/ports', label: 'Ports', wide: true },
       { path: '/network/lan', label: 'LAN', feature: 'lan', wide: true },
       { path: '/network/uplinks', label: 'Uplinks', feature: 'failover' },
       { path: '/network/dns', label: 'DNS', feature: 'dns' },

@@ -13,12 +13,15 @@ export default function DataTable<T>({
   fill,
   rowClassName,
   cellClassName,
+  onRowClick,
 }: {
   table: Table<T>;
   /** The column that takes whatever width the sized ones leave. */
   fill?: string;
   rowClassName?: (row: Row<T>) => string | undefined;
   cellClassName?: (columnId: string) => string | undefined;
+  /** A row that opens something: the whole row is the target. */
+  onRowClick?: (row: Row<T>) => void;
 }) {
   const rows = table.getRowModel().rows;
   const columns = table.getVisibleLeafColumns();
@@ -54,7 +57,8 @@ export default function DataTable<T>({
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={row.id} className={rowClassName?.(row)}>
+            <tr key={row.id} className={rowClassName?.(row)}
+                onClick={onRowClick ? () => onRowClick(row) : undefined}>
               {row.getVisibleCells().map((cell) => (
                 <td
                   key={cell.id}

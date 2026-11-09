@@ -675,6 +675,25 @@ export interface PortUplink {
   iface: string;
   addressing: Addressing;
   state: { up: boolean; address: string | null; gateway: string | null };
+  /** The router at the end of it: its MAC from the ARP table, its maker as
+      Pulzr Net named it on the last report. */
+  router: { address: string; mac: string | null; maker: string | null } | null;
+  /** The public side, for the uplink the last report left on. */
+  internet: { address: string | null; provider: { name: string | null; asn: number | null } | null } | null;
+}
+
+/** What announced itself on a port, over LLDP or CDP (lldpd). */
+export interface PortNeighbor {
+  protocol: string | null;
+  name: string | null;
+  description: string | null;
+  chassis: string | null;
+  /** The chassis MAC's maker, as Pulzr Net named it. */
+  maker?: string | null;
+  managementAddress: string | null;
+  capabilities: string[];
+  port: string | null;
+  portDescription: string | null;
 }
 
 export interface PortVlan {
@@ -694,6 +713,7 @@ export interface Port {
   role: PortRole;
   addressing: Addressing;
   uplink: PortUplink | null;
+  neighbors?: PortNeighbor[];
   vlans: PortVlan[];
 }
 

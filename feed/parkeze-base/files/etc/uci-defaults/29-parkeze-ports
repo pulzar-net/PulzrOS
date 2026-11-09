@@ -11,4 +11,19 @@
 
 /usr/sbin/parkeze-ports render
 /etc/init.d/parkeze-ports enable
+
+# lldpd: what is on the other end of each port, when it says. Receive-only,
+# on the board's own ports and nothing else: a gateway on a customer's
+# network announces nothing to it, and the tunnel and the bridges are not
+# where a neighbour is.
+if [ -f /etc/config/lldpd ]; then
+	. /etc/parkeze/board.conf
+	uci -q batch <<EOF
+set lldpd.config.readonly_mode='1'
+delete lldpd.config.interface
+$(for port in ${PARKEZE_PORT_IFACE:-eth0} ${PARKEZE_LAN_PORTS}; do echo "add_list lldpd.config.interface='${port}'"; done)
+EOF
+	uci commit lldpd
+	/etc/init.d/lldpd enable
+fi
 exit 0

@@ -1,11 +1,128 @@
+/* ── the port strip ─────────────────────────────────────────────────────────
+   The device's jacks in a row, as on the case: each one a tile coloured by
+   what its link negotiated, the way a switch's own page shows them. */
+.strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 4px 0 18px;
+}
+
+.jack {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  width: 76px;
+  padding: 10px 6px 8px;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  color: var(--text-tertiary);
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+}
+
+.jack:hover { border-color: var(--border-secondary); background: var(--bg-tertiary); }
+.jack.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+
+.socket {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 32px;
+  border-radius: 6px;
+  background: var(--bg-tertiary);
+}
+
+.gigabit .socket { background: color-mix(in srgb, var(--status-success) 18%, transparent); color: var(--status-success); }
+.fast .socket { background: color-mix(in srgb, var(--status-warning) 20%, transparent); color: var(--status-warning); }
+
+.jackName {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.jackSpeed {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+.jackRole {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-tertiary);
+}
+
+/* ── the table ─────────────────────────────────────────────────────────── */
+.cell { vertical-align: middle; }
+.row { cursor: pointer; }
+
+.port {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+}
+
+.vlanPort {
+  padding-left: 22px;
+  font-weight: 400;
+  color: var(--text-secondary);
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+  opacity: 0.5;
+}
+
+.dot.gigabit { background: var(--status-success); opacity: 1; }
+.dot.fast { background: var(--status-warning); opacity: 1; }
+
+.changed {
+  font-size: 11px;
+  color: var(--accent);
+}
+
+.connected {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.line {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dim { color: var(--text-secondary); }
+
+/* ── the editor ────────────────────────────────────────────────────────── */
+.editor {
+  display: grid;
+  gap: 16px;
+}
+
+.label {
+  margin-bottom: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
 .vlans {
   display: grid;
   gap: 8px;
-  margin-top: 14px;
 }
 
-/* Each control at its own width: a role switch stretched across the card
-   reads as a text field. The remove button goes to the far end. */
 .vlan {
   display: flex;
   align-items: center;
@@ -18,37 +135,25 @@
   font-weight: 500;
 }
 
-.remove {
-  margin-left: auto;
-}
-
-/* Who is on a VLAN, or the address an uplink VLAN holds. */
-.behind {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-  color: var(--text-secondary);
-}
+.remove { margin-left: auto; }
 
 .add {
   display: flex;
   align-items: flex-end;
   gap: 10px;
-  margin-top: 14px;
 }
 
-.vid {
-  width: 112px;
-}
-
-.facts {
-  margin-top: 14px;
-}
+.vid { width: 112px; }
 
 .bar {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
+  align-items: center;
+}
+
+.summary {
+  margin-right: auto;
+  font-size: 12.5px;
+  color: var(--text-secondary);
 }

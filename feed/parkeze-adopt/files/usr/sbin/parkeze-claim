@@ -573,9 +573,9 @@ facts() {
     board_id="${BOARD_ID:-unknown}"
     version="${PARKEZE_VERSION:-0.0.0}"
 
-    printf '{"board":"%s","osVersion":"%s","modemPresent":%s,"modemModel":"%s","modemKind":"%s","simIccid":"%s","sshHostKey":"%s","wiredUsable":%s,"tunnelVia":"%s","tunnelState":"%s","wifiUplink":"%s","consolePort":443,"consoleScheme":"https","tunnelConsolePort":8080,"sshPort":22,"sshCa":%s,"system":%s,"rakPower":%s,"setupAp":%s,"speedtest":%s,"consoleCertificate":%s%s}' \
+    printf '{"board":"%s","osVersion":"%s","modemPresent":%s,"modemModel":"%s","modemKind":"%s","simIccid":"%s","sshHostKey":"%s","wiredUsable":%s,"tunnelVia":"%s","tunnelState":"%s","wifiUplink":"%s","consolePort":443,"consoleScheme":"https","tunnelConsolePort":8080,"sshPort":22,"sshCa":%s,"system":%s,"rakPower":%s,"setupAp":%s,"speedtest":%s,"wiredRouters":%s,"activeUplink":"%s","consoleCertificate":%s%s}' \
         "${board_id}" "${version}" "${modem_present}" "${modem_model:-}" "${modem_kind:-}" "${iccid:-}" \
-        "${host_key:-}" "${wired_usable}" "${tunnel_via:-none}" "${tunnel:-none}" "${wifi_uplink:-unchecked}" "${ssh_ca}" "$(system_facts)" "$(rak_power_facts)" "$(setup_ap_facts)" "$(speedtest_facts)" \
+        "${host_key:-}" "${wired_usable}" "${tunnel_via:-none}" "${tunnel:-none}" "${wifi_uplink:-unchecked}" "${ssh_ca}" "$(system_facts)" "$(rak_power_facts)" "$(setup_ap_facts)" "$(speedtest_facts)" "$(router_facts)" "$(active_uplink)" \
         "$(console_cert_facts)" "$(console_csr_field)"
 }
 
@@ -625,6 +625,31 @@ setup_ap_facts() {
 #
 # Already JSON, written by lua-cjson; checked anyway, because one bad byte
 # here would make parkeze.net reject the whole report.
+# Each wired uplink's router by MAC (parkeze-ports routers): Pulzr Net names
+# its maker on the answer, with the public address this report came from and
+# who that address belongs to. [] on a gateway with no wired uplink up.
+router_facts() {
+    local out
+    out="$(parkeze-ports routers 2>/dev/null)"
+    if [ -n "${out}" ] && echo "${out}" | jsonfilter -e '@' >/dev/null 2>&1; then
+        echo "${out}"
+    else
+        echo '[]'
+    fi
+}
+
+# The uplink this report leaves on, so Pulzr Net knows which one the public
+# address it sees belongs to: parkeze-uplinks' answer where it runs, else the
+# first wired uplink that is up.
+active_uplink() {
+    local active
+    active="$(parkeze-uplinks status 2>/dev/null | jsonfilter -e '@.active' 2>/dev/null)" || true
+    if [ -z "${active}" ] && [ -f /usr/share/parkeze/wired.sh ]; then
+        active="$(. /usr/share/parkeze/wired.sh; wired_gateway 2>/dev/null | cut -d' ' -f3)"
+    fi
+    printf '%s' "${active}" | tr -cd 'A-Za-z0-9_'
+}
+
 # The latest speed test of each kind on each uplink (parkeze-speedtest), so
 # Pulzr Net has it without asking; the history is the MQTT op's. null on a
 # board without the speedtest feature.
@@ -713,6 +738,15 @@ report() {
             log "claim $(claim_id) is accepted again; the claim waiting to replace it is dropped"
         fi
         log "reported: backhaul=$(echo "${response}" | jsonfilter -e '@.backhaul' 2>/dev/null || true)"
+        # What Pulzr Net made of the routers and the public side, for the
+        # console's Ports page (parkeze-ports identify checks it).
+        local network
+        network="$(echo "${response}" | jsonfilter -e '@.network' 2>/dev/null)" || true
+        if [ -n "${network}" ]; then
+            printf '%s' "${network}" > /tmp/parkeze-network.json
+            parkeze-ports identify /tmp/parkeze-network.json 2>/dev/null || true
+            rm -f /tmp/parkeze-network.json
+        fi
         # The console certificate the cloud signed for this report's request.
         # Reported once more straight away, so it is held to the certificate
         # now rather than six hours from now.

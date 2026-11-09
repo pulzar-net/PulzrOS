@@ -2,7 +2,12 @@
 // What each Ethernet port is for, and the VLANs it carries.
 //
 //   parkeze-ports status             JSON: every port, its role, its VLANs,
-//                                    each uplink's addressing, a pending change
+//                                    each uplink's addressing and router, what
+//                                    announced itself on the port (LLDP), a
+//                                    pending change
+//   parkeze-ports routers            each wired uplink's router MAC, for the
+//                                    report
+//   parkeze-ports identify <file>    keep what Pulzr Net answered about them
 //   parkeze-ports set <file>|-       a whole layout, as JSON; applied at once
 //                                    and undone unless confirmed in time
 //   parkeze-ports confirm            keep the layout `set` applied
@@ -64,6 +69,10 @@ let fs = require('fs');
 let uci = require('uci');
 
 const STATE = '/etc/parkeze/ports';
+// Pulzr Net's answer to the report about the routers and the public side:
+// tmpfs, because it is asked again on every boot's report.
+const IDENTITY = '/var/run/parkeze/network.json';
+const MAC = /^[0-9a-f]{2}(:[0-9a-f]{2}){5}$/;
 const PENDING = STATE + '/pending.json';
 const SNAPSHOT = STATE + '/rollback';
 const SNAPSHOT_CONFIGS = ['network', 'firewall', 'dhcp', 'parkeze'];
@@ -555,6 +564,61 @@ let carrier = (dev) => {
     };
 };
 
+// ── what is on each port ──────────────────────────────────────────────────
+//
+// An uplink's router by its MAC, from the ARP table: the address alone says
+// nothing about what is at the end of the cable, its maker does, and Pulzr
+// Net names it (netaddr's IEEE registry) on the report's answer.
+//
+// And whatever announced itself on the port: lldpd listens on every port in
+// receive-only mode (29-parkeze-ports), so a managed switch or a business
+// router names itself and the port it is, LLDP or Cisco's CDP alike, and
+// this gateway announces nothing on a network that is not ours. Equipment
+// that announces nothing shows nothing; a home router and most cheap
+// switches do not.
+
+let arp = () => {
+    let out = {};
+    for (let line in split(fs.readfile('/proc/net/arp') ?? '', '\n')) {
+        let f = split(trim(line), /\s+/);
+        if (length(f) >= 6 && match(lc(f[3]), MAC) && f[3] != '00:00:00:00:00:00')
+            out[f[5] + ' ' + f[0]] = lc(f[3]);
+    }
+    return out;
+};
+
+let clip = (v, n) => type(v) == 'string' && length(v) ? substr(v, 0, n) : null;
+
+let neighbors = () => {
+    let out = {};
+    if (!fs.access('/usr/sbin/lldpcli', 'x')) return out;
+    let doc = null;
+    try { doc = json(capture(['lldpcli', '-f', 'json0', 'show', 'neighbors']) ?? 'null'); } catch (e) { doc = null; }
+    let first = (a) => type(a) == 'array' ? a[0]?.value : null;
+    for (let l in type(doc?.lldp) == 'array' ? doc.lldp : [])
+        for (let i in type(l?.interface) == 'array' ? l.interface : []) {
+            if (type(i?.name) != 'string') continue;
+            let c = i.chassis?.[0] ?? {}, p = i.port?.[0] ?? {};
+            out[i.name] ??= [];
+            push(out[i.name], {
+                protocol: clip(i.via, 8),
+                name: clip(first(c.name), 64),
+                description: clip(first(c.descr), 160),
+                chassis: clip(first(c.id), 64),
+                managementAddress: clip(first(c['mgmt-ip']), 64),
+                capabilities: map(filter(type(c.capability) == 'array' ? c.capability : [], (x) => x?.enabled),
+                                  (x) => clip(x.type, 16)),
+                port: clip(first(p.id), 64),
+                portDescription: clip(first(p.descr), 96),
+            });
+        }
+    return out;
+};
+
+let identity = () => {
+    try { return json(fs.readfile(IDENTITY) ?? 'null'); } catch (e) { return null; }
+};
+
 let ifaceState = (name) => {
     let out = capture(['ubus', 'call', 'network.interface.' + name, 'status']);
     let s = null;
@@ -563,7 +627,7 @@ let ifaceState = (name) => {
     let address = null, gateway = null;
     for (let a in s['ipv4-address'] ?? []) address = sprintf('%s/%d', a.address, a.mask);
     for (let r in s.route ?? []) if (r.target == '0.0.0.0' && r.mask == 0) gateway = r.nexthop;
-    return { up: !!s.up, address, gateway };
+    return { up: !!s.up, address, gateway, device: s.l3_device ?? null };
 };
 
 let status = () => {
@@ -571,6 +635,7 @@ let status = () => {
     let all = links(ports, b);
     let byLink = {};
     for (let l in all) byLink[l.device] = l;
+    let macs = arp(), known = identity(), heard = neighbors();
     let linkOut = (l) => {
         if (!l) return null;
         let out = { role: l.role };
@@ -578,6 +643,14 @@ let status = () => {
             out.iface = l.iface;
             out.addressing = l.addressing;
             out.state = ifaceState(l.iface);
+            let mac = out.state.gateway ? macs[(out.state.device ?? l.device) + ' ' + out.state.gateway] : null;
+            out.router = out.state.gateway
+                ? { address: out.state.gateway, mac: mac ?? null, maker: (mac && known?.routers?.[mac]) || null }
+                : null;
+            // What the internet sees, as Pulzr Net saw this gateway's last
+            // report: only for the uplink that report left on.
+            out.internet = known?.via == l.iface
+                ? { address: known.publicAddress ?? null, provider: known.provider ?? null } : null;
         }
         return out;
     };
@@ -591,6 +664,7 @@ let status = () => {
             role: x.role,
             addressing: x.addressing,
             uplink: x.role == 'uplink' ? linkOut(byLink[x.name]) : null,
+            neighbors: map(heard[x.name] ?? [], (n) => ({ ...n, maker: known?.routers?.[lc(n.chassis ?? '')] ?? null })),
             vlans: map(x.vlans, (v) => ({ vid: v.vid, role: v.role, addressing: v.addressing,
                                           uplink: v.role == 'uplink' ? linkOut(byLink[sprintf('%s.%d', x.name, v.vid)]) : null })),
         })),
@@ -683,6 +757,46 @@ let commands = {
         log('layout undone at boot: it was never confirmed');
     },
 
+    // Each wired uplink's router, for the report: Pulzr Net names the maker.
+    routers: () => {
+        let cur = uci.cursor(), b = board(), macs = arp(), out = [];
+        for (let l in links(layout(cur, b), b)) {
+            if (l.role != 'uplink') continue;
+            let st = ifaceState(l.iface);
+            let mac = st.gateway ? macs[(st.device ?? l.device) + ' ' + st.gateway] : null;
+            if (mac) push(out, { iface: l.iface, mac });
+        }
+        // And whatever announced itself by MAC alone: an LLDP neighbour with
+        // no name is named by its maker too.
+        let heard = neighbors();
+        for (let port in keys(heard))
+            for (let n in heard[port]) {
+                let mac = lc(n.chassis ?? '');
+                if (match(mac, MAC) && !length(filter(out, (r) => r.mac == mac)))
+                    push(out, { iface: port, mac, neighbor: true });
+            }
+        printf('%J\n', out);
+    },
+
+    // The report's answer about them, kept for `status`. Checked here, not
+    // trusted: it is shown on the console.
+    identify: (path) => {
+        let doc = null;
+        try { doc = json(fs.readfile(path) ?? 'null'); } catch (e) { doc = null; }
+        if (type(doc) != 'object') die('not an answer', 2);
+        let routers = {};
+        for (let mac in keys(type(doc.routers) == 'object' ? doc.routers : {}))
+            if (match(mac, MAC) && type(doc.routers[mac]) == 'string') routers[mac] = clip(doc.routers[mac], 64);
+        let provider = type(doc.provider) == 'object' ? doc.provider : null;
+        system(['mkdir', '-p', '/var/run/parkeze']);
+        fs.writefile(IDENTITY, sprintf('%J', {
+            via: match(doc.via ?? '', /^(wan(_[A-Za-z0-9_]+)?|wwifi|wwan|usbwan)$/) ? doc.via : null,
+            publicAddress: match(doc.publicAddress ?? '', /^[0-9a-fA-F.:]{3,45}$/) ? doc.publicAddress : null,
+            provider: provider ? { name: clip(provider.name, 80), asn: type(provider.asn) == 'int' ? provider.asn : null } : null,
+            routers,
+        }));
+    },
+
     seed: () => {
         let cur = uci.cursor(), b = board();
         if (readLayout(cur, b)) return;
@@ -698,5 +812,5 @@ let commands = {
 };
 
 let cmd = commands[ARGV[0] ?? 'status'];
-cmd ?? die('usage: parkeze-ports {status|set|confirm|revert|seed|render|boot}', 2);
+cmd ?? die('usage: parkeze-ports {status|routers|identify|set|confirm|revert|seed|render|boot}', 2);
 call(cmd, null, null, ...slice(ARGV, 1));
