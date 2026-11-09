@@ -120,6 +120,7 @@ export default function Ports() {
 
   const columns = useMemo(() => {
     const behind = (device: string) => (clients ?? []).filter((c) => c.online && c.port === device);
+    const uplinkOf = (r: Row) => (r.vid == null ? r.port.uplink : r.port.vlans.find((v) => v.vid === r.vid)?.uplink);
     return [
       column.display({
         id: 'port',
@@ -150,36 +151,35 @@ export default function Ports() {
           r.role === 'none' ? <span className={styles.dim}>Unused</span>
             : <Badge tone={r.role === 'uplink' ? 'info' : 'neutral'}>{ROLE_NAMES[r.role]}</Badge>,
       }),
+      // One line a cell, every row the same height: what is behind a port
+      // is split over columns rather than stacked in one.
       column.display({
         id: 'connected',
         header: 'Connected',
         cell: ({ row: { original: r } }) => {
-          const lines: string[] = [];
-          const uplink = r.vid == null ? r.port.uplink : r.port.vlans.find((v) => v.vid === r.vid)?.uplink;
-          if (uplink?.router) {
-            lines.push([uplink.router.maker ?? 'Router', uplink.router.address].join(' · '));
-          }
-          if (r.vid == null) {
-            for (const n of r.port.neighbors ?? []) {
-              // A neighbour that sends its MAC as its port id said nothing
-              // about a port; one with no name is named by its maker.
-              const who = n.name ?? (n.maker ? `${n.maker} device` : n.chassis);
-              const where = n.portDescription ?? (n.port && n.port !== n.chassis ? n.port : null);
-              lines.push([who, where ? `port ${where}` : null].filter(Boolean).join(', '));
-            }
-          }
-          if (r.role === 'devices') {
+          const uplink = uplinkOf(r);
+          let text: string | null = null;
+          if (uplink?.router) text = [uplink.router.maker ?? 'Router', uplink.router.address].join(' · ');
+          else if (r.role === 'devices') {
             const here = behind(r.vid == null ? r.port.name : `${r.port.name}.${r.vid}`);
-            if (here.length) lines.push(here.map(clientName).join(', '));
+            if (here.length) text = here.map(clientName).join(', ');
           }
-          if (!lines.length) return <span className={styles.dim}>—</span>;
-          return (
-            <span className={styles.connected}>
-              {lines.map((l, i) => (
-                <span key={i} className={`${styles.line} ${i ? styles.dim : ''}`} title={l}>{l}</span>
-              ))}
-            </span>
-          );
+          return text ? <span className={styles.line} title={text}>{text}</span> : <span className={styles.dim}>—</span>;
+        },
+      }),
+      column.display({
+        id: 'announced',
+        header: 'Announced',
+        size: 170,
+        cell: ({ row: { original: r } }) => {
+          // What spoke LLDP or CDP on the port: by name, else by maker. A
+          // neighbour that sends its MAC as its port id said nothing of a port.
+          const n = r.vid == null ? r.port.neighbors?.[0] : undefined;
+          if (!n) return <span className={styles.dim}>—</span>;
+          const who = n.name ?? (n.maker ? `${n.maker} device` : n.chassis);
+          const where = n.portDescription ?? (n.port && n.port !== n.chassis ? n.port : null);
+          const text = [who, where ? `port ${where}` : null].filter(Boolean).join(', ');
+          return <span className={styles.line} title={text}>{text}</span>;
         },
       }),
       column.display({
@@ -187,25 +187,27 @@ export default function Ports() {
         header: 'Address',
         size: 140,
         cell: ({ row: { original: r } }) => {
-          const uplink = r.vid == null ? r.port.uplink : r.port.vlans.find((v) => v.vid === r.vid)?.uplink;
+          const uplink = uplinkOf(r);
           const address = uplink?.state.address ?? (r.vid == null && state?.console === r.port.name ? state.consoleAddress : null);
           return address ? <span className="mono">{address}</span> : <span className={styles.dim}>—</span>;
         },
       }),
       column.display({
-        id: 'internet',
-        header: 'Internet',
-        size: 200,
+        id: 'provider',
+        header: 'Provider',
+        size: 170,
         cell: ({ row: { original: r } }) => {
-          const uplink = r.vid == null ? r.port.uplink : r.port.vlans.find((v) => v.vid === r.vid)?.uplink;
-          const net = uplink?.internet;
-          if (!net?.address) return <span className={styles.dim}>—</span>;
-          return (
-            <span className={styles.connected}>
-              <span className={styles.line} title={net.provider?.name ?? undefined}>{net.provider?.name ?? 'Public'}</span>
-              <span className={`${styles.line} ${styles.dim} mono`}>{net.address}</span>
-            </span>
-          );
+          const name = uplinkOf(r)?.internet?.provider?.name;
+          return name ? <span className={styles.line} title={name}>{name}</span> : <span className={styles.dim}>—</span>;
+        },
+      }),
+      column.display({
+        id: 'public',
+        header: 'Public Address',
+        size: 130,
+        cell: ({ row: { original: r } }) => {
+          const address = uplinkOf(r)?.internet?.address;
+          return address ? <span className="mono">{address}</span> : <span className={styles.dim}>—</span>;
         },
       }),
     ];
@@ -268,7 +270,7 @@ export default function Ports() {
           onRowHover={(row) => setHovered(row?.original.port.name ?? null)}
           cellClassName={() => styles.cell}
           onRowClick={(row) => setEditing(row.original.port.name)}
-          minWidth={880}
+          minWidth={1100}
         />
       </Section>
 

@@ -1,18 +1,19 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Lock, Unlock, Wifi as WifiIcon } from 'lucide-react';
+import { Lock, Unlock, Wifi as WifiIcon, WifiOff } from 'lucide-react';
 import { api } from '@/services/api';
 import type { AccessStatus } from '@/types';
 import Section from '@/components/ui/Section';
-import { StatusBadge } from '@/components/ui/Badge';
-import Fact, { FactList } from '@/components/Fact';
+import Badge from '@/components/ui/Badge';
+import Fact from '@/components/Fact';
+import { duration } from '@/lib/format';
 import Notice from '@/components/ui/Notice';
 import Button from '@/components/ui/Button';
 import Spinner from '@/components/ui/Spinner';
 import ErrorState from '@/components/ErrorState';
 import WifiFailure, { explain, useFailurePopup, type WifiFailureInfo } from './WifiFailure';
 import JoinWizard from './JoinWizard';
-import { UPLINK_WARNING, commonName } from './wifiFormat';
+import { SECURITY_NAMES, commonName, signalBars } from './wifiFormat';
 import styles from './Wifi.module.css';
 
 /**
@@ -119,76 +120,71 @@ export default function Wifi() {
   const others = (info?.saved ?? []).filter((network) => !network.active);
   const problem = wifi.configured && !wifi.up ? info?.failure : null;
 
-  const joinButton = (
-    <Button variant={wifi.configured ? 'default' : 'primary'} onClick={() => setWizard({})}>
-      {wifi.configured ? 'Change network' : 'Join a network'}
-    </Button>
-  );
+  const status = !wifi.configured ? null
+    : !wifi.up ? { label: 'Not connected', tone: 'error' as const }
+    : wifi.uplink === 'portal' ? { label: 'Sign-in needed', tone: 'warning' as const }
+    : wifi.uplink === 'offline' ? { label: 'No internet', tone: 'warning' as const }
+    : wifi.uplink === 'unchecked' ? { label: 'Checking', tone: 'neutral' as const }
+    : { label: 'Connected', tone: 'success' as const };
+  const bars = signalBars(wifi.configured && wifi.up ? wifi.signal : null);
+  const Bars = bars.icon;
 
   return (
     <div className="fade-in">
       {wifi.configured ? (
-        <Section
-          actions={
-            <>
-              {blocked && (
+        <Section wide>
+          <div className={styles.hero}>
+            <span className={`${styles.badge} ${styles[bars.tone]} ${!wifi.up ? styles.down : ''}`}>
+              <Bars size={26} strokeWidth={2} />
+            </span>
+            <div className={styles.heroText}>
+              <div className={styles.heroTitle}>
+                <span className={styles.heroSsid}>{wifi.ssid}</span>
+                {status && <Badge tone={status.tone}>{status.label}</Badge>}
+              </div>
+              <div className={styles.heroMeta}>
+                {[
+                  wifi.up ? wifi.address : null,
+                  wifi.up && wifi.signal != null ? `${bars.word}, ${wifi.signal} dBm` : null,
+                  SECURITY_NAMES[wifi.security],
+                ].filter(Boolean).join(' · ')}
+              </div>
+              {problem && (
+                <button className={styles.problem} onClick={failure.show}>
+                  {explain(problem, wifi.ssid).title}
+                </button>
+              )}
+            </div>
+            <div className={styles.heroActions}>
+              {blocked && wifi.uplink === 'portal' && (
                 <Button
                   variant="primary"
                   loading={signIn.isPending}
                   onClick={() => signIn.mutate(window.open('about:blank', '_blank'))}
                 >
-                  Sign in
+                  Sign In
                 </Button>
               )}
-              {joinButton}
+              <Button onClick={() => setWizard({})}>Change Network</Button>
               <Button
+                variant="quiet"
                 loading={forget.isPending && forget.variables === wifi.ssid}
                 onClick={() => forget.mutate(wifi.ssid)}
               >
                 Forget
               </Button>
-            </>
-          }
-        >
-          <FactList>
-            <Fact label="Network" value={wifi.ssid} />
-            <Fact
-              label="State"
-              value={
-                <StatusBadge
-                  ok={wifi.up}
-                  okLabel="Connected"
-                  badLabel="Not connected"
-                  warn={wifi.up ? UPLINK_WARNING[wifi.uplink] : undefined}
-                />
-              }
-            />
-            {problem && (
-              <Fact
-                label="Problem"
-                value={
-                  <button className={styles.problem} onClick={failure.show}>
-                    {explain(problem, wifi.ssid).title}
-                  </button>
-                }
-              />
-            )}
-            {wifi.up && <Fact label="Address" value={wifi.address} mono />}
-            {wifi.up && <Fact label="Signal" value={wifi.signal != null ? `${wifi.signal} dBm` : null} />}
-            {wifi.mac && <Fact label="MAC" value={wifi.mac} mono />}
-            {info?.portal && <Fact label="Sign-in page" value={info.portal} mono />}
-            {info?.identity && <Fact label="Username" value={info.identity} />}
-            {info?.certSubject && (
-              <Fact label="Certificate" value={commonName(info.certSubject)} mono />
-            )}
-          </FactList>
-          {blocked && (
-            <Notice tone="warning">
-              {wifi.uplink === 'portal'
-                ? `${wifi.ssid} wants a sign-in before it carries traffic.`
-                : `${wifi.ssid} is connected and nothing answers through it.`}
-            </Notice>
+            </div>
+          </div>
+
+          {(wifi.mac || info?.portal || info?.identity || info?.certSubject) && (
+            <div className={styles.details}>
+              {wifi.mac && <Fact label="MAC" value={wifi.mac} mono />}
+              {info?.identity && <Fact label="Username" value={info.identity} />}
+              {info?.certSubject && <Fact label="Certificate" value={commonName(info.certSubject)} mono />}
+              {info?.portal && <Fact label="Sign-in page" value={info.portal} mono />}
+            </div>
           )}
+
           {forget.isError && <Notice tone="error">{(forget.error as Error).message}</Notice>}
           {signIn.isError && <Notice tone="error">{(signIn.error as Error).message}</Notice>}
           <WifiFailure
@@ -199,35 +195,46 @@ export default function Wifi() {
           />
         </Section>
       ) : (
-        <Section actions={joinButton}>
-          <Notice tone="info">Not on a WiFi network.</Notice>
+        <Section wide>
+          <div className={styles.empty}>
+            <span className={`${styles.badge} ${styles.down}`}><WifiOff size={26} strokeWidth={2} /></span>
+            <div className={styles.emptyTitle}>No WiFi Network</div>
+            <Button variant="primary" onClick={() => setWizard({})}>Join a Network</Button>
+          </div>
         </Section>
       )}
 
       {others.length > 0 && (
-        <Section title="Saved Networks" icon={WifiIcon}>
-          <ul className={styles.list}>
+        <Section title="Saved Networks" icon={WifiIcon} wide>
+          <ul className={styles.saved}>
             {others.map((network) => (
               <li key={network.ssid} className={styles.savedRow}>
                 {network.security === 'open' ? (
-                  <Unlock size={13} strokeWidth={2} className={styles.open} />
+                  <Unlock size={14} strokeWidth={2} className={styles.open} />
                 ) : (
-                  <Lock size={13} strokeWidth={2} />
+                  <Lock size={14} strokeWidth={2} className={styles.lock} />
                 )}
                 <span className={styles.ssid}>{network.ssid}</span>
-                {network.security === 'eap' && <span className={styles.signal}>802.1X</span>}
-                <Button
-                  loading={rejoin.isPending && rejoin.variables === network.ssid}
-                  onClick={() => rejoin.mutate(network.ssid)}
-                >
-                  Join
-                </Button>
-                <Button
-                  loading={forget.isPending && forget.variables === network.ssid}
-                  onClick={() => forget.mutate(network.ssid)}
-                >
-                  Forget
-                </Button>
+                <span className={styles.tag}>{SECURITY_NAMES[network.security]}</span>
+                <span className={styles.when}>
+                  {network.lastJoined ? `Joined ${duration(Math.floor(Date.now() / 1000) - network.lastJoined)} ago` : ''}
+                </span>
+                <span className={styles.rowActions}>
+                  <button
+                    className={styles.rowAction}
+                    disabled={rejoin.isPending}
+                    onClick={() => rejoin.mutate(network.ssid)}
+                  >
+                    {rejoin.isPending && rejoin.variables === network.ssid ? 'Joining' : 'Join'}
+                  </button>
+                  <button
+                    className={`${styles.rowAction} ${styles.quiet}`}
+                    disabled={forget.isPending}
+                    onClick={() => forget.mutate(network.ssid)}
+                  >
+                    Forget
+                  </button>
+                </span>
               </li>
             ))}
           </ul>

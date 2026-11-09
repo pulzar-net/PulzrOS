@@ -1,7 +1,7 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import styles from './Button.module.css';
 
-type Variant = 'default' | 'primary' | 'danger';
+type Variant = 'default' | 'primary' | 'danger' | 'quiet';
 
 export default function Button({
   variant = 'default',

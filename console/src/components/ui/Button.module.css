@@ -31,6 +31,11 @@
 .danger { border-color: color-mix(in srgb, var(--status-error) 45%, transparent); color: var(--status-error); }
 .danger:hover:not(:disabled) { background: var(--status-error); border-color: var(--status-error); color: var(--text-inverse); }
 
+/* No border and no fill until pointed at: the third action beside two
+   others, Forget beside Change Network. */
+.quiet { border-color: transparent; background: transparent; color: var(--text-secondary); }
+.quiet:hover:not(:disabled) { background: var(--bg-tertiary); border-color: transparent; color: var(--text-primary); }
+
 .spinner {
   width: 12px;
   height: 12px;

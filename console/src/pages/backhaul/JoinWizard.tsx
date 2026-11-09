@@ -1,17 +1,17 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { ChevronRight, Lock, RefreshCw, Unlock } from 'lucide-react';
+import { ChevronRight, CircleCheck, CircleX, Plus, RefreshCw, ShieldCheck, Timer } from 'lucide-react';
 import { api } from '@/services/api';
 import type { AccessStatus, WifiNetwork } from '@/types';
 import Dialog from '@/components/ui/Dialog';
 import Button from '@/components/ui/Button';
 import Notice from '@/components/ui/Notice';
 import Spinner from '@/components/ui/Spinner';
-import { StatusBadge } from '@/components/ui/Badge';
+import Badge from '@/components/ui/Badge';
 import Fact, { FactList } from '@/components/Fact';
 import { CheckboxField, SelectField, TextField } from '@/components/ui/Field';
 import { explain, type WifiFailureInfo } from './WifiFailure';
-import { UPLINK_WARNING, commonName, fingerprint } from './wifiFormat';
+import { SECURITY_NAMES, UPLINK_WARNING, commonName, fingerprint, signalBars } from './wifiFormat';
 import styles from './Wifi.module.css';
 
 /**
@@ -239,24 +239,28 @@ export default function JoinWizard({
         {scan.data?.error && <Notice tone="info">{scan.data.error}</Notice>}
         {scan.isLoading && <Spinner label="Scanning" />}
         <ul className={`${styles.list} ${scan.isFetching && !scan.isLoading ? styles.stale : ''}`}>
-          {networks.map((network) => (
-            <li key={network.ssid}>
-              <button className={styles.network} onClick={() => choose(network)}>
-                {network.encryption === 'open' ? (
-                  <Unlock size={13} strokeWidth={2} className={styles.open} />
-                ) : (
-                  <Lock size={13} strokeWidth={2} />
-                )}
-                <span className={styles.ssid}>{network.ssid}</span>
-                {network.encryption === 'eap' && <span className={styles.signal}>802.1X</span>}
-                <span className={styles.signal}>{network.signal} dBm</span>
-                <ChevronRight size={14} strokeWidth={2} className={styles.chevron} />
-              </button>
-            </li>
-          ))}
+          {networks.map((network) => {
+            const bars = signalBars(network.signal);
+            const Bars = bars.icon;
+            const here = wifi.configured && wifi.ssid === network.ssid && wifi.up;
+            return (
+              <li key={network.ssid}>
+                <button className={styles.network} onClick={() => choose(network)}>
+                  <Bars size={16} strokeWidth={2} className={`${styles.bars} ${styles[bars.tone]}`} />
+                  <span className={styles.ssid}>{network.ssid}</span>
+                  {here && <span className={styles.current}>Connected</span>}
+                  <span className={`${styles.tag} ${network.encryption === 'open' ? styles.open : ''}`}>
+                    {SECURITY_NAMES[network.encryption]}
+                  </span>
+                  <ChevronRight size={14} strokeWidth={2} className={styles.chevron} />
+                </button>
+              </li>
+            );
+          })}
           <li>
             <button className={styles.network} onClick={other}>
-              <span className={styles.ssid}>Other network</span>
+              <Plus size={16} strokeWidth={2} className={styles.chevron} />
+              <span className={styles.ssid}>Other Network</span>
               <ChevronRight size={14} strokeWidth={2} className={styles.chevron} />
             </button>
           </li>
@@ -267,8 +271,17 @@ export default function JoinWizard({
   }
 
   if (step === 'credentials') {
+    const bars = signalBars(scanned?.signal);
+    const Bars = bars.icon;
     body = (
       <div className={styles.fields}>
+        {!typed && name && (
+          <div className={styles.target}>
+            <Bars size={16} strokeWidth={2} className={`${styles.bars} ${styles[bars.tone]}`} />
+            <span className={styles.ssid}>{name}</span>
+            <span className={styles.tag}>{SECURITY_NAMES[security]}</span>
+          </div>
+        )}
         {typed && (
           <>
             <TextField
@@ -395,16 +408,21 @@ export default function JoinWizard({
       <Spinner label="Checking certificate" />
     ) : (
       <>
-        <FactList>
-          <Fact label="Server" value={commonName(leaf.subject)} mono />
-          {issuer && <Fact label="Issued by" value={commonName(issuer.subject)} />}
-          {root && <Fact label="Root" value={commonName(root.subject)} />}
-          <Fact
-            label="SHA-256"
-            value={<span className={styles.fingerprint}>{fingerprint(leaf.hash)}</span>}
-            mono
-          />
-        </FactList>
+        <div className={styles.trust}>
+          <div className={styles.trustHead}>
+            <ShieldCheck size={16} strokeWidth={2} />
+            {commonName(leaf.subject)}
+          </div>
+          <FactList>
+            {issuer && <Fact label="Issued by" value={commonName(issuer.subject)} />}
+            {root && <Fact label="Root" value={commonName(root.subject)} />}
+            <Fact
+              label="SHA-256"
+              value={<span className={styles.fingerprint}>{fingerprint(leaf.hash)}</span>}
+              mono
+            />
+          </FactList>
+        </div>
         {join.isError && <Notice tone="error">{(join.error as Error).message}</Notice>}
       </>
     );
@@ -433,30 +451,38 @@ export default function JoinWizard({
 
   if (step === 'joining') {
     if (connected) {
+      const warning = UPLINK_WARNING[wifi.configured ? wifi.uplink : ''];
       body = (
-        <FactList>
-          <Fact
-            label="State"
-            value={
-              <StatusBadge ok okLabel="Connected" warn={UPLINK_WARNING[wifi.configured ? wifi.uplink : '']} />
-            }
-          />
-          <Fact label="Address" value={wifi.configured ? wifi.address : null} mono />
-        </FactList>
+        <div className={styles.outcome}>
+          <CircleCheck size={40} strokeWidth={1.8} className={`${styles.outcomeIcon} ${styles.ok}`} />
+          <div className={styles.outcomeTitle}>Connected to {name}</div>
+          {warning && <Badge tone="warning">{warning}</Badge>}
+          <p className={styles.explain}>{wifi.configured ? wifi.address : null}</p>
+        </div>
       );
     } else if (fresh) {
       const why = explain(fresh, name);
       body = (
-        <>
-          <Notice tone="error">{why.title}</Notice>
+        <div className={styles.outcome}>
+          <CircleX size={40} strokeWidth={1.8} className={`${styles.outcomeIcon} ${styles.bad}`} />
+          <div className={styles.outcomeTitle}>{why.title}</div>
           <p className={styles.explain}>{why.meaning}</p>
           <p className={styles.explain}>{why.fix}</p>
-        </>
+        </div>
       );
     } else if (overdue) {
-      body = <Notice tone="warning">{name} has not connected.</Notice>;
+      body = (
+        <div className={styles.outcome}>
+          <Timer size={40} strokeWidth={1.8} className={`${styles.outcomeIcon} ${styles.wait}`} />
+          <div className={styles.outcomeTitle}>{name} has not connected</div>
+        </div>
+      );
     } else {
-      body = <Spinner label={`Connecting to ${name}`} />;
+      body = (
+        <div className={styles.outcome}>
+          <Spinner label={`Connecting to ${name}`} />
+        </div>
+      );
     }
     footer = (
       <>
@@ -486,7 +512,22 @@ export default function JoinWizard({
       }
       footer={footer}
     >
+      <Steps at={step} eap={isEap} />
       {body}
     </Dialog>
+  );
+}
+
+/** Where the wizard is: network, credentials, the certificate (802.1X only),
+    the outcome. */
+function Steps({ at, eap }: { at: Step; eap: boolean }) {
+  const steps: Step[] = eap ? ['network', 'credentials', 'certificate', 'joining'] : ['network', 'credentials', 'joining'];
+  const reached = steps.indexOf(at);
+  return (
+    <div className={styles.steps} aria-hidden>
+      {steps.map((s, i) => (
+        <span key={s} className={`${styles.step} ${i <= reached ? styles.done : ''}`} />
+      ))}
+    </div>
   );
 }

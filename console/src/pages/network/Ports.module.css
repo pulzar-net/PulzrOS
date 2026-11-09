@@ -62,7 +62,7 @@
 }
 
 /* ── the table ─────────────────────────────────────────────────────────── */
-.cell { vertical-align: middle; }
+.cell { vertical-align: middle; white-space: nowrap; }
 .row { cursor: pointer; }
 
 /* The rows of the port the strip points at, or the one being edited: the
@@ -106,6 +106,7 @@
 }
 
 .line {
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
