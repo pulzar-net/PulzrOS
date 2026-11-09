@@ -21,8 +21,9 @@ import Fact, { FactList } from '@/components/Fact';
 import DataTable from '@/components/DataTable';
 import Spinner from '@/components/ui/Spinner';
 import ErrorState from '@/components/ErrorState';
-import { bytes, duration } from '@/lib/format';
+import { bytes, duration, portLabel } from '@/lib/format';
 import styles from '../Pages.module.css';
+import own from './Lan.module.css';
 
 /**
  * The devlan zone: who is on the LAN ports, what each may reach, and which
@@ -36,7 +37,9 @@ import styles from '../Pages.module.css';
  */
 
 const POLICIES: { value: LanClient['policy']; label: string }[] = [
-  { value: 'parkeze', label: 'Parkeze' },
+  // `parkeze` is the stored value from before the rename: Pulzr Net's own
+  // servers (HTTPS and MQTT), NTP and the gateway's DNS, nothing else.
+  { value: 'parkeze', label: 'Pulzr Net' },
   { value: 'internet', label: 'Internet' },
 ];
 
@@ -70,16 +73,16 @@ export default function Lan() {
 
   const columns = useMemo(
     () => [
+      // The fill column: a hostname is the one value here of no fixed width.
       column.accessor((c) => c.hostname ?? '', {
         id: 'name',
         header: 'Name',
-        size: 110,
-        cell: (info) => info.getValue() || '—',
+        cell: (info) => <span className={own.name} title={info.getValue()}>{info.getValue() || '—'}</span>,
       }),
       column.accessor((c) => c.ip ?? '', {
         id: 'ip',
         header: 'Address',
-        size: 198,
+        size: 190,
         sortingFn: (a, b) => ipOrder(a.original.ip) - ipOrder(b.original.ip),
         cell: (info) => (
           <>
@@ -90,18 +93,18 @@ export default function Lan() {
       }),
       column.accessor('mac', {
         header: 'MAC',
-        size: 135,
+        size: 140,
         cell: (info) => <span className="mono">{info.getValue()}</span>,
       }),
       column.accessor((c) => c.port ?? '', {
         id: 'port',
         header: 'Port',
-        size: 56,
-        cell: (info) => info.getValue() || '—',
+        size: 72,
+        cell: (info) => (info.getValue() ? portLabel(info.getValue()) : '—'),
       }),
       column.accessor('policy', {
         header: 'Policy',
-        size: 160,
+        size: 190,
         enableSorting: false,
         cell: (info) => (
           <Segmented
@@ -143,6 +146,7 @@ export default function Lan() {
       column.display({
         id: 'reserve',
         header: '',
+        size: 96,
         cell: (info) => (
           <Button onClick={() => setEditing(info.row.original)}>
             {info.row.original.reserved ? 'Edit' : 'Reserve'}
@@ -183,7 +187,7 @@ export default function Lan() {
           {links.map((link) => (
             <Fact
               key={link.name}
-              label={link.name}
+              label={portLabel(link.name)}
               value={
                 <span className={styles.status}>
                   {link.up ? <Badge tone="success">Up</Badge> : <Badge tone="neutral">No link</Badge>}
@@ -204,7 +208,8 @@ export default function Lan() {
 
       <Section title="Clients" icon={MonitorSmartphone} note={`${online} online, ${clients.length} known`}>
         {policy.isError && <Notice tone="error">{(policy.error as Error).message}</Notice>}
-        <DataTable table={table} fill="reserve" />
+        <DataTable table={table} fill="name"
+                   cellClassName={(id) => (id === 'reserve' ? own.reserve : own.cell)} />
       </Section>
 
       <Forwards forwards={state.forwards ?? []} nameOf={nameOf} />

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { EthernetPort, Trash2 } from 'lucide-react';
 import { api } from '@/services/api';
-import type { Port, PortRole, PortsLayout, PortsStatus } from '@/types';
+import type { LanClient, LanStatus, Port, PortRole, PortsLayout, PortsStatus } from '@/types';
 import Section from '@/components/ui/Section';
 import Badge from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
@@ -14,6 +14,7 @@ import Spinner from '@/components/ui/Spinner';
 import ErrorState from '@/components/ErrorState';
 import PortsChangeNotice from '@/components/PortsChangeNotice';
 import { usePortsChange } from '@/hooks/usePortsChange';
+import { useFeatures } from '@/hooks/useFeatures';
 import { countdown } from '@/lib/format';
 import styles from './Ports.module.css';
 
@@ -43,6 +44,17 @@ export default function Ports() {
     refetchInterval: 10_000,
   });
   const change = usePortsChange();
+  const features = useFeatures();
+  // Who is behind each LAN port: parkeze-lan reads it off the bridge's
+  // forwarding table, the same answer as the LAN page's Port column.
+  const lan = useQuery({
+    queryKey: ['lan'],
+    queryFn: () => api.get<LanStatus>('/lan/status'),
+    enabled: features.has('lan'),
+    refetchInterval: 15_000,
+  });
+  const behind = (device: string) =>
+    (lan.data?.clients ?? []).filter((c) => c.online && c.port === device);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [dirty, setDirty] = useState(false);
 
@@ -81,6 +93,7 @@ export default function Ports() {
           draft={draft.find((p) => p.name === port.name)!}
           devices={state.devices}
           console={state.console === port.name ? state.consoleAddress : null}
+          behind={behind}
           disabled={busy}
           onChange={(next) => edit(port.name, next)}
         />
@@ -110,13 +123,17 @@ export default function Ports() {
   );
 }
 
+/** A LAN client by what it calls itself, else its address. */
+const clientName = (c: LanClient) => c.hostname ?? c.ip ?? c.mac;
+
 function PortCard({
-  port, draft, devices, console: hasConsole, disabled, onChange,
+  port, draft, devices, console: hasConsole, behind, disabled, onChange,
 }: {
   port: Port;
   draft: Draft[number];
   devices: boolean;
   console: string | null;
+  behind: (device: string) => LanClient[];
   disabled: boolean;
   onChange: (next: (p: Draft[number]) => Draft[number]) => void;
 }) {
@@ -148,11 +165,15 @@ function PortCard({
         onChange={(role) => onChange((p) => ({ ...p, role }))}
       />
 
-      {(port.uplink || hasConsole) && (
+      {(port.uplink || hasConsole || port.role === 'devices') && (
         <div className={styles.facts}>
           <FactList>
             {port.uplink && <Fact label="Address" value={port.uplink.state.address} mono />}
+            {port.uplink && <Fact label="Router" value={port.uplink.state.gateway} mono />}
             {hasConsole && <Fact label="Console" value={hasConsole} mono />}
+            {port.role === 'devices' && (
+              <Fact label="Devices" value={behind(port.name).map(clientName).join(', ') || null} />
+            )}
           </FactList>
         </div>
       )}
@@ -171,6 +192,11 @@ function PortCard({
                   ...p, vlans: p.vlans.map((x) => (x.vid === v.vid ? { ...x, role } : x)),
                 }))}
               />
+              <span className={styles.behind}>
+                {v.role === 'devices'
+                  ? behind(`${port.name}.${v.vid}`).map(clientName).join(', ')
+                  : port.vlans.find((x) => x.vid === v.vid)?.uplink?.state.address ?? ''}
+              </span>
               <Button
                 className={styles.remove}
                 aria-label={`Remove VLAN ${v.vid}`}

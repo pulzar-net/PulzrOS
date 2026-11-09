@@ -1,0 +1,17 @@
+/* The clients table's rows hold a switch and a button beside plain text; at
+   DataTable's top alignment the text sat above them. */
+.cell {
+  vertical-align: middle;
+}
+
+.name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reserve {
+  vertical-align: middle;
+  text-align: right;
+}
