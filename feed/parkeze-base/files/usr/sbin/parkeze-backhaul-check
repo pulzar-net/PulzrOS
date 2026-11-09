@@ -34,6 +34,7 @@
 
 . /etc/parkeze/board.conf
 . /usr/share/parkeze/cellular.sh
+. /usr/share/parkeze/wired.sh
 
 JSON=0
 [ "$1" = "--json" ] && JSON=1
@@ -105,11 +106,15 @@ if [ "$1" = "--any" ]; then
     [ "$(tunnel_state)" = up ] && { echo tunnel; exit 0; }
 
     network_flush_cache
-    if network_is_up wan && network_get_gateway _gw wan && [ -n "${_gw}" ] \
-       && network_get_device _dev wan && connects "${_dev}"; then
-        echo wired
-        exit 0
-    fi
+    # Every wired uplink: a port can be one since 0.3.11, and a gateway moved
+    # onto its second one has an uplink all the same.
+    for _iface in $(wired_ifaces); do
+        if network_is_up "${_iface}" && network_get_gateway _gw "${_iface}" && [ -n "${_gw}" ] \
+           && network_get_device _dev "${_iface}" && connects "${_dev}"; then
+            echo wired
+            exit 0
+        fi
+    done
     if network_is_up wwifi && parkeze-wifi-uplink usable; then
         echo wifi
         exit 0

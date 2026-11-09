@@ -37,7 +37,8 @@
 # a second, green breathing on an RGB light. Whoever pressed the button four
 # times is looking for this. If the gateway refused, every light flashes fast
 # for six seconds (`alert`, red breathing on an RGB light) and then goes back
-# to the codes above. See parkeze-reset-button.
+# to the codes above. See parkeze-reset-button. A RAK7289CV2 has neither status
+# nor cloud, so its LoRa lights show it, and stop showing uplinks meanwhile.
 #
 # ON A BOARD WITH FEWER LEDS
 #
@@ -117,6 +118,7 @@ modem_state() {
 # gateway hearing forty uplinks in five seconds should look busy, not seizure-
 # inducing, and flashing forty times would take longer than the poll anyway.
 last_uplinks=0
+lora_setup=0
 
 # Whether the setup AP is up. A file parkeze-ap keeps, so this costs nothing.
 ap_up() { [ -f /var/run/parkeze/ap/raised ]; }
@@ -186,7 +188,15 @@ while :; do
 
     # ── lora ────────────────────────────────────────────────────────────────
     now="$(uplink_count)"
-    if [ "${now}" -gt "${last_uplinks}" ] 2>/dev/null; then
+    if ap_up && ! has_led status && ! has_led cloud; then
+        led lora setup
+        led lora2 setup
+        lora_setup=1
+    elif [ "${lora_setup}" = 1 ]; then
+        led lora off
+        led lora2 off
+        lora_setup=0
+    elif [ "${now}" -gt "${last_uplinks}" ] 2>/dev/null; then
         led lora flash
         led lora2 flash
     fi

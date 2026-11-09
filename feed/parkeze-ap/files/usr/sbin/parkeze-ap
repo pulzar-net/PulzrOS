@@ -10,7 +10,9 @@
 #   parkeze-ap key                 print this unit's AP passphrase
 #   parkeze-ap ssid                print this unit's SSID
 #   parkeze-ap report              the SSID and passphrase, as JSON, for
-#                                  parkeze.net. null on an unadopted gateway
+#                                  parkeze.net. false if this gateway can never
+#                                  raise one; null if there is nothing to say
+#                                  this time
 #   parkeze-ap station-check       the watchdog's: see station_check below
 #
 # ── WHAT THIS IS FOR ───────────────────────────────────────────────────────
@@ -305,10 +307,23 @@ button() {
 # parkeze.net to give them. The gateway cannot show it: it has no screen, and
 # the console that would is behind the AP. So it goes up on the report while
 # there is an uplink, ahead of the day there is not.
+#
+# false and null are different answers. false says no AP can come up here, so
+# the platform drops what it holds. null only says this report has nothing, and
+# a passphrase already up there is what somebody will need if the uplink never
+# comes back, so one bad read must not take it away.
 report() {
+    local net_key
+    if [ -z "$(radio)" ] || { [ "$(uci -q get parkeze.ap.button)" = "0" ] && ! enabled; }; then
+        echo false
+        return 0
+    fi
     adopted || { echo null; return 0; }
-    ensure_secret
-    printf '{"ssid":"%s","key":"%s"}\n' "$(ssid)" "$(key)"
+    ensure_secret || { echo null; return 0; }
+    net_key="$(key)" || { echo null; return 0; }
+    # A configured SSID is anybody's text.
+    printf '{"ssid":"%s","key":"%s"}\n' \
+        "$(ssid | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')" "${net_key}"
 }
 
 down() {

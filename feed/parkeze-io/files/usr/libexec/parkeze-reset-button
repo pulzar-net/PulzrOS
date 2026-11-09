@@ -90,6 +90,7 @@ status_report() {
     # laptop. On the cloud LED where there is one, since that is what it means.
     local name=cloud pulses=6 _
     led --has cloud || name=status
+    led --has "${name}" || name=lora
     /usr/sbin/parkeze-backhaul-check >/dev/null 2>&1 && pulses=3
     led --hold "$(( pulses * 2 + 2 ))"
     for _ in $(seq "${pulses}"); do

@@ -117,7 +117,8 @@ For somebody who has moved a gateway and has no cable to it. Four short presses,
 then leave the button alone for three seconds.
 
 - **No uplink works:** the setup AP comes up for `parkeze.ap.window` (30 minutes).
-  The status light flashes once a second, or the RGB light breathes green.
+  The status light flashes once a second, the RGB light breathes green, and a
+  RAK7289CV2, which has neither, flashes its LoRa lights.
   Join `Pulzar-<six hex>`, open `https://192.168.62.1`, sign in, Backhaul > WiFi.
 - **An uplink works:** nothing is raised. Every light flashes fast for six
   seconds, or the RGB light breathes red. There is no reason for a radio on a
@@ -144,7 +145,8 @@ without releasing the gateway. Those gateways keep that behaviour until they run
 0.3.6.
 
 **What counts as an uplink.** `parkeze-backhaul-check --any`: a live tunnel, or
-the platform answering out of the wired or cellular device, or
+the platform answering out of any wired uplink (every port or VLAN with that
+role, not only `wan`) or the cellular device, or
 `parkeze-wifi-uplink` saying WiFi is `open`. Not a lease alone, and not WiFi
 waiting at a sign-in page, which are both what a moved gateway tends to have.
 
@@ -172,11 +174,17 @@ the gateway's own Access page, and the way in to an adopted gateway with no upli
 is a cable.
 The passphrase survives upgrades from 0.3.6 (`keep.d/parkeze-ap`). Before that
 each upgrade changed it.
+`setupAp` is `false` when no AP can come up here (no radio, or the button and the
+master switch both off), and the platform drops what it holds. `null` means this
+report has nothing to say, after a failed read for instance, and leaves it alone:
+the passphrase is what somebody needs if the uplink never comes back.
 
 **Where the feedback goes on an Opal.** Nowhere yet. Its light is an ET6326 on I2C
 and its kernel has no I2C driver, so `parkeze-led` has nothing to drive. The SSID
 appearing is the only sign that it worked, and the log (`logread | grep button`)
-the only sign that it did not.
+the only sign that it did not. A driver is built on branch `et6326-leds` of
+`openwrt-gl-sft1200`, and has not run on a unit: see
+[`setup-mode-validation.md`](setup-mode-validation.md).
 
 ## Signing the gateway in to a WiFi portal
 

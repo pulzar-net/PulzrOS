@@ -54,6 +54,7 @@ install_script() {
         -e "s#/etc/parkeze#${SANDBOX}/etc/parkeze#g" \
         -e "s#/var/run/parkeze#${SANDBOX}/run#g" \
         -e "s#/usr/share/parkeze/cellular.sh#${SANDBOX}/lib/cellular.sh#g" \
+        -e "s#/usr/share/parkeze/wired.sh#${SANDBOX}/lib/wired.sh#g" \
         -e "s#/lib/functions/network.sh#${SANDBOX}/lib/network.sh#g" \
         "$1" > "${BIN}/$(basename "$1")"
     chmod +x "${BIN}/$(basename "$1")"
@@ -408,6 +409,24 @@ echo 1 > "${SANDBOX}/run/ap/joining"
 UBUS_WWIFI='{"up":true}' "${AP}" station-check
 check "an association is left alone" 0 "$(db wireless.parkeze_sta.disabled)"
 
+# ── what goes up on the report ──────────────────────────────────────────────
+
+reset_ap
+report_json() { "${AP}" report | python3 -c 'import json,sys; v=json.load(sys.stdin); print(v if not isinstance(v,dict) else v["ssid"]+"|"+("key" if len(v["key"])==16 else "nokey"))'; }
+echo 'parkeze.adoption.state=adopted' >> "${UCI_DB}"
+check "an adopted gateway reports its AP" "Pulzar-abc123|key" "$(PATH="${BIN}:${PATH}" report_json | sed 's/Pulzar-[0-9a-f]*/Pulzar-abc123/')"
+echo "parkeze.ap.ssid=Bob's \"AP\"" >> "${UCI_DB}"
+check "a configured SSID stays JSON" "Bob's \"AP\"|key" "$(report_json)"
+sed -i.bak '/^parkeze.ap.ssid=/d' "${UCI_DB}"
+sed -i.bak '/^parkeze.adoption.state=/d' "${UCI_DB}"
+check "nothing to say on an unadopted gateway is null, not gone" "None" "$(report_json)"
+echo 'parkeze.ap.button=0' >> "${UCI_DB}"
+echo 'parkeze.ap.enabled=0' >> "${UCI_DB}"
+check "no way to raise it says so" "False" "$(report_json)"
+sed -i.bak -e '/^parkeze.ap.button=/d' -e '/^parkeze.ap.enabled=/d' "${UCI_DB}"
+sed -i.bak '/=wifi-device$/d' "${UCI_DB}"
+check "nor does a board with no radio" "False" "$(report_json)"
+
 # ── the watchdog ────────────────────────────────────────────────────────────
 
 install_script "${FEED}/parkeze-ap/files/usr/sbin/parkeze-ap-watchdog"
@@ -454,6 +473,9 @@ check "master switch off still stops the fallback" 0 "$(called 'parkeze-ap up')"
 install_script "${FEED}/parkeze-base/files/usr/sbin/parkeze-backhaul-check"
 sed -e "s#/lib/functions/network.sh#${SANDBOX}/lib/network.sh#" \
     "${FEED}/parkeze-base/files/usr/share/parkeze/cellular.sh" > "${SANDBOX}/lib/cellular.sh"
+sed -e "s#/lib/functions/network.sh#${SANDBOX}/lib/network.sh#" \
+    "${FEED}/parkeze-base/files/usr/share/parkeze/wired.sh" > "${SANDBOX}/lib/wired.sh"
+{ echo 'network.wan=interface'; echo 'network.wan_lan1=interface'; } >> "${UCI_DB}"
 
 # netifd, as far as these scripts ask it: UP names the interfaces that are up.
 cat > "${SANDBOX}/lib/network.sh" <<'EOF'
@@ -486,6 +508,12 @@ got="$(any)"; check "a lease that goes nowhere is not an uplink" "1:" "$?:${got}
 
 export UP="wan" CONNECTS="dev-wan"
 got="$(any)"; check "wired" "0:wired" "$?:${got}"
+
+export UP="wan wan_lan1" CONNECTS="dev-wan_lan1"
+got="$(any)"; check "a second wired uplink counts, with the first one dead" "0:wired" "$?:${got}"
+
+export UP="wan_lan1" CONNECTS=""
+got="$(any)"; check "and goes nowhere like any other" "1:" "$?:${got}"
 
 export UP="wwifi" CONNECTS="" PARKEZE_WIFI_UPLINK_RC=0
 got="$(any)"; check "WiFi" "0:wifi" "$?:${got}"

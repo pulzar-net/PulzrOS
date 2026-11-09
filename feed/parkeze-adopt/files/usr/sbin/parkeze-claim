@@ -611,7 +611,9 @@ setup_ap_facts() {
     local out
     command -v parkeze-ap >/dev/null 2>&1 || { echo null; return; }
     out="$(parkeze-ap report 2>/dev/null)"
-    if [ -n "${out}" ] && echo "${out}" | jsonfilter -e '@' >/dev/null 2>&1; then
+    if [ "${out}" = false ]; then
+        echo false
+    elif [ -n "${out}" ] && echo "${out}" | jsonfilter -e '@' >/dev/null 2>&1; then
         echo "${out}"
     else
         echo null
