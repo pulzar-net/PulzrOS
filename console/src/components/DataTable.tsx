@@ -14,6 +14,7 @@ export default function DataTable<T>({
   rowClassName,
   cellClassName,
   onRowClick,
+  minWidth,
 }: {
   table: Table<T>;
   /** The column that takes whatever width the sized ones leave. */
@@ -22,13 +23,16 @@ export default function DataTable<T>({
   cellClassName?: (columnId: string) => string | undefined;
   /** A row that opens something: the whole row is the target. */
   onRowClick?: (row: Row<T>) => void;
+  /** Below this the table scrolls sideways rather than squeezing its fill
+      column to nothing. */
+  minWidth?: number;
 }) {
   const rows = table.getRowModel().rows;
   const columns = table.getVisibleLeafColumns();
 
   return (
     <div className={styles.scroller}>
-      <table className={styles.table}>
+      <table className={styles.table} style={minWidth ? { minWidth } : undefined}>
         <colgroup>
           {columns.map((col) => (
             <col key={col.id} style={col.id === fill ? undefined : { width: col.getSize() }} />

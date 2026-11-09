@@ -121,7 +121,7 @@ export default function Ports() {
       column.display({
         id: 'port',
         header: 'Port',
-        size: 150,
+        size: 128,
         cell: ({ row: { original: r } }) => (
           <span className={`${styles.port} ${r.vid != null ? styles.vlanPort : ''}`}>
             {r.vid == null && <span className={`${styles.dot} ${tier(r.port)}`} />}
@@ -133,7 +133,7 @@ export default function Ports() {
       column.display({
         id: 'link',
         header: 'Link',
-        size: 96,
+        size: 88,
         cell: ({ row: { original: r } }) =>
           r.vid != null ? <span className={styles.dim}>Tagged</span>
             : r.port.link.up ? speed(r.port.link.speed) ?? 'Up'
@@ -142,7 +142,7 @@ export default function Ports() {
       column.display({
         id: 'role',
         header: 'Role',
-        size: 92,
+        size: 84,
         cell: ({ row: { original: r } }) =>
           r.role === 'none' ? <span className={styles.dim}>Unused</span>
             : <Badge tone={r.role === 'uplink' ? 'info' : 'neutral'}>{ROLE_NAMES[r.role]}</Badge>,
@@ -182,7 +182,7 @@ export default function Ports() {
       column.display({
         id: 'address',
         header: 'Address',
-        size: 150,
+        size: 140,
         cell: ({ row: { original: r } }) => {
           const uplink = r.vid == null ? r.port.uplink : r.port.vlans.find((v) => v.vid === r.vid)?.uplink;
           const address = uplink?.state.address ?? (r.vid == null && state?.console === r.port.name ? state.consoleAddress : null);
@@ -192,7 +192,7 @@ export default function Ports() {
       column.display({
         id: 'internet',
         header: 'Internet',
-        size: 190,
+        size: 200,
         cell: ({ row: { original: r } }) => {
           const uplink = r.vid == null ? r.port.uplink : r.port.vlans.find((v) => v.vid === r.vid)?.uplink;
           const net = uplink?.internet;
@@ -262,6 +262,7 @@ export default function Ports() {
           rowClassName={() => styles.row}
           cellClassName={() => styles.cell}
           onRowClick={(row) => setEditing(row.original.port.name)}
+          minWidth={880}
         />
       </Section>
 
