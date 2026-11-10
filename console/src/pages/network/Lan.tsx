@@ -182,7 +182,6 @@ export default function Lan() {
   if (!state.configured) return <Notice tone="warning">No LAN configured on this gateway.</Notice>;
 
   const clients = state.clients ?? [];
-  const online = clients.filter((c) => c.online).length;
   const links = state.links ?? (state.ports ?? []).map((name) => ({ name, up: false, speed: null }));
   const cellular = clients.reduce((sum, c) => sum + total(c.traffic, 'wwan') + total(c.traffic, 'usbwan'), 0);
   const nameOf = (ip: string) => clients.find((c) => c.ip === ip)?.hostname;
@@ -214,7 +213,7 @@ export default function Lan() {
         </FactList>
       </Section>
 
-      <Section title="Clients" icon={MonitorSmartphone} note={`${online} online, ${clients.length} known`}>
+      <Section title="Clients" icon={MonitorSmartphone} wide>
         {policy.isError && <Notice tone="error">{(policy.error as Error).message}</Notice>}
         <DataTable table={table} fill="name"
                    cellClassName={(id) => (id === 'reserve' ? own.reserve : own.cell)} />

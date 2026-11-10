@@ -150,7 +150,6 @@ function Names({ hosts, onChanged }: { hosts: Host[]; onChanged: () => void }) {
       title="Local Names"
       icon={Tags}
       wide
-      note={hosts.length ? String(hosts.length) : undefined}
       actions={<Button onClick={() => setEditing('new')}>Add</Button>}
     >
       {hosts.length > 0 ? (
