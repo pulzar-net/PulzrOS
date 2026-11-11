@@ -184,12 +184,11 @@ EOF
     # board normally carries — address something else entirely.
     #
     # Detection copies those pins into the slot whatever bus it finds, which is
-    # right for the record and wrong for this file. Handed them, concentratord
-    # configured both radios and all eight channels over USB perfectly well and
-    # then hung on "Starting the concentrator", so chirpstack-mqtt-forwarder sat
-    # on "Reading gateway id" forever and the gateway never forwarded anything.
-    # It looked like a dead concentrator; it was a reset line pointing at GPIO
-    # 17 on a board whose concentrator is on the end of a USB cable.
+    # right for the record and wrong for this file. Leaving them out keeps the
+    # file honest; it is not what stopped a USB concentrator. concentratord
+    # sets pins up only on SPI (chirpstack-concentratord-sx1302 main.rs), and
+    # the hang on "Starting the concentrator" was parkeze-gps-detect probing
+    # the concentrator's tty and changing its baud rate (e35cb65).
     if [ "${bus}" != "usb" ]; then
         [ -n "${reset}" ] && printf '%s_reset_chip="%s"\n%s_reset_pin=%s\n' "${chipset}" "${chip}" "${chipset}" "${reset}"
         [ -n "${power}" ] && printf '%s_power_en_chip="%s"\n%s_power_en_pin=%s\n' "${chipset}" "${chip}" "${chipset}" "${power}"

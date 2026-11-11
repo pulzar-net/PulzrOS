@@ -129,12 +129,18 @@ until the other starts. In that build the GPS goes on USB.
 
 ### Who owns the serial port
 
-Concentratord opens the GNSS tty itself when given `gnss_dev_path`, and does
-not share it — only the process holding the port has GPS time and PPS. It sends
-its position to the network server rather than logging it, so while it runs the
-gateway cannot read the receiver locally, and `parkeze-gps status` says so
-rather than reporting a stale fix. Stopping the LoRa service frees the port for
-a direct read.
+We give concentratord the GNSS tty itself in `gnss_dev_path`, and it holds
+the port — only the process holding it has GPS time. It sends its position to
+the network server rather than logging it, so while it runs the gateway cannot
+read the receiver locally, and `parkeze-gps status` says so rather than
+reporting a stale fix. Stopping the LoRa service frees the port for a direct
+read.
+
+That is our choice, not a limit of concentratord: it also takes
+`gnss_dev_path="gpsd://localhost:2947"` (since 2022), and ChirpStack Gateway
+OS runs gpsd that way on the RAK7289v2, so the receiver could be shared. PPS
+still has to be wired to the SX130x itself; gpsd carries the NMEA, not the
+pulse.
 
 On a two-slot gateway only slot 0 is given the receiver: one physical gateway
 has one position.
