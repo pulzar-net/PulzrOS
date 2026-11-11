@@ -260,6 +260,9 @@ export interface LorawanStatus {
   buffer: {
     enabled: boolean;
     running: boolean;
+    /** Whether the broker's bridge to the LNS is connected; null when the
+        broker is not running. */
+    bridgeUp: boolean | null;
     /** Whether there is an SD card to keep the queue on. Without one the
         buffer does not run at all. */
     persistent: boolean;

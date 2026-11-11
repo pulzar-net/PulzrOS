@@ -378,6 +378,7 @@ status = function() {
     const uci = cursor();
     const stats = runJson('/usr/sbin/parkeze-forwarder-stats 2>/dev/null');
     const running = run('/etc/init.d/parkeze-packet-forwarder running >/dev/null 2>&1 && echo yes');
+    const buffer = runJson('/usr/sbin/parkeze-lora-buffer status 2>/dev/null');
 
     return {
         gatewayEui: uci.get('parkeze', 'identity', 'gateway_eui'),
@@ -399,9 +400,13 @@ status = function() {
             lastUplink: stats ? stats.last_uplink : null,
         },
         bridge: {
-            // Written by mqtt-forwarder's connect and connection-error
-            // callbacks; see parkeze-lora-config.
-            connected: run('cat /var/run/parkeze/lora/slot0.mqtt 2>/dev/null') == 'connected',
+            // Buffered, the forwarder's own connection is to loopback and is
+            // up whenever the local broker is, so the broker's bridge is what
+            // says whether uplinks reach the LNS. Otherwise the forwarder's
+            // connect and connection-error callbacks (parkeze-lora-config).
+            connected: buffer && buffer.bridgeUp != null
+                ? buffer.bridgeUp
+                : run('cat /var/run/parkeze/lora/slot0.mqtt 2>/dev/null') == 'connected',
             broker: uci.get('parkeze', 'mqtt', 'host'),
         },
         // Whether uplinks may use the metered link, and whether they are
@@ -412,7 +417,7 @@ status = function() {
         // What happens to uplinks that cannot be sent: held, or dropped. It
         // belongs next to backhaul because it is what decides whether
         // backhaul.sending == false is a delay or a hole in the data.
-        buffer: runJson('/usr/sbin/parkeze-lora-buffer status 2>/dev/null'),
+        buffer: buffer,
     };
 };
 

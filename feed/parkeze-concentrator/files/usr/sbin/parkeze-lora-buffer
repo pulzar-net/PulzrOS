@@ -3,7 +3,7 @@
 # Hold uplinks locally when they cannot be sent, and replay them when they can.
 #
 #   parkeze-lora-buffer render   write the broker's config, if enabled
-#   parkeze-lora-buffer status   JSON: enabled, running, how much is queued
+#   parkeze-lora-buffer status   JSON: enabled, running, bridge up, how much is queued
 #
 # It does not start anything. procd does, from parkeze-packet-forwarder, so
 # the broker is supervised and respawned like everything else in the LoRa
@@ -108,10 +108,12 @@ persistence_dir() {
 
 # Whether broker <pid> holds an established TCP connection to remote port
 # <port>, which is the bridge and nothing else: with buffering on, the
-# forwarder talks to loopback. Read from the kernel because the image has no
-# MQTT client to ask the broker with, and adding one to 32MB of flash for this
-# is not worth it. Lags a real drop by up to ~1.5x the bridge keepalive (60s),
-# until TCP gives up on a peer that has gone quiet.
+# forwarder talks to loopback. Read from the kernel, not from the broker's
+# bridge notifications: mosquitto (2.0.20) publishes the local state as "0"
+# only on its first connect attempt, then "1" on each connect, and the "0" for
+# a drop is a will on the remote broker. Locally, a bridge that was up once
+# reads "1" through every outage after it. Lags a real drop by up to ~1.5x the
+# bridge keepalive (60s), until TCP gives up on a peer that has gone quiet.
 bridge_up() {
     local pid="$1" port inodes
     port="$(printf ':%04X' "$2")"
@@ -249,7 +251,16 @@ render)
 status)
     on=false; enabled && on=true
     running=false
-    pgrep -f "mosquitto -c ${CONF}" >/dev/null 2>&1 && running=true
+    # Whether uplinks are leaving the gateway, which the forwarder cannot say
+    # when it publishes here: its own connection is to loopback, and that is
+    # up whenever this broker is. null when there is no broker to ask.
+    bridge=null
+    pid="$(pgrep -f "mosquitto -c ${CONF}" 2>/dev/null | head -n1)"
+    if [ -n "${pid}" ]; then
+        running=true
+        remote="$(get parkeze.mqtt.port)"; remote="${remote:-${PARKEZE_MQTT_PORT:-8883}}"
+        bridge=false; bridge_up "${pid}" "${remote}" && bridge=true
+    fi
     # What is waiting, as of the broker's last write to the card. That is
     # current during an outage, which is when anybody asks, and stale-but-small
     # otherwise: `watch` writes only while the uplink is down. Its size is the
@@ -259,8 +270,8 @@ status)
     if persist="$(persistence_dir)" && [ -f "${persist}/mosquitto.db" ]; then
         queued_bytes="$(wc -c < "${persist}/mosquitto.db" 2>/dev/null || echo 0)"
     fi
-    printf '{"enabled":%s,"running":%s,"persistent":%s,"port":%s,"queuedBytes":%s}\n' \
-        "${on}" "${running}" \
+    printf '{"enabled":%s,"running":%s,"bridgeUp":%s,"persistent":%s,"port":%s,"queuedBytes":%s}\n' \
+        "${on}" "${running}" "${bridge}" \
         "$(persistence_dir >/dev/null 2>&1 && echo true || echo false)" \
         "${PORT}" "${queued_bytes}"
     ;;
