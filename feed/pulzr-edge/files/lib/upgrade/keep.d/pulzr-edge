@@ -1,4 +1,5 @@
-# The daemon's configuration and its broker certificate are the gateway's own,
-# written to it after adoption; an upgrade that dropped them would leave its
-# buses silent until they were written again.
+# The buses and register maps are the operator's own; an upgrade that dropped
+# them would leave the buses silent until they were written again. The broker
+# login is not here: it is the gateway's, in UCI, and the daemon's config is
+# generated from it at every start.
 /etc/pulzr-edge/
