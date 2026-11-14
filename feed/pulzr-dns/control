@@ -4,6 +4,7 @@ Replaces: parkeze-dns
 Conflicts: parkeze-dns
 Depends: ucode, ucode-mod-fs, ucode-mod-uci, dnsmasq-full, ddns-scripts, ddns-scripts-cloudflare, curl
 Maintainer: Joseph Telaak <joseph@pulzr.net>
+License: Apache-2.0
 Architecture: all
 Description: The gateway's resolver, as the site sets it.
  Upstream servers in place of the uplink's, local names the LAN resolves,

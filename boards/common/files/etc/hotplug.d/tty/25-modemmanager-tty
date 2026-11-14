@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
 # Copyright (C) 2016 Velocloud Inc
 # Copyright (C) 2016 Aleksander Morgado <aleksander@aleksander.es>
 #

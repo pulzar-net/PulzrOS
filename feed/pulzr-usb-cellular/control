@@ -4,6 +4,7 @@ Replaces: parkeze-usb-cellular
 Conflicts: parkeze-usb-cellular
 Depends: pulzr-base, pulzr-cellular
 Maintainer: Joseph Telaak <joseph@pulzr.net>
+License: Apache-2.0
 Architecture: all
 Description: A USB cellular adapter that is an Ethernet device, as an uplink.
  Brings a HiLink dongle or a tethered phone up as usbwan, a DHCP client that

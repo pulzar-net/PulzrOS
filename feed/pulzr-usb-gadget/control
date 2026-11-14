@@ -4,6 +4,7 @@ Replaces: parkeze-usb-gadget
 Conflicts: parkeze-usb-gadget
 Depends: pulzr-tui, umdns, dnsmasq-full
 Maintainer: Joseph Telaak <joseph@pulzr.net>
+License: Apache-2.0
 Architecture: all
 Description: The console over a USB cable, as a network and a serial port.
  Presents the board's USB device port to a laptop as a network interface —

@@ -1,0 +1,22 @@
+PulzarOS
+Copyright 2025-2026 Pulzar LLC and PulzarOS contributors
+
+This product includes software developed at Pulzar LLC (https://pulzr.net).
+
+PulzarOS's own code is licensed under the Apache License, Version 2.0 (see
+LICENSE), except where a file or package says otherwise:
+
+  * boards/common/files/etc/hotplug.d/tty/25-modemmanager-tty is a modified
+    copy of a file from OpenWrt's modemmanager package and stays GPL-2.0-only.
+  * feed/pulzr-base/files/usr/share/pulzr/fonts/slant.flf is a FIGlet font by
+    Glenn Chappell, with its own permission notice in the file header.
+  * feed/pulzr-concentrator/files/usr/share/pulzr/region/*/region.toml and
+    channels.toml are ChirpStack Concentratord's example files (MIT).
+
+The Pulzar name, the Pulzar logo and wordmark (console/public/icon.svg,
+console/public/wordmark.png) and the PulzarOS name are trademarks of Pulzar LLC.
+The Apache-2.0 licence covers the code, not the right to use those marks.
+
+The images this repository builds also contain OpenWrt and many packages from
+its feeds, each under its own licence, and the ChirpStack gateway binaries. See
+THIRD-PARTY-NOTICES.md.

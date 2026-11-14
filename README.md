@@ -1,44 +1,51 @@
 # PulzarOS
 
-A Pulzar-branded OpenWrt distribution for LoRaWAN gateways, managed by
-[Pulzar Cloud](../Pulzar Cloud).
+An OpenWrt 25.12 distribution for LoRaWAN and Bluetooth LE gateways. It turns a
+Raspberry Pi or a RAK WisGate into a managed LoRaWAN gateway with a local
+console, a terminal UI, and one-touch adoption into a cloud.
 
-Replaces the previous Raspberry Pi OS / pi-gen build entirely. Nothing of it is
-carried over.
+PulzarOS is built with OpenWrt's ImageBuilder from a pinned release. There is
+no LuCI: the gateway console is a React app served by uhttpd over a ucode API,
+and the same pages are available in a terminal over serial, SSH and USB.
 
-## What it is
+## What it does
 
-- **OpenWrt 25.12**, assembled with ImageBuilder from a pinned release.
-- **No LuCI.** The Pulzar console replaces it: a React app served as static
-  files by uhttpd over a ucode API, sharing design tokens verbatim with
-  Pulzar Cloud so the two are visibly one product.
-- **One-touch provisioning.** Power on, scan the QR, pick the site. The gateway
-  adopts itself; nobody types a credential into it.
-- **Multi-board from one tree.** A board is a page of deltas over a shared
-  config, not a fork. Pi 3/4/5 as kits, two RAK units as fixed hardware.
-- **Concentrator slots**, so an 8-channel Pi and a 16-channel RAK7289CV2 run
-  the same code. Auto-detection across SPI, USB and UART on kit boards, with
-  everything operator-correctable from the console.
-- **Full front panel** — LEDs and buttons mapped per board, driven from real
-  state, with a lamp test for bring-up.
-- **GNSS** over UART or USB, auto-detected, feeding real GPS time to the packet
-  forwarder — and honest about the difference between a live fix and the
-  position the gateway is announcing.
-- **Generated login banner** — the mark and the wordmark are drawn at print
-  time, not pasted into a file, and the facts under it are read live.
-- **The console in a terminal** — every page of the web console as a TUI, on
-  the serial console, over SSH, on a Pi's own screen, and over a USB cable that
-  is also a network to the console at `pulzr.local`.
-- **Two management paths** — a WireGuard tunnel over wired, 1NCE over
-  cellular — with the tunnel structurally prevented from ever touching the
-  metered link.
-- **A way back in** — one ethernet port that is the uplink and the console port
-  at the same time, reachable at `pulzr-<serial>.local` from a laptop and a
-  cable with nothing configured, and reachable from a site network not at all.
-  LAN ports reach the console too, and four presses of the reset button raise
-  the setup AP on a gateway with no working uplink.
+- **LoRaWAN gateway.** ChirpStack Concentratord and the MQTT Forwarder, with
+  concentrator slots so an 8-channel Pi and a 16-channel RAK7289CV2 run the same
+  code. SPI, USB and UART concentrators are detected on kit boards and
+  everything is correctable from the console.
+- **Bluetooth LE.** Advertisement forwarding over MQTT where the board has it.
+- **One-touch adoption.** Power on, scan the QR on the console or the SSH
+  banner, pick the site. The gateway adopts itself; nobody types a credential
+  into it. See [`docs/provisioning.md`](docs/provisioning.md).
+- **Two management paths.** A WireGuard tunnel over wired, and a cellular path
+  over a SIM, with the tunnel structurally barred from ever using the metered
+  link. See [`docs/backhaul.md`](docs/backhaul.md).
+- **A way back in.** One ethernet port is the uplink and the console port at
+  once, reachable at `pulzr-<serial>.local` from a laptop and a cable with
+  nothing configured; four presses of the reset button raise a setup AP.
+- **Front panel.** LEDs and buttons mapped per board and driven from real state.
+- **GNSS** over UART or USB, feeding real GPS time to the forwarder.
+- **Local console, three ways.** The web console, the same pages as a TUI on the
+  serial console, over SSH (`ssh pulzr@<gateway>`), on a Pi's own screen, and
+  over a USB cable that is also a network (`pulzr.local`).
 
-## Quick start
+## Boards
+
+| Board | ID | Concentrator |
+|---|---|---|
+| Raspberry Pi 3 | `rpi3` | kit (HAT, USB, UART), probed |
+| Raspberry Pi 4 | `rpi4` | kit, probed |
+| Raspberry Pi 5 | `rpi5` | kit, probed |
+| RAK7268C WisGate Edge Lite 2 | `rak7268c` | fixed |
+| RAK7268CV2 WisGate Edge Lite 2 | `rak7268cv2` | fixed |
+| RAK7289CV2 WisGate Edge Pro | `rak7289cv2` | fixed, 2 x 8 channels |
+| GL.iNet GL-SFT1200 (Opal) | `gl-sft1200` | none: a router for LAN, uplinks and DNS |
+
+A board is a page of deltas over a shared configuration, not a fork. See
+[`docs/boards.md`](docs/boards.md) to add one.
+
+## Build
 
 ```bash
 ./build.sh --list          # what is buildable
@@ -46,138 +53,120 @@ carried over.
 ./build.sh --all           # build everything
 ```
 
-`build.sh` builds the React console, packages the feed, and assembles images,
-in that order.
+`build.sh` builds the React console, stages the package feed, and assembles
+images in that order. Images land in `out/<board>/`. The first build downloads
+and checksum-verifies an ImageBuilder (about 150 MB, cached).
 
-## Flashing one
+Image assembly needs Linux: OpenWrt's ImageBuilder is prebuilt x86_64 ELF
+binaries. On a Mac `build.sh` runs that step in Docker. You need `node` (20+),
+`curl`, `jq` and `zstd`, plus GNU `tar` for byte-reproducible packages.
+
+Three public keys decide whom an image trusts. None is secret:
+
+| Variable | What it is |
+|---|---|
+| `PULZR_RECOVERY_PUBKEY` | the Ed25519 key an offline adoption is signed with |
+| `PULZR_FIRMWARE_PUBKEY` | the Ed25519 key firmware updates must be signed with |
+| `PULZR_SSH_CA_PUBKEY` | the SSH CA whose certificates root accepts (default `boards/common/ssh/pulzr_user_ca.pub`) |
+
+`boards/common/ssh/` also holds the operator fleet key that goes into root's
+`authorized_keys` (`fleet/pulzr-fleet.pub`). The ones in this tree are
+Pulzar's: **replace the CA and the fleet key with your own before building
+images for your own fleet.** Without the recovery and firmware keys the build
+warns and produces an image that cannot be adopted offline or check an
+update's signature. See [`docs/auth.md`](docs/auth.md).
+
+`PULZR_DEV=1 ./build.sh <board>` builds a development image: a root shell on the
+serial console, failsafe, and your key from `boards/common/ssh/dev/`. Its
+version ends in `-dev`; the CI workflow refuses to build one for release.
+
+## Flash
 
 ```bash
 ./flash.sh --download rpi4     # fetch the latest CI image and write it to a card
 ```
 
-Refuses internal disks, never guesses the target, and asks you to type the disk
-identifier rather than press `y`.
+`flash.sh` refuses internal disks, never guesses the target, and asks you to
+type the disk identifier rather than press `y`. The images are raw disk images,
+not ISOs: any SD writer (Raspberry Pi Imager's *Use custom*, Etcher, Rufus) can
+write the `.img.xz`. A RAK unit is upgraded from its console or with
+`sysupgrade`. See [`docs/flashing.md`](docs/flashing.md).
 
-Or use any SD writer: these are raw disk images (not ISOs — a Pi will not boot
-one of those). Download the artifact and open the `.img.xz` in Raspberry Pi
-Imager's *Use custom*, Etcher, or Rufus.
+## Adopt
 
-See [`docs/flashing.md`](docs/flashing.md).
+A gateway needs a cloud to adopt into. By default that is Pulzar Cloud at
+`https://app.pulzr.net`: scan the code the gateway shows, sign in, pick an
+organization.
 
-## Building
-
-Images land in `out/<board>/`. First build downloads and checksum-verifies an
-ImageBuilder (~150MB, cached); after that a build is a few minutes.
-
-**Image assembly requires Linux.** OpenWrt's ImageBuilder is a tree of prebuilt
-x86_64 ELF binaries with no macOS build, so on a Mac `build.sh` runs that step
-in a Docker container. The feed (`scripts/build-feed.sh`) is staged natively on
-macOS, and packed into `.apk` files during assembly by the ImageBuilder's own
-`apk`, the only one that writes the release's format.
-
-Requires `node` (20+), `curl`, `jq` and `zstd`, plus GNU `tar` for
-byte-reproducible packages: `brew install node jq zstd gnu-tar`. Without
-gnu-tar the packages are still correct, just not byte-reproducible.
-
-To bake the fleet recovery anchor into the image — required for offline
-adoption — point `PULZR_RECOVERY_PUBKEY` at the public half of the key from
-`Pulzar Cloud/tools/generate-recovery-key.sh`.
+To adopt into your own cloud, build with `PULZR_NET_URL` (and
+`PULZR_MQTT_HOST` for the first-contact broker) set in `boards/common/board.conf`
+to a server that implements the gateway API the scripts call under
+`/api/v1/gateway-ops/` — claim registration and polling, adoption, reporting and
+WireGuard enrolment. [`docs/provisioning.md`](docs/provisioning.md) walks the
+protocol and the two secrets it rests on.
 
 ## Layout
 
 ```
-boards/           one per board; common/ holds everything shared
-  common/board.conf        sourced by every board
-  common/raspberrypi.conf  the kit boards
-  common/rakwireless.conf  the fixed-hardware boards
-console/          the React console. Built to static files by build.sh and
-                  packaged into pulzr-console; no Node on the gateway.
-feed/             the Pulzar OpenWrt package feed
-  pulzr-base          identity, network defaults, branding
-  pulzr-console       the LuCI replacement: ucode API + the built SPA
-  pulzr-concentrator  slot detection, profiles, concentratord + MQTT forwarder
-  pulzr-cellular      modem, data frugality, backhaul health
-  pulzr-wireguard     management tunnel to the hub, pinned to the wired uplink
-  chirpstack-gateway    ChirpStack's gateway binaries, per architecture
-  pulzr-adopt         one-touch provisioning and adoption
-  pulzr-io            front-panel LEDs and buttons
-  pulzr-ap            setup AP (off by default; four presses of reset raise it)
-  pulzr-tui           the console in a terminal, on every board
-  pulzr-display       the TUI on a Pi's own screen, when it has one
-  pulzr-usb-gadget    the USB-C port as a network and a serial console
-  pulzr-rak-power     the RAK7289CV2 power board: watchdog, battery pack
-scripts/          build-feed.sh, check-ucode.sh, ucode stubs, run-tui.sh,
-                  test-claim.sh and test-ssh-setup.sh (device shell, stubbed),
-                  test-rak-power.sh (against a simulated power board),
-                  test-setup-mode.sh (the reset button and the setup AP)
-docs/             the design decisions worth writing down
+boards/           one directory per board; common/ holds everything shared
+console/          the React console, built to static files by build.sh
+feed/             the OpenWrt package feed (pulzr-*, plus chirpstack-gateway)
+scripts/          build-feed.sh, the checks and the tests
+docs/             design decisions worth writing down
 ```
 
-## Documentation
-
-- [`docs/backhaul.md`](docs/backhaul.md) — the two uplinks, the two management
-  paths, and why the management tunnel is structurally barred from cellular.
-- [`docs/auth.md`](docs/auth.md) — how you get into a gateway, including the
-  offline Ed25519 recovery flow and why a stored break-glass password would be
-  the wrong answer.
-- [`docs/access.md`](docs/access.md) — the ethernet port, the USB port, the
-  setup AP, and why forcing a gateway offline to raise its radio gains an
-  attacker nothing.
-- [`docs/tui.md`](docs/tui.md) — the terminal UI: where it runs, who it trusts,
-  and how it stays the same console as the web one.
-- [`docs/flashing.md`](docs/flashing.md) — getting an image onto a board, and
-  the first-boot experience.
-- [`docs/provisioning.md`](docs/provisioning.md) — one-touch provisioning end
-  to end, the two secrets it rests on, and what happens when a gateway has no
-  internet.
-- [`docs/concentrators.md`](docs/concentrators.md) — slots, why 16 channels is
-  two concentrators, and kit versus product boards.
-- [`docs/boards.md`](docs/boards.md) — adding a board, and adding a
-  concentrator.
-- [`docs/rak-power.md`](docs/rak-power.md) — the RAK7289CV2's power board: the
-  watchdog that keeps a DC-powered unit on, the battery pack, and what about
-  them is still unverified on hardware.
-- [`openwrt-device-template`](https://github.com/Pulzr/openwrt-device-template) — porting a board OpenWrt does not
-  support, and why the flash layout has to come off the hardware rather than a
-  datasheet.
+Packages: `pulzr-base` (identity, network defaults), `pulzr-console` (ucode API
+and the built SPA), `pulzr-concentrator`, `pulzr-cellular`, `pulzr-wireguard`,
+`pulzr-adopt`, `pulzr-io`, `pulzr-ap`, `pulzr-tui`, `pulzr-display`,
+`pulzr-usb-gadget`, `pulzr-lan`, `pulzr-dns`, `pulzr-uplinks`, `pulzr-speedtest`,
+`pulzr-storage`, `pulzr-ble`, `pulzr-mqtt`, `pulzr-rak-power`.
 
 ## Development
 
-`PULZR_DEV=1 ./build.sh <board>` builds a development image: the serial
-console's root shell, failsafe, the TUI's `!` for any sign-in, and your key
-from `boards/common/ssh/dev/`. Its version ends in `-dev`; CI will not build one. See
-[`docs/auth.md`](docs/auth.md), "Who gets root".
-
-The console has two halves. The React app typechecks and builds normally:
+The console typechecks and builds normally:
 
 ```bash
 cd console && npm install && npm run typecheck && npm run build
 npm run dev            # against a gateway: PULZR_GATEWAY=https://<ip> npm run dev
 ```
 
-Its API is ucode, which does not exist on a Mac. Syntax-check that before
-flashing anything:
+Its API is ucode, which does not exist on a Mac. Build it once and the checks
+run anywhere:
 
 ```bash
 git clone --depth 1 https://github.com/jow-/ucode /tmp/ucode
 cmake -B /tmp/ucode/build -DFS_SUPPORT=ON /tmp/ucode && cmake --build /tmp/ucode/build
 UCODE=/tmp/ucode/build/ucode scripts/check-ucode.sh
+python3 scripts/check-ucode-scope.py
+for t in scripts/test-*.sh; do UCODE=/tmp/ucode/build/ucode bash "$t"; done
+UCODE=/tmp/ucode/build/ucode scripts/run-tui.sh     # the TUI, on canned state
 ```
 
-That resolves `fs`, `uci`, `ubus` and `digest` against the stubs in
+`check-ucode.sh` resolves `fs`, `uci`, `ubus` and `digest` against the stubs in
 `scripts/ucode-stubs/`, so it catches importing a function that does not exist
-as well as plain syntax errors. Keep the stubs honest when you reach for a new
-one.
+as well as syntax errors. [`CLAUDE.md`](CLAUDE.md) lists the rules the checks
+enforce, and the conventions for the console's text.
 
-The terminal UI runs on the same ucode, against canned gateway state:
+## Upgrading from ParkezeOS
 
-```bash
-UCODE=/tmp/ucode/build/ucode scripts/run-tui.sh
-```
+Gateways that ran the earlier name keep their identity, secrets and settings
+across the upgrade: `pulzr-legacy` moves the old state to the new paths on
+first boot and keeps the old copies current so a rollback finds them.
+[`docs/legacy-migration.md`](docs/legacy-migration.md).
+
+## Contributing, security, licence
+
+[`CONTRIBUTING.md`](CONTRIBUTING.md) (DCO sign-off),
+[`SECURITY.md`](SECURITY.md) (security@pulzr.net),
+[`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
+
+PulzarOS's code is Apache-2.0 ([`LICENSE`](LICENSE), [`NOTICE`](NOTICE)).
+Images also contain OpenWrt and its packages, each under its own licence, and
+the ChirpStack gateway binaries: see
+[`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md).
 
 ## Status
 
-Everything here is written but **none of it has been run on hardware**. The
-build pipeline, the ucode modules and the cryptography have been verified as
-far as they can be off-device — see the note at the end of the handover for
-exactly what was and was not checked.
+The build pipeline, the ucode modules and the cryptography are checked as far
+as they can be off-device by the scripts above; behaviour on hardware is
+described in the docs board by board, including what is still unverified.

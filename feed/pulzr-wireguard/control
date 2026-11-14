@@ -4,6 +4,7 @@ Replaces: parkeze-wireguard
 Conflicts: parkeze-wireguard
 Depends: pulzr-base, kmod-wireguard, wireguard-tools, ip-full, curl, ca-bundle, jsonfilter
 Maintainer: Joseph Telaak <joseph@pulzr.net>
+License: Apache-2.0
 Architecture: all
 Description: WireGuard management tunnel, pinned to the wired path.
  Dials out to the Pulzar Cloud WireGuard hub so the cloud can reach this

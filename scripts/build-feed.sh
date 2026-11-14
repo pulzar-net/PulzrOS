@@ -127,6 +127,7 @@ package_one() {
     echo "arch:${arch}"
     echo "origin:pulzr"
     awk '/^Maintainer:/ { sub(/^Maintainer: */, ""); print "maintainer:" $0 }' "${control}"
+    awk '/^License:/ { sub(/^License: */, ""); print "license:" $0 }' "${control}"
     # Conflicts: become `!name` entries in depends, which is how apk says it.
     awk '/^Depends:/ { sub(/^Depends: */, ""); gsub(/, */, " "); d = d (d ? " " : "") $0 }
          /^Conflicts:/ { sub(/^Conflicts: */, ""); n = split($0, c, /, */)

@@ -8,6 +8,7 @@ Source: pulzr
 Section: utils
 Priority: optional
 Maintainer: Joseph Telaak <joseph@pulzr.net>
+License: Apache-2.0
 Architecture: all
 Description: The RAK7289CV2's power board: its watchdog and battery pack.
  Feeds the power board's hardware watchdog, which on the newer RAK7289CV2

@@ -47,6 +47,15 @@ ucode/
 .env
 .env.local
 *.pem
+# A developer's own SSH material dropped into the image overlay by hand.
+# build.sh composes root's authorized_keys itself; nothing belongs here.
+boards/common/files/etc/dropbear/
+boards/common/files/root/
+authorized_keys
+id_rsa
+id_ed25519
+id_ecdsa
+*.key
 *_ed25519
 # Public halves are not secret, and boards/common/ssh/ is meant to be committed.
 !*_ed25519.pub

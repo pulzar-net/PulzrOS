@@ -4,6 +4,7 @@ Replaces: parkeze-ap
 Conflicts: parkeze-ap
 Depends: ucode, ucode-mod-uci, wpad-openssl, iw, dnsmasq-full, jsonfilter
 Maintainer: Joseph Telaak <joseph@pulzr.net>
+License: Apache-2.0
 Architecture: all
 Description: Setup access point.
  Raises a self-titled access point so a gateway can be reconfigured when it has

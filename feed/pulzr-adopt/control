@@ -4,6 +4,7 @@ Replaces: parkeze-adopt
 Conflicts: parkeze-adopt
 Depends: ucode, ucode-mod-uci, curl, ca-bundle, openssl-util, qrencode, jsonfilter
 Maintainer: Joseph Telaak <joseph@pulzr.net>
+License: Apache-2.0
 Architecture: all
 Description: One-touch provisioning and adoption.
  Mints a claim identity at first boot, shows it as a QR over SSH and in the

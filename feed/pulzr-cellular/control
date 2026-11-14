@@ -4,6 +4,7 @@ Replaces: parkeze-cellular
 Conflicts: parkeze-cellular
 Depends: pulzr-base, modemmanager, kmod-usb-net-qmi-wwan, ucode, curl
 Maintainer: Joseph Telaak <joseph@pulzr.net>
+License: Apache-2.0
 Architecture: all
 Description: Cellular backhaul management and data frugality.
  Brings up the modem, and keeps the gateway's own traffic on the metered link

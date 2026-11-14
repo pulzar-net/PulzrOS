@@ -4,6 +4,7 @@ Replaces: parkeze-storage
 Conflicts: parkeze-storage
 Depends: kmod-fs-ext4, kmod-fs-vfat, kmod-nls-cp437, kmod-nls-iso8859-1
 Maintainer: Joseph Telaak <joseph@pulzr.net>
+License: Apache-2.0
 Architecture: all
 Description: Removable storage, for the boards that have a slot.
  Mounts the SD card a WisGate ships with and records it in UCI, chosen by

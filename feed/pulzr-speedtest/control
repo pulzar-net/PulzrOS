@@ -4,6 +4,7 @@ Replaces: parkeze-speedtest
 Conflicts: parkeze-speedtest
 Depends: ucode, ucode-mod-fs, ucode-mod-uci, curl, ca-bundle, librespeed-cli
 Maintainer: Joseph Telaak <joseph@pulzr.net>
+License: Apache-2.0
 Architecture: all
 Description: How fast each free uplink is, direct and through the tunnel.
  librespeed-cli against the nearest LibreSpeed public server on each wired

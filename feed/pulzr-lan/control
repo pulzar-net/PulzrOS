@@ -4,6 +4,7 @@ Replaces: parkeze-lan
 Conflicts: parkeze-lan
 Depends: ucode, ucode-mod-fs, ucode-mod-uci, dnsmasq-full, firewall4, nftables-json, kmod-nft-nat
 Maintainer: Joseph Telaak <joseph@pulzr.net>
+License: Apache-2.0
 Architecture: all
 Description: The devlan zone: ports for devices this gateway serves.
  DHCP and DNS with per-device reservations, NAT out whichever uplink is

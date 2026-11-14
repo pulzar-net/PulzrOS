@@ -4,6 +4,7 @@ Replaces: parkeze-io
 Conflicts: parkeze-io
 Depends: pulzr-base, ucode, ucode-mod-uci, ucode-mod-fs
 Maintainer: Joseph Telaak <joseph@pulzr.net>
+License: Apache-2.0
 Architecture: all
 Description: Front-panel LEDs and buttons.
  Maps logical indicators — power, status, lora, cloud, cellular — onto whatever

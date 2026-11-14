@@ -4,6 +4,7 @@ Replaces: parkeze-uplinks
 Conflicts: parkeze-uplinks
 Depends: pulzr-base, ucode, ucode-mod-fs, ucode-mod-uci
 Maintainer: Joseph Telaak <joseph@pulzr.net>
+License: Apache-2.0
 Architecture: all
 Description: Uplink order and failover.
  Sets each uplink's route metric from an order the site chooses, and pings

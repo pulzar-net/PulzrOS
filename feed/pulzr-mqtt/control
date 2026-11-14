@@ -4,6 +4,7 @@ Replaces: parkeze-mqtt
 Conflicts: parkeze-mqtt
 Depends: mosquitto-client-ssl, jsonfilter
 Maintainer: Joseph Telaak <joseph@pulzr.net>
+License: Apache-2.0
 Architecture: all
 Description: Manage a gateway over MQTT instead of its web console.
  Answers a fixed set of questions and performs a fixed set of actions on the
