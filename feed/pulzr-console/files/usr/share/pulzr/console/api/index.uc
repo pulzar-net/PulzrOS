@@ -626,7 +626,10 @@ function route(env) {
     if (PUBLIC[key])
         return handler(env, req, null, null);
 
-    const token = cookies(env)[SESSION_COOKIE];
+    // ParkezeOS's cookie name is read too, so a platform or browser that
+    // still sends parkeze_session keeps its session across the rename.
+    const jar = cookies(env);
+    const token = jar[SESSION_COOKIE] ?? jar['parkeze_session'];
     const session = auth.readSession(token);
     if (!session)
         return error(401, 'Not signed in.');
@@ -635,7 +638,7 @@ function route(env) {
     // header. A cross-origin page can cause the cookie to be sent but cannot
     // read the token to echo it.
     if (method != 'GET') {
-        const sent = env.headers ? env.headers['x-pulzr-csrf'] : null;
+        const sent = env.headers ? (env.headers['x-pulzr-csrf'] ?? env.headers['x-parkeze-csrf']) : null;
         if (!auth.constantTimeEqual(sent ? sent : '', session.csrf))
             return error(403, 'Missing or invalid CSRF token.');
     }

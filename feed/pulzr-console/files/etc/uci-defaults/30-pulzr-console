@@ -98,7 +98,9 @@ set uhttpd.main.rfc1918_filter='0'
 set uhttpd.main.max_requests='16'
 set uhttpd.main.max_connections='64'
 set uhttpd.main.script_timeout='600'
-set uhttpd.main.network_timeout='30'
+# An image upload over a SIM stalls for longer than 30 s at a time; uhttpd
+# then drops it part way (found on Downey, 14 Nov 2026: 1.5 MB of 34 MB).
+set uhttpd.main.network_timeout='300'
 # Two minutes, not twenty seconds. Through the cloud every new connection is
 # a TLS handshake on this CPU, about 100ms each and one at a time, and
 # the cloud keeps four open per gateway; at twenty seconds they were gone
@@ -143,7 +145,7 @@ set uhttpd.tunnel.rfc1918_filter='0'
 set uhttpd.tunnel.max_requests='16'
 set uhttpd.tunnel.max_connections='64'
 set uhttpd.tunnel.script_timeout='600'
-set uhttpd.tunnel.network_timeout='30'
+set uhttpd.tunnel.network_timeout='300'
 set uhttpd.tunnel.http_keepalive='120'
 set uhttpd.tunnel.tcp_keepalive='1'
 set uhttpd.tunnel.no_dirlists='1'

@@ -178,7 +178,7 @@ upload = function(env, issuer) {
             'Upload stopped at %d of %d bytes.', received, len) };
     }
 
-    const manifest = env.headers ? env.headers['x-pulzr-manifest'] : null;
+    const manifest = env.headers ? (env.headers['x-pulzr-manifest'] ?? env.headers['x-parkeze-manifest']) : null;
     const result = apply(IMAGE, manifest, issuer, true);
     if (result.error) return result;
     result.bytes = received;
