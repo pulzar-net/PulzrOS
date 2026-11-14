@@ -575,10 +575,24 @@ facts() {
     board_id="${BOARD_ID:-unknown}"
     version="${PULZR_VERSION:-0.0.0}"
 
-    printf '{"board":"%s","osVersion":"%s","modemPresent":%s,"modemModel":"%s","modemKind":"%s","simIccid":"%s","sshHostKey":"%s","wiredUsable":%s,"tunnelVia":"%s","tunnelState":"%s","wifiUplink":"%s","consolePort":443,"consoleScheme":"https","tunnelConsolePort":8080,"sshPort":22,"sshCa":%s,"system":%s,"rakPower":%s,"setupAp":%s,"speedtest":%s,"wiredRouters":%s,"activeUplink":"%s","consoleCertificate":%s%s}' \
+    printf '{"board":"%s","osVersion":"%s","modemPresent":%s,"modemModel":"%s","modemKind":"%s","simIccid":"%s","sshHostKey":"%s","wiredUsable":%s,"tunnelVia":"%s","tunnelState":"%s","wifiUplink":"%s","consolePort":443,"consoleScheme":"https","tunnelConsolePort":8080,"sshPort":22,"sshCa":%s,"system":%s,"rakPower":%s,"setupAp":%s,"speedtest":%s,"wiredRouters":%s,"activeUplink":"%s","stats":%s,"consoleCertificate":%s%s}' \
         "${board_id}" "${version}" "${modem_present}" "${modem_model:-}" "${modem_kind:-}" "${iccid:-}" \
-        "${host_key:-}" "${wired_usable}" "${tunnel_via:-none}" "${tunnel:-none}" "${wifi_uplink:-unchecked}" "${ssh_ca}" "$(system_facts)" "$(rak_power_facts)" "$(setup_ap_facts)" "$(speedtest_facts)" "$(router_facts)" "$(active_uplink)" \
+        "${host_key:-}" "${wired_usable}" "${tunnel_via:-none}" "${tunnel:-none}" "${wifi_uplink:-unchecked}" "${ssh_ca}" "$(system_facts)" "$(rak_power_facts)" "$(setup_ap_facts)" "$(speedtest_facts)" "$(router_facts)" "$(active_uplink)" "$(stats_facts)" \
         "$(console_cert_facts)" "$(console_csr_field)"
+}
+
+# CPU, memory, temperature, storage, buffer depth, signal and bytes per uplink
+# (pulzr-report-stats). Bounded, so a stuck modem or radio cannot hold the
+# report; {} when it says nothing usable, which Pulzar Cloud reads as no stats.
+stats_facts() {
+    local out
+    command -v pulzr-report-stats >/dev/null 2>&1 || { echo '{}'; return; }
+    out="$(timeout 30 pulzr-report-stats 2>/dev/null)"
+    if [ -n "${out}" ] && echo "${out}" | jsonfilter -e '@' >/dev/null 2>&1; then
+        echo "${out}"
+    else
+        echo '{}'
+    fi
 }
 
 # The console's certificate from the console CA (pulzr-console-cert): its

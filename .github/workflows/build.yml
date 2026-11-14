@@ -140,6 +140,7 @@ jobs:
       - name: Claim, SSH setup and cellular watchdog logic
         run: |
           ./scripts/test-claim.sh
+          ./scripts/test-report-stats.sh
           ./scripts/test-ssh-setup.sh
           ./scripts/test-cellular-watchdog.sh
           ./scripts/test-firmware-stash.sh

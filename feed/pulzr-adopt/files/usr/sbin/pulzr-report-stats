@@ -1,0 +1,184 @@
+#!/bin/sh
+#
+# The `stats` section of the report, as one JSON object on stdout.
+#
+#   pulzr-report-stats
+#
+# Run by `pulzr-claim report`, under a timeout, once per report. Every field
+# is optional: a board that cannot read one leaves it out, and Pulzar Cloud
+# keeps no series for it. Nothing here may block the report, so every command
+# that is not a plain read of /proc or /sys runs under `timeout`.
+#
+# ── WHY NOTHING NEW IS FETCHED ─────────────────────────────────────────────
+#
+# The report is six-hourly and leaves on whichever uplink is up, SIM included.
+# This adds a few hundred bytes to a request that is sent anyway and starts no
+# poller: CPU is the change in /proc/stat since the previous report (kept in
+# /tmp, so a reboot starts over and the first report has none), and signal is
+# read once from state the modem and radio already hold. The cellular figure
+# is only the extended signal API's dBm, present once somebody has run
+# `mmcli --signal-setup`; the percentage ModemManager always has is not dBm
+# and is not made into it.
+#
+# A report fired by an uplink change a minute after the last one would average
+# CPU over seconds, so a sample younger than a minute is not taken and the
+# earlier one stays.
+
+PROC="${PULZR_STATS_PROC:-/proc}"
+SYS="${PULZR_STATS_SYS:-/sys}"
+STATE="${PULZR_STATS_STATE:-/tmp/pulzr-report-stats.cpu}"
+BUFFER_PORT="${PULZR_LORA_BUFFER_PORT:-18831}"
+
+out=""
+add() { out="${out}${out:+,}$1"; }
+
+num() { case "$1" in ''|*[!0-9]*) return 1 ;; esac; }
+
+# ── CPU ─────────────────────────────────────────────────────────────────────
+cpu() {
+    local up up_prev t_prev idle_prev name u n s i io irq sirq st total idle dt di tenths
+    read -r up _ < "${PROC}/uptime" 2>/dev/null || return
+    up="${up%%.*}"
+    read -r name u n s i io irq sirq st _ < "${PROC}/stat" 2>/dev/null || return
+    [ "${name}" = cpu ] || return
+    total=$(( ${u:-0} + ${n:-0} + ${s:-0} + ${i:-0} + ${io:-0} + ${irq:-0} + ${sirq:-0} + ${st:-0} ))
+    idle=$(( ${i:-0} + ${io:-0} ))
+    if read -r up_prev t_prev idle_prev < "${STATE}" 2>/dev/null \
+        && num "${up_prev}" && num "${t_prev}" && num "${idle_prev}" \
+        && [ "${up}" -ge "${up_prev}" ]; then
+        # Younger than a minute: keep the earlier sample and say nothing.
+        [ $(( up - up_prev )) -ge 60 ] || return
+        dt=$(( total - t_prev )); di=$(( idle - idle_prev ))
+        echo "${up} ${total} ${idle}" > "${STATE}" 2>/dev/null
+        [ "${dt}" -gt 0 ] && [ "${di}" -ge 0 ] && [ "${di}" -le "${dt}" ] || return
+        tenths=$(( (dt - di) * 1000 / dt ))
+        add "\"cpuPercent\":$(( tenths / 10 )).$(( tenths % 10 ))"
+        return
+    fi
+    # No sample, an unreadable one, or the counters restarted (a reboot).
+    echo "${up} ${total} ${idle}" > "${STATE}" 2>/dev/null
+}
+
+# ── memory, temperature, storage ────────────────────────────────────────────
+memory() {
+    local pct
+    pct="$(awk '
+        $1 == "MemTotal:" { t = $2 } $1 == "MemAvailable:" { a = $2; have = 1 }
+        $1 == "MemFree:" { f = $2 } $1 == "Buffers:" { b = $2 } $1 == "Cached:" { c = $2 }
+        END { if (!have) a = f + b + c
+              if (t > 0 && a >= 0 && a <= t) printf "%.1f", (t - a) * 100 / t }
+    ' "${PROC}/meminfo" 2>/dev/null)"
+    [ -n "${pct}" ] && add "\"memoryUsedPercent\":${pct}"
+}
+
+temperature() {
+    local zone raw
+    for zone in "${SYS}"/class/thermal/thermal_zone*/temp; do
+        [ -r "${zone}" ] || continue
+        read -r raw < "${zone}" 2>/dev/null || continue
+        case "${raw}" in ''|*[!0-9-]*|-) continue ;; esac
+        # Millidegrees, which is what the kernel's thermal ABI says.
+        add "\"temperatureC\":$(awk -v t="${raw}" 'BEGIN { printf "%.1f", t / 1000 }')"
+        return
+    done
+}
+
+storage() {
+    local pct path
+    for path in /overlay /; do
+        pct="$(timeout 5 df -P "${path}" 2>/dev/null | awk 'NR == 2 { gsub(/%/, "", $5); print $5 }')"
+        num "${pct}" && [ "${pct}" -le 100 ] && { add "\"storageUsedPercent\":${pct}"; return; }
+    done
+}
+
+# ── the LoRa uplink buffer ──────────────────────────────────────────────────
+# Messages stored in the local broker, from its own $SYS tree over loopback:
+# no traffic leaves the gateway. Only while the buffer runs.
+buffer() {
+    local running count
+    command -v pulzr-lora-buffer >/dev/null 2>&1 || return
+    command -v mosquitto_sub >/dev/null 2>&1 || return
+    running="$(timeout 5 pulzr-lora-buffer status 2>/dev/null | jsonfilter -e '@.running' 2>/dev/null)"
+    [ "${running}" = true ] || return
+    count="$(timeout 4 mosquitto_sub -h 127.0.0.1 -p "${BUFFER_PORT}" -C 1 -W 2 \
+        -t '$SYS/broker/store/messages/count' -t '$SYS/broker/messages/stored' 2>/dev/null | head -n1)"
+    num "${count}" && add "\"bufferDepth\":${count}"
+}
+
+# ── signal ──────────────────────────────────────────────────────────────────
+# The station interface of the saved WiFi uplink, as the console finds it.
+wifi_signal() {
+    local ifname dbm
+    command -v iwinfo >/dev/null 2>&1 || return
+    [ -n "$(uci -q get wireless.parkeze_sta.ssid 2>/dev/null)" ] || return
+    ifname="$(timeout 3 ubus call network.wireless status 2>/dev/null \
+        | jsonfilter -e '@[*].interfaces[@.section="parkeze_sta"].ifname' 2>/dev/null | head -n1)"
+    [ -n "${ifname}" ] || return
+    dbm="$(timeout 3 iwinfo "${ifname}" info 2>/dev/null | sed -n 's/.*Signal: *\(-[0-9]\{1,3\}\) dBm.*/\1/p' | head -n1)"
+    [ -n "${dbm}" ] && printf '%s' "${dbm}"
+}
+
+cellular_signal() {
+    local det kind index raw dbm key
+    command -v mmcli >/dev/null 2>&1 || return
+    command -v pulzr-modem-detect >/dev/null 2>&1 || return
+    det="$(timeout 5 pulzr-modem-detect --status 2>/dev/null)" || return
+    kind="$(printf '%s' "${det}" | jsonfilter -e '@.kind' 2>/dev/null)"
+    case "${kind}" in qmi|mbim|at) ;; *) return ;; esac
+    index="$(printf '%s' "${det}" | jsonfilter -e '@.index' 2>/dev/null)"
+    num "${index}" || return
+    raw="$(timeout 5 mmcli -m "${index}" --output-keyvalue 2>/dev/null)" || return
+    for key in rssi rsrp; do
+        dbm="$(printf '%s\n' "${raw}" | sed -n "s/^modem\.signal\.lte\.${key} *: *\(-[0-9]\{1,3\}\).*/\1/p" | head -n1)"
+        [ -n "${dbm}" ] && { printf '%s' "${dbm}"; return; }
+    done
+}
+
+signal() {
+    local w c parts=""
+    w="$(wifi_signal)"; c="$(cellular_signal)"
+    [ -n "${w}" ] && parts="\"wifi\":${w}"
+    [ -n "${c}" ] && parts="${parts}${parts:+,}\"cellular\":${c}"
+    [ -n "${parts}" ] && add "\"signalDbm\":{${parts}}"
+}
+
+# ── bytes per uplink ────────────────────────────────────────────────────────
+# Which device is which kind is pulzr-uplinks' answer. A kind with several
+# (two wired uplinks, a modem and a phone) is their sum; a counter that goes
+# backwards when one of them bounces is the platform's to read as a reset.
+traffic() {
+    local status i kind dev rx tx parts=""
+    local wired_rx=0 wired_tx=0 wired_n=0 wifi_rx=0 wifi_tx=0 wifi_n=0 cell_rx=0 cell_tx=0 cell_n=0
+    command -v pulzr-uplinks >/dev/null 2>&1 || return
+    status="$(timeout 10 pulzr-uplinks status 2>/dev/null)" || return
+    i=0
+    while [ "${i}" -lt 8 ]; do
+        kind="$(printf '%s' "${status}" | jsonfilter -e "@.uplinks[${i}].kind" 2>/dev/null)"
+        [ -n "${kind}" ] || break
+        dev="$(printf '%s' "${status}" | jsonfilter -e "@.uplinks[${i}].device" 2>/dev/null)"
+        i=$(( i + 1 ))
+        case "${dev}" in ''|*[!A-Za-z0-9._-]*) continue ;; esac
+        read -r rx < "${SYS}/class/net/${dev}/statistics/rx_bytes" 2>/dev/null || continue
+        read -r tx < "${SYS}/class/net/${dev}/statistics/tx_bytes" 2>/dev/null || continue
+        num "${rx}" && num "${tx}" || continue
+        case "${kind}" in
+            ethernet) wired_rx=$(( wired_rx + rx )); wired_tx=$(( wired_tx + tx )); wired_n=$(( wired_n + 1 )) ;;
+            wifi) wifi_rx=$(( wifi_rx + rx )); wifi_tx=$(( wifi_tx + tx )); wifi_n=$(( wifi_n + 1 )) ;;
+            cellular|usb-cellular) cell_rx=$(( cell_rx + rx )); cell_tx=$(( cell_tx + tx )); cell_n=$(( cell_n + 1 )) ;;
+        esac
+    done
+    [ "${wired_n}" -gt 0 ] && parts="\"wired\":{\"rxBytes\":${wired_rx},\"txBytes\":${wired_tx}}"
+    [ "${wifi_n}" -gt 0 ] && parts="${parts}${parts:+,}\"wifi\":{\"rxBytes\":${wifi_rx},\"txBytes\":${wifi_tx}}"
+    [ "${cell_n}" -gt 0 ] && parts="${parts}${parts:+,}\"cellular\":{\"rxBytes\":${cell_rx},\"txBytes\":${cell_tx}}"
+    [ -n "${parts}" ] && add "\"traffic\":{${parts}}"
+}
+
+cpu
+memory
+temperature
+storage
+buffer
+signal
+traffic
+
+printf '{%s}\n' "${out}"
