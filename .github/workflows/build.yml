@@ -638,3 +638,6 @@ jobs:
         with:
           files: release/*
           generate_release_notes: true
+          # v0.4.0-rc1 and the like are pre-releases: net-api installs one by
+          # its tag but never offers it as the latest to a gateway.
+          prerelease: ${{ contains(github.ref_name, '-') }}
