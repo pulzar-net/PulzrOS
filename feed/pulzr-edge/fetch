@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+#
+# Put the pulzr-edge binary for one architecture into a package root.
+#
+#   fetch <package-arch> <dest-root> <cache-dir>
+#
+# The binaries are pulzr-edge's own release assets: static musl, built and
+# tested under qemu by its release workflow. Every download is pinned by
+# sha256, from the release's SHA256SUMS. Bump the version here and nowhere
+# else.
+
+set -euo pipefail
+
+ARCH="${1:?arch}" DEST="${2:?dest}" CACHE="${3:?cache}"
+VERSION=0.1.0
+RELEASE="https://github.com/pulzar-net/pulzr-edge/releases/download/v${VERSION}"
+mkdir -p "${CACHE}" "${DEST}/usr/sbin"
+
+sha256() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1
+  else shasum -a 256 "$1" | cut -d' ' -f1; fi
+}
+
+case "${ARCH}" in
+  aarch64_*)   asset=pulzr-edge-aarch64-linux-musl want=04869c1008628b1ceb0a5d02a296435edb41f47ea39bd58e67dbb3c9bcf39c93 ;;
+  mipsel_24kc) asset=pulzr-edge-mipsel-linux-musl  want=941fcb4f1e4de44ffcd068d9f825605fc86ff1892037e243a863fb7dc238d386 ;;
+  *) echo "no pulzr-edge binary for ${ARCH}" >&2; exit 1 ;;
+esac
+
+out="${CACHE}/${asset}-${VERSION}"
+if ! { [ -f "${out}" ] && [ "$(sha256 "${out}")" = "${want}" ]; }; then
+  curl -fsSL --retry 3 -o "${out}.part" "${RELEASE}/${asset}"
+  [ "$(sha256 "${out}.part")" = "${want}" ] || { echo "checksum mismatch: ${RELEASE}/${asset}" >&2; exit 1; }
+  mv "${out}.part" "${out}"
+fi
+install -m 0755 "${out}" "${DEST}/usr/sbin/pulzr-edge"

@@ -119,7 +119,8 @@ Packages: `pulzr-base` (identity, network defaults), `pulzr-console` (ucode API
 and the built SPA), `pulzr-concentrator`, `pulzr-cellular`, `pulzr-wireguard`,
 `pulzr-adopt`, `pulzr-io`, `pulzr-ap`, `pulzr-tui`, `pulzr-display`,
 `pulzr-usb-gadget`, `pulzr-lan`, `pulzr-dns`, `pulzr-uplinks`, `pulzr-speedtest`,
-`pulzr-storage`, `pulzr-ble`, `pulzr-mqtt`, `pulzr-rak-power`.
+`pulzr-storage`, `pulzr-ble`, `pulzr-mqtt`, `pulzr-rak-power`, and `pulzr-edge`
+(the Modbus daemon, from its own repository's releases; in no image yet).
 
 ## Development
 

@@ -1,0 +1,4 @@
+# The daemon's configuration and its broker certificate are the gateway's own,
+# written to it after adoption; an upgrade that dropped them would leave its
+# buses silent until they were written again.
+/etc/pulzr-edge/

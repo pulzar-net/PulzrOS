@@ -1,0 +1,9 @@
+Package: pulzr-edge
+Maintainer: Joseph Telaak <joseph@pulzr.net>
+License: Apache-2.0
+Architecture: @ARCH@
+Description: Pulzar edge daemon: Modbus RTU and TCP devices behind the gateway.
+ Speaks the Pulzar protocol for the devices on the gateway's own buses over
+ one MQTT session. Static binaries from github.com/pulzar-net/pulzr-edge
+ releases, fetched and checksum-verified at build time; see
+ feed/pulzr-edge/fetch.
