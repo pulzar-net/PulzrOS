@@ -1,0 +1,21 @@
+#!/bin/sh
+#
+# The TUI as a port's own program: a Pi's HDMI console, the USB gadget's serial
+# port. Behind the web console's sign-in, because the port is physical access
+# and on a gateway in a car park that proves nothing (docs/auth.md).
+#
+#   pulzr-tui-console <tty> [TERM]
+#
+# procd's inittab already hands a respawn entry its tty as stdin and stdout;
+# a procd service instance gets /dev/null, so the tty is attached here either
+# way. stderr stays where procd put it, which is the log.
+
+tty="$1"
+[ -c "${tty}" ] || { echo "pulzr-tui-console: ${tty} is not a terminal" >&2; exit 1; }
+
+# The far end of a USB serial port is a terminal emulator on somebody's
+# laptop, which takes 256 colours; a VT is a VT.
+export TERM="${2:-${TERM:-xterm-256color}}"
+export HOME=/root
+
+exec /usr/sbin/pulzr-tui --console --tty "${tty}" <"${tty}" >"${tty}"

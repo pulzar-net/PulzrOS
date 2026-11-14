@@ -1,6 +1,6 @@
 // A stand-in for ucode's uci module that keeps the config in one JSON file
-// ($UCI_JSON), for scripts/test-router.sh. Only what parkeze-dns and
-// parkeze-uplinks call: get, get_all, set, delete, foreach, commit.
+// ($UCI_JSON), for scripts/test-router.sh. Only what pulzr-dns and
+// pulzr-uplinks call: get, get_all, set, delete, foreach, commit.
 let fs = require('fs');
 let path = getenv('UCI_JSON');
 

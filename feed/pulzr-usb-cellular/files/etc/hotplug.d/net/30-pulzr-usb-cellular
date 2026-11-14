@@ -1,0 +1,6 @@
+#!/bin/sh
+#
+# A dongle plugged in, or one that usb-modeswitch has just switched out of
+# its CD-ROM mode, appears here as a new network device.
+[ "${ACTION}" = "add" ] || exit 0
+( /usr/sbin/pulzr-usb-cellular scan >/dev/null 2>&1 ) &

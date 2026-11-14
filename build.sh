@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Build a ParkezeOS image for one board.
+# Build a PulzarOS image for one board.
 #
 #   ./build.sh rpi4                 # one board
 #   ./build.sh rpi3 rpi4            # several
@@ -12,7 +12,7 @@
 #   ./build.sh --stage feed         # just the packages
 #   ./build.sh --stage image rpi4   # just the image, using what is on disk
 #
-#   PARKEZE_DEV=1 ./build.sh rpi4   # a development image, for the bench
+#   PULZR_DEV=1 ./build.sh rpi4   # a development image, for the bench
 #
 # The stages exist so CI can build the console and the packages once and share
 # them across every board. Running without --stage does all three, which is
@@ -40,24 +40,24 @@ BUILD_DIR="${ROOT_DIR}/.build"
 OUT_DIR="${ROOT_DIR}/out"
 
 # Version stamped into the image so a running gateway can say what it is.
-PARKEZE_VERSION="$(cat "${ROOT_DIR}/VERSION" 2>/dev/null || echo 0.0.0-dev)"
+PULZR_VERSION="$(cat "${ROOT_DIR}/VERSION" 2>/dev/null || echo 0.0.0-dev)"
 
 # A development image: what a production image locks away from whoever is
 # standing at the gateway, left open for whoever is building it. The serial
 # console's root shell, failsafe mode, the TUI's `!` for any signed-in
 # session, site keys from the card, and every key in boards/common/ssh/dev/.
-# Its version says -dev everywhere it is shown, parkeze.net included, and CI
+# Its version says -dev everywhere it is shown, Pulzar Cloud included, and CI
 # refuses to build one, so a release can never be one. render_board_files
 # records it in board.conf, which is what the gateway reads.
-if [ "${PARKEZE_DEV:-0}" = 1 ]; then
+if [ "${PULZR_DEV:-0}" = 1 ]; then
   if [ "${GITHUB_ACTIONS:-}" = true ]; then
-    echo "PARKEZE_DEV=1 is a bench build; CI builds releases, and a release is never one." >&2
+    echo "PULZR_DEV=1 is a bench build; CI builds releases, and a release is never one." >&2
     exit 1
   fi
-  PARKEZE_VERSION="${PARKEZE_VERSION}-dev"
+  PULZR_VERSION="${PULZR_VERSION}-dev"
 fi
-PARKEZE_BUILD="$(date -u +%Y%m%d%H%M)"
-PARKEZE_COMMIT="$(git -C "${ROOT_DIR}" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+PULZR_BUILD="$(date -u +%Y%m%d%H%M)"
+PULZR_COMMIT="$(git -C "${ROOT_DIR}" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 
 log()  { printf '\033[36m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[33m warn\033[0m %s\n' "$*" >&2; }
@@ -178,7 +178,7 @@ verify_download() {
 
 # The tag for the assembly container. Bumped only when assembly_dockerfile
 # changes; docker's own layer cache handles everything finer-grained.
-DOCKER_IMAGE="parkeze-os-build:1"
+DOCKER_IMAGE="pulzr-os-build:1"
 
 # The image-assembly container, only needed on macOS. OpenWrt's ImageBuilder is
 # a tree of prebuilt x86_64 ELF binaries with no macOS build, so the parts that
@@ -241,7 +241,7 @@ with_timeout() {
 # True when we are already the containerised half of a re-exec, so the
 # container does not try to start another container.
 in_container() {
-  [ "${PARKEZE_IN_CONTAINER:-0}" = "1" ]
+  [ "${PULZR_IN_CONTAINER:-0}" = "1" ]
 }
 
 reexec_for_assembly() {
@@ -305,7 +305,7 @@ EOF
       warn "  Expect several minutes per board on the first run." ;;
   esac
 
-  # PARKEZE_IN_CONTAINER stops the container re-entering this branch, and
+  # PULZR_IN_CONTAINER stops the container re-entering this branch, and
   # --assemble-only skips the host-side steps that have already happened.
   #
   # Bind-mounting the repo means the .build cache and the out/ directory are
@@ -316,9 +316,9 @@ EOF
     --platform linux/amd64 \
     -v "${ROOT_DIR}:/src" \
     -w /src \
-    -e PARKEZE_IN_CONTAINER=1 \
-    -e PARKEZE_RECOVERY_PUBKEY \
-    -e PARKEZE_DEV \
+    -e PULZR_IN_CONTAINER=1 \
+    -e PULZR_RECOVERY_PUBKEY \
+    -e PULZR_DEV \
     "${DOCKER_IMAGE}" \
     ./build.sh --stage image "${boards[@]}" \
     || die "assembly failed inside the container"
@@ -329,13 +329,13 @@ EOF
 
 # ── The console ─────────────────────────────────────────────────────────────
 
-CONSOLE_PAYLOAD="${ROOT_DIR}/feed/parkeze-console/files/www/parkeze"
+CONSOLE_PAYLOAD="${ROOT_DIR}/feed/pulzr-console/files/www/pulzr"
 
 build_console() {
   # The console is a React app built to static files. There is no Node on a
   # gateway — uhttpd serves the output and everything dynamic goes through the
   # ucode API — so this runs here, on the build host, and the result becomes
-  # the parkeze-console package's payload.
+  # the pulzr-console package's payload.
   #
   # The payload directory is generated and gitignored. Building into the
   # package tree rather than into console/dist and copying afterwards means
@@ -362,7 +362,7 @@ build_console() {
     ( cd "${src}" && npm install --silent --no-audit --no-fund )
   fi
 
-  ( cd "${src}" && PARKEZE_CONSOLE_OUT="${CONSOLE_PAYLOAD}" npm run build )
+  ( cd "${src}" && PULZR_CONSOLE_OUT="${CONSOLE_PAYLOAD}" npm run build )
 
   [ -f "${CONSOLE_PAYLOAD}/index.html" ] \
     || die "the console build produced no index.html"
@@ -399,8 +399,8 @@ install_fleet_key() {
   # adopted by trusting an unsigned blob, which we will not do. So the build
   # warns loudly rather than failing: a lab image with no key is a legitimate
   # thing to want, and a production one without it is not.
-  local dest="${ROOT_DIR}/boards/common/files/etc/parkeze"
-  local key="${PARKEZE_RECOVERY_PUBKEY:-${ROOT_DIR}/recovery_ed25519.pub}"
+  local dest="${ROOT_DIR}/boards/common/files/etc/pulzr"
+  local key="${PULZR_RECOVERY_PUBKEY:-${ROOT_DIR}/recovery_ed25519.pub}"
 
   # `--stage image` runs in a fresh CI job: the overlay arrived as an artifact
   # from the feed stage, which already put the anchor in it, and the secret is
@@ -418,8 +418,8 @@ install_fleet_key() {
     warn "No fleet recovery public key found at ${key}."
     warn "  Images from this build CANNOT be adopted offline, and gateways"
     warn "  adopted from them have no recovery anchor until they are online."
-    warn "  Generate one with parkeze.net/tools/generate-recovery-key.sh and"
-    warn "  point PARKEZE_RECOVERY_PUBKEY at the .pub half."
+    warn "  Generate an Ed25519 pair, keep the private half in your platform,"
+    warn "  and point PULZR_RECOVERY_PUBKEY at the .pub half."
     return 0
   fi
 
@@ -440,10 +440,10 @@ install_fleet_key() {
 install_firmware_key() {
   # The firmware signing *public* key, baked into the image.
   #
-  # What makes a gateway able to answer "did Parkeze build this image" before
+  # What makes a gateway able to answer "did Pulzar build this image" before
   # it writes one over itself. The private half lives in Actions secrets and
   # signs a manifest beside each released image — tools/sign-firmware.sh —
-  # and parkeze-firmware verifies it on the device.
+  # and pulzr-firmware verifies it on the device.
   #
   # A separate key from the recovery anchor above, on purpose: that one's
   # whole value is that its private half never leaves recovery-service, and
@@ -454,8 +454,8 @@ install_firmware_key() {
   # reason: a lab image built without it is a legitimate thing to want. What
   # it cannot do is silently produce images that *look* verifiable — a
   # gateway with no key refuses to verify rather than waving images through.
-  local dest="${ROOT_DIR}/boards/common/files/etc/parkeze"
-  local key="${PARKEZE_FIRMWARE_PUBKEY:-${ROOT_DIR}/firmware_ed25519.pub}"
+  local dest="${ROOT_DIR}/boards/common/files/etc/pulzr"
+  local key="${PULZR_FIRMWARE_PUBKEY:-${ROOT_DIR}/firmware_ed25519.pub}"
 
   # Same reconstruction rule as the recovery anchor: `--stage image` runs in a
   # fresh job whose overlay arrived as an artifact that already has this.
@@ -471,7 +471,7 @@ install_firmware_key() {
     warn "  Gateways from this build CANNOT check whether an image is ours,"
     warn "  and will refuse to verify rather than trust one."
     warn "  Generate one with tools/generate-firmware-key.sh and point"
-    warn "  PARKEZE_FIRMWARE_PUBKEY at the .pub half."
+    warn "  PULZR_FIRMWARE_PUBKEY at the .pub half."
     return 0
   fi
 
@@ -495,16 +495,15 @@ install_ops_keys() {
   #
   # These are PUBLIC keys. There is nothing sensitive in the image.
   #
-  # The private half belongs to PARKEZE.NET, not to a person — generated by
-  # tools/generate-fleet-ssh-key.sh in that repo and mounted read-only into
-  # gateway-link. So access follows whoever operates the platform rather
+  # The private half belongs to the platform operator, not to a person, and
+  # is held by the cloud. So access follows whoever operates the platform rather
   # than whoever happened to build the firmware, and no laptop key ever ships
   # in a firmware image.
   #
   # ── THE TRADE, STATED PLAINLY ──────────────────────────────────────────────
   #
   # This is a fleet-wide credential, which is the same shape of risk as the
-  # parkeze/parkeze default the previous ParkezeOS shipped: whoever holds a
+  # pulzr/pulzr default the previous PulzarOS shipped: whoever holds a
   # private half is root on every gateway built with its public half.
   #
   # It is a much better version of that trade, not an escape from it. A private
@@ -517,30 +516,30 @@ install_ops_keys() {
   #   - rotating is cheap and deliberate so: new pair, rebuild, push the new
   #     authorized_keys over the management tunnel with the old key. Unlike the fleet
   #     recovery key this needs no re-adoption
-  #   - PARKEZE_OPS_KEYS=0 omits the file entirely for a build that should
+  #   - PULZR_OPS_KEYS=0 omits the file entirely for a build that should
   #     have no fleet access at all
   #   - it is not a substitute for the per-unit password, which is what an
   #     installer in the field uses; both exist because they answer to
   #     different people
-  local keydir="${PARKEZE_OPS_KEYS_DIR:-${ROOT_DIR}/boards/common/ssh/fleet}"
+  local keydir="${PULZR_OPS_KEYS_DIR:-${ROOT_DIR}/boards/common/ssh/fleet}"
   # NOT /etc/dropbear/authorized_keys. A file shipped under /etc is a package
   # conffile, and sysupgrade keeps conffiles — so the key a gateway was
   # flashed with survived every upgrade that carried a new one, and rotating
   # the fleet key silently did nothing to the fleet. This lands on /usr, which
-  # sysupgrade replaces whole, and parkeze-fleet-keys composes the real
+  # sysupgrade replaces whole, and pulzr-fleet-keys composes the real
   # authorized_keys from it at boot.
-  local sharedir="${ROOT_DIR}/boards/common/files/usr/share/parkeze"
+  local sharedir="${ROOT_DIR}/boards/common/files/usr/share/pulzr"
   local fleet="${sharedir}/fleet-keys"
 
   rm -f "${fleet}"
 
-  if [ "${PARKEZE_OPS_KEYS:-1}" != "1" ]; then
-    log "Fleet SSH key omitted (PARKEZE_OPS_KEYS=0)"
+  if [ "${PULZR_OPS_KEYS:-1}" != "1" ]; then
+    log "Fleet SSH key omitted (PULZR_OPS_KEYS=0)"
     return 0
   fi
 
   local found=0 ca_blob=""
-  ca_blob="$(awk '{ print $2; exit }' "${PARKEZE_SSH_CA_PUBKEY:-${ROOT_DIR}/boards/common/ssh/parkeze_user_ca.pub}" 2>/dev/null || true)"
+  ca_blob="$(awk '{ print $2; exit }' "${PULZR_SSH_CA_PUBKEY:-${ROOT_DIR}/boards/common/ssh/pulzr_user_ca.pub}" 2>/dev/null || true)"
   mkdir -p "${sharedir}"
   for pub in "${keydir}"/*.pub; do
     [ -f "${pub}" ] || continue
@@ -553,7 +552,7 @@ install_ops_keys() {
     fi
     # The SSH CA is not a login key. In authorized_keys its private half would
     # open every gateway directly, which is the one thing certificates exist
-    # to stop; parkeze.net's generator once said to copy it here.
+    # to stop; Pulzar Cloud's generator once said to copy it here.
     if [ -n "${ca_blob}" ] && awk '{ print $2 }' "${pub}" | grep -qxF "${ca_blob}"; then
       die "${pub} is the SSH CA, not a login key. It belongs in ${ROOT_DIR}/boards/common/ssh/."
     fi
@@ -564,10 +563,9 @@ install_ops_keys() {
   if [ "${found}" -eq 0 ]; then
     rm -f "${fleet}"
     warn "No fleet SSH key in ${keydir}."
-    warn "  Root on gateways from this build takes a parkeze.net certificate:"
-    warn "  root has no password. Generate the pair with"
-    warn "  parkeze.net/tools/generate-fleet-ssh-key.sh and put the .pub in"
-    warn "  ${keydir} to have them accept it straight from a flash."
+    warn "  Root on gateways from this build takes a certificate from your"
+    warn "  platform's SSH CA: root has no password. Put the operator's"
+    warn "  fleet .pub in ${keydir} to have them accept it straight from a flash."
     return 0
   fi
 
@@ -578,11 +576,11 @@ install_ops_keys() {
 install_dev_keys() {
   # A development image's own keys: every boards/common/ssh/dev/*.pub, for the
   # people at the bench. Added to the fleet keys, so root's authorized_keys
-  # takes them as it takes Parkeze's. Ignored in .gitignore, because they are people's,
+  # takes them as it takes Pulzar's. Ignored in .gitignore, because they are people's,
   # and never read for a production image.
-  [ "${PARKEZE_DEV:-0}" = 1 ] || return 0
-  local fleet="${ROOT_DIR}/boards/common/files/usr/share/parkeze/fleet-keys" found=0 pub ca_blob
-  ca_blob="$(awk '{ print $2; exit }' "${PARKEZE_SSH_CA_PUBKEY:-${ROOT_DIR}/boards/common/ssh/parkeze_user_ca.pub}" 2>/dev/null || true)"
+  [ "${PULZR_DEV:-0}" = 1 ] || return 0
+  local fleet="${ROOT_DIR}/boards/common/files/usr/share/pulzr/fleet-keys" found=0 pub ca_blob
+  ca_blob="$(awk '{ print $2; exit }' "${PULZR_SSH_CA_PUBKEY:-${ROOT_DIR}/boards/common/ssh/pulzr_user_ca.pub}" 2>/dev/null || true)"
   for pub in "${ROOT_DIR}/boards/common/ssh/dev"/*.pub; do
     [ -f "${pub}" ] || continue
     grep -qE '^(ssh-(rsa|ed25519)|ecdsa-sha2-)' "${pub}" || { warn "${pub} holds no public key; skipped"; continue; }
@@ -601,9 +599,9 @@ install_dev_keys() {
 install_ssh_ca() {
   # The SSH certificate authority's *public* line, baked into the image.
   #
-  # parkeze.net reaches a gateway's shell with a certificate it signs for that
+  # Pulzar Cloud reaches a gateway's shell with a certificate it signs for that
   # one gateway, for five minutes; a gateway accepts it because it trusts this
-  # line (parkeze-ssh-setup). Public, and committed beside the fleet key for
+  # line (pulzr-ssh-setup). Public, and committed beside the fleet key for
   # the same reason the fleet key is: which key opens a gateway is part of
   # what an image is. Its private half is recovery-service's.
   #
@@ -612,15 +610,15 @@ install_ssh_ca() {
   #
   # Warns rather than failing: an image without it is reached with the fleet
   # key, as every image before it was.
-  local key="${PARKEZE_SSH_CA_PUBKEY:-${ROOT_DIR}/boards/common/ssh/parkeze_user_ca.pub}"
-  local dest="${ROOT_DIR}/boards/common/files/usr/share/parkeze/ssh"
+  local key="${PULZR_SSH_CA_PUBKEY:-${ROOT_DIR}/boards/common/ssh/pulzr_user_ca.pub}"
+  local dest="${ROOT_DIR}/boards/common/files/usr/share/pulzr/ssh"
 
-  rm -f "${dest}/parkeze_user_ca.pub"
+  rm -f "${dest}/pulzr_user_ca.pub"
 
   if [ ! -f "${key}" ]; then
     warn "No SSH CA public key at ${key}."
     warn "  Gateways from this build accept no certificates, only the fleet key."
-    warn "  Copy parkeze.net's secrets/parkeze_ssh_ca.pub there."
+    warn "  Copy your platform's SSH CA public line there."
     return 0
   fi
 
@@ -632,8 +630,8 @@ install_ssh_ca() {
   fi
 
   mkdir -p "${dest}"
-  cp "${key}" "${dest}/parkeze_user_ca.pub"
-  chmod 0644 "${dest}/parkeze_user_ca.pub"
+  cp "${key}" "${dest}/pulzr_user_ca.pub"
+  chmod 0644 "${dest}/pulzr_user_ca.pub"
   log "SSH CA installed"
 }
 
@@ -694,14 +692,14 @@ build_feed() {
   # Anything that is not a bench build ships compiled ucode, which needs a
   # compiler at the gateway's exact ucode version. See scripts/harden-payload.sh.
   local ucode=""
-  if [ "${PARKEZE_DEV:-0}" != 1 ]; then
+  if [ "${PULZR_DEV:-0}" != 1 ]; then
     ucode="$("${ROOT_DIR}/scripts/host-ucode.sh")" \
       || die "no host ucode to compile the feed with (needs cmake and json-c)"
   fi
 
-  log "Staging Parkeze feed"
+  log "Staging Pulzar feed"
   UCODE="${ucode}" "${ROOT_DIR}/scripts/build-feed.sh" "${FEED_DIR}" "${stage}" \
-    "${PARKEZE_VERSION}" "${PARKEZE_BUILD}"
+    "${PULZR_VERSION}" "${PULZR_BUILD}"
 }
 
 # ── Per-board image ─────────────────────────────────────────────────────────
@@ -710,9 +708,9 @@ render_board_files() {
   # The `files/` tree ImageBuilder overlays onto the rootfs. Board values are
   # written as a single sourced config rather than substituted into a dozen
   # scripts, so that a running gateway can be inspected: `cat
-  # /etc/parkeze/board.conf` tells you exactly what the image was built with.
+  # /etc/pulzr/board.conf` tells you exactly what the image was built with.
   local files="$1"
-  mkdir -p "${files}/etc/parkeze"
+  mkdir -p "${files}/etc/pulzr"
 
   {
     echo "# Generated by build.sh — do not edit on the device."
@@ -720,17 +718,17 @@ render_board_files() {
     echo "# it is a record of what this image was built as."
     echo "BOARD_ID='${BOARD_ID}'"
     echo "BOARD_NAME='${BOARD_NAME}'"
-    echo "PARKEZE_VERSION='${PARKEZE_VERSION}'"
-    echo "PARKEZE_BUILD='${PARKEZE_BUILD}'"
-    echo "PARKEZE_COMMIT='${PARKEZE_COMMIT}'"
+    echo "PULZR_VERSION='${PULZR_VERSION}'"
+    echo "PULZR_BUILD='${PULZR_BUILD}'"
+    echo "PULZR_COMMIT='${PULZR_COMMIT}'"
     echo "OPENWRT_VERSION='${OPENWRT_VERSION}'"
-    for var in $(compgen -v | grep '^PARKEZE_' | sort); do
+    for var in $(compgen -v | grep '^PULZR_' | sort); do
       case "${var}" in
-        PARKEZE_VERSION|PARKEZE_BUILD|PARKEZE_COMMIT) continue ;;
+        PULZR_VERSION|PULZR_BUILD|PULZR_COMMIT) continue ;;
       esac
       printf "%s='%s'\n" "${var}" "${!var}"
     done
-  } > "${files}/etc/parkeze/board.conf"
+  } > "${files}/etc/pulzr/board.conf"
 
   # A board may ship literal files of its own; they win over anything shared.
   [ -d "${BOARDS_DIR}/common/files" ] && cp -a "${BOARDS_DIR}/common/files/." "${files}/"
@@ -750,7 +748,7 @@ build_board() {
     . "${conf}"
 
     : "${OPENWRT_PROFILE:?board.conf must set OPENWRT_PROFILE}"
-    parkeze_check_features || exit 1
+    pulzr_check_features || exit 1
 
     if [ "${BOARD_STATUS:-supported}" != "supported" ]; then
       cat >&2 <<EOF
@@ -794,7 +792,7 @@ EOF
     # Nothing in the build reports a problem; the only trace is ImageBuilder
     # echoing a "Packages:" line that stops mid-sentence.
     local packages
-    packages="$(parkeze_packages \
+    packages="$(pulzr_packages \
                 | sed 's/#.*//' \
                 | tr -s '[:space:]' ' ')"
     for pkg in ${PACKAGES_REMOVE}; do packages="${packages} -${pkg}"; done
@@ -810,7 +808,7 @@ EOF
       PROFILE="${OPENWRT_PROFILE}" \
       PACKAGES="${packages}" \
       FILES="${files}" \
-      EXTRA_IMAGE_NAME="parkeze-${PARKEZE_VERSION}" \
+      EXTRA_IMAGE_NAME="pulzr-${PULZR_VERSION}" \
       BIN_DIR="${OUT_DIR}/${BOARD_ID}" \
       -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
 
@@ -826,7 +824,7 @@ EOF
 # This exists because they once did not. Our hand-built opkg packages were ar
 # archives where opkg only reads gzipped tar; it recorded all eight as
 # installed and extracted nothing. The build succeeded, the image booted, and
-# it contained no part of ParkezeOS. apk is less forgiving of a bad package,
+# it contained no part of PulzarOS. apk is less forgiving of a bad package,
 # but the packing is still ours rather than OpenWrt's.
 #
 # Nothing in the build reported a problem, so the check is here: look in the
@@ -866,26 +864,26 @@ EOF
   # Then: did our own packages actually put files down? One file from a package
   # with no dependencies of its own, so a failure here means the packaging is
   # broken rather than a dependency being unavailable.
-  local witness="${root}/usr/sbin/parkeze-motd"
+  local witness="${root}/usr/sbin/pulzr-motd"
   if [ ! -f "${witness}" ]; then
     cat >&2 <<EOF
 error: the image built, but contains none of our files.
 
        ${witness} is missing from the assembled rootfs, which means the
-       parkeze-* packages installed their metadata and no payload.
+       pulzr-* packages installed their metadata and no payload.
 
        Compare what was staged with what was packed:
 
-         tar -tf .build/feed/parkeze-base_noarch.tar | grep parkeze-motd
+         tar -tf .build/feed/pulzr-base_noarch.tar | grep pulzr-motd
          $(imagebuilder_dir)/staging_dir/host/bin/apk adbdump \\
-           $(imagebuilder_dir)/packages/parkeze-base-*.apk
+           $(imagebuilder_dir)/packages/pulzr-base-*.apk
 EOF
     exit 1
   fi
 
   local count
-  count="$(find "${root}" -path '*parkeze*' -type f | wc -l | tr -d ' ')"
-  log "Payload check: ${count} Parkeze files in the rootfs"
+  count="$(find "${root}" -path '*pulzr*' -type f | wc -l | tr -d ' ')"
+  log "Payload check: ${count} Pulzar files in the rootfs"
 }
 
 # ── Entry point ─────────────────────────────────────────────────────────────
@@ -981,7 +979,7 @@ main() {
 
   for board in "${boards[@]}"; do build_board "${board}"; done
 
-  log "Done. ParkezeOS ${PARKEZE_VERSION} (${PARKEZE_COMMIT})"
+  log "Done. PulzarOS ${PULZR_VERSION} (${PULZR_COMMIT})"
 }
 
 main "$@"

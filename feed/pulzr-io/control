@@ -1,0 +1,11 @@
+Package: pulzr-io
+Provides: parkeze-io
+Replaces: parkeze-io
+Conflicts: parkeze-io
+Depends: pulzr-base, ucode, ucode-mod-uci, ucode-mod-fs
+Maintainer: Joseph Telaak <joseph@pulzr.net>
+Architecture: all
+Description: Front-panel LEDs and buttons.
+ Maps logical indicators — power, status, lora, cloud, cellular — onto whatever
+ LEDs a board actually has, and drives them from real system state. Handles the
+ reset button, including the held-down factory reset.

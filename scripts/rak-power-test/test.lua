@@ -1,4 +1,4 @@
--- parkeze-rak-power's tests. Run by scripts/test-rak-power.sh, which sets
+-- pulzr-rak-power's tests. Run by scripts/test-rak-power.sh, which sets
 -- package.path to the feed and, for the simulated bus, package.cpath to a
 -- lua-libmodbus built from the release OpenWrt ships.
 --
@@ -7,7 +7,7 @@
 --   sim    the same service through real libmodbus to a pymodbus power
 --          board on a pty pair (RAK_POWER_SIM=<simulator dir>)
 
-local power = require("parkeze.rak_power")
+local power = require("pulzr.rak_power")
 
 local passed, failed = 0, 0
 local function check(what, ok, detail)
@@ -187,7 +187,7 @@ local function unit()
   bus.t = bus.t + 101; svc:tick()
   eq("but asked again in half an hour, in case one is fitted", count(bus, 0x6E), 2)
 
-  -- ── telling parkeze.net ──────────────────────────────────────────────────
+  -- ── telling Pulzar Cloud ──────────────────────────────────────────────────
 
   bus = fake_bus()
   bus.slaves[0xC8] = watchdog
@@ -309,7 +309,7 @@ local function sim(dir)
   package.loaded["uloop"] = uloop
   local saved = { read_board = power.read_board, resolve = power.resolve, present = power.present,
                   exit = os.exit, popen = io.popen, arg = arg }
-  power.read_board = function() return { PARKEZE_RAK_POWER_USB = "1-1.4", PARKEZE_RAK_POWER_ID = "1a86:7523" } end
+  power.read_board = function() return { PULZR_RAK_POWER_USB = "1-1.4", PULZR_RAK_POWER_ID = "1a86:7523" } end
   power.resolve = function() return port end
   power.present = function() return true end
   local logged = {}
@@ -320,7 +320,7 @@ local function sim(dir)
     return saved.popen(cmd, mode)
   end
   os.exit = function(code) error({ exit = code }) end
-  arg = { [0] = "parkeze-rak-power", "run" }
+  arg = { [0] = "pulzr-rak-power", "run" }
   local main = assert(loadfile(os.getenv("RAK_POWER_MAIN")))
   local ok, err = pcall(main)
   power.read_board, power.resolve, power.present = saved.read_board, saved.resolve, saved.present

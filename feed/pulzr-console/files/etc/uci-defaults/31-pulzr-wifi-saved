@@ -1,0 +1,51 @@
+#!/bin/sh
+#
+# Remember the WiFi network a gateway had already joined before networks
+# were remembered at all, so it is in the saved list after the upgrade rather
+# than missing until somebody rejoins it. Also folds in the pinned
+# certificate the first enterprise-WiFi build kept in pulzr.wifi.
+#
+# Idempotent: uci-defaults run again after every sysupgrade.
+
+# See 30-pulzr-console: at image assembly this would run on the build host.
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+
+# Compat: the wireless section ids parkeze_sta and parkeze_ap are kept from ParkezeOS; a gateway
+# upgraded or rolled back keeps its saved WiFi only if both images agree on them.
+ssid="$(uci -q get wireless.parkeze_sta.ssid)"
+if [ -n "${ssid}" ]; then
+    known=0
+    for s in $(uci -q show pulzr | sed -n 's/^pulzr\.\([^.=]*\)=wifi_network$/\1/p'); do
+        [ "$(uci -q get "pulzr.${s}.ssid")" = "${ssid}" ] && known=1
+    done
+    if [ "${known}" = 0 ]; then
+        name="$(uci add pulzr wifi_network)"
+        uci set "pulzr.${name}.ssid=${ssid}"
+        case "$(uci -q get wireless.parkeze_sta.encryption)" in
+            wpa*)
+                uci set "pulzr.${name}.security=eap"
+                for opt in eap_type auth identity anonymous_identity password; do
+                    v="$(uci -q get "wireless.parkeze_sta.${opt}")"
+                    [ -n "${v}" ] && uci set "pulzr.${name}.${opt}=${v}"
+                done
+                ca="$(uci -q get wireless.parkeze_sta.ca_cert)"
+                hash="${ca#hash://server/sha256/}"
+                [ "${hash}" != "${ca}" ] && uci set "pulzr.${name}.cert_hash=${hash}"
+                subject="$(uci -q get pulzr.wifi.cert_subject)"
+                [ -n "${subject}" ] && uci set "pulzr.${name}.cert_subject=${subject}"
+                ;;
+            none|'')
+                uci set "pulzr.${name}.security=open"
+                ;;
+            *)
+                uci set "pulzr.${name}.security=psk"
+                key="$(uci -q get wireless.parkeze_sta.key)"
+                [ -n "${key}" ] && uci set "pulzr.${name}.key=${key}"
+                ;;
+        esac
+        uci set "pulzr.${name}.last_joined=$(date +%s)"
+    fi
+fi
+uci -q delete pulzr.wifi
+uci commit pulzr
+exit 0

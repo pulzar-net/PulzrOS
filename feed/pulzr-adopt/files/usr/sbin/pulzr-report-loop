@@ -1,0 +1,79 @@
+#!/bin/sh
+#
+# The loop behind /etc/init.d/pulzr-report. Split out for the same reason
+# pulzr-claim-loop is: the interval is the interesting part and it should be
+# readable without reading procd.
+
+log() { logger -t report -p daemon.info "$*"; }
+
+# Once on start, then every six hours.
+#
+# Six rather than six minutes because none of this changes often. A gateway's
+# model never changes, its console port never changes, and its backhaul changes
+# when somebody runs a cable — which is a site visit, not a thing that happens
+# between polls. The report exists so the console is not a form somebody typed
+# into a year ago, not so it is live telemetry.
+#
+# It also has to be cheap on a SIM. A cellular-only gateway is billed for every
+# one of these, and at six hours it is four small POSTs a day.
+INTERVAL=21600
+
+# Not immediately: adoption restarts this service, and the management tunnel is
+# enrolling in the same moment. Reporting a tunnel that has not handshaken yet
+# as the first thing Pulzar Cloud ever hears is a worse answer than waiting half
+# a minute for the real one.
+sleep 30
+
+# After Pulzar Cloud says the claim is revoked: asked once more this much later
+# before anything is done about it. See pulzr-claim's header.
+CONFIRM=60
+
+# A report that does not get through is tried again after five minutes,
+# doubling to the interval. The first one goes out while the tunnel is still
+# enrolling, and when it failed Pulzar Cloud heard nothing for six hours: an
+# Opal adopted that way was listed as a LoRaWAN gateway until the next one.
+RETRY=300
+retry="${RETRY}"
+
+last=0
+while :; do
+    if [ "$(uci -q get pulzr.adoption.state)" != "adopted" ]; then
+        log "not adopted; reporting stops"
+        /etc/init.d/pulzr-report stop >/dev/null 2>&1 &
+        exit 0
+    fi
+
+    now="$(date +%s)"
+
+    # The claim was revoked and a new one waits to be adopted. Polled here
+    # rather than by pulzr-claim's own service, which runs only while
+    # unadopted: this gateway is still adopted, still forwarding and still on
+    # its tunnel. The old claim is still reported with every six hours, in
+    # case Pulzar Cloud accepts it again.
+    if pulzr-claim reclaiming >/dev/null 2>&1; then
+        if [ "$((now - last))" -ge "${INTERVAL}" ]; then
+            last="${now}"
+            pulzr-claim report >/dev/null 2>&1 || true
+        fi
+        pulzr-claim poll >/dev/null 2>&1 || true
+        sleep "$(pulzr-claim backoff 2>/dev/null || echo 3600)"
+        continue
+    fi
+
+    last="${now}"
+    pulzr-claim report >/dev/null 2>&1
+    case "$?" in
+        0)
+            retry="${RETRY}"
+            sleep "${INTERVAL}"
+            ;;
+        3)
+            sleep "${CONFIRM}"
+            ;;
+        *)
+            sleep "${retry}"
+            retry=$((retry * 2))
+            [ "${retry}" -gt "${INTERVAL}" ] && retry="${INTERVAL}"
+            ;;
+    esac
+done

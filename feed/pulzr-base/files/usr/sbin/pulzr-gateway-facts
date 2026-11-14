@@ -1,0 +1,78 @@
+#!/bin/sh
+#
+# What this gateway is, as key=value lines.
+#
+# Run by the MQTT forwarder on every stats interval ([metadata.commands]), which
+# attaches the output to the stats message it already sends to the LNS. The LNS
+# stores it on the gateway record, and Pulzar Cloud reads that record — so the
+# gateway page learns the firmware version and addresses over the connection
+# and credentials the gateway already uses for LoRaWAN, with no extra topic and
+# no broker change.
+#
+# Also used by `pulzr-claim report`, so a gateway with no working radio —
+# which sends no stats — still says what it is. In pulzr-base, not the
+# lorawan feature's package, for the same reason: a router such as the Opal
+# has no radio at all, and without these facts Pulzar Cloud cannot tell it
+# runs PulzarOS, so never asks for its LAN or lists the devices behind it.
+#
+# Small on purpose: this rides every stats message, and on a SIM those are
+# billed. Keys are short and nothing here is slow.
+
+. /etc/pulzr/board.conf
+
+addr() {
+    # First IPv4 address on a logical interface, or nothing.
+    ubus call "network.interface.$1" status 2>/dev/null \
+        | jsonfilter -e '@["ipv4-address"][0].address' 2>/dev/null
+}
+
+# The key names are read by the cloud, in reports and in the forwarder metadata;
+# they keep their ParkezeOS spelling.
+echo "parkeze_version=${PULZR_VERSION}"
+echo "parkeze_build=${PULZR_BUILD}"
+echo "openwrt=${OPENWRT_VERSION}"
+echo "board=${BOARD_ID}"
+echo "uptime=$(cut -d. -f1 /proc/uptime)"
+
+# The wired uplink the routes put first: wan, or another port's or VLAN's
+# when pulzr-ports made more than one, or made the wan port a LAN port.
+. /usr/share/pulzr/wired.sh
+for iface in $(wired_ifaces); do
+    wan="$(addr "${iface}")"
+    [ -n "${wan}" ] && { echo "wan_ip=${wan}"; break; }
+done
+# wwan only. usbwan's address is the one a HiLink dongle or a phone handed out
+# behind its own NAT, which reaches nothing; Pulzar Cloud reaching it would be
+# a wrong turn, not a missing fact.
+wwan="$(addr wwan)"; [ -n "${wwan}" ]  && echo "cellular_ip=${wwan}"
+
+tunnel="$(jsonfilter -i /etc/pulzr/wireguard/tunnel.json -e '@.address' 2>/dev/null)"
+[ -n "${tunnel}" ] && echo "tunnel_ip=${tunnel%/*}"
+
+# absent on a build without the lorawan feature: there is nothing to detect.
+if [ -x /usr/sbin/pulzr-concentrator-detect ]; then
+    echo "concentrator=$(uci -q get pulzr.concentrator.status || echo unknown)"
+else
+    echo "concentrator=absent"
+fi
+
+# What this image was built to be. Pulzar Cloud used to infer a router from a
+# missing concentrator and an LNS that had never heard the gateway, so until
+# that inference had its facts an Opal was listed as a LoRaWAN gateway. A Pi
+# built for LoRaWAN whose concentrator has died is still one.
+# Comma-separated: a report keeps only a safe character set, and spaces are
+# not in it.
+echo "features=$(echo ${PULZR_FEATURES} | tr ' ' ',')"
+
+# The unit as its maker recorded it, where it did (pulzr-hwdesc): which of
+# a model's builds this is, the serial on its label, and its capabilities.
+if hw="$(pulzr-hwdesc get DEV_NAME 2>/dev/null)" && [ -n "${hw}" ]; then
+    echo "hw=${hw}"
+    echo "hw_sn=$(pulzr-hwdesc get DEV_SERIAL_NUMBER)"
+    echo "hw_caps=$(pulzr-hwdesc caps)"
+fi
+
+# on, off or absent; Pulzar Cloud lists a gateway with Bluetooth as carrying
+# both radios, and shows the switch for it.
+[ -x /usr/sbin/pulzr-ble ] && echo "bluetooth=$(/usr/sbin/pulzr-ble state)"
+exit 0

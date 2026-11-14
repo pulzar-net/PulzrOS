@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 #
-# Drive parkeze-claim through a revoked claim and back, against a sandbox.
+# Drive pulzr-claim through a revoked claim and back, against a sandbox.
 #
 #   scripts/test-claim.sh
 #
 # The part of the claim that decides things — when an answer counts as a
 # revocation, when a second claim is minted, which claim is shown, polled and
 # promoted — is shell that otherwise only runs on a gateway, against
-# parkeze.net. Getting it wrong costs either a gateway nobody can adopt again
+# Pulzar Cloud. Getting it wrong costs either a gateway nobody can adopt again
 # or one that shows a claim code to whoever reports during a bad deploy, and
 # neither is found on a bench. So it runs here, with curl, uci, jsonfilter and
 # the scripts it calls replaced by stubs that answer what each case needs.
@@ -18,7 +18,7 @@
 set -uo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CLAIM="${ROOT_DIR}/feed/parkeze-adopt/files/usr/sbin/parkeze-claim"
+CLAIM="${ROOT_DIR}/feed/pulzr-adopt/files/usr/sbin/pulzr-claim"
 
 command -v python3 >/dev/null 2>&1 || { echo "python3 is required (for the jsonfilter stub)" >&2; exit 2; }
 
@@ -89,22 +89,22 @@ cat > "${STUBS}/logger" <<'EOF'
 echo "$*" >> "${SANDBOX}/log"
 EOF
 
-cat > "${STUBS}/parkeze-adopt" <<'EOF'
+cat > "${STUBS}/pulzr-adopt" <<'EOF'
 #!/bin/sh
 echo "$*" >> "${SANDBOX}/adopt.log"
 [ "$1" = "--from-bundle" ] && cp "$2" "${SANDBOX}/installed-bundle.json"
 exit 0
 EOF
 
-cat > "${STUBS}/parkeze-wireguard-enroll" <<'EOF'
+cat > "${STUBS}/pulzr-wireguard-enroll" <<'EOF'
 #!/bin/sh
 echo "$*" >> "${SANDBOX}/enroll.log"
 EOF
 
-printf '#!/bin/sh\necho "{\\"present\\":false}"\n' > "${STUBS}/parkeze-modem-detect"
-printf '#!/bin/sh\necho "{\\"wiredUsable\\":true,\\"via\\":\\"wired\\"}"\n' > "${STUBS}/parkeze-wireguard-route"
-printf '#!/bin/sh\necho up\n' > "${STUBS}/parkeze-backhaul-check"
-cat > "${STUBS}/parkeze-ssh-setup" <<'EOF'
+printf '#!/bin/sh\necho "{\\"present\\":false}"\n' > "${STUBS}/pulzr-modem-detect"
+printf '#!/bin/sh\necho "{\\"wiredUsable\\":true,\\"via\\":\\"wired\\"}"\n' > "${STUBS}/pulzr-wireguard-route"
+printf '#!/bin/sh\necho up\n' > "${STUBS}/pulzr-backhaul-check"
+cat > "${STUBS}/pulzr-ssh-setup" <<'EOF'
 #!/bin/sh
 case "$1" in
     --host-key)  echo "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITEST" ;;
@@ -124,13 +124,13 @@ chmod +x "${STUBS}"/*
 
 cat > "${SANDBOX}/board.conf" <<'EOF'
 BOARD_ID='rak7289cv2'
-PARKEZE_VERSION='0.4.0'
+PULZR_VERSION='0.4.0'
 EOF
 
 export PATH="${STUBS}:${PATH}"
 export SANDBOX UCI_DB="${SANDBOX}/uci" CURL_DIR="${SANDBOX}/curl" CURL_LOG="${SANDBOX}/curl.log"
-export PARKEZE_CLAIM_DIR="${STATE}" PARKEZE_BOARD_CONF="${SANDBOX}/board.conf"
-export PARKEZE_NET_URL="https://net.test"
+export PULZR_CLAIM_DIR="${STATE}" PULZR_BOARD_CONF="${SANDBOX}/board.conf"
+export PULZR_NET_URL="https://net.test"
 
 # ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -153,9 +153,9 @@ adopted_gateway() {
     rm -rf "${STATE}" "${SANDBOX}"/*.log "${SANDBOX}/installed-bundle.json" "${CURL_DIR}"/*
     : > "${CURL_LOG}"
     cat > "${UCI_DB}" <<'EOF'
-parkeze.adoption.state=adopted
-parkeze.identity.gateway_eui=ac1f09fffe0a1b2c
-parkeze.identity.serial=1234abcd
+pulzr.adoption.state=adopted
+pulzr.identity.gateway_eui=ac1f09fffe0a1b2c
+pulzr.identity.serial=1234abcd
 EOF
     mkdir -p "${STATE}"
     echo "OLD0-CLAI-M000" > "${STATE}/id"
@@ -182,17 +182,17 @@ check "report carries the host key" \
 check "a board without a RAK power board reports it as null" \
     python3 -c 'import json,sys; assert json.loads(sys.argv[1])["facts"]["rakPower"] is None' "$(last_body report)"
 
-printf '#!/bin/sh\necho "{\\"running\\":true,\\"watchdog\\":{\\"state\\":\\"failing\\"}}"\n' > "${STUBS}/parkeze-rak-power"
-chmod +x "${STUBS}/parkeze-rak-power"
+printf '#!/bin/sh\necho "{\\"running\\":true,\\"watchdog\\":{\\"state\\":\\"failing\\"}}"\n' > "${STUBS}/pulzr-rak-power"
+chmod +x "${STUBS}/pulzr-rak-power"
 claim report
 check "the power board record rides the report" \
     [ "$(field "$(last_body report)" facts.rakPower.watchdog.state)" = failing ]
 
-printf '#!/bin/sh\necho "{\\"running\\":tr"\n' > "${STUBS}/parkeze-rak-power"
+printf '#!/bin/sh\necho "{\\"running\\":tr"\n' > "${STUBS}/pulzr-rak-power"
 claim report
 check "an unreadable power board record is null, and the report still parses" \
     python3 -c 'import json,sys; assert json.loads(sys.argv[1])["facts"]["rakPower"] is None' "$(last_body report)"
-rm -f "${STUBS}/parkeze-rak-power"
+rm -f "${STUBS}/pulzr-rak-power"
 
 # ── a 404 that is not the revoked answer ────────────────────────────────────
 
@@ -234,7 +234,7 @@ check "registration names the new claim" [ "$(field "$(last_body register)" clai
 check "registration commits to the new secret" \
     [ "$(field "$(last_body register)" commitment)" = "$(sha256sum "${STATE}/next/secret" | cut -d' ' -f1)" ]
 check "registration names this gateway" [ "$(field "$(last_body register)" eui)" = "ac1f09fffe0a1b2c" ]
-check "parkeze-claim reclaiming says so" claim reclaiming
+check "pulzr-claim reclaiming says so" claim reclaiming
 
 registered_once="$(requests register)"
 claim report
@@ -331,7 +331,7 @@ check "note-revoked confirms the second" claim reclaiming
 # ── an unadopted gateway with a revoked claim ───────────────────────────────
 
 adopted_gateway
-sed -i.bak 's/^parkeze.adoption.state=.*/parkeze.adoption.state=unadopted/' "${UCI_DB}"
+sed -i.bak 's/^pulzr.adoption.state=.*/pulzr.adoption.state=unadopted/' "${UCI_DB}"
 answer report 404 "${REVOKED_REPORT}"
 aged_marker
 claim note-revoked

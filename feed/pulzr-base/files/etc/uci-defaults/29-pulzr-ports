@@ -1,0 +1,29 @@
+#!/bin/sh
+#
+# Write the port layout over the defaults 20-pulzr-network and
+# 25-pulzr-lan just built: which ports are uplinks, which serve devices,
+# the VLANs, each uplink's addressing. See pulzr-ports.
+
+# OpenWrt's prepare_rootfs runs every uci-defaults script during image
+# assembly, with IPKG_INSTROOT set and absolute paths resolving to the build
+# host. Everything below belongs to the device, so defer it to first boot.
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+
+/usr/sbin/pulzr-ports render
+/etc/init.d/pulzr-ports enable
+
+# lldpd: what is on the other end of each port, when it says. Receive-only,
+# on the board's own ports and nothing else: a gateway on a customer's
+# network announces nothing to it, and the tunnel and the bridges are not
+# where a neighbour is.
+if [ -f /etc/config/lldpd ]; then
+	. /etc/pulzr/board.conf
+	uci -q batch <<EOF
+set lldpd.config.readonly_mode='1'
+delete lldpd.config.interface
+$(for port in ${PULZR_PORT_IFACE:-eth0} ${PULZR_LAN_PORTS}; do echo "add_list lldpd.config.interface='${port}'"; done)
+EOF
+	uci commit lldpd
+	/etc/init.d/lldpd enable
+fi
+exit 0

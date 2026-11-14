@@ -17,14 +17,14 @@
 #
 # ── WHAT IT CHECKS ─────────────────────────────────────────────────────────
 #
-#   * every package each board's config installs (parkeze_packages)
+#   * every package each board's config installs (pulzr_packages)
 #   * the Depends: line of every package in feed/
 #
 # against the four architecture-independent feeds plus the target's own kmods
 # index — kmods are published per target and kernel version, not in the shared
 # feeds, so checking them against `packages` would report every kmod as missing.
 #
-# Our own parkeze-* packages are skipped: they are what this repo builds.
+# Our own pulzr-* packages are skipped: they are what this repo builds.
 
 set -uo pipefail
 
@@ -134,8 +134,8 @@ for board in "${boards[@]}"; do
     # are multi-line quoted strings with `#` comments inside them, so splitting
     # first turns every word of English prose into a "missing package" — which
     # it duly did, reporting 86 of them including "the" and "without".
-    parkeze_check_features || exit 1
-    wanted="$(parkeze_packages \
+    pulzr_check_features || exit 1
+    wanted="$(pulzr_packages \
               | sed 's/#.*//' \
               | tr -s '[:space:]' '\n' \
               | grep -v '^$' | grep -v '^-')"

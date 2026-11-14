@@ -20,12 +20,12 @@ import styles from './Login.module.css';
 
 /**
  * Offline recovery: getting into an adopted gateway that cannot reach
- * parkeze.net.
+ * Pulzar Cloud.
  *
  * The gateway holds only a *public* key, so nothing stored on it grants
  * access — dump the flash of a stolen unit and you get nothing. Instead it
- * prints a challenge, an operator carries it to parkeze.net on a phone, and
- * brings back a signature over those exact bytes. See ParkezeOS docs/auth.md
+ * prints a challenge, an operator carries it to Pulzar Cloud on a phone, and
+ * brings back a signature over those exact bytes. See PulzarOS docs/auth.md
  * for why a stored break-glass password would be the wrong answer.
  *
  * The screen is two numbered steps on one card, deliberately. Somebody using
@@ -49,12 +49,12 @@ export default function Recovery({
 
   // "Is this gateway still adopted?"
   //
-  // Recovery is for an adopted gateway that cannot reach Parkeze. If it was
+  // Recovery is for an adopted gateway that cannot reach Pulzar. If it was
   // decommissioned from the console there is nobody left to sign the
   // challenge, and the operator should be claiming it again instead — but
   // from here that looks identical to a signature that keeps being refused.
   //
-  // The answer comes from parkeze.net, not from this button. The device asks,
+  // The answer comes from Pulzar Cloud, not from this button. The device asks,
   // twice, over TLS, with its own credential; only that can return it to
   // adoption. Pressing this cannot unadopt a working gateway, and neither can
   // anyone else who reaches this screen.

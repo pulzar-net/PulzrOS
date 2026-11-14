@@ -3,7 +3,7 @@ import { api } from '@/services/api';
 import type { Feature } from '@/types';
 
 /**
- * What this board was built with (PARKEZE_FEATURES; docs/features.md).
+ * What this board was built with (PULZR_FEATURES; docs/features.md).
  *
  * Fixed for the life of the image, so asked once. Until it answers nothing
  * gated is shown, rather than a sidebar that grows and then shrinks. If it

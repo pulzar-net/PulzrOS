@@ -1,0 +1,29 @@
+#!/usr/bin/ucode -R
+// The gateway console, in a terminal.
+//
+//   pulzr-tui                        here, as root; no sign-in
+//   pulzr-tui --console [--tty DEV]  as a port's own program, behind the
+//                                      web console's sign-in
+//   pulzr-tui --remote               as an SSH session's only command,
+//                                      opened from Pulzar Cloud; no shell
+//
+// See /usr/share/pulzr/tui/app.uc for what it is and who it trusts.
+
+let opts = { console: false, remote: false, tty: null };
+for (let i = 0; i < length(ARGV); i++) {
+    if (ARGV[i] == '--console') opts.console = true;
+    else if (ARGV[i] == '--remote') opts.remote = true;
+    else if (ARGV[i] == '--tty') opts.tty = ARGV[++i];
+    else {
+        warn('usage: pulzr-tui [--console [--tty DEVICE] | --remote]\n');
+        exit(2);
+    }
+}
+// Two answers to who is at the keyboard; there is only one.
+if (opts.console && opts.remote) {
+    warn('usage: pulzr-tui [--console [--tty DEVICE] | --remote]\n');
+    exit(2);
+}
+
+let app = loadfile((getenv('PULZR_TUI_LIB') ?? '/usr/share/pulzr/tui') + '/app.uc', { raw_mode: true })();
+exit(app.start(opts));

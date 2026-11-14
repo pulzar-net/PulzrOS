@@ -18,8 +18,8 @@ import styles from '../Pages.module.css';
 import own from './SpeedTest.module.css';
 
 /**
- * Speed tests (parkeze-speedtest): each free uplink straight to the nearest
- * LibreSpeed server, and the management tunnel as Pulzr Net measures it,
+ * Speed tests (pulzr-speedtest): each free uplink straight to the nearest
+ * LibreSpeed server, and the management tunnel as Pulzar Cloud measures it,
  * side by side. Never over cellular.
  */
 
@@ -98,7 +98,7 @@ export default function SpeedTest() {
       cell: (info) => {
         const r = info.row.original;
         if (r.error) return <Badge tone="error">{r.error}</Badge>;
-        return r.test === 'tunnel' ? 'Pulzr Net' : r.server ?? '—';
+        return r.test === 'tunnel' ? 'Pulzar Cloud' : r.server ?? '—';
       },
     }),
   ], []);

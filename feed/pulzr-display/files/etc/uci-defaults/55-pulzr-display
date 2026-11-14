@@ -1,0 +1,17 @@
+#!/bin/sh
+#
+# Take tty1 from the stock login, for the terminal UI.
+#
+# OpenWrt's bcm27xx inittab runs login.sh on tty1, which with OpenWrt's
+# defaults is a root shell without a password for anybody with a keyboard and
+# a screen. pulzr-display puts the TUI there instead, behind the same
+# sign-in as the web console — and only when a display is attached.
+
+# OpenWrt's prepare_rootfs runs every uci-defaults script during image
+# assembly, with IPKG_INSTROOT set and absolute paths resolving to the build
+# host. Everything below belongs to the device, so defer it to first boot.
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+
+sed -i '/^tty1::/d' /etc/inittab
+/etc/init.d/pulzr-display enable
+exit 0

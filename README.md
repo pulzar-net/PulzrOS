@@ -1,7 +1,7 @@
-# ParkezeOS
+# PulzarOS
 
-A Parkeze-branded OpenWrt distribution for LoRaWAN gateways, managed by
-[parkeze.net](../parkeze.net).
+A Pulzar-branded OpenWrt distribution for LoRaWAN gateways, managed by
+[Pulzar Cloud](../Pulzar Cloud).
 
 Replaces the previous Raspberry Pi OS / pi-gen build entirely. Nothing of it is
 carried over.
@@ -9,9 +9,9 @@ carried over.
 ## What it is
 
 - **OpenWrt 25.12**, assembled with ImageBuilder from a pinned release.
-- **No LuCI.** The Parkeze console replaces it: a React app served as static
+- **No LuCI.** The Pulzar console replaces it: a React app served as static
   files by uhttpd over a ucode API, sharing design tokens verbatim with
-  parkeze.net so the two are visibly one product.
+  Pulzar Cloud so the two are visibly one product.
 - **One-touch provisioning.** Power on, scan the QR, pick the site. The gateway
   adopts itself; nobody types a credential into it.
 - **Multi-board from one tree.** A board is a page of deltas over a shared
@@ -28,12 +28,12 @@ carried over.
   time, not pasted into a file, and the facts under it are read live.
 - **The console in a terminal** — every page of the web console as a TUI, on
   the serial console, over SSH, on a Pi's own screen, and over a USB cable that
-  is also a network to the console at `parkeze.local`.
+  is also a network to the console at `pulzr.local`.
 - **Two management paths** — a WireGuard tunnel over wired, 1NCE over
   cellular — with the tunnel structurally prevented from ever touching the
   metered link.
 - **A way back in** — one ethernet port that is the uplink and the console port
-  at the same time, reachable at `parkeze-<serial>.local` from a laptop and a
+  at the same time, reachable at `pulzr-<serial>.local` from a laptop and a
   cable with nothing configured, and reachable from a site network not at all.
   LAN ports reach the console too, and four presses of the reset button raise
   the setup AP on a gateway with no working uplink.
@@ -80,8 +80,8 @@ byte-reproducible packages: `brew install node jq zstd gnu-tar`. Without
 gnu-tar the packages are still correct, just not byte-reproducible.
 
 To bake the fleet recovery anchor into the image — required for offline
-adoption — point `PARKEZE_RECOVERY_PUBKEY` at the public half of the key from
-`parkeze.net/tools/generate-recovery-key.sh`.
+adoption — point `PULZR_RECOVERY_PUBKEY` at the public half of the key from
+`Pulzar Cloud/tools/generate-recovery-key.sh`.
 
 ## Layout
 
@@ -91,21 +91,21 @@ boards/           one per board; common/ holds everything shared
   common/raspberrypi.conf  the kit boards
   common/rakwireless.conf  the fixed-hardware boards
 console/          the React console. Built to static files by build.sh and
-                  packaged into parkeze-console; no Node on the gateway.
-feed/             the Parkeze OpenWrt package feed
-  parkeze-base          identity, network defaults, branding
-  parkeze-console       the LuCI replacement: ucode API + the built SPA
-  parkeze-concentrator  slot detection, profiles, concentratord + MQTT forwarder
-  parkeze-cellular      modem, data frugality, backhaul health
-  parkeze-wireguard     management tunnel to the hub, pinned to the wired uplink
+                  packaged into pulzr-console; no Node on the gateway.
+feed/             the Pulzar OpenWrt package feed
+  pulzr-base          identity, network defaults, branding
+  pulzr-console       the LuCI replacement: ucode API + the built SPA
+  pulzr-concentrator  slot detection, profiles, concentratord + MQTT forwarder
+  pulzr-cellular      modem, data frugality, backhaul health
+  pulzr-wireguard     management tunnel to the hub, pinned to the wired uplink
   chirpstack-gateway    ChirpStack's gateway binaries, per architecture
-  parkeze-adopt         one-touch provisioning and adoption
-  parkeze-io            front-panel LEDs and buttons
-  parkeze-ap            setup AP (off by default; four presses of reset raise it)
-  parkeze-tui           the console in a terminal, on every board
-  parkeze-display       the TUI on a Pi's own screen, when it has one
-  parkeze-usb-gadget    the USB-C port as a network and a serial console
-  parkeze-rak-power     the RAK7289CV2 power board: watchdog, battery pack
+  pulzr-adopt         one-touch provisioning and adoption
+  pulzr-io            front-panel LEDs and buttons
+  pulzr-ap            setup AP (off by default; four presses of reset raise it)
+  pulzr-tui           the console in a terminal, on every board
+  pulzr-display       the TUI on a Pi's own screen, when it has one
+  pulzr-usb-gadget    the USB-C port as a network and a serial console
+  pulzr-rak-power     the RAK7289CV2 power board: watchdog, battery pack
 scripts/          build-feed.sh, check-ucode.sh, ucode stubs, run-tui.sh,
                   test-claim.sh and test-ssh-setup.sh (device shell, stubbed),
                   test-rak-power.sh (against a simulated power board),
@@ -143,7 +143,7 @@ docs/             the design decisions worth writing down
 
 ## Development
 
-`PARKEZE_DEV=1 ./build.sh <board>` builds a development image: the serial
+`PULZR_DEV=1 ./build.sh <board>` builds a development image: the serial
 console's root shell, failsafe, the TUI's `!` for any sign-in, and your key
 from `boards/common/ssh/dev/`. Its version ends in `-dev`; CI will not build one. See
 [`docs/auth.md`](docs/auth.md), "Who gets root".
@@ -152,7 +152,7 @@ The console has two halves. The React app typechecks and builds normally:
 
 ```bash
 cd console && npm install && npm run typecheck && npm run build
-npm run dev            # against a gateway: PARKEZE_GATEWAY=https://<ip> npm run dev
+npm run dev            # against a gateway: PULZR_GATEWAY=https://<ip> npm run dev
 ```
 
 Its API is ucode, which does not exist on a Mac. Syntax-check that before

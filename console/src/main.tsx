@@ -9,8 +9,8 @@ import './index.css';
 /**
  * A page left open across a firmware upgrade, or an index.html a browser kept,
  * asks for chunks the new image no longer has: every asset name is a hash of
- * its content. uhttpd can put no Cache-Control on index.html (gateway-link
- * marks it no-cache on the Pulzr Net path, but a laptop on a LAN port talks to
+ * its content. uhttpd can put no Cache-Control on index.html (the cloud
+ * marks it no-cache on the Pulzar Cloud path, but a laptop on a LAN port talks to
  * uhttpd directly), so the page reloads itself once, which fetches the
  * current index.html, rather than showing a page of errors. Once a minute at
  * most, so a chunk that is really missing does not loop.

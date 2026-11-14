@@ -1,0 +1,44 @@
+#!/bin/sh
+#
+# Follow whichever backhaul the tunnel is allowed to use.
+#
+# Re-homing the tunnel is one route replace in table 97 — wg0 itself, its
+# keys and its peer are untouched — so `apply` alone is enough on every
+# ifup/ifdown of either interface, and is what makes a failover take seconds
+# rather than however long it takes something else to notice the handshake
+# went stale.
+#
+# Wired ifup gets a full service restart instead, because it is also the
+# moment enrolment finally has a link home: a gateway that missed its tunnel
+# config the first time round retries there. That path already requires
+# somebody to run a cable, so paying for a restart on it is free.
+
+. /etc/pulzr/board.conf
+
+[ "${PULZR_WIREGUARD_ENABLED:-1}" = "1" ] || exit 0
+
+CELL="${PULZR_WAN_CELL_IFACE:-wwan}"
+WIFI="${PULZR_WAN_WIFI_IFACE:-wwifi}"
+
+# Any wired uplink: wan, or wan_<device> for another port or a VLAN
+# (pulzr-ports).
+case "${INTERFACE}" in wan|wan_*) WIRED="${INTERFACE}" ;; *) WIRED="" ;; esac
+
+if [ -n "${WIRED}" ]; then
+    case "${ACTION}" in
+        ifup)   /etc/init.d/pulzr-wireguard restart ;;
+        ifdown) /usr/sbin/pulzr-wireguard-route apply ;;
+    esac
+elif [ "${INTERFACE}" = "${WIFI}" ]; then
+    # Same as wired: WiFi is an egress the tunnel may use, so coming up on it
+    # is worth a restart to re-resolve the hub's endpoint on the new path.
+    case "${ACTION}" in
+        ifup)   /etc/init.d/pulzr-wireguard restart ;;
+        ifdown) /usr/sbin/pulzr-wireguard-route apply ;;
+    esac
+elif [ "${INTERFACE}" = "${CELL}" ] || [ "${INTERFACE}" = usbwan ]; then
+    # usbwan is a HiLink dongle or a phone: cellular, though it looks wired.
+    case "${ACTION}" in
+        ifup|ifdown) /usr/sbin/pulzr-wireguard-route apply ;;
+    esac
+fi

@@ -1,8 +1,0 @@
-Package: parkeze-ble
-Depends: kmod-bluetooth, bluez-utils, mosquitto-client-ssl
-Maintainer: Joseph Telaak <joseph@parkeze.com>
-Architecture: all
-Description: Bluetooth beacons, heard beside the LoRaWAN radio.
- Scans passively with the board's Bluetooth radio or a USB dongle and sends
- the parking beacons it hears to parkeze.net, which decodes them with the
- device type's codec. Off until turned on from parkeze.net or the console.

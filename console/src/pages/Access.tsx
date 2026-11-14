@@ -196,7 +196,7 @@ function ApCard({ state, onChange }: { state: AccessStatus; onChange: () => void
 }
 
 /**
- * How parkeze.net reaches this gateway: a WireGuard tunnel the gateway opens
+ * How Pulzar Cloud reaches this gateway: a WireGuard tunnel the gateway opens
  * outwards, so nothing at the site has to accept an inbound connection.
  */
 function Tunnel() {

@@ -3,7 +3,7 @@
 A board with ports for devices, a router's LAN ports or a Pi's USB Ethernet
 adapter, serves those devices as a small network of its own: `devlan`. The
 first device is a PLC that keeps its own identity and its own connection to
-Parkeze; the gateway is only its path.
+Pulzar; the gateway is only its path.
 
 A board without them is unchanged. Its one port has no role and never serves
 DHCP; see [backhaul.md](backhaul.md).
@@ -13,8 +13,8 @@ DHCP; see [backhaul.md](backhaul.md).
 In the board's `board.conf`:
 
 ```sh
-PARKEZE_LAN_PORTS="lan1 lan2 lan3"     # the ports, by their Linux names
-PARKEZE_FEATURES="${PARKEZE_FEATURES} lan"
+PULZR_LAN_PORTS="lan1 lan2 lan3"     # the ports, by their Linux names
+PULZR_FEATURES="${PULZR_FEATURES} lan"
 ```
 
 A USB adapter also needs its driver in `PACKAGES_BOARD`:
@@ -22,9 +22,9 @@ A USB adapter also needs its driver in `PACKAGES_BOARD`:
 for ASIX, `kmod-usb-net-cdc-ether` for adapters that follow the standard. On a
 Pi the adapter is `eth1`.
 
-`PARKEZE_DEVLAN_IPADDR` is the gateway's address on it, `192.168.64.1` unless
+`PULZR_DEVLAN_IPADDR` is the gateway's address on it, `192.168.64.1` unless
 the board says otherwise. The first boot builds the rest
-(`feed/parkeze-lan/files/etc/uci-defaults/25-parkeze-lan`).
+(`feed/pulzr-lan/files/etc/uci-defaults/25-pulzr-lan`).
 
 Those are the ports a gateway starts with. Which ports, and which VLANs,
 serve devices after that is Network > Ports ([ports.md](ports.md)): any port
@@ -48,7 +48,7 @@ switch; the gateway never sees that traffic.
 
 | Destination | `parkeze` (default) | `internet` |
 |---|---|---|
-| Parkeze, TCP 443 and 8883 | yes | yes |
+| Pulzar, TCP 443 and 8883 | yes | yes |
 | NTP, UDP 123 | yes | yes |
 | DNS, on the gateway | yes | yes |
 | Anything else out an uplink | no | yes |
@@ -57,14 +57,14 @@ switch; the gateway never sees that traffic.
 | Other LAN devices | no | no |
 | The management tunnel | no | no |
 
-"Parkeze" is the domains of `PARKEZE_NET_URL` and `PARKEZE_MQTT_HOST`
+"Pulzar" is the domains of `PULZR_NET_URL` and `PULZR_MQTT_HOST`
 (`parkeze.com` today). dnsmasq adds each address it answers for those names to
 an nftables set, so the rule follows a move without anybody changing it. A
 device that ignores the gateway's DNS and asks its own resolver reaches none
-of Parkeze.
+of Pulzar.
 
 The console is open here so a laptop on a LAN port can configure the gateway,
-at `https://<the gateway's address here>`, or `https://parkeze.local` over mDNS.
+at `https://<the gateway's address here>`, or `https://pulzr.local` over mDNS.
 What a device reaches is the sign-in page; see [auth.md](auth.md).
 
 The zone rejects rather than drops: this is our network, and a device refused
@@ -84,7 +84,7 @@ says. A camera on `internet` with its stream blocked on cellular keeps
 sending alarms through a failover and stops spending the SIM on video.
 Refused, not dropped, as the zone does.
 
-Matched by MAC in parkeze-lan's own table, on the cellular devices netifd
+Matched by MAC in pulzr-lan's own table, on the cellular devices netifd
 has now (the `cellular_if` set, reloaded on each uplink's hotplug).
 
 ## Managing it
@@ -92,16 +92,16 @@ has now (the `cellular_if` set, reloaded on each uplink's hotplug).
 On the gateway:
 
 ```
-parkeze-lan status                          everything below, as JSON
-parkeze-lan policy <mac> parkeze|internet
-parkeze-lan reserve <mac> <ip> [<name>]     <name> also resolves, as <name>.lan
-parkeze-lan unreserve <mac>
-parkeze-lan cellular <mac> allow|block [tcp:<port>[-<port>] udp:...]
-parkeze-lan forward <ip> <port> <seconds>
-parkeze-lan unforward <tunnel port>
-parkeze-lan expose tcp|udp <port> <ip> [<client port>]
-parkeze-lan unexpose tcp|udp <port>
-parkeze-lan links                           reload the uplinks' devices and addresses
+pulzr-lan status                          everything below, as JSON
+pulzr-lan policy <mac> parkeze|internet
+pulzr-lan reserve <mac> <ip> [<name>]     <name> also resolves, as <name>.lan
+pulzr-lan unreserve <mac>
+pulzr-lan cellular <mac> allow|block [tcp:<port>[-<port>] udp:...]
+pulzr-lan forward <ip> <port> <seconds>
+pulzr-lan unforward <tunnel port>
+pulzr-lan expose tcp|udp <port> <ip> [<client port>]
+pulzr-lan unexpose tcp|udp <port>
+pulzr-lan links                           reload the uplinks' devices and addresses
 ```
 
 In the console, Network > LAN (`lib/lan.uc`, `pages/network/Lan.tsx`): the
@@ -109,10 +109,10 @@ clients, each one's policy, reservation and cellular rule, the exposed ports,
 and the open tunnel forwards. It sets the first four through the commands
 above, audited as `lan.policy`, `lan.reserve`, `lan.cellular` and
 `lan.expose`, so the `lan` op reports them like any other. It never opens or
-closes a tunnel forward: that is net-api's, over MQTT. net-api opens no
+closes a tunnel forward: that is the cloud's, over MQTT. The cloud opens no
 exposed port: that is the site's, made at the gateway.
 
-Over MQTT (`parkeze/gateway/<eui>/mgmt/request`, see `parkeze-mqtt-agent`):
+Over MQTT (`parkeze/gateway/<eui>/mgmt/request`, see `pulzr-mqtt-agent`):
 
 | `op` | Fields | Answer |
 |---|---|---|
@@ -157,7 +157,7 @@ to stay under the agent's 8KB answer.
   `wwifi`, `wwan`, `usbwan`), and `tunnel` for a forward's traffic. The
   console's Cellular column is `wwan` and `usbwan` together. Counted after the
   firewall, so a refused attempt is not traffic, and since boot. It lives in
-  ParkezeOS's own nftables table, so a firewall reload does not zero it.
+  PulzarOS's own nftables table, so a firewall reload does not zero it.
 - `exposedOn` is where exposed ports answer now: each wired and WiFi
   uplink's address. A private one is behind a site router.
 - `journal` is the last twenty forwards opened and closed, and ports exposed
@@ -167,12 +167,12 @@ to stay under the agent's 8KB answer.
 
 The one forward a gateway makes: from the WireGuard management tunnel to one
 device's TCP port, for between a minute and a day. It is how somebody on
-parkeze.net opens a PLC's own interface without the PLC holding a second
+Pulzar Cloud opens a PLC's own interface without the PLC holding a second
 connection or the site opening anything.
 
 `lan-forward` answers with a tunnel port, from 40000 to 40015, and `expires`,
 the Unix time it closes (the report's `expiresIn` is the seconds left).
-gateway-link connects to the gateway's WireGuard address on that port and
+the cloud connects to the gateway's WireGuard address on that port and
 reaches the device, which sees the connection come from the gateway's LAN
 address. Only traffic arriving on `wg0` is forwarded: the same port on the SIM
 address, the site network or anything else reaches nothing.
@@ -186,11 +186,11 @@ address, the site network or anything else reaches nothing.
 - **Only through the forward.** The tunnel cannot route to the LAN; `mgmt`
   forwards nothing but what the forward's DNAT marked.
 - **Journalled**, like a setup AP raise: every open and close, with the
-  request id, in `/etc/parkeze/lan/forwards.log`, kept across upgrades and
+  request id, in `/etc/pulzr/lan/forwards.log`, kept across upgrades and
   reported in `lan`.
 
 The table and the reasoning for keeping it out of fw4's are in the header of
-`/usr/sbin/parkeze-lan`.
+`/usr/sbin/pulzr-lan`.
 
 ## Exposed ports
 
@@ -210,7 +210,7 @@ Dynamic DNS; [features.md](features.md)). TCP or UDP, at most 32.
   it while exposed: moving or releasing it is refused until the port goes,
   or the port would follow whatever leased the address next.
 - **Not the gateway's own ports**: TCP 22, 80, 443 and 8443, UDP 67 and 68.
-- **Kept**, in UCI (`parkeze.expose_<proto>_<port>`), across reboots and
+- **Kept**, in UCI (`pulzr.expose_<proto>_<port>`), across reboots and
   upgrades; each one made and removed is in the journal.
 - **Behind a site router**, the uplink's address is private and the page
   says so: the site router forwards the same port to the gateway's address,
@@ -218,6 +218,6 @@ Dynamic DNS; [features.md](features.md)). TCP or UDP, at most 32.
 
 The device sees the caller's real address: nothing is masqueraded. Replies
 follow the main routing table, so an exposed port answers on whichever
-uplink carries the default route; see the header of `/usr/sbin/parkeze-lan`.
+uplink carries the default route; see the header of `/usr/sbin/pulzr-lan`.
 fw4's `wan` zone forwards nothing, so `wan-forward.nft` adds one rule to it,
 accepting what this table's DNAT marked.

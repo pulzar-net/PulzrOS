@@ -1,0 +1,45 @@
+#!/bin/sh
+#
+# Take the serial console from the stock login, for the terminal UI.
+#
+# OpenWrt's inittab runs /usr/libexec/login.sh on the console, and login.sh
+# with OpenWrt's defaults (system.ttylogin unset) is a root shell without a
+# password for anybody with a USB-serial adapter and three wires. A root shell
+# on PulzarOS is a copy of PulzarOS. So the serial line gets what HDMI and
+# the USB port already have: the TUI, behind the web console's sign-in, whose
+# `!` drops to a shell only for Pulzar staff.
+#
+# tty1 is left alone: 55-pulzr-display takes it, and only when a screen is
+# attached. A development build keeps the stock shell on serial, which is what
+# the bench uses when nothing else works.
+
+# OpenWrt's prepare_rootfs runs every uci-defaults script during image
+# assembly, with IPKG_INSTROOT set and absolute paths resolving to the build
+# host. Everything below belongs to the device, so defer it to first boot.
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+
+PULZR_DEV=0
+[ -f /etc/pulzr/board.conf ] && . /etc/pulzr/board.conf
+[ "${PULZR_DEV:-0}" = 1 ] && exit 0
+
+# procd read /etc/inittab before this ran, so the rewrite below starts the TUI
+# from the next boot. Until then login.sh still runs on serial; with ttylogin
+# it asks /bin/login for root's password, and root has none
+# (pulzr-root-keys-only), so the line between this boot and the next is
+# closed rather than open.
+uci -q set system.@system[0].ttylogin='1'
+uci commit system
+
+# `::askconsole:` is the kernel's console, whichever UART the board's cmdline
+# names; a line with an id names its tty. Both are rewritten, whatever action
+# the target's inittab gave them. Rerun after every upgrade, as uci-defaults
+# are, and a no-op once done: /etc/inittab is a conffile and is kept.
+awk -F: 'BEGIN { OFS = ":" }
+    $4 == "/usr/libexec/login.sh" && $1 != "tty1" {
+        $4 = "/usr/libexec/pulzr-tui-console " ($1 == "" ? "/dev/console" : "/dev/" $1)
+    }
+    { print }' /etc/inittab > /etc/inittab.pulzr \
+    && [ -s /etc/inittab.pulzr ] \
+    && mv /etc/inittab.pulzr /etc/inittab
+rm -f /etc/inittab.pulzr
+exit 0

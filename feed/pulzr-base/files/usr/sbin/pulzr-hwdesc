@@ -1,0 +1,85 @@
+#!/bin/sh
+#
+# The hardware descriptor a RAK WisGate carries in its factory partition.
+#
+#   pulzr-hwdesc              the descriptor as JSON, passwords left out
+#   pulzr-hwdesc caps         its capability words, on one line
+#   pulzr-hwdesc has <cap>    exit 0 if the unit lists that capability
+#   pulzr-hwdesc get <path>   one value, as a jsonfilter path: GPS.model
+#
+# Exits 1 on a board that has none.
+#
+# board.conf names the model; this names the unit. RAK builds one firmware for
+# every RAK636 gateway and writes each unit's own facts here at manufacture:
+# which pins its modem, LoRa card and GNSS reset on, and what the unit has.
+# Units of one model differ: a RAK7289CV2 with the power board's hardware
+# watchdog lists `hwwdg`, and the bench one did while answering nothing on its
+# RS485 port over PoE, which a model-wide constant would have read as an older
+# board.
+#
+# The layout is RAK's (/etc/uci-defaults/00_einfo in WisGateOS 2): at 0x2000 in
+# the factory partition, "RAK", the payload's md5 as 32 hex characters, a
+# compression byte ("0" is none, the only one RAK writes), the payload length
+# as 4 hex digits, then the payload, which is JSON.
+#
+# The payload also holds the unit's default root and WiFi passwords. They are
+# dropped before anything is cached or printed, so nothing that reads this,
+# the console and the report to Pulzar Cloud included, ever has them.
+
+MTD="${PULZR_HWDESC_MTD:-}"
+CACHE="${PULZR_HWDESC_CACHE:-/var/run/pulzr/hwdesc.json}"
+OFFSET=8192
+
+die() { echo "pulzr-hwdesc: $*" >&2; exit 1; }
+
+find_mtd() {
+    local dev
+    dev="$(sed -n 's/^\(mtd[0-9]*\):.*"factory"$/\1/p' /proc/mtd 2>/dev/null | head -n1)"
+    [ -n "${dev}" ] && echo "/dev/${dev}"
+}
+
+# Read, check and cache the descriptor; the cache is all anyone else reads.
+load() {
+    [ -s "${CACHE}" ] && return 0
+    [ -n "${MTD}" ] || MTD="$(find_mtd)"
+    [ -r "${MTD}" ] || return 1
+
+    local header magic md5 comp len tmp
+    header="$(dd if="${MTD}" bs=1 skip="${OFFSET}" count=40 2>/dev/null)"
+    magic="$(echo "${header}" | cut -c1-3)"
+    [ "${magic}" = "RAK" ] || return 1
+    md5="$(echo "${header}" | cut -c4-35)"
+    comp="$(echo "${header}" | cut -c36)"
+    len="$(echo "${header}" | cut -c37-40)"
+    [ "${comp}" = 0 ] || die "compression '${comp}' is not one RAK writes"
+    case "${len}" in [0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]) ;; *) die "bad length '${len}'" ;; esac
+
+    mkdir -p "$(dirname "${CACHE}")"
+    tmp="${CACHE}.$$"
+    dd if="${MTD}" bs=1 skip=$((OFFSET + 40)) count=$((0x${len})) 2>/dev/null > "${tmp}"
+    [ "$(md5sum < "${tmp}" | cut -c1-32)" = "${md5}" ] || { rm -f "${tmp}"; die "md5 does not match"; }
+
+    # Leading or trailing comma, wherever RAK put the keys.
+    sed -E 's/"DEV_(ROOT|WIFI)_DEFPW" *: *"[^"]*" *, *//g; s/, *"DEV_(ROOT|WIFI)_DEFPW" *: *"[^"]*"//g' \
+        "${tmp}" > "${tmp}.clean"
+    rm -f "${tmp}"
+    if grep -q 'DEFPW' "${tmp}.clean" || ! jsonfilter -i "${tmp}.clean" -e '@.DEV_NAME' >/dev/null 2>&1; then
+        rm -f "${tmp}.clean"
+        die "could not take the passwords out cleanly"
+    fi
+    mv "${tmp}.clean" "${CACHE}"
+}
+
+load || exit 1
+
+case "${1:-}" in
+    "")   cat "${CACHE}" ;;
+    caps) jsonfilter -i "${CACHE}" -e '@.DEV_CAPS' 2>/dev/null ;;
+    has)
+        for cap in $(jsonfilter -i "${CACHE}" -e '@.DEV_CAPS' 2>/dev/null); do
+            [ "${cap}" = "${2:?usage: pulzr-hwdesc has <cap>}" ] && exit 0
+        done
+        exit 1 ;;
+    get)  jsonfilter -i "${CACHE}" -e "@.${2:?usage: pulzr-hwdesc get <path>}" ;;
+    *)    echo "usage: pulzr-hwdesc [caps | has <cap> | get <path>]" >&2; exit 2 ;;
+esac

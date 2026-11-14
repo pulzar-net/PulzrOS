@@ -18,13 +18,13 @@ import styles from '../Pages.module.css';
 
 /**
  * The uplink order, and tracking that moves off an uplink that carries
- * nothing (parkeze-uplinks). Failover only: one uplink carries traffic at a
+ * nothing (pulzr-uplinks). Failover only: one uplink carries traffic at a
  * time, the first in the order that answers.
  *
- * The WiFi's health is parkeze-wifi-uplink's portal check, so it has no
+ * The WiFi's health is pulzr-wifi-uplink's portal check, so it has no
  * tracking switch. Cellular is untracked until somebody turns it on, because
- * every ping is billed. The order and tracking are in parkeze-uplinks' state,
- * which is what parkeze.net's `uplinks` op reads.
+ * every ping is billed. The order and tracking are in pulzr-uplinks' state,
+ * which is what Pulzar Cloud's `uplinks` op reads.
  */
 
 const SWITCH = [

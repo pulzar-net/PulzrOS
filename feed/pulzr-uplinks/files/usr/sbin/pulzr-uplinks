@@ -1,0 +1,355 @@
+#!/usr/bin/ucode
+// Which uplink carries the gateway's traffic, and moving off one that has
+// stopped carrying anything.
+//
+//   pulzr-uplinks status                       JSON: each uplink, the order
+//   pulzr-uplinks order <iface>...             the order they are tried in
+//   pulzr-uplinks track <iface> on|off         probe this uplink or not
+//   pulzr-uplinks tracking <ips> <interval> <down> <up>
+//   pulzr-uplinks apply                        each uplink's route metric
+//   pulzr-uplinks usable <iface>               exit 0 unless tracking
+//                                                has seen it carry nothing
+//   pulzr-uplinks run                          the tracker, under procd
+//
+// ── WHY TRACKING ───────────────────────────────────────────────────────────
+//
+// The route metrics already fail over, but only when netifd takes an
+// interface down. A cable to a site router whose own internet is gone keeps
+// its carrier and its lease, so wan stays up at metric 10 and the gateway
+// sends everything into it while a working SIM sits behind it. Tracking pings
+// out of each tracked uplink's own device (ping -I binds the socket to it)
+// and, after `down` misses in a row, pushes that uplink's metric behind every
+// uplink that still answers. `up` answers in a row bring it back.
+//
+// ── METRICS, NOT POLICY ROUTING ────────────────────────────────────────────
+//
+// Position in the order sets the metric: 10, 20, 30, 40. An uplink tracking
+// has seen fail gets 100 plus the same step, so a gateway whose uplinks have
+// all failed still tries them in order. The failed one keeps a route, at the
+// back: the next probe has to leave through it.
+//
+// Not mwan3. It is policy routing with fwmarks of its own, and
+// pulzr-wireguard-route and pulzr-lora-route already confine their
+// traffic with fwmark rules; two schemes marking the same packets is how the
+// tunnel ends up on the SIM. And everything here, the tunnel, LoRa routing,
+// the console and the report, reads the uplink from the metrics already.
+//
+// Failover only, no load balancing. Balancing spreads one site's connections
+// over two public addresses, which breaks every service that pins a session
+// to the address it saw, and it spends the SIM's data on traffic a cable
+// would have carried free.
+//
+// ── WHAT IS TRACKED ────────────────────────────────────────────────────────
+//
+// Ethernet by default. Cellular only when somebody turns it on: one ping
+// every ten seconds is about 40 MB a month, on a SIM that may have 500 MB for
+// its life, and pulzr-cellular-watchdog already keeps wwan carrying
+// traffic. The WiFi has its own check, pulzr-wifi-uplink, which also tells
+// a sign-in page from the internet; its answer is the WiFi's health here, and
+// it calls `apply` when the answer changes.
+//
+// The order and the tracking settings are in UCI (pulzr.uplinks), and
+// `status` is what the MQTT agent's `uplinks` op sends Pulzar Cloud, so an
+// order set at the gateway is one Pulzar Cloud sees.
+
+let fs = require('fs');
+let uci = require('uci');
+
+const STATE = '/var/run/pulzr/uplinks.json';
+// The wired ones are whatever pulzr-ports made: wan, and wan_<device>
+// for any other port or VLAN that is an uplink (see wired.sh).
+const KNOWN = ['wwifi', 'wwan', 'usbwan'];
+const KIND = { wwifi: 'wifi', wwan: 'cellular', usbwan: 'usb-cellular' };
+const METERED = { wwan: true, usbwan: true };
+const WIRED = /^wan(_[A-Za-z0-9_]+)?$/;
+const HEALTHY = 10;
+const FAILED = 100;
+const STEP = 10;
+const IPV4 = /^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$/;
+const DEVICE = /^[A-Za-z0-9._-]{1,15}$/;
+
+let die = (msg, code) => {
+    warn(msg, '\n');
+    exit(code ?? 1);
+};
+
+let log = (msg) => system(['logger', '-t', 'uplinks', '-p', 'daemon.notice', msg]);
+
+let ipv4 = (ip) => {
+    let m = match(ip ?? '', IPV4);
+    if (!m) return false;
+    for (let i = 1; i <= 4; i++) if (int(m[i]) > 255) return false;
+    return true;
+};
+
+let number = (text, low, high) => {
+    let n = match(text ?? '', /^[0-9]{1,4}$/) ? int(text) : -1;
+    return n >= low && n <= high ? n : null;
+};
+
+// netifd's view of one interface, through the ubus CLI: the same answer
+// every other script here acts on.
+let iface = (name) => {
+    let proc = fs.popen(sprintf('ubus call network.interface.%s status 2>/dev/null', name), 'r');
+    let out = null;
+    if (proc) { out = proc.read('all'); proc.close(); }
+    let s = null;
+    try { s = out ? json(out) : null; } catch (e) { s = null; }
+    return { up: !!s?.up, device: s?.l3_device ?? null };
+};
+
+// The uplinks this gateway has: the ones netifd has a section for. wwifi
+// exists once a network has been joined, usbwan on a board that can take a
+// USB adapter.
+let wired = (name) => !!match(name ?? '', WIRED);
+
+let kind = (name) => wired(name) ? 'ethernet' : KIND[name];
+
+let present = (cur) => {
+    let out = [];
+    cur.foreach('network', 'interface', (s) => {
+        if (wired(s['.name']) && s.disabled != '1') push(out, s['.name']);
+    });
+    return [...sort(out), ...filter(KNOWN, (name) => cur.get('network', name) == 'interface')];
+};
+
+let config = () => {
+    let cur = uci.cursor();
+    let have = present(cur);
+    let s = cur.get_all('pulzr', 'uplinks') ?? {};
+    let list = (v) => type(v) == 'array' ? v : (v != null ? [v] : []);
+
+    // An uplink the order does not name yet goes in by kind: a wired one
+    // after the last wired one, rather than behind the SIM.
+    let order = filter(uniq(list(s.order)), (n) => n in have);
+    for (let n in have) {
+        if (n in order) continue;
+        let at = length(order);
+        if (wired(n)) {
+            at = 0;
+            for (let i = 0; i < length(order); i++) if (wired(order[i])) at = i + 1;
+        }
+        splice(order, at, 0, n);
+    }
+
+    let ips = filter(list(s.track_ip), ipv4);
+    return {
+        order,
+        // With nothing set, every wired uplink is tracked, as wan was.
+        track: filter(uniq(s.track == null ? filter(have, wired) : list(s.track)), (n) => n in have && n != 'wwifi'),
+        ips: length(ips) ? ips : ['1.1.1.1', '8.8.8.8'],
+        interval: number(s.interval, 5, 300) ?? 10,
+        down: number(s.down, 1, 10) ?? 3,
+        up: number(s.up, 1, 10) ?? 3,
+    };
+};
+
+let readState = () => {
+    try { return json(fs.readfile(STATE) ?? '{}') ?? {}; } catch (e) { return {}; }
+};
+
+let writeState = (state) => {
+    fs.mkdir('/var/run/pulzr');
+    fs.writefile(STATE + '.tmp', sprintf('%J', state));
+    fs.rename(STATE + '.tmp', STATE);
+};
+
+let wifiUsable = () => system('/usr/sbin/pulzr-wifi-uplink usable >/dev/null 2>&1') == 0;
+
+let healthy = (name, state) =>
+    name == 'wwifi' ? wifiUsable() : state[name]?.state != 'offline';
+
+// Each uplink's metric from its place in the order and its health. Writes and
+// reloads only when one differs: it is a write to flash and a network reload.
+let apply = () => {
+    let cfg = config(), state = readState(), cur = uci.cursor(), changed = false;
+    for (let i = 0; i < length(cfg.order); i++) {
+        let name = cfg.order[i];
+        let metric = sprintf('%d', (healthy(name, state) ? HEALTHY : FAILED) + STEP * i);
+        if (cur.get('network', name, 'metric') == metric) continue;
+        cur.set('network', name, 'metric', metric);
+        changed = true;
+    }
+    if (changed) {
+        cur.commit('network');
+        system('ubus call network reload >/dev/null 2>&1');
+    }
+    return changed;
+};
+
+// The tunnel and LoRa routing pick their uplink themselves and are told when
+// the answer may have changed, as pulzr-wifi-uplink tells them. The report
+// carries the tunnel's path and whether wired is usable.
+let hooks = () => {
+    for (let tool in ['/usr/sbin/pulzr-wireguard-route', '/usr/sbin/pulzr-lora-route'])
+        if (fs.access(tool, 'x')) system(tool + ' apply >/dev/null 2>&1');
+    system('( pulzr-claim report >/dev/null 2>&1 & ) 2>/dev/null');
+};
+
+// The uplink carrying traffic: the first in the order that is up and healthy,
+// which is the one the metrics put first.
+let active = (cfg, state, links) => {
+    for (let n in cfg.order) if (links[n].up && healthy(n, state)) return n;
+    for (let n in cfg.order) if (links[n].up) return n;
+    return null;
+};
+
+let wifiState = () => {
+    let out = null;
+    let proc = fs.popen('/usr/sbin/pulzr-wifi-uplink status 2>/dev/null', 'r');
+    if (proc) { out = proc.read('all'); proc.close(); }
+    try { return json(out ?? '{}')?.state ?? 'unchecked'; } catch (e) { return 'unchecked'; }
+};
+
+let status = () => {
+    let cfg = config(), state = readState(), cur = uci.cursor(), links = {};
+    for (let n in cfg.order) links[n] = iface(n);
+    let uplinks = [];
+    for (let n in cfg.order) {
+        let s = state[n] ?? {}, link = links[n], st;
+        if (!link.up) st = 'down';
+        else if (n == 'wwifi') st = { open: 'online', portal: 'portal', offline: 'offline' }[wifiState()] ?? 'unchecked';
+        else if (!(n in cfg.track)) st = 'untracked';
+        else st = s.state ?? 'unchecked';
+        push(uplinks, {
+            iface: n,
+            kind: kind(n),
+            metered: !!METERED[n],
+            up: link.up,
+            device: link.device,
+            tracked: n in cfg.track,
+            state: st,
+            since: s.since ?? null,
+            checkedAt: s.checkedAt ?? null,
+            metric: int(cur.get('network', n, 'metric') ?? 0) || null,
+        });
+    }
+    return {
+        order: cfg.order,
+        active: active(cfg, state, links),
+        tracking: { ips: cfg.ips, interval: cfg.interval, down: cfg.down, up: cfg.up },
+        uplinks,
+    };
+};
+
+// Any answer from any of the addresses: one target that drops ICMP for an
+// hour is not an outage.
+let probe = (dev, ips) => {
+    if (!match(dev, DEVICE)) return false;
+    for (let ip in ips)
+        if (system(sprintf("ping -c 1 -W 2 -I '%s' '%s' >/dev/null 2>&1", dev, ip)) == 0)
+            return true;
+    return false;
+};
+
+// One look at every tracked uplink. An uplink that is down, or no longer
+// tracked, loses its state, so it starts again as unchecked: healthy until
+// `down` misses say otherwise, because waiting for proof would hold a fresh
+// cable back for half a minute after every boot.
+let round = () => {
+    let cfg = config(), state = readState(), now = time(), moved = false;
+    for (let n in keys(state))
+        if (!(n in cfg.order)) delete state[n];
+    for (let n in cfg.order) {
+        if (n == 'wwifi') continue;
+        let link = iface(n);
+        if (!(n in cfg.track) || !link.up || !link.device) {
+            if (state[n]?.state == 'offline') moved = true;
+            delete state[n];
+            continue;
+        }
+        let s = (state[n] ??= { state: 'unchecked', since: now, fails: 0, oks: 0 });
+        let ok = probe(link.device, cfg.ips);
+        s.checkedAt = now;
+        if (ok) { s.oks++; s.fails = 0; } else { s.fails++; s.oks = 0; }
+
+        let next = s.state;
+        if (ok && (s.state == 'unchecked' || (s.state == 'offline' && s.oks >= cfg.up))) next = 'online';
+        if (!ok && s.state != 'offline' && s.fails >= cfg.down) next = 'offline';
+        if (next == s.state) continue;
+        if (next == 'offline' || s.state == 'offline') {
+            log(sprintf('%s %s -> %s', n, s.state, next));
+            moved = true;
+        }
+        s.state = next;
+        s.since = now;
+    }
+    writeState(state);
+    if (moved) {
+        apply();
+        hooks();
+    }
+    return cfg.interval;
+};
+
+let save = (fn) => {
+    let cur = uci.cursor();
+    if (cur.get('pulzr', 'uplinks') != 'uplinks') cur.set('pulzr', 'uplinks', 'uplinks');
+    fn(cur);
+    cur.commit('pulzr');
+};
+
+let changed = (what) => {
+    log(what);
+    if (apply()) hooks();
+    printf('%J\n', status());
+};
+
+let commands = {
+    status: () => printf('%J\n', status()),
+
+    apply: () => { if (apply()) hooks(); },
+
+    usable: (name) => exit(readState()[name]?.state == 'offline' ? 1 : 0),
+
+    order: (...names) => {
+        let have = present(uci.cursor());
+        length(names) || die('name the uplinks in order', 2);
+        for (let n in names)
+            (n in have) || die(sprintf('%s is not an uplink here', n), 2);
+        length(uniq(names)) == length(names) || die('an uplink is named twice', 2);
+        save((cur) => cur.set('pulzr', 'uplinks', 'order', names));
+        changed('order ' + join(' ', config().order));
+    },
+
+    track: (name, on) => {
+        (name in present(uci.cursor())) || die(sprintf('%s is not an uplink here', name), 2);
+        name != 'wwifi' || die('the WiFi has its own check', 2);
+        (on == 'on' || on == 'off') || die('on or off', 2);
+        let track = filter(config().track, (n) => n != name);
+        if (on == 'on') push(track, name);
+        // 'none' rather than no option: with none, Ethernet is tracked.
+        save((cur) => cur.set('pulzr', 'uplinks', 'track', length(track) ? track : 'none'));
+        if (on == 'off') {
+            let state = readState();
+            delete state[name];
+            writeState(state);
+        }
+        changed(sprintf('%s tracking %s', name, on));
+    },
+
+    tracking: (ips, interval, down, up) => {
+        let list = filter(split(ips ?? '', ','), (ip) => length(ip));
+        (length(list) >= 1 && length(list) <= 4) || die('one to four addresses to ping', 2);
+        for (let ip in list) ipv4(ip) || die(sprintf('%s is not an IPv4 address', ip), 2);
+        let i = number(interval, 5, 300) ?? die('an interval from 5 to 300 seconds', 2);
+        let d = number(down, 1, 10) ?? die('from 1 to 10 misses', 2);
+        let u = number(up, 1, 10) ?? die('from 1 to 10 answers', 2);
+        save((cur) => {
+            cur.set('pulzr', 'uplinks', 'track_ip', list);
+            cur.set('pulzr', 'uplinks', 'interval', sprintf('%d', i));
+            cur.set('pulzr', 'uplinks', 'down', sprintf('%d', d));
+            cur.set('pulzr', 'uplinks', 'up', sprintf('%d', u));
+        });
+        changed(sprintf('tracking %s every %ds, down after %d, up after %d', join(' ', list), i, d, u));
+    },
+
+    run: () => {
+        apply();
+        while (true) sleep(round() * 1000);
+    },
+};
+
+let cmd = commands[ARGV[0] ?? 'status'];
+cmd ?? die('usage: pulzr-uplinks {status|order|track|tracking|apply|usable|run}', 2);
+call(cmd, null, null, ...slice(ARGV, 1));

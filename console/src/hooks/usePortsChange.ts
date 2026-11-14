@@ -5,12 +5,12 @@ import { api } from '@/services/api';
 /**
  * A port change, kept only once this browser reaches the gateway again.
  *
- * parkeze-ports applies a layout at once and undoes it unless it is confirmed
+ * pulzr-ports applies a layout at once and undoes it unless it is confirmed
  * inside its window. The confirm comes from here, after the change has had
  * time to take effect: if it gets through, whoever made the change can still
  * reach the gateway and it is kept; if the change cut them off, nothing gets
  * through and the gateway puts the old layout back on its own. The same holds
- * through Pulzr Net, where the request rides the tunnel the change may have
+ * through Pulzar Cloud, where the request rides the tunnel the change may have
  * moved.
  */
 export type PortsPhase = 'idle' | 'confirming' | 'kept' | 'undone';

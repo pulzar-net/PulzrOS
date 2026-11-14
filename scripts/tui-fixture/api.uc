@@ -15,18 +15,18 @@ return {
                                     : { local: true, sso: false, recovery: false, state: 'unadopted', note: null },
         loginLocal: (u, p, addr) => p == 'wrong' ? { error: 'Incorrect username or password.', status: 401 }
                                                  : { session: sessionFor(u, 'local', 3600, p == 'initial') },
-        recoveryChallenge: () => ({ challenge: { code: 'a84041ffff1234ab.9f3c2b1a8e7d6c5b4a39281f.1789330979', expiresIn: 600 }, hostname: 'parkeze-1234ab' }),
+        recoveryChallenge: () => ({ challenge: { code: 'a84041ffff1234ab.9f3c2b1a8e7d6c5b4a39281f.1789330979', expiresIn: 600 }, hostname: 'pulzr-1234ab' }),
         recoveryVerify: (sig, addr) => sig == 'bad' ? { error: 'That signature does not verify.' } : { session: sessionFor('recovery', 'recovery', 1800) },
         // Approved on the third ask, as if somebody took a moment to find
         // their phone.
         terminalStart: () => { asks = 0; return { code: 'K7M2-QP4X', url: 'https://app.pulzr.net/gateway-access#signin=K7M2-QP4X', expiresIn: 600, interval: 3 }; },
-        terminalCollect: (code, addr) => ++asks < 3 ? { pending: true } : { session: sessionFor('ops@parkeze.com', 'sso', 3600) },
+        terminalCollect: (code, addr) => ++asks < 3 ? { pending: true } : { session: sessionFor('ops@pulzr.net', 'sso', 3600) },
         readSession: (t) => ({ ok: true }),
         destroySession: (t) => null,
         audit: () => null,
     },
     system: {
-        summary: () => ({ identity: { hostname: 'parkeze-1234ab', gatewayEui: 'a84041ffff1234ab', serial: '10000000d3a1234ab', serialSource: 'cpuinfo', board: 'rpi4', boardName: 'Raspberry Pi 4' },
+        summary: () => ({ identity: { hostname: 'pulzr-1234ab', gatewayEui: 'a84041ffff1234ab', serial: '10000000d3a1234ab', serialSource: 'cpuinfo', board: 'rpi4', boardName: 'Raspberry Pi 4' },
             firmware: { version: '0.2.1', build: '202610131200', commit: '190239c', openwrt: 'OpenWrt 24.10.0 r28427-6df0e3d02a', kernel: '6.6.73' },
             adoption: { state: adopted ? 'adopted' : 'unadopted', org: adopted ? 'Example Parking' : null },
             health: { uptime: 273845, temperature: 51.6 } }),
@@ -38,11 +38,11 @@ return {
         processes: () => ({ total: time() * 400, processes: [ { pid: 1, name: 'procd', command: '/sbin/procd', state: 'S', ticks: time() % 97, threads: 1, rss: 3145728 },
             { pid: 1201, name: 'chirpstack-conc', command: '/usr/bin/chirpstack-concentratord-sx1302 -c /var/etc/concentratord.toml', state: 'S', ticks: time() * 3, threads: 4, rss: 9437184 },
             { pid: 2, name: 'kthreadd', command: '', state: 'S', ticks: 0, threads: 1, rss: 0 } ] }),
-        logs: (q) => ({ lines: [ 'Tue Oct 13 12:00:01 2026 daemon.info procd: Instance parkeze-packet-forwarder::concentratord0 s in a crash loop',
+        logs: (q) => ({ lines: [ 'Tue Oct 13 12:00:01 2026 daemon.info procd: Instance pulzr-packet-forwarder::concentratord0 s in a crash loop',
             'Tue Oct 13 12:00:03 2026 daemon.err mqtt-forwarder[1301]: connection error: Network unreachable',
             'Tue Oct 13 12:00:05 2026 kern.warn kernel: [  12.345] usb 1-1.3: device descriptor read/64, error -71',
             'Tue Oct 13 12:00:07 2026 daemon.notice netifd: Interface \'wan\' is now up',
-            'Tue Oct 13 12:00:09 2026 user.info parkeze-claim: registered claim K7M2-QP4X-9RTB' ] }),
+            'Tue Oct 13 12:00:09 2026 user.info pulzr-claim: registered claim K7M2-QP4X-9RTB' ] }),
         reboot: () => ok(),
     },
     network: {
@@ -73,9 +73,9 @@ return {
     },
     io: { status: () => ({ leds: [ { logical: 'power', physical: 'PWR', present: true }, { logical: 'status', physical: 'ACT', present: true }, { logical: 'lora', physical: null, present: false } ], available: [ 'PWR', 'ACT', 'mmc0' ], button: { reset: null, holdSeconds: 10 } }) },
     access: {
-        status: () => ({ ap: { capable: true, up: false, enabled: false, secured: false, ssid: 'Parkeze-1234AB', clients: 0 },
-            port: { hostname: 'parkeze-1234ab', console: '192.168.61.1', uplink: '10.20.0.57' },
-            usb: { present: true, connected: true, name: 'parkeze.local', address: '192.168.63.1', serial: '/dev/ttyGS0' },
+        status: () => ({ ap: { capable: true, up: false, enabled: false, secured: false, ssid: 'Pulzar-1234AB', clients: 0 },
+            port: { hostname: 'pulzr-1234ab', console: '192.168.61.1', uplink: '10.20.0.57' },
+            usb: { present: true, connected: true, name: 'pulzr.local', address: '192.168.63.1', serial: '/dev/ttyGS0' },
             wifi: { configured: true, ssid: 'Site-Ops', security: 'psk', up: true, uplink: 'portal', address: '10.30.1.8', signal: -58, mac: 'a8:40:41:1c:22:9e' } }),
         wifiDetail: () => ({ configured: true, saved: [ { ssid: 'Site-Ops', security: 'psk', active: true }, { ssid: 'eduroam', security: 'eap', active: false } ] }),
         scan: () => ({ capable: true, networks: [ { ssid: 'Site-Ops', signal: -58, quality: 52, encryption: 'psk' }, { ssid: 'eduroam', signal: -70, quality: 40, encryption: 'eap' }, { ssid: 'Guest', signal: -80, quality: 30, encryption: 'open' } ] }),

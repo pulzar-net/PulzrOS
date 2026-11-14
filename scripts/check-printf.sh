@@ -3,10 +3,10 @@
 # Every printf in the feed hands as many arguments as its format asks for.
 #
 # This exists because a shipped image reported malformed JSON twice in one
-# afternoon, both times the same way: a field was added to `parkeze-claim`'s
+# afternoon, both times the same way: a field was added to `pulzr-claim`'s
 # facts format and the matching argument was not. sh does not complain — the
 # missing %s takes whatever came next, so `{"sshHostKey":"{...system json..."}`
-# went out over HTTPS and parkeze.net answered 400. Nothing on the gateway
+# went out over HTTPS and Pulzar Cloud answered 400. Nothing on the gateway
 # notices; the reports simply stop counting, which is the worst kind of broken.
 #
 # Deliberately crude: it reads the format string's specifiers and counts the

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Drive parkeze-led's RGB light against a fake /sys/class/leds.
+# Drive pulzr-led's RGB light against a fake /sys/class/leds.
 #
 #   scripts/test-led.sh
 #
@@ -16,17 +16,17 @@
 set -uo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-LED="${ROOT_DIR}/feed/parkeze-io/files/usr/sbin/parkeze-led"
+LED="${ROOT_DIR}/feed/pulzr-io/files/usr/sbin/pulzr-led"
 
 SANDBOX="$(mktemp -d)"
 trap 'rm -rf "${SANDBOX}"' EXIT
-export PARKEZE_LEDS="${SANDBOX}/leds"
-export PARKEZE_LED_CACHE="${SANDBOX}/run"
-export PARKEZE_BOARD_CONF="${SANDBOX}/board.conf"
+export PULZR_LEDS="${SANDBOX}/leds"
+export PULZR_LED_CACHE="${SANDBOX}/run"
+export PULZR_BOARD_CONF="${SANDBOX}/board.conf"
 
-cat > "${PARKEZE_BOARD_CONF}" <<'EOF'
-PARKEZE_LED_LORA="green:lora"
-PARKEZE_LED_CLOUD="rgb:status"
+cat > "${PULZR_BOARD_CONF}" <<'EOF'
+PULZR_LED_LORA="green:lora"
+PULZR_LED_CLOUD="rgb:status"
 EOF
 
 failures=0
@@ -46,10 +46,10 @@ check() {
 # make them appear on that write, so they are there from the start and the
 # trigger file is what the checks read.
 fresh() {
-    rm -rf "${PARKEZE_LEDS}" "${PARKEZE_LED_CACHE}"
+    rm -rf "${PULZR_LEDS}" "${PULZR_LED_CACHE}"
     local c
     for c in red green blue; do
-        local d="${PARKEZE_LEDS}/${c}:status"
+        local d="${PULZR_LEDS}/${c}:status"
         mkdir -p "${d}"
         echo 255 > "${d}/max_brightness"
         echo 0 > "${d}/brightness"
@@ -59,13 +59,13 @@ fresh() {
             sw) : > "${d}/pattern" ;;
         esac
     done
-    mkdir -p "${PARKEZE_LEDS}/green:lora"
-    echo 1 > "${PARKEZE_LEDS}/green:lora/max_brightness"
-    echo 0 > "${PARKEZE_LEDS}/green:lora/brightness"
-    echo none > "${PARKEZE_LEDS}/green:lora/trigger"
+    mkdir -p "${PULZR_LEDS}/green:lora"
+    echo 1 > "${PULZR_LEDS}/green:lora/max_brightness"
+    echo 0 > "${PULZR_LEDS}/green:lora/brightness"
+    echo none > "${PULZR_LEDS}/green:lora/trigger"
 }
 
-val() { cat "${PARKEZE_LEDS}/$1" 2>/dev/null; }
+val() { cat "${PULZR_LEDS}/$1" 2>/dev/null; }
 
 BREATH="0 2080 255 130 255 2080 0 260"
 
@@ -93,21 +93,21 @@ check "and nothing else" "0 0" "$(val green:status/brightness) $(val blue:status
 
 fresh hw
 sh "${LED}" cloud path wired
-echo restarted > "${PARKEZE_LEDS}/blue:status/hw_pattern"
+echo restarted > "${PULZR_LEDS}/blue:status/hw_pattern"
 sh "${LED}" cloud path wired
 check "the same state does not restart the breath" restarted "$(val blue:status/hw_pattern)"
 sh "${LED}" cloud path cellular
 check "a new state does" "${BREATH}" "$(val red:status/hw_pattern)"
 check "and clears the old colour" "none 0" "$(val blue:status/trigger) $(val blue:status/brightness)"
 
-PARKEZE_LED_BREATHE="1040 260 1040 130" sh "${LED}" cloud solid w
-PARKEZE_LED_BREATHE="1040 260 1040 130" sh "${LED}" cloud breathe g
-check "breath timing comes from PARKEZE_LED_BREATHE" "0 1040 255 260 255 1040 0 130" \
+PULZR_LED_BREATHE="1040 260 1040 130" sh "${LED}" cloud solid w
+PULZR_LED_BREATHE="1040 260 1040 130" sh "${LED}" cloud breathe g
+check "breath timing comes from PULZR_LED_BREATHE" "0 1040 255 260 255 1040 0 130" \
     "$(val green:status/hw_pattern)"
 
 fresh hw
 sh "${LED}" --has cloud; check "--has finds all three channels" 0 "$?"
-rm -rf "${PARKEZE_LEDS}/green:status"
+rm -rf "${PULZR_LEDS}/green:status"
 sh "${LED}" --has cloud; check "--has fails with one missing" 1 "$?"
 sh "${LED}" cloud path wired; check "a missing light is not an error" 0 "$?"
 

@@ -1,0 +1,295 @@
+#!/bin/sh
+#
+# Keep the cellular link carrying traffic: bring it back when netifd or the
+# modem has given up on it, and when it is up in name and carries nothing.
+#
+# ── WHY THIS EXISTS ────────────────────────────────────────────────────────
+#
+# Two 1NCE outages, each of which left a gateway offline with nothing on it
+# that would ever try again.
+#
+# A link that carries nothing. The 1NCE session on the RAKs is torn down and
+# re-created every 24 hours, within a second, on the same address. Nearly
+# always the gateway carries on. On 2026-10-23 the Osbourne gateway did not:
+# the SIM was attached, held a fresh session and its IP, and the gateway sent
+# zero bytes over it for a day. netifd and ModemManager both believed the link
+# was fine, so for this case the watchdog does not ask them. It asks the link.
+#
+# A link nobody brings back. A connectivity reset that 1NCE makes while the
+# network is refusing the SIM strands a gateway in two layers, reproduced on
+# the bench Pro (PulzarOS 0.1.0):
+#
+#   netifd   ModemManager's 10-report-down bounces wwan once. If registration
+#            fails in that one setup, the modemmanager proto calls
+#            proto_block_restart and netifd never tries wwan again.
+#   modem    a refused attach can come back with cause #8, "EPS and non-EPS
+#            services not allowed". After it the modem treats the USIM as
+#            invalid until it is switched off (TS 24.301, attach reject) and
+#            searches emergency-only for good. Re-enabling the SIM at 1NCE,
+#            ifup and a ModemManager disable/enable all left it there; a modem
+#            reset, then ifup, connected in ten seconds.
+#
+# A plain reset with the network answering recovers in 15 seconds through
+# 10-report-down alone. It takes a refusal longer than that one retry.
+#
+# ── WHAT IT DOES ───────────────────────────────────────────────────────────
+#
+# Once a minute, by what netifd and ModemManager say:
+#
+#   up, connected      the traffic ladder below
+#   up, no bearer      ifup: the bearer went and netifd was not told, which
+#                      happens when it drops during a setup
+#   setting up 10 min  ifup
+#   down, modem registered, disabled or gone
+#                      ifup: clears a blocked restart. Retried at 1, 2, 4 ...
+#                      30 minutes, because a SIM out of data or disabled at
+#                      the provider is refused every time
+#   down, modem not registered for 5 min
+#                      modem reset, then the row above on the next looks.
+#                      Repeated at 5, 10, 20, 30 minutes
+#
+# Down for half an hour, with the gateway up six hours and nothing reaching
+# Pulzar Cloud, it reboots, as the ladder does.
+#
+# ── THE TRAFFIC LADDER ─────────────────────────────────────────────────────
+#
+# A receive counter that has not grown for STALL seconds earns a probe out of
+# the cellular device (pulzr-backhaul-check --cellular). If that fails too,
+# each rung gets STALL seconds to work before the next:
+#
+#   1. ifup wwan — netifd tears the bearer down and ModemManager connects a
+#      new one. Cures a host that is still holding the old session.
+#   2. reset the modem. Cures a modem that has wedged.
+#   3. reboot. Cures everything else, including the parts of the gateway this
+#      script cannot see. Only if the gateway cannot be managed by any path,
+#      and only past MIN_UPTIME, so a gateway in a dead spot reboots at most
+#      once every six hours rather than every quarter of one, and loses the
+#      LoRa buffer that seldom. Otherwise the ladder starts again at 1.
+#
+# A gateway whose tunnel is up is on the wired path and its traffic is not
+# judged: a SIM behind ethernet is silent by design.
+#
+# ── WHAT IT COSTS ──────────────────────────────────────────────────────────
+#
+# Nothing while the link is in use: the packet forwarder's 30s keepalive and
+# the MQTT agent's 60s ping both draw replies, so a live cellular link's
+# receive counter moves every minute, and reading it, netifd and ModemManager
+# is free. Only the ladder's probe spends data, about 700 bytes, once per
+# STALL of silence.
+#
+# Time here is ticks counted by the loop, not the wall clock, so
+# scripts/test-cellular-watchdog.sh drives all of it through a stub sleep.
+
+INTERVAL=60
+STALL=300
+MIN_UPTIME=21600
+# A down state has to be seen on this many looks in a row before it is acted
+# on: 10-report-down's own bounce takes about ten seconds, and stepping on it
+# restarts a setup that was about to work.
+SETTLE=2
+GAP_MIN=60
+GAP_MAX=1800
+# Long enough for a real search after losing coverage; nothing else brings
+# back a modem that has written the SIM off.
+RESET_AFTER=300
+# Setup takes seconds; ModemManager's own calls time out at 120s.
+PENDING_MAX=600
+DOWN_REBOOT=1800
+
+SYS_NET="${PULZR_SYS_NET:-/sys/class/net}"
+UPTIME_FILE="${PULZR_UPTIME_FILE:-/proc/uptime}"
+
+log() { logger -t pulzr-cellular -p daemon.notice "$*"; }
+
+field() { echo "$2" | jsonfilter -e "@.$1" 2>/dev/null; }
+
+modem_state() {
+    mmcli -m any --output-keyvalue 2>/dev/null \
+        | sed -n 's/^modem\.generic\.state *: *//p' | head -n1
+}
+
+clock=0
+last_rx="" stalled=0 rung=0
+attempts=0 last_attempt=-100000 resets=0 last_reset=-100000
+seen_key="" seen=0 pending_since="" down_since=""
+
+# The same condition on consecutive looks: SETTLE of them, or $2.
+settled() {
+    if [ "$1" = "${seen_key}" ]; then
+        seen=$((seen + 1))
+    else
+        seen_key="$1" seen=1
+    fi
+    [ "${seen}" -ge "${2:-${SETTLE}}" ]
+}
+
+# $1 shifted left once per earlier try in $2, capped at GAP_MAX. Capped before
+# shifting: a SIM refused for weeks must not overflow it.
+backoff() {
+    local n="$2"
+    [ "${n}" -gt 0 ] && n=$((n - 1))
+    [ "${n}" -gt 5 ] && n=5
+    n=$(($1 << n))
+    [ "${n}" -gt "${GAP_MAX}" ] && n="${GAP_MAX}"
+    echo "${n}"
+}
+
+bring_up() {
+    [ $((clock - last_attempt)) -ge "$(backoff "${GAP_MIN}" "${attempts}")" ] || return 0
+    attempts=$((attempts + 1)) last_attempt="${clock}" seen_key=""
+    log "$1; bringing wwan up (attempt ${attempts})"
+    # ifup is down then up. The down is what clears a blocked restart, and
+    # what replaces a bearer the modem has already lost.
+    ifup wwan
+}
+
+reset_modem() {
+    log "$1; resetting the modem"
+    # ModemManager's reset is an AT command, so it needs a modem that still
+    # answers one. One that has wedged, or dropped off USB, is reset through
+    # its reset line instead, where the board has one (modem-reset; RAK636
+    # boards do, on a different pin per board).
+    mmcli -m any --reset >/dev/null 2>&1 \
+        || pulzr-hwline modem-reset pulse 1 \
+        || log "modem reset failed"
+    # It re-enumerates as a new ModemManager modem with its GPS engine off,
+    # and nothing else re-detects it: 20-pulzr-modem skips wwan's own
+    # events. wwan itself comes back on a later look, as down with the modem
+    # disabled.
+    ( sleep 20; /usr/sbin/pulzr-modem-detect >/dev/null 2>&1 ) &
+}
+
+# Have the uplink buffer's broker write its queue to the card. Found by
+# command line through /proc: the image has no pkill or pgrep (OpenWrt's
+# busybox leaves them out), so the `pkill -USR1` this used to be failed every
+# time and the reboot went ahead with the queue still in memory.
+flush_buffer() {
+    local p found=1
+    for p in /proc/[0-9]*; do
+        case "$(tr '\0' ' ' < "${p}/cmdline" 2>/dev/null)" in
+            *"mosquitto -c /var/run/pulzr/lora/mosquitto.conf"*)
+                kill -USR1 "${p#/proc/}" 2>/dev/null && found=0 ;;
+        esac
+    done
+    return "${found}"
+}
+
+reboot_if_stranded() {
+    local up
+    up="$(cut -d. -f1 "${UPTIME_FILE}")"
+    [ "${up}" -ge "${MIN_UPTIME}" ] || return 0
+    pulzr-backhaul-check >/dev/null 2>&1 && return 0
+    log "$1 and nothing else reaches Pulzar Cloud; rebooting"
+    # The uplink buffer is holding this outage's uplinks. Have it write them
+    # to the card first; with no card they are lost, which is the price of a
+    # gateway that can be reached again.
+    flush_buffer && sleep 5
+    reboot
+}
+
+judge_traffic() {
+    local rx previous
+    if [ "$(pulzr-backhaul-check --tunnel 2>/dev/null)" = "up" ]; then
+        last_rx="" stalled=0 rung=0
+        return
+    fi
+
+    rx="$(cat "${SYS_NET}/${1:-none}/statistics/rx_bytes" 2>/dev/null)"
+    # Grown, not merely different: a modem reset recreates the device and its
+    # counter starts again from zero, which is not traffic. Read as traffic,
+    # it sent the ladder back to rung 1 after every reset and never let it
+    # reach the reboot.
+    previous="${last_rx}"
+    last_rx="${rx}"
+    if [ -n "${rx}" ] && [ -n "${previous}" ] && [ "${rx}" -gt "${previous}" ]; then
+        [ "${rung}" -gt 0 ] && log "cellular is passing traffic again"
+        stalled=0 rung=0
+        return
+    fi
+
+    stalled=$((stalled + INTERVAL))
+    [ "${stalled}" -ge "${STALL}" ] || return
+    stalled=0
+
+    if pulzr-backhaul-check --cellular >/dev/null 2>&1; then
+        rung=0
+        return
+    fi
+
+    rung=$((rung + 1))
+    case "${rung}" in
+        1)
+            log "cellular has carried nothing for ${STALL}s and cannot reach Pulzar Cloud; restarting wwan"
+            ifup wwan
+            ;;
+        2)
+            reset_modem "cellular still dead after restarting wwan"
+            ;;
+        *)
+            reboot_if_stranded "cellular still dead after a modem reset"
+            rung=0
+            ;;
+    esac
+}
+
+while :; do
+    sleep "${INTERVAL}"
+    clock=$((clock + INTERVAL))
+
+    if [ "$(uci -q get pulzr.cellular.modem_present)" != "1" ] \
+       || [ "$(uci -q get network.wwan.disabled)" = "1" ]; then
+        last_rx="" stalled=0 rung=0 seen_key="" pending_since="" down_since=""
+        attempts=0 resets=0
+        continue
+    fi
+
+    status="$(ifstatus wwan 2>/dev/null)"
+    up="$(field up "${status}")"
+    mm="$(modem_state)"
+
+    if [ "${up}" = "true" ] && [ "${mm}" = "connected" ]; then
+        attempts=0 resets=0 seen_key="" pending_since="" down_since=""
+        judge_traffic "$(field l3_device "${status}")"
+        continue
+    fi
+
+    # Not carrying anything, by netifd's or the modem's own account. The
+    # ladder waits: its rungs bounce wwan through exactly this state, and
+    # resetting it here would keep it on rung 1 for ever. Only the counter
+    # goes, since a recovered link starts a new one.
+    last_rx=""
+    [ -n "${down_since}" ] || down_since="${clock}"
+    pending="$(field pending "${status}")"
+    error="$(field 'errors[0].code' "${status}")"
+
+    if [ "${up}" = "true" ]; then
+        pending_since=""
+        settled nobearer && bring_up "wwan is up but the modem is ${mm:-gone}"
+    elif [ "${pending}" = "true" ]; then
+        [ -n "${pending_since}" ] || pending_since="${clock}"
+        if [ $((clock - pending_since)) -ge "${PENDING_MAX}" ]; then
+            pending_since=""
+            bring_up "wwan has been setting up for ${PENDING_MAX}s"
+        fi
+    else
+        pending_since=""
+        case "${mm}" in
+            searching|enabled)
+                if settled unregistered $((RESET_AFTER / INTERVAL)) \
+                   && [ $((clock - last_reset)) -ge "$(backoff "${RESET_AFTER}" "${resets}")" ]; then
+                    resets=$((resets + 1)) last_reset="${clock}" seen_key=""
+                    reset_modem "wwan is down (${error:-no error}) and the modem has not registered for ${RESET_AFTER}s"
+                fi
+                ;;
+            *)
+                settled down && bring_up "wwan is down (${error:-no error}) and the modem is ${mm:-gone}"
+                ;;
+        esac
+    fi
+
+    if [ $((clock - down_since)) -ge "${DOWN_REBOOT}" ] \
+       && [ "$(pulzr-backhaul-check --tunnel 2>/dev/null)" != "up" ]; then
+        down_since="${clock}"
+        reboot_if_stranded "cellular has been down for ${DOWN_REBOOT}s"
+    fi
+done

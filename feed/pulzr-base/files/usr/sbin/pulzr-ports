@@ -1,0 +1,817 @@
+#!/usr/bin/ucode
+// What each Ethernet port is for, and the VLANs it carries.
+//
+//   pulzr-ports status             JSON: every port, its role, its VLANs,
+//                                    each uplink's addressing and router, what
+//                                    announced itself on the port (LLDP), a
+//                                    pending change
+//   pulzr-ports routers            each wired uplink's router MAC, for the
+//                                    report
+//   pulzr-ports identify <file>    keep what Pulzar Cloud answered about them
+//   pulzr-ports set <file>|-       a whole layout, as JSON; applied at once
+//                                    and undone unless confirmed in time
+//   pulzr-ports confirm            keep the layout `set` applied
+//   pulzr-ports revert             undo it now
+//   pulzr-ports seed               the board's layout, unless one is kept
+//   pulzr-ports render             write network, firewall and dhcp from it
+//   pulzr-ports boot               undo a change a reboot interrupted
+//   pulzr-ports expire <seconds>   the timer `set` starts
+//
+// ── ROLES, NOT VLANS ───────────────────────────────────────────────────────
+//
+// A port is an uplink, serves devices (the devlan zone, pulzr-lan), or is
+// unused. On a switch with DSA, which is every router board here, each jack
+// is its own Linux device, so turning the WAN jack into a LAN port, or a LAN
+// jack into a second uplink, is a role and nothing else.
+//
+// A VLAN is a role on a tag: wan.20 as a second uplink on the same cable, or
+// devices on a managed switch's tagged port. The kernel tags (8021q), so this
+// works on any NIC, which on a Pi or a RAK with one Ethernet port is the only
+// way to have a second uplink or a LAN at all. A port's untagged role can be
+// "none" with VLANs on it: a trunk.
+//
+// ── WHERE THINGS LAND ──────────────────────────────────────────────────────
+//
+// The layout is the source of truth, in /etc/config/pulzr (port_<name>,
+// vlan_<name>_<vid>), and `render` writes the rest from it:
+//
+//   uplinks    netifd interfaces in the wan zone. wan for the board's own
+//              uplink port untagged, wan_<device> for any other (wan_lan1,
+//              wan_wan_20), so a link keeps its name, its place in
+//              pulzr-uplinks' order and its tracking when another one is
+//              added. /usr/share/pulzr/wired.sh lists them for the scripts
+//              that used to name wan.
+//   devices    members of br-devlan, isolated from each other as before.
+//   console    192.168.61.1 and 169.254.61.1 go on the board's uplink port
+//              while it is an uplink, else on the first port that is one, and
+//              nowhere when none is: a devices port already answers at
+//              PULZR_DEVLAN_IPADDR with DHCP.
+//
+// Each uplink's addressing (DHCP, or static) is kept with its link here, not
+// only in network.<iface>: 20-pulzr-network rebuilds network.wan as DHCP on
+// every sysupgrade, which used to drop a site's static address with it.
+//
+// ── UNDONE UNLESS CONFIRMED ────────────────────────────────────────────────
+//
+// A port change can cut off whoever makes it: the laptop on the LAN jack that
+// becomes an uplink, or the tunnel on the uplink that becomes a LAN port when
+// the change came through Pulzar Cloud. So `set` keeps the configuration it
+// replaces, on flash, and starts a timer; the console confirms by reaching
+// the gateway again after the change, and if nothing does within the window
+// the old configuration comes back. A reboot inside the window undoes it at
+// boot, before the network starts. This is LuCI's apply-and-rollback, for the
+// one kind of change here that needs it.
+//
+// A second `set` inside the window keeps the first snapshot: the one known to
+// work is the one before any of them.
+
+let fs = require('fs');
+let uci = require('uci');
+
+const STATE = '/etc/pulzr/ports';
+// Pulzar Cloud's answer to the report about the routers and the public side:
+// tmpfs, because it is asked again on every boot's report.
+const IDENTITY = '/var/run/pulzr/network.json';
+const MAC = /^[0-9a-f]{2}(:[0-9a-f]{2}){5}$/;
+const PENDING = STATE + '/pending.json';
+const SNAPSHOT = STATE + '/rollback';
+const SNAPSHOT_CONFIGS = ['network', 'firewall', 'dhcp', 'pulzr'];
+const WINDOW = 90;
+// A confirm sooner than this after `set` is refused: the network, firewall
+// and tunnel are still moving, and a browser that answers before the new
+// layout has taken effect has proved nothing about it.
+const SETTLE = 15;
+const MAX_VLANS = 8;
+const MAX_UPLINKS = 8;
+const ROLES = ['uplink', 'devices', 'none'];
+const VLAN_ROLES = ['uplink', 'devices'];
+const IPV4 = /^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$/;
+const PORT_NAME = /^[A-Za-z0-9-]{1,12}$/;
+
+let die = (msg, code) => {
+    warn(msg, '\n');
+    exit(code ?? 1);
+};
+
+let log = (msg) => system(['logger', '-t', 'ports', '-p', 'daemon.notice', msg]);
+
+let capture = (argv) => {
+    let quoted = join(' ', map(argv, (a) => "'" + replace(a, "'", "'\\''") + "'"));
+    let proc = fs.popen(quoted + ' 2>/dev/null', 'r');
+    if (!proc) return null;
+    let out = proc.read('all');
+    proc.close();
+    return out;
+};
+
+let list = (v) => type(v) == 'array' ? v : (v != null ? [v] : []);
+
+// The board's ports, by sourcing board.conf the way every shell script does:
+// a board file overrides common defaults further down, so the first
+// assignment in the text is not the answer.
+let board = () => {
+    let out = capture(['sh', '-c', '. /etc/pulzr/board.conf; ' +
+        'printf "%s\\n%s\\n%s\\n" "${PULZR_PORT_IFACE:-eth0}" "${PULZR_LAN_PORTS}" "${PULZR_DEVLAN_IPADDR:-192.168.64.1}"']) ?? '';
+    let lines = split(out, '\n');
+    let primary = trim(lines[0] ?? '') || 'eth0';
+    let lan = filter(split(trim(lines[1] ?? ''), /\s+/), (p) => length(p) && p != primary);
+    return { primary, lan, ports: [primary, ...lan], devlanAddress: trim(lines[2] ?? '') || '192.168.64.1' };
+};
+
+// What a technician reads on the case: WAN, LAN 1. A Pi's eth0 is its one
+// Ethernet jack.
+let label = (name) => {
+    let m = match(name, /^(wan|lan)([0-9]*)$/);
+    if (m) return uc(m[1]) + (length(m[2]) ? ' ' + m[2] : '');
+    m = match(name, /^eth([0-9]+)$/);
+    if (m) return int(m[1]) == 0 ? 'Ethernet' : sprintf('Ethernet %d', int(m[1]) + 1);
+    return name;
+};
+
+let ipv4 = (text) => {
+    let m = match(text ?? '', IPV4);
+    if (!m) return null;
+    let octets = [int(m[1]), int(m[2]), int(m[3]), int(m[4])];
+    for (let o in octets) if (o > 255) return null;
+    return octets;
+};
+
+let prefixOf = (mask) => {
+    let o = ipv4(mask);
+    if (!o) return null;
+    let bits = 0, ended = false;
+    for (let octet in o)
+        for (let i = 7; i >= 0; i--) {
+            let on = (octet >> i) & 1;
+            if (on && ended) return null;
+            if (on) bits++; else ended = true;
+        }
+    return bits;
+};
+
+// ucode's integers are 64-bit, so these stay positive with no unsigned shift
+// (which it does not have).
+let toInt = (o) => (o[0] << 24) | (o[1] << 16) | (o[2] << 8) | o[3];
+
+let maskInt = (bits) => bits == 0 ? 0 : ((0xffffffff << (32 - bits)) & 0xffffffff);
+
+// Whether two networks share any address.
+let overlaps = (a, abits, b, bbits) => {
+    let bits = abits < bbits ? abits : bbits;
+    return (toInt(a) & maskInt(bits)) == (toInt(b) & maskInt(bits));
+};
+
+let devlanPresent = (cur) => cur.get('network', 'devlan') == 'interface';
+
+// ── the layout ─────────────────────────────────────────────────────────────
+
+let addressingOf = (s) => {
+    if (s.proto != 'static') return { mode: 'dhcp' };
+    return {
+        mode: 'static',
+        address: s.ipaddr ?? null,
+        netmask: s.netmask ?? null,
+        gateway: s.gateway ?? null,
+        dns: list(s.dns),
+    };
+};
+
+// The kept layout, or null when there is none yet.
+let readLayout = (cur, b) => {
+    let ports = {}, any = false;
+    cur.foreach('pulzr', 'port', (s) => {
+        if (!(s.name in b.ports)) return;
+        any = true;
+        ports[s.name] = { name: s.name, role: s.role in ROLES ? s.role : 'none', addressing: addressingOf(s), vlans: [] };
+    });
+    if (!any) return null;
+    cur.foreach('pulzr', 'vlan', (s) => {
+        let p = ports[s.port];
+        let vid = int(s.vid ?? 0);
+        if (!p || vid < 1 || vid > 4094 || !(s.role in VLAN_ROLES)) return;
+        push(p.vlans, { vid, role: s.role, addressing: addressingOf(s) });
+    });
+    let out = [];
+    for (let name in b.ports) {
+        let p = ports[name] ?? { name, role: 'none', addressing: { mode: 'dhcp' }, vlans: [] };
+        p.vlans = sort(p.vlans, (x, y) => x.vid - y.vid);
+        push(out, p);
+    }
+    return out;
+};
+
+// The board's own shape: its uplink port an uplink, its LAN ports devices
+// (where there is a devlan zone to put them in). The uplink keeps whatever
+// addressing network.wan has now, so a gateway upgraded from before ports
+// existed keeps a static address somebody set at it.
+//
+// Seeded before 25-pulzr-lan has made the devlan zone on a first boot, so
+// whether LAN ports serve devices is the board's answer: it has them and
+// carries pulzr-lan.
+let boardLayout = (cur, b) => {
+    let wan = cur.get_all('network', 'wan') ?? {};
+    let onPrimary = (wan.device ?? b.primary) == b.primary;
+    let lan = devlanPresent(cur) || (length(b.lan) && fs.access('/usr/sbin/pulzr-lan', 'x'));
+    return map(b.ports, (name) => ({
+        name,
+        role: name == b.primary ? 'uplink' : (lan ? 'devices' : 'none'),
+        addressing: name == b.primary && onPrimary ? addressingOf(wan) : { mode: 'dhcp' },
+        vlans: [],
+    }));
+};
+
+let layout = (cur, b) => readLayout(cur, b) ?? boardLayout(cur, b);
+
+let writeAddressing = (cur, section, a) => {
+    for (let key in ['proto', 'ipaddr', 'netmask', 'gateway', 'dns']) cur.delete('pulzr', section, key);
+    if (a?.mode == 'static') {
+        cur.set('pulzr', section, 'proto', 'static');
+        cur.set('pulzr', section, 'ipaddr', a.address);
+        cur.set('pulzr', section, 'netmask', a.netmask);
+        cur.set('pulzr', section, 'gateway', a.gateway);
+        if (length(a.dns ?? [])) cur.set('pulzr', section, 'dns', a.dns);
+    } else {
+        cur.set('pulzr', section, 'proto', 'dhcp');
+    }
+};
+
+let writeLayout = (cur, ports) => {
+    let gone = [];
+    cur.foreach('pulzr', 'port', (s) => push(gone, s['.name']));
+    cur.foreach('pulzr', 'vlan', (s) => push(gone, s['.name']));
+    for (let name in gone) cur.delete('pulzr', name);
+    for (let p in ports) {
+        let section = 'port_' + p.name;
+        cur.set('pulzr', section, 'port');
+        cur.set('pulzr', section, 'name', p.name);
+        cur.set('pulzr', section, 'role', p.role);
+        writeAddressing(cur, section, p.addressing);
+        for (let v in p.vlans) {
+            let vs = sprintf('vlan_%s_%d', p.name, v.vid);
+            cur.set('pulzr', vs, 'vlan');
+            cur.set('pulzr', vs, 'port', p.name);
+            cur.set('pulzr', vs, 'vid', sprintf('%d', v.vid));
+            cur.set('pulzr', vs, 'role', v.role);
+            writeAddressing(cur, vs, v.addressing);
+        }
+    }
+};
+
+// Every link a layout makes: a port's untagged role, then each of its VLANs.
+let links = (ports, b) => {
+    let out = [];
+    for (let p in ports) {
+        if (p.role != 'none')
+            push(out, { port: p.name, vid: null, device: p.name, role: p.role, addressing: p.addressing });
+        for (let v in p.vlans)
+            push(out, { port: p.name, vid: v.vid, device: sprintf('%s.%d', p.name, v.vid), role: v.role, addressing: v.addressing });
+    }
+    for (let l in out)
+        if (l.role == 'uplink')
+            l.iface = l.device == b.primary ? 'wan' : 'wan_' + replace(l.device, '.', '_');
+    return out;
+};
+
+// The port the console's fixed addresses live on: the board's uplink port
+// while it is one, untagged; else the first port that is.
+let accessPort = (ports, b) => {
+    let p = filter(ports, (x) => x.name == b.primary)[0];
+    if (p?.role == 'uplink') return p.name;
+    for (let x in ports) if (x.role == 'uplink') return x.name;
+    return null;
+};
+
+// ── checking a layout ──────────────────────────────────────────────────────
+
+// The fixed networks an uplink's static address may not fall in: the
+// console's, link-local, the devlan zone's and the setup AP's and USB port's.
+let reserved = (b) => {
+    let devlan = ipv4(b.devlanAddress) ?? [192, 168, 64, 1];
+    return [
+        { net: [192, 168, 61, 0], bits: 24, what: 'the console network (192.168.61.0/24)' },
+        { net: [169, 254, 0, 0], bits: 16, what: 'link-local (169.254.0.0/16)' },
+        { net: devlan, bits: 24, what: sprintf('the LAN (%d.%d.%d.0/24)', devlan[0], devlan[1], devlan[2]) },
+        { net: [192, 168, 62, 0], bits: 24, what: 'the setup network (192.168.62.0/24)' },
+        { net: [192, 168, 63, 0], bits: 24, what: 'the USB network (192.168.63.0/24)' },
+    ];
+};
+
+let checkAddressing = (a, where, b) => {
+    if (type(a) != 'object' || a.mode == 'dhcp' || a.mode == null) return { value: { mode: 'dhcp' } };
+    if (a.mode != 'static') return { error: sprintf('%s: addressing is DHCP or static.', where) };
+    let address = ipv4(trim(a.address ?? '')), gateway = ipv4(trim(a.gateway ?? ''));
+    let bits = prefixOf(trim(a.netmask ?? ''));
+    if (!address) return { error: sprintf('%s: the address is not a valid IPv4 address.', where) };
+    if (bits == null || bits < 8 || bits > 30) return { error: sprintf('%s: the netmask is not valid.', where) };
+    if (!gateway) return { error: sprintf('%s: the gateway is not a valid IPv4 address.', where) };
+    if (!overlaps(address, bits, gateway, bits))
+        return { error: sprintf('%s: the gateway is not on the same subnet as the address.', where) };
+    for (let r in reserved(b))
+        if (overlaps(address, bits, r.net, r.bits))
+            return { error: sprintf('%s: that address overlaps %s.', where, r.what) };
+    let dns = [];
+    for (let server in (type(a.dns) == 'array' ? a.dns : [])) {
+        server = trim(server ?? '');
+        if (!length(server)) continue;
+        if (!ipv4(server)) return { error: sprintf('%s: %s is not a valid DNS server.', where, server) };
+        push(dns, server);
+    }
+    if (length(dns) > 3) return { error: sprintf('%s: at most three DNS servers.', where) };
+    return { value: { mode: 'static', address: trim(a.address), netmask: trim(a.netmask), gateway: trim(a.gateway), dns } };
+};
+
+// The layout a caller sent, cleaned, or the reason it cannot be applied.
+let check = (req, cur, b) => {
+    if (type(req?.ports) != 'array') return { error: 'A layout is a list of ports.' };
+    let seen = {}, out = [];
+    for (let p in req.ports) {
+        let name = p?.name;
+        if (type(name) != 'string' || !match(name, PORT_NAME) || !(name in b.ports))
+            return { error: sprintf('%s is not a port on this gateway.', name) };
+        if (seen[name]) return { error: sprintf('%s is named twice.', label(name)) };
+        seen[name] = true;
+        let role = p.role ?? 'none';
+        if (!(role in ROLES)) return { error: sprintf('%s: a role is uplink, devices or none.', label(name)) };
+        if (role == 'devices' && !devlanPresent(cur))
+            return { error: 'This gateway has no LAN to put devices on.' };
+        let addressing = checkAddressing(p.addressing, label(name), b);
+        if (addressing.error) return addressing;
+        let vlans = [], vids = {};
+        if (p.vlans != null && type(p.vlans) != 'array') return { error: sprintf('%s: VLANs are a list.', label(name)) };
+        for (let v in p.vlans ?? []) {
+            let vid = type(v?.vid) == 'int' ? v.vid : (match(v?.vid ?? '', /^[0-9]{1,4}$/) ? int(v.vid) : 0);
+            if (vid < 1 || vid > 4094) return { error: sprintf('%s: a VLAN ID is 1 to 4094.', label(name)) };
+            if (vids[vid]) return { error: sprintf('%s: VLAN %d is listed twice.', label(name), vid) };
+            vids[vid] = true;
+            if (!(v.role in VLAN_ROLES)) return { error: sprintf('%s VLAN %d: a role is uplink or devices.', label(name), vid) };
+            if (v.role == 'devices' && !devlanPresent(cur))
+                return { error: 'This gateway has no LAN to put devices on.' };
+            let va = checkAddressing(v.addressing, sprintf('%s VLAN %d', label(name), vid), b);
+            if (va.error) return va;
+            push(vlans, { vid, role: v.role, addressing: va.value });
+        }
+        if (length(vlans) > MAX_VLANS) return { error: sprintf('%s: at most %d VLANs.', label(name), MAX_VLANS) };
+        push(out, { name, role, addressing: addressing.value, vlans: sort(vlans, (x, y) => x.vid - y.vid) });
+    }
+    for (let name in b.ports)
+        if (!seen[name]) push(out, { name, role: 'none', addressing: { mode: 'dhcp' }, vlans: [] });
+    out = sort(out, (x, y) => index(b.ports, x.name) - index(b.ports, y.name));
+
+    // A laptop with a plain cable has to reach the console somewhere: the
+    // timer undoes a change nobody can confirm, but not one that leaves a
+    // gateway with nothing to plug into until then.
+    if (!length(filter(out, (p) => p.role != 'none')))
+        return { error: 'At least one port has to stay an uplink or a LAN port without a VLAN.' };
+
+    let all = links(out, b);
+    let uplinks = filter(all, (l) => l.role == 'uplink');
+    if (length(uplinks) > MAX_UPLINKS) return { error: sprintf('At most %d wired uplinks.', MAX_UPLINKS) };
+    for (let i = 0; i < length(uplinks); i++)
+        for (let j = i + 1; j < length(uplinks); j++) {
+            let a = uplinks[i].addressing, c = uplinks[j].addressing;
+            if (a.mode != 'static' || c.mode != 'static') continue;
+            let abits = prefixOf(a.netmask), cbits = prefixOf(c.netmask);
+            if (overlaps(ipv4(a.address), abits, ipv4(c.address), cbits))
+                return { error: 'Two uplinks have addresses on the same subnet.' };
+        }
+    return { value: out };
+};
+
+// ── rendering ──────────────────────────────────────────────────────────────
+
+let sectionsOf = (cur, config, kind) => {
+    let out = [];
+    cur.foreach(config, kind, (s) => push(out, s));
+    return out;
+};
+
+// network, firewall, dhcp and pulzr.uplinks from a layout. Writes; does
+// not commit or reload.
+let render = (cur, ports, b) => {
+    let all = links(ports, b);
+    let uplinks = filter(all, (l) => l.role == 'uplink');
+    let devices = filter(all, (l) => l.role == 'devices');
+
+    // VLAN devices: ours are vlan_<port>_<vid>, and only ours are touched.
+    for (let s in sectionsOf(cur, 'network', 'device'))
+        if (match(s['.name'], /^vlan_[A-Za-z0-9-]+_[0-9]+$/) && s.type == '8021q')
+            cur.delete('network', s['.name']);
+    for (let l in all) {
+        if (l.vid == null) continue;
+        let name = sprintf('vlan_%s_%d', l.port, l.vid);
+        cur.set('network', name, 'device');
+        cur.set('network', name, 'type', '8021q');
+        cur.set('network', name, 'ifname', l.port);
+        cur.set('network', name, 'vid', sprintf('%d', l.vid));
+        cur.set('network', name, 'name', l.device);
+    }
+
+    // The wired uplinks, keeping each one's metric: pulzr-uplinks owns it.
+    let metrics = {};
+    for (let s in sectionsOf(cur, 'network', 'interface'))
+        if (s['.name'] == 'wan' || match(s['.name'], /^wan_/)) {
+            metrics[s['.name']] = s.metric;
+            cur.delete('network', s['.name']);
+        }
+    for (let i = 0; i < length(uplinks); i++) {
+        let l = uplinks[i], a = l.addressing;
+        cur.set('network', l.iface, 'interface');
+        cur.set('network', l.iface, 'device', l.device);
+        cur.set('network', l.iface, 'metric', metrics[l.iface] ?? sprintf('%d', 10 + i));
+        if (a.mode == 'static') {
+            cur.set('network', l.iface, 'proto', 'static');
+            cur.set('network', l.iface, 'ipaddr', a.address);
+            cur.set('network', l.iface, 'netmask', a.netmask);
+            cur.set('network', l.iface, 'gateway', a.gateway);
+            if (length(a.dns ?? [])) cur.set('network', l.iface, 'dns', a.dns);
+        } else {
+            cur.set('network', l.iface, 'proto', 'dhcp');
+        }
+    }
+
+    // The console's fixed addresses.
+    let access = accessPort(ports, b);
+    for (let iface in ['console', 'linklocal']) {
+        if (cur.get('network', iface) != 'interface') continue;
+        cur.set('network', iface, 'device', access ?? b.primary);
+        if (access) cur.delete('network', iface, 'disabled');
+        else cur.set('network', iface, 'disabled', '1');
+    }
+
+    // The devlan bridge.
+    if (devlanPresent(cur)) {
+        let dev = filter(sectionsOf(cur, 'network', 'device'), (s) => s.name == 'br-devlan')[0];
+        let section = dev?.['.name'] ?? 'devlan_dev';
+        if (!dev) {
+            cur.set('network', section, 'device');
+            cur.set('network', section, 'name', 'br-devlan');
+            cur.set('network', section, 'type', 'bridge');
+        }
+        cur.delete('network', section, 'ports');
+        if (length(devices)) cur.set('network', section, 'ports', map(devices, (l) => l.device));
+    }
+
+    // The wan zone: every wired uplink, and the console's addresses where
+    // they are up. Everything else in it (wwifi, usbwan) stays.
+    let zone = split(trim(cur.get('firewall', 'wan', 'network') ?? ''), /\s+/);
+    zone = filter(zone, (n) => length(n) && n != 'console' && n != 'linklocal' && n != 'wan' && !match(n, /^wan_/));
+    if (access) zone = ['console', 'linklocal', ...zone];
+    zone = [...map(uplinks, (l) => l.iface), ...zone];
+    cur.set('firewall', 'wan', 'network', join(' ', zone));
+
+    // dnsmasq never answers on an uplink's device.
+    let dnsmasq = sectionsOf(cur, 'dhcp', 'dnsmasq')[0];
+    if (dnsmasq) {
+        let not = map(uplinks, (l) => l.device);
+        cur.set('dhcp', dnsmasq['.name'], 'notinterface', length(not) ? not : [b.primary]);
+    }
+
+    // pulzr-uplinks: a new wired uplink is tracked, as wan always was, and
+    // goes in the order after the last wired one rather than behind the SIM.
+    if (cur.get('pulzr', 'uplinks') == 'uplinks') {
+        let names = map(uplinks, (l) => l.iface);
+        let s = cur.get_all('pulzr', 'uplinks');
+        let wired = (n) => n == 'wan' || match(n, /^wan_/);
+        let track = filter(list(s.track), (n) => !wired(n) || n in names);
+        let order = filter(list(s.order), (n) => !wired(n) || n in names);
+        let known = {};
+        for (let n in list(s.known_wired)) known[n] = true;
+        for (let n in names) {
+            if (known[n]) continue;
+            if (!(n in track)) push(track, n);
+            if (length(order) && !(n in order)) {
+                let at = 0;
+                for (let i = 0; i < length(order); i++) if (wired(order[i])) at = i + 1;
+                splice(order, at, 0, n);
+            }
+        }
+        track = filter(track, (n) => n != 'none');
+        cur.set('pulzr', 'uplinks', 'track', length(track) ? track : 'none');
+        if (length(order)) cur.set('pulzr', 'uplinks', 'order', order);
+        // The wired uplinks seen before, so turning tracking off for one
+        // stays off across the next render.
+        if (length(names)) cur.set('pulzr', 'uplinks', 'known_wired', names);
+        else cur.delete('pulzr', 'uplinks', 'known_wired');
+    }
+};
+
+let commitAll = (cur) => {
+    for (let c in SNAPSHOT_CONFIGS) cur.commit(c);
+};
+
+let reload = () => {
+    system('ubus call network reload >/dev/null 2>&1');
+    system('/etc/init.d/firewall reload >/dev/null 2>&1');
+    system('/etc/init.d/dnsmasq reload >/dev/null 2>&1');
+    if (fs.access('/usr/sbin/pulzr-uplinks', 'x')) system('/usr/sbin/pulzr-uplinks apply >/dev/null 2>&1');
+    if (fs.access('/usr/sbin/pulzr-lan', 'x')) system('( sleep 5; /usr/sbin/pulzr-lan isolate ) >/dev/null 2>&1 &');
+    // The tunnel and LoRa routing re-pick their uplink on ifup and ifdown;
+    // an uplink that only changed name gets neither, so ask once.
+    system('( sleep 8; /usr/sbin/pulzr-wireguard-route apply; /usr/sbin/pulzr-lora-route apply ) >/dev/null 2>&1 &');
+};
+
+// ── the pending change ─────────────────────────────────────────────────────
+
+let pending = () => {
+    try { return json(fs.readfile(PENDING) ?? 'null'); } catch (e) { return null; }
+};
+
+let snapshot = () => {
+    system(['mkdir', '-p', SNAPSHOT]);
+    for (let c in SNAPSHOT_CONFIGS) {
+        let from = '/etc/config/' + c;
+        if (fs.access(from)) fs.writefile(SNAPSHOT + '/' + c, fs.readfile(from));
+        else fs.unlink(SNAPSHOT + '/' + c);
+    }
+    system('sync');
+};
+
+let restore = () => {
+    for (let c in SNAPSHOT_CONFIGS) {
+        let from = SNAPSHOT + '/' + c;
+        if (fs.access(from)) fs.writefile('/etc/config/' + c, fs.readfile(from));
+    }
+};
+
+let clearPending = () => {
+    for (let c in SNAPSHOT_CONFIGS) fs.unlink(SNAPSHOT + '/' + c);
+    fs.rmdir(SNAPSHOT);
+    fs.unlink(PENDING);
+    system('sync');
+};
+
+let arm = (by) => {
+    let until = time() + WINDOW;
+    let was = pending();
+    fs.writefile(PENDING, sprintf('%J', { until, by: by ?? was?.by ?? null, since: was?.since ?? time(), applied: time() }));
+    system('sync');
+    system(['start-stop-daemon', '-S', '-b', '-x', '/usr/sbin/pulzr-ports', '--', 'expire', sprintf('%d', WINDOW + 1)]);
+    return until;
+};
+
+// ── status ─────────────────────────────────────────────────────────────────
+
+let carrier = (dev) => {
+    if (!match(dev, /^[A-Za-z0-9._-]{1,15}$/)) return { present: false };
+    let base = '/sys/class/net/' + dev;
+    if (!fs.access(base)) return { present: false };
+    let speed = int(trim(fs.readfile(base + '/speed') ?? '') || '-1');
+    return {
+        present: true,
+        up: trim(fs.readfile(base + '/carrier') ?? '0') == '1',
+        speed: speed > 0 ? speed : null,
+        mac: trim(fs.readfile(base + '/address') ?? '') || null,
+    };
+};
+
+// ── what is on each port ──────────────────────────────────────────────────
+//
+// An uplink's router by its MAC, from the ARP table: the address alone says
+// nothing about what is at the end of the cable, its maker does, and Pulzr
+// Net names it (netaddr's IEEE registry) on the report's answer.
+//
+// And whatever announced itself on the port: lldpd listens on every port in
+// receive-only mode (29-pulzr-ports), so a managed switch or a business
+// router names itself and the port it is, LLDP or Cisco's CDP alike, and
+// this gateway announces nothing on a network that is not ours. Equipment
+// that announces nothing shows nothing; a home router and most cheap
+// switches do not.
+
+let arp = () => {
+    let out = {};
+    for (let line in split(fs.readfile('/proc/net/arp') ?? '', '\n')) {
+        let f = split(trim(line), /\s+/);
+        if (length(f) >= 6 && match(lc(f[3]), MAC) && f[3] != '00:00:00:00:00:00')
+            out[f[5] + ' ' + f[0]] = lc(f[3]);
+    }
+    return out;
+};
+
+let clip = (v, n) => type(v) == 'string' && length(v) ? substr(v, 0, n) : null;
+
+let neighbors = () => {
+    let out = {};
+    if (!fs.access('/usr/sbin/lldpcli', 'x')) return out;
+    let doc = null;
+    try { doc = json(capture(['lldpcli', '-f', 'json0', 'show', 'neighbors']) ?? 'null'); } catch (e) { doc = null; }
+    let first = (a) => type(a) == 'array' ? a[0]?.value : null;
+    for (let l in type(doc?.lldp) == 'array' ? doc.lldp : [])
+        for (let i in type(l?.interface) == 'array' ? l.interface : []) {
+            if (type(i?.name) != 'string') continue;
+            let c = i.chassis?.[0] ?? {}, p = i.port?.[0] ?? {};
+            out[i.name] ??= [];
+            push(out[i.name], {
+                protocol: clip(i.via, 8),
+                name: clip(first(c.name), 64),
+                description: clip(first(c.descr), 160),
+                chassis: clip(first(c.id), 64),
+                managementAddress: clip(first(c['mgmt-ip']), 64),
+                capabilities: map(filter(type(c.capability) == 'array' ? c.capability : [], (x) => x?.enabled),
+                                  (x) => clip(x.type, 16)),
+                port: clip(first(p.id), 64),
+                portDescription: clip(first(p.descr), 96),
+            });
+        }
+    return out;
+};
+
+let identity = () => {
+    try { return json(fs.readfile(IDENTITY) ?? 'null'); } catch (e) { return null; }
+};
+
+let ifaceState = (name) => {
+    let out = capture(['ubus', 'call', 'network.interface.' + name, 'status']);
+    let s = null;
+    try { s = out ? json(out) : null; } catch (e) { s = null; }
+    if (!s) return { up: false, address: null, gateway: null, dns: [] };
+    let address = null, gateway = null;
+    for (let a in s['ipv4-address'] ?? []) address = sprintf('%s/%d', a.address, a.mask);
+    for (let r in s.route ?? []) if (r.target == '0.0.0.0' && r.mask == 0) gateway = r.nexthop;
+    // What a lease handed out, so Ethernet's "Make static" keeps it.
+    return { up: !!s.up, address, gateway, dns: s['dns-server'] ?? [], device: s.l3_device ?? null };
+};
+
+let status = () => {
+    let cur = uci.cursor(), b = board(), ports = layout(cur, b);
+    let all = links(ports, b);
+    let byLink = {};
+    for (let l in all) byLink[l.device] = l;
+    let macs = arp(), known = identity(), heard = neighbors();
+    let linkOut = (l) => {
+        if (!l) return null;
+        let out = { role: l.role };
+        if (l.role == 'uplink') {
+            out.iface = l.iface;
+            out.addressing = l.addressing;
+            out.state = ifaceState(l.iface);
+            let mac = out.state.gateway ? macs[(out.state.device ?? l.device) + ' ' + out.state.gateway] : null;
+            out.router = out.state.gateway
+                ? { address: out.state.gateway, mac: mac ?? null, maker: (mac && known?.routers?.[mac]) || null }
+                : null;
+            // What the internet sees, as Pulzar Cloud saw this gateway's last
+            // report: only for the uplink that report left on.
+            out.internet = known?.via == l.iface
+                ? { address: known.publicAddress ?? null, provider: known.provider ?? null } : null;
+        }
+        return out;
+    };
+    let p = pending();
+    return {
+        ports: map(ports, (x) => ({
+            name: x.name,
+            label: label(x.name),
+            primary: x.name == b.primary,
+            link: carrier(x.name),
+            role: x.role,
+            addressing: x.addressing,
+            uplink: x.role == 'uplink' ? linkOut(byLink[x.name]) : null,
+            neighbors: map(heard[x.name] ?? [], (n) => ({ ...n, maker: known?.routers?.[lc(n.chassis ?? '')] ?? null })),
+            vlans: map(x.vlans, (v) => ({ vid: v.vid, role: v.role, addressing: v.addressing,
+                                          uplink: v.role == 'uplink' ? linkOut(byLink[sprintf('%s.%d', x.name, v.vid)]) : null })),
+        })),
+        console: accessPort(ports, b),
+        consoleAddress: cur.get('network', 'console', 'ipaddr') ?? null,
+        devices: devlanPresent(cur),
+        pending: p && p.until > time() ? { until: p.until, in: p.until - time(), by: p.by,
+                                           confirmableIn: max(0, (p.applied ?? 0) + SETTLE - time()) } : null,
+        window: WINDOW,
+        settle: SETTLE,
+    };
+};
+
+// ── commands ───────────────────────────────────────────────────────────────
+
+let commands = {
+    status: () => printf('%J\n', status()),
+
+    set: (path, by) => {
+        let text = path == '-' || path == null ? fs.stdin.read('all') : fs.readfile(path);
+        let req = null;
+        try { req = json(text ?? ''); } catch (e) { die('a layout is JSON', 2); }
+        let cur = uci.cursor(), b = board();
+        let checked = check(req, cur, b);
+        if (checked.error) die(checked.error, 2);
+        let ports = checked.value;
+        if (!pending()) snapshot();
+        writeLayout(cur, ports);
+        render(cur, ports, b);
+        commitAll(cur);
+        let until = arm(by);
+        log(sprintf('layout applied%s, kept if confirmed within %ds: %s', by ? ' by ' + by : '', WINDOW,
+                    join(', ', map(links(ports, b), (l) => sprintf('%s %s', l.device, l.role)))));
+        reload();
+        // The settle time and the window count from here: the reload itself
+        // takes seconds on a slow CPU (most of twenty on the Opal, the
+        // firewall alone), a confirm inside it has proved nothing, and the
+        // person confirming should get the whole window. The timer armed
+        // before the reload, so a reload that never returns is still undone.
+        let p = pending();
+        if (p) {
+            p.applied = time();
+            p.until = time() + WINDOW;
+            fs.writefile(PENDING, sprintf('%J', p));
+            system('sync');
+        }
+        printf('%J\n', { pending: { until: p?.until ?? until, in: (p?.until ?? until) - time(), confirmableIn: SETTLE } });
+    },
+
+    confirm: () => {
+        let p = pending();
+        if (!p) { printf('%J\n', { confirmed: false }); return; }
+        if (time() < (p.applied ?? 0) + SETTLE) die('too soon: the change is still settling', 3);
+        clearPending();
+        log('layout confirmed');
+        printf('%J\n', { confirmed: true });
+    },
+
+    revert: () => {
+        if (!pending()) die('there is no change to undo', 2);
+        restore();
+        clearPending();
+        log('layout undone');
+        reload();
+        printf('%J\n', { reverted: true });
+    },
+
+    expire: (seconds) => {
+        sleep((int(seconds ?? WINDOW) || WINDOW) * 1000);
+        // Each `set` starts one of these and moves the deadline; only the one
+        // that wakes past it acts.
+        while (true) {
+            let p = pending();
+            if (!p) return;
+            if (p.until <= time()) break;
+            sleep((p.until - time() + 1) * 1000);
+        }
+        restore();
+        clearPending();
+        log('layout undone: nothing reached the gateway to confirm it');
+        reload();
+    },
+
+    // Before the network starts: a change still pending after a reboot was
+    // never confirmed.
+    boot: () => {
+        if (!pending()) return;
+        restore();
+        clearPending();
+        log('layout undone at boot: it was never confirmed');
+    },
+
+    // Each wired uplink's router, for the report: Pulzar Cloud names the maker.
+    routers: () => {
+        let cur = uci.cursor(), b = board(), macs = arp(), out = [];
+        for (let l in links(layout(cur, b), b)) {
+            if (l.role != 'uplink') continue;
+            let st = ifaceState(l.iface);
+            let mac = st.gateway ? macs[(st.device ?? l.device) + ' ' + st.gateway] : null;
+            if (mac) push(out, { iface: l.iface, mac });
+        }
+        // And whatever announced itself by MAC alone: an LLDP neighbour with
+        // no name is named by its maker too.
+        let heard = neighbors();
+        for (let port in keys(heard))
+            for (let n in heard[port]) {
+                let mac = lc(n.chassis ?? '');
+                if (match(mac, MAC) && !length(filter(out, (r) => r.mac == mac)))
+                    push(out, { iface: port, mac, neighbor: true });
+            }
+        printf('%J\n', out);
+    },
+
+    // The report's answer about them, kept for `status`. Checked here, not
+    // trusted: it is shown on the console.
+    identify: (path) => {
+        let doc = null;
+        try { doc = json(fs.readfile(path) ?? 'null'); } catch (e) { doc = null; }
+        if (type(doc) != 'object') die('not an answer', 2);
+        let routers = {};
+        for (let mac in keys(type(doc.routers) == 'object' ? doc.routers : {}))
+            if (match(mac, MAC) && type(doc.routers[mac]) == 'string') routers[mac] = clip(doc.routers[mac], 64);
+        let provider = type(doc.provider) == 'object' ? doc.provider : null;
+        system(['mkdir', '-p', '/var/run/pulzr']);
+        fs.writefile(IDENTITY, sprintf('%J', {
+            via: match(doc.via ?? '', /^(wan(_[A-Za-z0-9_]+)?|wwifi|wwan|usbwan)$/) ? doc.via : null,
+            publicAddress: match(doc.publicAddress ?? '', /^[0-9a-fA-F.:]{3,45}$/) ? doc.publicAddress : null,
+            provider: provider ? { name: clip(provider.name, 80), asn: type(provider.asn) == 'int' ? provider.asn : null } : null,
+            routers,
+        }));
+    },
+
+    seed: () => {
+        let cur = uci.cursor(), b = board();
+        if (readLayout(cur, b)) return;
+        writeLayout(cur, boardLayout(cur, b));
+        cur.commit('pulzr');
+    },
+
+    render: () => {
+        let cur = uci.cursor(), b = board();
+        render(cur, layout(cur, b), b);
+        commitAll(cur);
+    },
+};
+
+let cmd = commands[ARGV[0] ?? 'status'];
+cmd ?? die('usage: pulzr-ports {status|routers|identify|set|confirm|revert|seed|render|boot}', 2);
+call(cmd, null, null, ...slice(ARGV, 1));

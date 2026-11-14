@@ -1,0 +1,37 @@
+#!/usr/bin/ucode -R
+// Draw the Pulzar mark.
+//
+//   pulzr-logo                  the mark, for this terminal
+//   pulzr-logo --beside         the mark with stdin laid out to its right
+//   pulzr-logo --width          its width in columns, 0 if it will not draw
+//
+// The drawing is /usr/share/pulzr/logo.uc; see its header for how colour
+// depth and glyphs are chosen, and PULZR_COLOR / PULZR_ASCII for
+// overriding a terminal that misreports itself.
+
+let _m_fs = require('fs');
+let logo = loadfile('/usr/share/pulzr/logo.uc', { raw_mode: true })();
+
+const term = logo.detect(_m_fs.stdout.isatty());
+const lines = logo.render(term);
+const cols = length(lines) ? logo.width() : 0;
+
+if (ARGV[0] == '--width') {
+    print(cols, '\n');
+    exit(0);
+}
+
+let text = [];
+if (ARGV[0] == '--beside') {
+    const raw = _m_fs.stdin.read('all') ?? '';
+    text = split(replace(raw, /\n+$/, ''), '\n');
+}
+
+// No mark on this terminal: the text alone, so --beside still prints.
+if (!length(lines)) {
+    for (let t in text) print(t, '\n');
+    exit(0);
+}
+
+for (let line in logo.beside(lines, text, cols))
+    print('  ', line, '\n');

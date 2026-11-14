@@ -1,9 +1,0 @@
-Package: parkeze-speedtest
-Depends: ucode, ucode-mod-fs, ucode-mod-uci, curl, ca-bundle, librespeed-cli
-Maintainer: Joseph Telaak <joseph@parkeze.com>
-Architecture: all
-Description: How fast each free uplink is, direct and through the tunnel.
- librespeed-cli against the nearest LibreSpeed public server on each wired
- and WiFi uplink, bound to its device so a test never leaves over cellular,
- and gateway-link's measurement of the WireGuard tunnel to Pulzr Net, so the
- two can be compared. Daily at the gateway's own time of night by default.

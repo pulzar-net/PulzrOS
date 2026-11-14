@@ -117,7 +117,7 @@ function FirmwareUpload() {
       // Read here rather than in the api helper: it is a header, so it has to
       // be a string before the request starts, and File.text() is a promise.
       const headers = manifest
-        ? { 'X-Parkeze-Manifest': (await manifest.text()).trim() }
+        ? { 'X-Pulzr-Manifest': (await manifest.text()).trim() }
         : undefined;
       return upload<{ target?: string; openwrt?: string; signed?: boolean }>(
         '/system/firmware', image, setProgress, headers,

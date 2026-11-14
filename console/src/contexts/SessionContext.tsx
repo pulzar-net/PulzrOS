@@ -15,7 +15,7 @@ import type { Session } from '@/types';
  *
  * "How" matters as much as "who" here, which is why `kind` is carried around
  * rather than collapsed into a boolean. A recovery session is an exceptional
- * state — granted by parkeze.net to get into a gateway whose backhaul is dead —
+ * state — granted by Pulzar Cloud to get into a gateway whose backhaul is dead —
  * and the UI banners it, counts it down, and ends it visibly. Treating it as
  * just another login would hide the one thing about it that matters.
  */

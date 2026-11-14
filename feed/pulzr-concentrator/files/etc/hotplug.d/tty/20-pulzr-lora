@@ -1,0 +1,32 @@
+#!/bin/sh
+#
+# /dev/lora<n> for the LoRa card in USB slot n, by the hub port it is wired to.
+#
+# A board with its cards on USB lists their ports in PULZR_LORA_USB_PORTS, in
+# slot order, and declares its slots on /dev/lora<n>. The ttyACM number is
+# whatever was free when the card enumerated: on the RAK7289CV2 a card reset
+# while concentratord still held ttyACM0 came back as ttyACM1, and slot 0,
+# declared on ttyACM0, stayed dead until the card was unbound and bound again.
+# The port does not move. RAK's own firmware maps them the same way
+# (/etc/hotplug.d/usb/11-symlinks).
+
+case "${DEVNAME}" in ttyACM*) ;; *) exit 0 ;; esac
+
+. "${PULZR_BOARD_CONF:-/etc/pulzr/board.conf}"
+[ -n "${PULZR_LORA_USB_PORTS}" ] || exit 0
+DEV="${PULZR_DEV_DIR:-/dev}"
+
+# /devices/.../1-1.2/1-1.2:1.0/tty/ttyACM0 -> 1-1.2:1.0
+iface="$(basename "$(dirname "$(dirname "${DEVPATH}")")")"
+
+n=0
+for port in ${PULZR_LORA_USB_PORTS}; do
+    if [ "${port}" = "${iface}" ]; then
+        case "${ACTION}" in
+            add)    ln -sf "/dev/${DEVNAME}" "${DEV}/lora${n}" ;;
+            remove) [ "$(readlink "${DEV}/lora${n}")" = "/dev/${DEVNAME}" ] && rm -f "${DEV}/lora${n}" ;;
+        esac
+    fi
+    n=$((n + 1))
+done
+exit 0

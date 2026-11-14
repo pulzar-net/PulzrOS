@@ -92,7 +92,7 @@ done < <(
   {
     find feed -name '*.uc'
     # Standalone ucode programs live in usr/sbin with no .uc suffix and are
-    # identified by their shebang. parkeze-figlet is one.
+    # identified by their shebang. pulzr-figlet is one.
     find feed -type f -path '*/usr/sbin/*' -print0 \
       | while IFS= read -r -d '' f; do
           head -c 32 "$f" | grep -q ucode && printf '%s\n' "$f"
@@ -128,10 +128,10 @@ fi
 # exists to catch. Read from the actual mapping instead, the way uhttpd itself
 # decides what to load.
 while IFS= read -r suffix; do
-  handler="feed/parkeze-console/files${suffix}"
+  handler="feed/pulzr-console/files${suffix}"
   if [ ! -f "${handler}" ]; then
     echo "FAIL ${handler}"
-    echo "     registered as a ucode_prefix handler in 30-parkeze-console but"
+    echo "     registered as a ucode_prefix handler in 30-pulzr-console but"
     echo "     does not exist."
     fail=$((fail + 1))
     continue
@@ -156,7 +156,7 @@ done < <(grep -rohE "ucode_prefix='[^=]*=[^']*'" feed/ \
 
 # lib/*.uc are loaded with loadfile(), so they must end in a returned object
 # rather than exports.
-for lib in feed/parkeze-console/files/usr/share/parkeze/console/lib/*.uc; do
+for lib in feed/pulzr-console/files/usr/share/pulzr/console/lib/*.uc; do
   [ -f "${lib}" ] || continue
   if grep -q '^export ' "${lib}"; then
     echo "FAIL ${lib}"

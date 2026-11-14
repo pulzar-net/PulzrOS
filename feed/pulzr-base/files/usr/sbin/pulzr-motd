@@ -1,0 +1,171 @@
+#!/bin/sh
+#
+# The login banner.
+#
+#   pulzr-motd            print it
+#   pulzr-motd --no-logo  just the facts, for a narrow terminal
+#
+# The mark is drawn by pulzr-logo from a pixel grid, and the wordmark beside
+# it is rendered by figlet at print time rather than being a block of
+# ASCII art pasted into this file. Two reasons, and the second is the real one:
+#
+#   * a hardcoded block is a thing to re-paste by hand whenever the wordmark
+#     or the font changes, and it always drifts;
+#   * a hardcoded block cannot adapt. Rendering here means the banner can drop
+#     the logo on a 40-column serial terminal instead of wrapping it into
+#     unreadable confetti, which is exactly the terminal an installer is on.
+#
+# Everything below the logo is read live. A banner that reports the state the
+# gateway was in when the image was built is worse than no banner — this is
+# often the first and only thing somebody sees about a device.
+
+. /etc/pulzr/board.conf 2>/dev/null
+
+WIDTH="${COLUMNS:-80}"
+FONT="${PULZR_MOTD_FONT:-/usr/share/pulzr/fonts/slant.flf}"
+WORDMARK="${PULZR_MOTD_WORDMARK:-Pulzar}"
+LOGO=1
+[ "$1" = "--no-logo" ] && LOGO=0
+
+# ANSI only when we are actually on a terminal. Piping this into a file or a
+# ticket should not fill it with escape sequences.
+if [ -t 1 ]; then
+    B='\033[1m'; DIM='\033[2m'; GREEN='\033[32m'; YELLOW='\033[33m'
+    RED='\033[31m'; OFF='\033[0m'
+else
+    B=''; DIM=''; GREEN=''; YELLOW=''; RED=''; OFF=''
+fi
+
+say() { printf "$@"; }
+
+# ── the wordmark ────────────────────────────────────────────────────────────
+
+wordmark() {
+    # pulzr-figlet, not figlet: OpenWrt packages no figlet for any
+    # architecture, so the renderer ships with us. It reads the same slant.flf
+    # and produces byte-identical output — see scripts/test-figlet.sh.
+    [ -x /usr/sbin/pulzr-figlet ] || return 1
+    [ -f "${FONT}" ] || return 1
+    /usr/sbin/pulzr-figlet -f "${FONT}" -- "${WORDMARK}" 2>/dev/null
+}
+
+logo() {
+    # The mark beside the wordmark, then the wordmark alone, then the mark
+    # beside the plain name — whichever is the widest that fits. Nothing here
+    # wraps, which is exactly why the widths are checked: a wrapped logo on a
+    # 40-column serial terminal is unreadable confetti.
+    #
+    # slant is 39 columns for "Pulzar"; the mark is its own width plus the
+    # indent and the gap pulzr-logo puts around it. pulzr-logo reports 0
+    # when this terminal will not draw it, and the wordmark carries on alone.
+    local mark=0
+    [ -x /usr/sbin/pulzr-logo ] && mark="$(/usr/sbin/pulzr-logo --width 2>/dev/null || echo 0)"
+    [ "${mark}" -gt 0 ] && mark=$((mark + 5))
+
+    if [ "${mark}" -gt 0 ] && [ "${WIDTH}" -ge $((mark + 39)) ] && wordmark >/dev/null; then
+        wordmark | /usr/sbin/pulzr-logo --beside
+    elif [ "${WIDTH}" -ge 46 ] && wordmark >/dev/null; then
+        wordmark
+    elif [ "${mark}" -gt 0 ] && [ "${WIDTH}" -ge $((mark + 7)) ]; then
+        printf "${B}Pulzar${OFF}\n" | /usr/sbin/pulzr-logo --beside
+    else
+        return 1
+    fi
+}
+
+# ── state ───────────────────────────────────────────────────────────────────
+
+adoption_line() {
+    local state org
+    state="$(uci -q get pulzr.adoption.state)"
+    org="$(uci -q get pulzr.adoption.org)"
+
+    case "${state}" in
+        adopted)
+            if pulzr-claim reclaiming >/dev/null 2>&1; then
+                say "  ${DIM}Adopted${OFF}      ${YELLOW}claim revoked — scan the code below${OFF}\n"
+            else
+                say "  ${DIM}Adopted${OFF}      ${GREEN}%s${OFF}\n" "${org:-unknown org}"
+            fi
+            ;;
+        *)
+            say "  ${DIM}Adopted${OFF}      ${YELLOW}not yet — scan the code below${OFF}\n"
+            ;;
+    esac
+}
+
+concentrator_line() {
+    local status present slots channels colour text
+    status="$(uci -q get pulzr.concentrator.status)"
+    present="$(uci -q get pulzr.concentrator.present || echo 0)"
+    slots="$(uci -q get pulzr.concentrator.slots || echo 0)"
+    channels="$(uci -q get pulzr.concentrator.channels || echo 0)"
+
+    case "${status}" in
+        present) colour="${GREEN}"; text="${channels} channels" ;;
+        partial) colour="${YELLOW}"
+                 text="${channels} channels — only ${present} of ${slots} concentrators" ;;
+        *)       colour="${RED}";  text="none detected" ;;
+    esac
+    say "  ${DIM}LoRaWAN${OFF}      ${colour}%s${OFF}\n" "${text}"
+}
+
+backhaul_line() {
+    # Reads the tunnel's last handshake from the kernel and the routing table.
+    # Nothing here goes near the network, so printing a banner never costs
+    # cellular data — see docs/backhaul.md for why that matters on this fleet.
+    local colour text
+    if [ "$(pulzr-backhaul-check --tunnel 2>/dev/null)" = "up" ]; then
+        colour="${GREEN}"; text="wired (management tunnel up)"
+    elif ( . /usr/share/pulzr/cellular.sh; cellular_gateway >/dev/null ); then
+        colour="${YELLOW}"; text="cellular only — metered"
+    else
+        colour="${RED}"; text="unreachable"
+    fi
+    say "  ${DIM}Backhaul${OFF}     ${colour}%s${OFF}\n" "${text}"
+}
+
+# ── output ──────────────────────────────────────────────────────────────────
+
+echo
+if [ "${LOGO}" = 1 ] && logo; then
+    :
+else
+    say "  ${B}Pulzar${OFF}\n"
+fi
+
+say "  ${DIM}%s${OFF}\n\n" \
+    "PulzrOS ${PULZR_VERSION:-dev} · ${BOARD_NAME:-unknown board}"
+
+say "  ${DIM}Host${OFF}         %s\n" "$(uci -q get pulzr.identity.hostname || cat /proc/sys/kernel/hostname)"
+say "  ${DIM}Gateway EUI${OFF}  %s\n" "$(uci -q get pulzr.identity.gateway_eui || echo unknown)"
+# Both console addresses, because which one is useful depends on how you got
+# here. The .local name is the one that works with a laptop and a cable and
+# nothing configured; the fixed address is the fallback when mDNS is blocked.
+say "  ${DIM}Console${OFF}      https://%s.local/\n" \
+    "$(uci -q get pulzr.identity.hostname || cat /proc/sys/kernel/hostname)"
+say "  ${DIM}%s${OFF}             https://%s/\n" "" \
+    "$(uci -q get network.console.ipaddr || echo 192.168.61.1)"
+# The USB port, on a board built with one: the name to type with a cable in.
+if [ -x /usr/sbin/pulzr-usb-gadget ]; then
+    say "  ${DIM}USB${OFF}          https://pulzr.local/  ${DIM}%s${OFF}\n" \
+        "$(uci -q get network.usb.ipaddr || echo 192.168.63.1)"
+fi
+# The same console, here. Named because somebody at a shell prompt has no
+# other way to learn it exists.
+[ -x /usr/sbin/pulzr-tui ] && say "  ${DIM}Terminal${OFF}     pulzr-tui\n"
+adoption_line
+concentrator_line
+backhaul_line
+
+# The first-boot password, shown only while it is still the first-boot
+# password. It is deleted the moment somebody changes it, so this disappears on
+# its own rather than advertising a stale credential forever.
+if [ -s /etc/pulzr/console/initial-password ]; then
+    echo
+    say "  ${YELLOW}This gateway is on its initial password. Change it at first sign-in.${OFF}\n"
+    say "  ${DIM}Username${OFF}     %s\n" "$(cat /etc/pulzr/console/username 2>/dev/null || echo pulzr)"
+    say "  ${DIM}Password${OFF}     ${B}%s${OFF}\n" "$(cat /etc/pulzr/console/initial-password)"
+fi
+
+echo

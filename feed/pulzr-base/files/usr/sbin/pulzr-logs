@@ -1,0 +1,69 @@
+#!/bin/sh
+#
+# The system log, by subsystem.
+#
+#   pulzr-logs --topics          one topic per line
+#   pulzr-logs <topic> [lines]   that topic's recent lines, oldest first
+#   pulzr-logs <topic> --follow  that topic as it is written, until Ctrl-C
+#
+# What support reads when a customer's gateway misbehaves: Pulzar Cloud's log
+# tool runs this over SSH, and the console's diagnostic shell on a serial or
+# USB port offers it. It reads and prints and does nothing else, and takes no
+# argument that reaches a shell, which is what lets both of those offer it to
+# somebody who is not allowed a shell.
+#
+# Exit 0, or 2 for an unknown topic or a bad line count.
+
+pattern() {
+	case "$1" in
+	wifi)     echo 'wpa_supplicant|hostapd|phy[0-9]-|wwifi|pulzr-wifi' ;;
+	cellular) echo 'ModemManager|modemmanager|wwan|pulzr-cell|qmi|mbim' ;;
+	# Not wwan: a wired line names wan after a quote or a space.
+	wired)    echo "eth[0-9]|br-lan|netifd: .*[ '\"(]wan(_[A-Za-z0-9_]+)?[ '\").:]|netifd: .*[ '\"(]lan[ '\").:]|ports:" ;;
+	tunnel)   echo 'wireguard|wg[0-9]|tailscale' ;;
+	lorawan)  echo 'chirpstack|concentratord|lora|sx130|mosquitto' ;;
+	ble)      echo 'bluetooth|bluez|hci[0-9]|pulzr-ble|btattach' ;;
+	console)  echo 'pulzr-console|pulzr-tui|uhttpd|sshd|login' ;;
+	system)   echo 'kernel|procd|sysupgrade|pulzr-firmware|pulzr-adopt|pulzr-claim|oom' ;;
+	all)      echo '.' ;;
+	*)        return 1 ;;
+	esac
+}
+
+TOPICS='wifi cellular wired tunnel lorawan ble console system all'
+
+if [ "$1" = --topics ]; then
+	for t in ${TOPICS}; do echo "${t}"; done
+	exit 0
+fi
+
+topic="$1"
+lines="${2:-200}"
+re="$(pattern "${topic}")" || {
+	echo "unknown topic '${topic}'. Topics: ${TOPICS}" >&2
+	exit 2
+}
+# Through grep rather than logread's own -e, which takes a basic regex: no
+# alternation, so no topic would ever match.
+if [ "${lines}" = --follow ]; then
+	logread -f | grep -E -- "${re}"
+	exit 0
+fi
+case "${lines}" in
+	''|*[!0-9]*) echo "lines must be a number" >&2; exit 2 ;;
+esac
+[ "${lines}" -gt 2000 ] && lines=2000
+[ "${lines}" -lt 1 ] && lines=1
+
+logread | grep -E -- "${re}" | tail -n "${lines}"
+
+# The last WiFi failure, decoded the way the console shows it: the log line
+# says "error 691", this says bad_credentials.
+if [ "${topic}" = wifi ] && [ -e /usr/share/pulzr/console/lib/wififail.uc ]; then
+	ucode -e '
+		let f = loadfile("/usr/share/pulzr/console/lib/wififail.uc", { raw_mode: true })().last();
+		print(f ? sprintf("== last failure: %s%s, at %s\n", f.code, f.detail ? " (" + f.detail + ")" : "", f.at)
+		        : "== last failure: none\n");
+	' 2>/dev/null
+fi
+exit 0

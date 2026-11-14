@@ -1,0 +1,353 @@
+#!/usr/bin/ucode
+// How fast each free uplink is, straight to the internet and through the
+// management tunnel to Pulzar Cloud, now and then.
+//
+//   pulzr-speedtest status            JSON: schedule, running, history
+//   pulzr-speedtest latest            the last of each test on each uplink
+//   pulzr-speedtest brief             status with the last 30, short: the
+//                                       MQTT agent's `speedtest`, under 8KB
+//   pulzr-speedtest start             run now, in the background
+//   pulzr-speedtest run               run now, here
+//   pulzr-speedtest schedule off|daily|weekly
+//   pulzr-speedtest service           the scheduler, under procd
+//
+// ── TWO TESTS, TO COMPARE ──────────────────────────────────────────────────
+//
+//   direct   librespeed-cli against the nearest LibreSpeed public server, once
+//            per free uplink, bound to that uplink's device (--interface,
+//            SO_BINDTODEVICE). What the site's line does.
+//   tunnel   the cloud sending to and taking from this gateway over the
+//            WireGuard tunnel (pulzr-claim tunnel-test), which is the path
+//            the console, SSH and management take through Pulzar Cloud. Where
+//            the two differ a lot, the tunnel is the problem, not the line.
+//
+// No server of our own: LibreSpeed's list is public servers run by their
+// sponsors, and the nearest by ping is picked each time. Each one is tried
+// over plain HTTP first. The list gives HTTPS, and on the Opal TLS is the
+// limit, not the line: one HTTPS download from a cloud host ran at 11.7 Mb/s where
+// plain HTTP ran at 48. HTTPS is the fallback for a server that does not
+// answer HTTP, and the result says which it was.
+//
+// ── NEVER CELLULAR ─────────────────────────────────────────────────────────
+//
+// Only wired and WiFi uplinks are tested, each through its own device, so a
+// test cannot fall through to the SIM when the route moves mid-test. A WiFi
+// network still on its sign-in page, an uplink tracking has seen carry
+// nothing, and the tunnel while it rides cellular are skipped. A gateway
+// whose only uplink is cellular never runs one.
+//
+// ── WHEN ───────────────────────────────────────────────────────────────────
+//
+// Daily by default, at a time of night that is this gateway's own (from its
+// EUI, between 01:00 and 05:00 local), so a fleet does not test at once and a
+// site does not see it at noon. About 10 seconds each way per uplink: on a
+// 100 Mb/s line roughly 200 MB a run.
+
+let fs = require('fs');
+let uci = require('uci');
+
+const STATE = '/etc/pulzr/speedtest';
+const HISTORY = STATE + '/history.json';
+const RUNNING = '/var/run/pulzr/speedtest.json';
+const SERVERS = 'https://librespeed.org/backend-servers/servers.php';
+const KEEP = 120;
+const EVERY = { daily: 86400, weekly: 604800 };
+const DEVICE = /^[A-Za-z0-9._-]{1,15}$/;
+
+let die = (msg, code) => {
+    warn(msg, '\n');
+    exit(code ?? 1);
+};
+
+let log = (msg) => system(['logger', '-t', 'speedtest', '-p', 'daemon.notice', msg]);
+
+let capture = (cmd) => {
+    let proc = fs.popen(cmd + ' 2>/dev/null', 'r');
+    if (!proc) return null;
+    let out = proc.read('all');
+    proc.close();
+    return out;
+};
+
+let captureJson = (cmd) => {
+    let out = capture(cmd);
+    try { return out ? json(out) : null; } catch (e) { return null; }
+};
+
+let readJson = (path, fallback) => {
+    try { return json(fs.readfile(path) ?? 'null') ?? fallback; } catch (e) { return fallback; }
+};
+
+let writeJson = (path, value) => {
+    fs.writefile(path + '.tmp', sprintf('%J', value));
+    fs.rename(path + '.tmp', path);
+};
+
+let config = () => {
+    let s = uci.cursor().get_all('pulzr', 'speedtest') ?? {};
+    let duration = int(s.duration ?? 10);
+    return {
+        every: s.every in ['off', 'daily', 'weekly'] ? s.every : 'daily',
+        duration: duration >= 3 && duration <= 30 ? duration : 10,
+    };
+};
+
+let history = () => readJson(HISTORY, []);
+
+let record = (entries) => {
+    system(['mkdir', '-p', STATE]);
+    let all = [...history(), ...entries];
+    if (length(all) > KEEP) all = slice(all, length(all) - KEEP);
+    writeJson(HISTORY, all);
+};
+
+// ── what to test ───────────────────────────────────────────────────────────
+
+let device = (iface) => {
+    let s = captureJson(sprintf("ubus call network.interface.%s status", iface));
+    return s?.up && s.l3_device && match(s.l3_device, DEVICE) ? s.l3_device : null;
+};
+
+// The free uplinks that are up and carrying traffic: wired and WiFi, never
+// cellular.
+let free = () => {
+    let out = [];
+    let st = captureJson('/usr/sbin/pulzr-uplinks status');
+    if (st?.uplinks) {
+        for (let u in st.uplinks) {
+            if (u.kind != 'ethernet' && u.kind != 'wifi') continue;
+            if (!u.up || u.state == 'offline' || u.state == 'portal' || u.state == 'down') continue;
+            let dev = u.device ?? device(u.iface);
+            if (dev) push(out, { iface: u.iface, kind: u.kind, device: dev });
+        }
+        return out;
+    }
+    // No pulzr-uplinks on this board: every wired uplink, and the WiFi
+    // once it is past any sign-in page.
+    for (let iface in split(trim(capture(". /usr/share/pulzr/wired.sh; wired_ifaces") ?? ''), '\n')) {
+        let dev = length(iface) ? device(iface) : null;
+        if (dev) push(out, { iface, kind: 'ethernet', device: dev });
+    }
+    let wifi = device('wwifi');
+    if (wifi && system('/usr/sbin/pulzr-wifi-uplink usable >/dev/null 2>&1') == 0)
+        push(out, { iface: 'wwifi', kind: 'wifi', device: wifi });
+    return out;
+};
+
+// ── the tests ──────────────────────────────────────────────────────────────
+
+// A command with a ceiling: there is no `timeout` applet in this build.
+let bounded = (cmd, seconds) => {
+    let out = sprintf('/tmp/pulzr-speedtest.%d.out', time());
+    system(sprintf("( %s ) > '%s' 2>/dev/null & pid=$!; n=0; " +
+                   "while kill -0 $pid 2>/dev/null; do [ $n -ge %d ] && { kill $pid; sleep 1; kill -9 $pid; break; }; sleep 1; n=$((n+1)); done; wait $pid 2>/dev/null",
+                   cmd, out, seconds));
+    let text = fs.readfile(out);
+    fs.unlink(out);
+    return text;
+};
+
+// LibreSpeed's server list, fetched out of the uplink being tested, with
+// each server's address as given and as plain HTTP.
+let servers = (dev) => {
+    let text = bounded(sprintf("curl -sS --interface '%s' -m 15 '%s'", dev, SERVERS), 20);
+    let list = null;
+    try { list = json(text ?? 'null'); } catch (e) { list = null; }
+    if (type(list) != 'array' || !length(list)) return null;
+    let plain = map(list, (s) => ({ ...s, server: replace(s.server ?? '', /^https:/, 'http:') }));
+    return { secure: list, plain };
+};
+
+let librespeed = (dev, list, cfg) => {
+    let path = sprintf('/tmp/pulzr-speedtest.%s.json', dev);
+    fs.writefile(path, sprintf('%J', list));
+    let out = bounded(sprintf("librespeed-cli --interface '%s' --json --duration %d --concurrent 4 --local-json '%s'",
+                              dev, cfg.duration, path), cfg.duration * 2 + 90);
+    fs.unlink(path);
+    let r = null;
+    try { r = json(out ?? 'null'); } catch (e) { r = null; }
+    r = type(r) == 'array' ? r[0] : r;
+    return r?.download > 0 || r?.upload > 0 ? r : null;
+};
+
+let direct = (u, cfg) => {
+    let entry = { at: time(), test: 'direct', iface: u.iface, kind: u.kind, device: u.device };
+    let list = servers(u.device);
+    if (!list) return { ...entry, error: 'the LibreSpeed server list did not load' };
+    let r = librespeed(u.device, list.plain, cfg), secure = false;
+    if (!r) { r = librespeed(u.device, list.secure, cfg); secure = true; }
+    if (!r) return { ...entry, error: 'no LibreSpeed server answered' };
+    return {
+        ...entry,
+        server: r.server?.name ?? null,
+        secure,
+        downloadMbps: r.download,
+        uploadMbps: r.upload,
+        pingMs: r.ping,
+        jitterMs: r.jitter,
+        bytesReceived: r.bytes_received,
+        bytesSent: r.bytes_sent,
+    };
+};
+
+// Through the cloud, which measures the tunnel from its end; asked for
+// over the report's channel, proved by the claim secret.
+let tunnel = (cfg) => {
+    let route = captureJson('/usr/sbin/pulzr-wireguard-route status');
+    let entry = { at: time(), test: 'tunnel', via: route?.via ?? 'none' };
+    if (!route || route.via == 'none') return null;
+    if (route.via == 'cellular') return null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+        let out = bounded(sprintf('/usr/sbin/pulzr-claim tunnel-test %d', cfg.duration), cfg.duration * 2 + 60);
+        let r = null;
+        try { r = json(out ?? 'null'); } catch (e) { r = null; }
+        if (r?.downloadMbps != null)
+            return { ...entry, iface: route.iface || null, device: route.device || null,
+                     downloadMbps: r.downloadMbps, uploadMbps: r.uploadMbps, pingMs: r.pingMs,
+                     bytesReceived: r.bytesReceived, bytesSent: r.bytesSent };
+        // Pulzar Cloud tests one tunnel at a time.
+        if (r?.busy) { sleep((60 + time() % 60) * 1000); continue; }
+        return { ...entry, error: r?.error ?? 'Pulzar Cloud did not answer' };
+    }
+    return { ...entry, error: 'Pulzar Cloud was busy testing other gateways' };
+};
+
+let running = () => {
+    let r = readJson(RUNNING, null);
+    if (!r?.pid || !fs.access(sprintf('/proc/%d', r.pid))) return null;
+    return r;
+};
+
+let run = () => {
+    if (running()) die('a speed test is already running', 3);
+    system(['mkdir', '-p', '/var/run/pulzr']);
+    let self = int(split(fs.readfile('/proc/self/stat') ?? '0', ' ')[0]);
+    writeJson(RUNNING, { pid: self, startedAt: time() });
+    let cfg = config(), out = [];
+    let uplinks = free();
+    if (!length(uplinks)) {
+        log('no wired or WiFi uplink to test');
+    }
+    for (let u in uplinks) {
+        let r = direct(u, cfg);
+        push(out, r);
+        log(r.error ? sprintf('%s: %s', u.iface, r.error)
+                    : sprintf('%s: %.1f down, %.1f up Mb/s, %.0f ms (%s)', u.iface, r.downloadMbps, r.uploadMbps, r.pingMs, r.server));
+    }
+    if (length(uplinks)) {
+        let t = tunnel(cfg);
+        if (t) {
+            push(out, t);
+            log(t.error ? sprintf('tunnel: %s', t.error)
+                        : sprintf('tunnel over %s: %.1f down, %.1f up Mb/s, %.0f ms', t.via, t.downloadMbps, t.uploadMbps, t.pingMs));
+        }
+    }
+    if (length(out)) record(out);
+    fs.unlink(RUNNING);
+    // Pulzar Cloud hears the result now, not at the next six-hourly report.
+    if (length(out)) system('( pulzr-claim report >/dev/null 2>&1 & ) 2>/dev/null');
+    return out;
+};
+
+// ── scheduling ─────────────────────────────────────────────────────────────
+
+// This gateway's minute of the night: from its EUI, so the same every day
+// and different from its neighbours'.
+let slot = () => {
+    let eui = uci.cursor().get('pulzr', 'identity', 'gateway_eui') ?? '';
+    let h = 0;
+    for (let i = 0; i < length(eui); i++) h = (h * 31 + ord(eui, i)) % 14400;
+    return 3600 + h;
+};
+
+// Seconds since local midnight, by the gateway's own clock and zone.
+let localSeconds = () => {
+    let t = localtime();
+    return t.hour * 3600 + t.min * 60 + t.sec;
+};
+
+let lastRun = () => {
+    let h = history();
+    return length(h) ? h[length(h) - 1].at : 0;
+};
+
+let due = (cfg) => {
+    if (cfg.every == 'off') return false;
+    let last = lastRun(), since = time() - last;
+    if (last && since < EVERY[cfg.every] - 7200) return false;
+    let now = localSeconds(), at = slot();
+    // Within half an hour after this gateway's slot, or overdue by a day.
+    // Never run counts as waiting for the slot, not as overdue: a fleet
+    // upgraded at once would otherwise test at once, at noon.
+    return (now >= at && now < at + 1800) || (last && since > EVERY[cfg.every] + 86400);
+};
+
+let status = () => {
+    let cfg = config(), r = running();
+    let h = history();
+    return {
+        schedule: { every: cfg.every, at: sprintf('%02d:%02d', slot() / 3600, (slot() % 3600) / 60), duration: cfg.duration },
+        running: r ? { startedAt: r.startedAt } : null,
+        uplinks: map(free(), (u) => ({ iface: u.iface, kind: u.kind, device: u.device })),
+        history: h,
+    };
+};
+
+// The last direct test on each uplink and the last tunnel test, for the
+// report: small, and what a fleet view needs.
+let latest = () => {
+    let by = {};
+    for (let r in history()) by[r.test == 'tunnel' ? 'tunnel' : 'direct:' + r.iface] = r;
+    return map(sort(keys(by)), (k) => {
+        let r = by[k];
+        return { at: r.at, test: r.test, iface: r.iface ?? null, kind: r.kind ?? null, via: r.via ?? null,
+                 device: r.device ?? null,
+                 downloadMbps: r.downloadMbps ?? null, uploadMbps: r.uploadMbps ?? null,
+                 pingMs: r.pingMs ?? null, server: r.server ?? null, error: r.error ?? null };
+    });
+};
+
+let commands = {
+    status: () => printf('%J\n', status()),
+
+    latest: () => printf('%J\n', latest()),
+
+    brief: () => {
+        let st = status(), h = st.history;
+        st.history = map(length(h) > 30 ? slice(h, length(h) - 30) : h, (r) => ({
+            at: r.at, test: r.test, iface: r.iface ?? null, kind: r.kind ?? null, via: r.via ?? null,
+            device: r.device ?? null, downloadMbps: r.downloadMbps ?? null, uploadMbps: r.uploadMbps ?? null, pingMs: r.pingMs ?? null,
+            server: r.server ? substr(r.server, 0, 40) : null, error: r.error ?? null,
+        }));
+        printf('%J\n', st);
+    },
+
+    run: () => printf('%J\n', run()),
+
+    start: () => {
+        if (running()) die('a speed test is already running', 3);
+        system(['start-stop-daemon', '-S', '-b', '-x', '/usr/sbin/pulzr-speedtest', '--', 'run']);
+        printf('%J\n', { started: true });
+    },
+
+    schedule: (every) => {
+        (every in ['off', 'daily', 'weekly']) || die('off, daily or weekly', 2);
+        let cur = uci.cursor();
+        if (cur.get('pulzr', 'speedtest') != 'speedtest') cur.set('pulzr', 'speedtest', 'speedtest');
+        cur.set('pulzr', 'speedtest', 'every', every);
+        cur.commit('pulzr');
+        log('schedule ' + every);
+        printf('%J\n', status().schedule);
+    },
+
+    service: () => {
+        while (true) {
+            if (due(config()) && !running()) run();
+            sleep(300 * 1000);
+        }
+    },
+};
+
+let cmd = commands[ARGV[0] ?? 'status'];
+cmd ?? die('usage: pulzr-speedtest {status|start|run|schedule|service}', 2);
+call(cmd, null, null, ...slice(ARGV, 1));

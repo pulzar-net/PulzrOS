@@ -1,3 +1,0 @@
-# When each LAN device was first and last seen, and the journal of forwards
-# opened to them, which parkeze.net reads back after an upgrade as before it.
-/etc/parkeze/lan/

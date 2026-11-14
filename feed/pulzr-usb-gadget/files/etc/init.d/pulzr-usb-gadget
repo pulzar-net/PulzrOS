@@ -1,0 +1,12 @@
+#!/bin/sh /etc/rc.common
+#
+# The USB device port: see /usr/sbin/pulzr-usb-gadget.
+#
+# Before the network, so usb0 exists when netifd first looks for it; netifd
+# would pick it up later through hotplug regardless.
+
+START=19
+STOP=90
+
+start() { /usr/sbin/pulzr-usb-gadget up; }
+stop() { /usr/sbin/pulzr-usb-gadget down; }

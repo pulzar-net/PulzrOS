@@ -21,7 +21,7 @@ step keeps a network up.
    gateway's page in the platform from a phone, type the signed code back. Expect
    a session of 30 minutes.
 4. Local password, adopted: refused unless a root shell opened it
-   (`parkeze-local-access`).
+   (`pulzr-local-access`).
 5. SSH on the LAN port: refused. 8080 on the LAN port: refused.
 6. Backhaul > WiFi: scan, join a network with the wrong password. Expect the
    failure on the page. Join with the right one. Expect the tunnel back within
@@ -68,7 +68,7 @@ the PulzrOS branch that points at its build.
    `dmesg | grep -iE 'i2c|ktd|et6326'`. A probe error here stops the test; report
    it, nothing else below can pass.
 3. Run the channel test in that repo's README and write down the colour of each.
-4. `parkeze-led status setup`: one short flash a second. `parkeze-led status alert`:
+4. `pulzr-led status setup`: one short flash a second. `pulzr-led status alert`:
    fast, around 5 Hz, not a slow 16-second cycle. Time them on a phone.
 5. Run Four presses above; both outcomes must be visible across a room.
 6. Then: correct the names, remove channel 2, merge, tag the release, point

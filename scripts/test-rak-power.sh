@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# parkeze-rak-power against a fake bus, then against a simulated RAK power board.
+# pulzr-rak-power against a fake bus, then against a simulated RAK power board.
 #
 #   scripts/test-rak-power.sh             both
 #   RAK_POWER_UNIT_ONLY=1 scripts/...     the fake bus only: no compiler, no pymodbus
@@ -22,7 +22,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HERE="${ROOT_DIR}/scripts/rak-power-test"
 WORK="${ROOT_DIR}/.build/rak-power-test"
-LUA_PATH_FEED="${ROOT_DIR}/feed/parkeze-rak-power/files/usr/lib/lua/?.lua"
+LUA_PATH_FEED="${ROOT_DIR}/feed/pulzr-rak-power/files/usr/lib/lua/?.lua"
 
 LUA_LIBMODBUS_URL="https://codeload.github.com/etactica/lua-libmodbus/tar.gz/v0.7"
 LUA_LIBMODBUS_SHA256="70369f4c4e36421095bf00dcee36c633b4284eaa79bcfdfd230bfefb27acefda"
@@ -118,4 +118,4 @@ done
 # Its server is listening a moment after the port file appears.
 sleep 0.5
 
-RAK_POWER_SIM="${SIM}" RAK_POWER_MAIN="${ROOT_DIR}/feed/parkeze-rak-power/files/usr/sbin/parkeze-rak-power" run_lua || { echo "--- simulator log" >&2; tail -n 30 "${SIM}/simulator.log" >&2; exit 1; }
+RAK_POWER_SIM="${SIM}" RAK_POWER_MAIN="${ROOT_DIR}/feed/pulzr-rak-power/files/usr/sbin/pulzr-rak-power" run_lua || { echo "--- simulator log" >&2; tail -n 30 "${SIM}/simulator.log" >&2; exit 1; }

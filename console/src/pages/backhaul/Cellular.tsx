@@ -35,7 +35,7 @@ export default function Cellular() {
   const [enabled, setEnabled] = useState(false);
 
   // Re-sync when a refetch brings different values, so an APN changed from
-  // parkeze.net does not sit invisibly behind a stale local edit.
+  // Pulzar Cloud does not sit invisibly behind a stale local edit.
   useEffect(() => {
     if (!cellular) return;
     setApn(cellular.apn ?? '');

@@ -1,0 +1,121 @@
+#!/bin/sh /etc/rc.common
+#
+# Make sure the gateway is never left with no firewall.
+#
+# WHY THIS EXISTS
+#
+# fw4 renders every /etc/nftables.d/*.nft snippet into one ruleset and loads it
+# atomically. One bad line anywhere means it loads NOTHING:
+#
+#   /etc/nftables.d/20-pulzr-tailscale.nft:20: Error: User does not exist
+#   The rendered ruleset contains errors, not doing firewall restart.
+#
+# That is exactly what happened. Our own tailscale snippet matched `meta skuid
+# "tailscale"`, a user no package ever created, so on a Pi 3 standing on a
+# customer LAN `nft list ruleset` was empty and SSH answered from the site
+# network. The UCI config was perfect. It was simply never applied.
+#
+# A firewall that fails open on a network we do not own is the single worst
+# failure this device has, and it was reachable from a typo in an unrelated
+# file. So it gets a backstop that does not depend on any of our snippets being
+# correct.
+#
+# WHAT IT DOES
+#
+# Repair first, substitute second. If fw4 did not load, the snippets are moved
+# aside one at a time and fw4 retried, which restores the REAL ruleset and says
+# which file was at fault. Only if that fails does it install a minimal
+# deny-everything table, because a gateway that is hard to reach beats a
+# gateway anybody can reach.
+
+START=20
+
+NFTDIR=/etc/nftables.d
+QUARANTINE=/etc/nftables.d/broken
+
+loaded() { [ "$(nft list ruleset 2>/dev/null | wc -l)" -gt 0 ]; }
+
+emerg() { logger -t pulzr-firewall -p daemon.crit "$*"; }
+
+fallback() {
+	# Deliberately tiny, and deliberately not a copy of the real policy: this
+	# is the "something is badly wrong" state, not a second implementation to
+	# keep in step. Established traffic, loopback, DHCP replies, and the
+	# console from the two local ranges. Everything else is dropped.
+	. /etc/pulzr/board.conf 2>/dev/null
+	local net="${PULZR_LAN_IPADDR%.*}.0/24"
+
+	nft -f - <<EOF 2>/dev/null
+table inet pulzr_fallback {
+	chain input {
+		type filter hook input priority -10; policy drop;
+		ct state established,related accept
+		ct state invalid drop
+		iif lo accept
+		udp sport 67 udp dport 68 accept
+		ip saddr 169.254.0.0/16 tcp dport { 22, 80, 443 } accept
+		ip saddr ${net} tcp dport { 22, 80, 443 } accept
+	}
+}
+EOF
+}
+
+start() {
+	# Clear any fallback from a previous boot before judging the current state,
+	# so a repaired gateway does not keep a crippled ruleset forever.
+	nft delete table inet pulzr_fallback 2>/dev/null
+
+	loaded && return 0
+
+	emerg "fw4 loaded no ruleset — this gateway currently has NO firewall"
+
+	# Find the culprit, then put the innocents back.
+	#
+	# Moving files aside one at a time and stopping at the first success leaves
+	# every file tried before the guilty one in quarantine — on a Pi 3 that took
+	# out 10-custom-filter-chains.nft, a stock OpenWrt snippet that was never the
+	# problem. Removing rules we did not need to remove is its own security
+	# regression, so anything moved aside is restored and re-tested.
+	mkdir -p "${QUARANTINE}"
+	local moved="" culprit=""
+	for f in "${NFTDIR}"/*.nft; do
+		[ -f "${f}" ] || continue
+		mv "${f}" "${QUARANTINE}/" 2>/dev/null || continue
+		moved="${moved} $(basename "${f}")"
+		/etc/init.d/firewall restart >/dev/null 2>&1
+		if loaded; then
+			culprit="$(basename "${f}")"
+			break
+		fi
+	done
+
+	if [ -n "${culprit}" ]; then
+		for name in ${moved}; do
+			[ "${name}" = "${culprit}" ] && continue
+			mv "${QUARANTINE}/${name}" "${NFTDIR}/" 2>/dev/null
+		done
+		/etc/init.d/firewall restart >/dev/null 2>&1
+		if loaded; then
+			emerg "firewall restored; ${culprit} quarantined to ${QUARANTINE}"
+			return 0
+		fi
+		# Putting them back broke it again, so more than one file is bad. Take
+		# them all out and keep the firewall.
+		for name in ${moved}; do
+			[ "${name}" = "${culprit}" ] && continue
+			mv "${NFTDIR}/${name}" "${QUARANTINE}/" 2>/dev/null
+		done
+		/etc/init.d/firewall restart >/dev/null 2>&1
+		if loaded; then
+			emerg "firewall restored; quarantined${moved} to ${QUARANTINE}"
+			return 0
+		fi
+	fi
+
+	# Nothing left to blame; the problem is in the UCI config itself.
+	if fallback && loaded; then
+		emerg "installed the minimal fallback ruleset: console reachable from 169.254.0.0/16 and the console subnet, everything else dropped"
+	else
+		emerg "COULD NOT INSTALL ANY FIREWALL — this gateway is open on whatever it is plugged into"
+	fi
+}

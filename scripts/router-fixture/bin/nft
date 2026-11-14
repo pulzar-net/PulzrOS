@@ -1,5 +1,5 @@
 #!/bin/sh
-# nftables for parkeze-lan: a script it loads is appended to $T/nft.log, its
+# nftables for pulzr-lan: a script it loads is appended to $T/nft.log, its
 # table always exists, and every set and map lists empty.
 case "$*" in
 	"-f "*) { echo "# load"; cat "$2"; } >> "${T}/nft.log" ;;

@@ -59,7 +59,7 @@ export default function Overview() {
     enabled: features.has('lan'),
   });
   // With failover the order is the site's, so which uplink carries traffic is
-  // parkeze-uplinks' answer, not Ethernet-then-WiFi-then-cellular.
+  // pulzr-uplinks' answer, not Ethernet-then-WiFi-then-cellular.
   const order = useQuery({
     queryKey: ['uplinks'],
     queryFn: () => api.get<UplinksStatus>('/uplinks/status'),
@@ -230,7 +230,7 @@ function uplink(paths: BackhaulStatus | undefined, order?: UplinksStatus): Row {
   const { wired, wifi, cellular } = paths;
   const carrying = (iface: UplinkIface, up: boolean | undefined) =>
     order ? order.active === iface || (iface === 'wwan' && order.active === 'usbwan') : !!up;
-  // Any wired uplink: there can be several (parkeze-ports).
+  // Any wired uplink: there can be several (pulzr-ports).
   if (order ? isWiredIface(order.active) : wired.up) {
     const how = wired.proto === 'static' ? 'static' : wired.proto === 'dhcp' ? 'by DHCP' : null;
     const device = order?.uplinks.find((u) => u.iface === order.active)?.device ?? wired.device;

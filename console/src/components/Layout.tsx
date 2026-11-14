@@ -87,7 +87,7 @@ export default function Layout({
           {session?.kind !== 'lan' && (
             <div className={styles.footMeta}>
               {session?.kind === 'sso'
-                ? 'via Parkeze'
+                ? 'via Pulzar'
                 : session?.kind === 'recovery'
                   ? 'recovery session'
                   : 'local sign-in'}
@@ -163,7 +163,7 @@ export default function Layout({
 function LanAccess() {
   const remaining = useSessionCountdown();
   return (
-    <div className={styles.lan} title="Closes on its own, or with parkeze-local-access close">
+    <div className={styles.lan} title="Closes on its own, or with pulzr-local-access close">
       <Network size={12} strokeWidth={2} />
       LAN access
       <span className={styles.lanClock}>{countdown(remaining)}</span>
@@ -173,7 +173,7 @@ function LanAccess() {
 
 /**
  * Shown on every page while a revoked claim waits to be replaced: the gateway
- * changed hands or was released, and parkeze.net refuses its reports until the
+ * changed hands or was released, and Pulzar Cloud refuses its reports until the
  * new claim is adopted. Not dismissible, for the reason the one below is not.
  */
 function ReclaimBanner() {
@@ -181,7 +181,7 @@ function ReclaimBanner() {
     <div className={styles.unadopted} role="status">
       <ShieldAlert size={15} strokeWidth={1.9} />
       <span>
-        <strong>Claim revoked.</strong> Parkeze refuses this gateway&apos;s
+        <strong>Claim revoked.</strong> Pulzar refuses this gateway&apos;s
         reports until its new claim is adopted.
       </span>
       <Link className={styles.unadoptedAction} to="/adopt">

@@ -74,7 +74,7 @@ export function modemKind(kind: ModemKind | null | undefined): string | null {
 }
 
 /** What a technician reads on the case for a port or a VLAN on one, the way
-    parkeze-ports labels them: lan1 is "LAN 1", wan.20 "WAN VLAN 20", a Pi's
+    pulzr-ports labels them: lan1 is "LAN 1", wan.20 "WAN VLAN 20", a Pi's
     eth0 "Ethernet". */
 export function portLabel(device: string | null | undefined): string {
   if (!device) return 'Ethernet';

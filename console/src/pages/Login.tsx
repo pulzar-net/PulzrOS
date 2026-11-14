@@ -19,7 +19,7 @@ import styles from './Login.module.css';
  * gateway decides — not this component. An unadopted gateway offers a local
  * password because that is the only thing that could work; an adopted one
  * offers recovery, because the credential a thief could pull out of its flash
- * must not be a way in. See ParkezeOS docs/auth.md.
+ * must not be a way in. See PulzarOS docs/auth.md.
  *
  * Note that the *reason* text comes from the API too. It changes with adoption
  * state and there is no version of it that belongs in the frontend.
@@ -27,8 +27,8 @@ import styles from './Login.module.css';
 /**
  * A handoff token in the fragment.
  *
- * parkeze.net returns the browser here with `#sso=<token>`, and
- * `parkeze-local-access open` prints a link ending `#ticket=<hex>`. Either is
+ * Pulzar Cloud returns the browser here with `#sso=<token>`, and
+ * `pulzr-local-access open` prints a link ending `#ticket=<hex>`. Either is
  * removed from the URL as soon as it is presented, success or not: a fragment
  * is never sent to a server, but it does stay in history, and the back button
  * on a shared laptop should not be a way back into somebody's session. The
@@ -53,7 +53,7 @@ function readHandoff(): Handoff | null {
 }
 
 export default function Login() {
-  const [mode, setMode] = useState<'password' | 'recovery' | 'parkeze' | null>(null);
+  const [mode, setMode] = useState<'password' | 'recovery' | 'pulzr' | null>(null);
   const [handoffToken, setHandoffToken] = useState(readHandoff);
   const [unreachable, setUnreachable] = useState(false);
   const presented = useRef<string | null>(null);
@@ -130,10 +130,10 @@ export default function Login() {
   const available = methods.data!;
   // An adopted gateway with local sign-in off has exactly one way in, so land
   // on it rather than making somebody click past a form they cannot use.
-  // Adopted: Parkeze sign-in first. Recovery is for when the browser has no
+  // Adopted: Pulzar sign-in first. Recovery is for when the browser has no
   // internet either, which is the rarer case and one click away.
   const effective =
-    mode ?? (available.local ? 'password' : available.sso ? 'parkeze' : 'recovery');
+    mode ?? (available.local ? 'password' : available.sso ? 'pulzr' : 'recovery');
 
   // A refused LAN link is shown above whichever form follows, since none of
   // them is the way back in: that is a fresh link from the gateway's shell.
@@ -153,11 +153,11 @@ export default function Login() {
         {effective === 'recovery' ? (
           <Recovery
             canGoBack={available.local || available.sso}
-            onBack={() => setMode(available.local ? 'password' : 'parkeze')}
+            onBack={() => setMode(available.local ? 'password' : 'pulzr')}
             notice={unreachable ? 'This browser cannot reach Pulzar.' : null}
           />
-        ) : effective === 'parkeze' ? (
-          <ParkezeSignIn
+        ) : effective === 'pulzr' ? (
+          <PulzarSignIn
             methods={available}
             error={ssoError}
             onRecovery={() => setMode('recovery')}
@@ -194,7 +194,7 @@ export default function Login() {
  * which is one more certificate warning and nothing else: nothing is signed in
  * yet.
  */
-function ParkezeSignIn({
+function PulzarSignIn({
   methods,
   error,
   onRecovery,
@@ -264,7 +264,7 @@ function PasswordForm({
   onRecovery: () => void;
 }) {
   const { signIn } = useSession();
-  const [username, setUsername] = useState('parkeze');
+  const [username, setUsername] = useState('pulzr');
   const [password, setPassword] = useState('');
 
   const login = useMutation({

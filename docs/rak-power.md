@@ -7,8 +7,8 @@ through a CH340 USB-serial bridge inside the case. Two things sit on that bus:
   unit on DC power whose OS does not feed it loses its power.
 - the optional **RAK battery pack**.
 
-`parkeze-rak-power` feeds the one, reads the other, and reports both to
-parkeze.net.
+`pulzr-rak-power` feeds the one, reads the other, and reports both to
+Pulzar Cloud.
 
 It is RAK-specific and deliberately small. It is not a general RS485 or
 Modbus service. The slaves, the registers and the line settings are RAK's and
@@ -54,7 +54,7 @@ sources and one bench probe.
     every 10 s; `wdtcfg` timeout `10`. That 10 matches the value ChirpStack
     writes to `0x0001`, so the feed is most likely the watchdog's timeout in
     minutes, rewritten.
-- **The bench Pro** (2026-10-26, ParkezeOS 0.1.0, with
+- **The bench Pro** (2026-10-26, PulzarOS 0.1.0, with
   `kmod-usb-serial-ch341` from the 24.10.0 feed, on PoE). The CH340 came up as
   `/dev/ttyUSB4` at `1-1.4`, with the EG95 on `ttyUSB0`-`3`. At 9600 8N1,
   nothing answered:
@@ -99,8 +99,8 @@ depends on which driver binds first, and ChirpStack hardcodes
 looks again whenever the node goes away. On the bench Pro the CH340 was
 `ttyUSB4`.
 
-**Only boards that declare it.** `PARKEZE_RAK_POWER_USB` and
-`PARKEZE_RAK_POWER_ID` live in `boards/common/rakwireless.conf`, empty by
+**Only boards that declare it.** `PULZR_RAK_POWER_USB` and
+`PULZR_RAK_POWER_ID` live in `boards/common/rakwireless.conf`, empty by
 default, and only `boards/rak7289cv2/board.conf` sets them and adds
 `PACKAGES_RAK_POWER`. No other board carries the package, and the init script
 starts nothing on a board that does not set the port.
@@ -124,9 +124,9 @@ starts nothing on a board that does not set the port.
 
 **The battery pack** is an optional accessory, so one that has never answered
 is `absent` and is asked every 30 minutes, in case one is fitted later, instead
-of every 5. parkeze.net shows nothing for a pack that is `absent`.
+of every 5. Pulzar Cloud shows nothing for a pack that is `absent`.
 
-**Telling parkeze.net.** The record rides `parkeze-claim report` as
+**Telling Pulzar Cloud.** The record rides `pulzr-claim report` as
 `facts.rakPower`, the same report that carries the rest of the gateway's
 health. That report goes every six hours. The daemon also asks for one when
 the summary changes:
@@ -142,7 +142,7 @@ Refresh on the gateway page, which asks over MQTT.
 
 **Times are ages.** The record says `fedAgo`, not a timestamp. The gateway's
 clock is 1970 until NTP answers, and the watchdog is fed from the first seconds
-of boot. parkeze.net counts back from when the record arrived.
+of boot. Pulzar Cloud counts back from when the record arrived.
 
 ## Why Lua
 
@@ -170,7 +170,7 @@ whose LNUM patch changes the bytecode format.
 ## Reading it on the gateway
 
 ```sh
-parkeze-rak-power status    # the record, ages in seconds
+pulzr-rak-power status    # the record, ages in seconds
 logread -e rak-power        # port, watchdog and battery state changes
 ```
 

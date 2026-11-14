@@ -1,0 +1,21 @@
+#!/bin/sh
+# Bluetooth's settings, off. Seeded so they are visible in UCI rather than
+# implied by their absence; see pulzr-ble for what each one does.
+#
+#   oui       MAC prefixes to send, space-separated. BC5729 is KKM's, whose
+#             beacons are the parking sensors Pulzar Cloud decodes today.
+#   min_rssi  weaker than this is not sent. -100 is the radio's floor.
+#   interval  seconds between messages.
+
+# OpenWrt runs uci-defaults during image assembly too; this is the device's.
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+
+uci -q get pulzr.ble >/dev/null 2>&1 || uci -q batch <<UCI
+set pulzr.ble=ble
+set pulzr.ble.enabled='0'
+set pulzr.ble.oui='BC5729'
+set pulzr.ble.min_rssi='-100'
+set pulzr.ble.interval='10'
+UCI
+uci -q commit pulzr
+exit 0

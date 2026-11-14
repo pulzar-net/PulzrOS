@@ -30,7 +30,7 @@ SANDBOX="$(mktemp -d)"
 trap 'touch "${SANDBOX}/go"; rm -rf "${SANDBOX}"' EXIT
 BIN="${SANDBOX}/bin"
 LOG="${SANDBOX}/calls"
-mkdir -p "${BIN}" "${SANDBOX}/etc/parkeze" "${SANDBOX}/run" "${SANDBOX}/lib"
+mkdir -p "${BIN}" "${SANDBOX}/etc/pulzr" "${SANDBOX}/run" "${SANDBOX}/lib"
 
 failures=0
 check() {
@@ -51,10 +51,10 @@ install_script() {
     sed -e "1s|^#!/bin/sh|#!${SHELL_FOR_DEVICE}|" \
         -e "s#/usr/sbin/#${BIN}/#g" \
         -e "s#/usr/libexec/#${BIN}/#g" \
-        -e "s#/etc/parkeze#${SANDBOX}/etc/parkeze#g" \
-        -e "s#/var/run/parkeze#${SANDBOX}/run#g" \
-        -e "s#/usr/share/parkeze/cellular.sh#${SANDBOX}/lib/cellular.sh#g" \
-        -e "s#/usr/share/parkeze/wired.sh#${SANDBOX}/lib/wired.sh#g" \
+        -e "s#/etc/pulzr#${SANDBOX}/etc/pulzr#g" \
+        -e "s#/var/run/pulzr#${SANDBOX}/run#g" \
+        -e "s#/usr/share/pulzr/cellular.sh#${SANDBOX}/lib/cellular.sh#g" \
+        -e "s#/usr/share/pulzr/wired.sh#${SANDBOX}/lib/wired.sh#g" \
         -e "s#/lib/functions/network.sh#${SANDBOX}/lib/network.sh#g" \
         "$1" > "${BIN}/$(basename "$1")"
     chmod +x "${BIN}/$(basename "$1")"
@@ -71,18 +71,18 @@ EOF
     chmod +x "${BIN}/$1"
 }
 
-for name in logger reboot factoryreset jffs2reset parkeze-adopt parkeze-backhaul-check wifi; do
+for name in logger reboot factoryreset jffs2reset pulzr-adopt pulzr-backhaul-check wifi; do
     stub "${name}"
 done
 
-# parkeze-led is only ever asked. --has says there is a cloud LED, --held no.
-cat > "${BIN}/parkeze-led" <<EOF
+# pulzr-led is only ever asked. --has says there is a cloud LED, --held no.
+cat > "${BIN}/pulzr-led" <<EOF
 #!/bin/sh
-echo "parkeze-led \$*" >> "${LOG}"
+echo "pulzr-led \$*" >> "${LOG}"
 [ "\$1" = "--held" ] && exit 1
 exit 0
 EOF
-chmod +x "${BIN}/parkeze-led"
+chmod +x "${BIN}/pulzr-led"
 
 # The settle wait is the one sleep that matters: it stands until the test says
 # the button has been left alone. Every other sleep is instant.
@@ -99,29 +99,29 @@ export PATH="${BIN}:${PATH}"
 
 # ── the reset button ────────────────────────────────────────────────────────
 
-install_script "${FEED}/parkeze-io/files/usr/libexec/parkeze-reset-button"
+install_script "${FEED}/pulzr-io/files/usr/libexec/pulzr-reset-button"
 
 cat > "${SANDBOX}/board.conf" <<'EOF'
-PARKEZE_BUTTON_RESET_HOLD="10"
+PULZR_BUTTON_RESET_HOLD="10"
 EOF
 echo "/dev/ubi0_1 /overlay ubifs rw 0 0" > "${SANDBOX}/mounts"
-stub parkeze-ap
+stub pulzr-ap
 
-export PARKEZE_BOARD_CONF="${SANDBOX}/board.conf"
-export PARKEZE_BUTTON_RUN="${SANDBOX}/run/button"
-export PARKEZE_UPTIME="${SANDBOX}/uptime"
-export PARKEZE_MOUNTS="${SANDBOX}/mounts"
-export PARKEZE_BUTTON_SETTLE=77
+export PULZR_BOARD_CONF="${SANDBOX}/board.conf"
+export PULZR_BUTTON_RUN="${SANDBOX}/run/button"
+export PULZR_UPTIME="${SANDBOX}/uptime"
+export PULZR_MOUNTS="${SANDBOX}/mounts"
+export PULZR_BUTTON_SETTLE=77
 
 clock=1000
-at() { clock=$((clock + $1)); echo "${clock}.50 0" > "${PARKEZE_UPTIME}"; }
+at() { clock=$((clock + $1)); echo "${clock}.50 0" > "${PULZR_UPTIME}"; }
 
 fresh() {
-    rm -rf "${PARKEZE_BUTTON_RUN}" "${SANDBOX}/go"
+    rm -rf "${PULZR_BUTTON_RUN}" "${SANDBOX}/go"
     : > "${LOG}"
     at 100000
 }
-button() { ACTION="$1" SEEN="${2:-0}" BUTTON=reset "${BIN}/parkeze-reset-button"; }
+button() { ACTION="$1" SEEN="${2:-0}" BUTTON=reset "${BIN}/pulzr-reset-button"; }
 tap() { at "${1:-1}"; button pressed; button released 0; }
 # Press it, and let the settle run out.
 leave_alone() {
@@ -129,7 +129,7 @@ leave_alone() {
     # Until the settle has finished whatever it decided, not for a guessed
     # time: the first run of a new stub can take longer than any guess.
     local i=0
-    while pgrep -f "${BIN}/parkeze-reset-button" >/dev/null && [ "${i}" -lt 200 ]; do
+    while pgrep -f "${BIN}/pulzr-reset-button" >/dev/null && [ "${i}" -lt 200 ]; do
         /bin/sleep 0.05; i=$((i + 1))
     done
 }
@@ -138,65 +138,65 @@ held() { at 0; button pressed; button released "$1"; }
 fresh; at 0; button pressed; check "pressing asks to hear back at the hold threshold" 10 "$?"
 
 fresh; tap; tap; tap; tap; leave_alone
-check "four presses ask for setup mode" 1 "$(called 'parkeze-ap button')"
-check "four presses do not report status" 0 "$(called 'parkeze-backhaul-check')"
+check "four presses ask for setup mode" 1 "$(called 'pulzr-ap button')"
+check "four presses do not report status" 0 "$(called 'pulzr-backhaul-check')"
 check "four presses do not reset" 0 "$(called 'factoryreset')"
-check "four presses do not release the gateway" 0 "$(called 'parkeze-adopt')"
+check "four presses do not release the gateway" 0 "$(called 'pulzr-adopt')"
 check "four presses do not reboot" 0 "$(called 'reboot')"
-check "a raised AP is not signalled as a refusal" 0 "$(called 'parkeze-led status alert')"
+check "a raised AP is not signalled as a refusal" 0 "$(called 'pulzr-led status alert')"
 
 fresh; tap; leave_alone
-check "one press reports status" 1 "$(called 'parkeze-backhaul-check')"
-check "one press is not setup mode" 0 "$(called 'parkeze-ap button')"
+check "one press reports status" 1 "$(called 'pulzr-backhaul-check')"
+check "one press is not setup mode" 0 "$(called 'pulzr-ap button')"
 check "one press does not reboot, as stock did" 0 "$(called 'reboot')"
 
 fresh; tap; tap; tap; leave_alone
-check "three presses do nothing" 0 "$(called 'parkeze-ap')"
-check "three presses report nothing" 0 "$(called 'parkeze-backhaul-check')"
+check "three presses do nothing" 0 "$(called 'pulzr-ap')"
+check "three presses report nothing" 0 "$(called 'pulzr-backhaul-check')"
 
 fresh; tap; tap; tap; tap; tap; leave_alone
-check "five presses are not four" 0 "$(called 'parkeze-ap')"
+check "five presses are not four" 0 "$(called 'pulzr-ap')"
 
 fresh; tap; tap; tap; tap 3; leave_alone
-check "a pause starts a new sequence" 0 "$(called 'parkeze-ap')"
-check "and the press after it is a press of its own" 1 "$(called 'parkeze-backhaul-check')"
+check "a pause starts a new sequence" 0 "$(called 'pulzr-ap')"
+check "and the press after it is a press of its own" 1 "$(called 'pulzr-backhaul-check')"
 
 fresh; tap; tap; at 0; button pressed; button released 2; tap; tap; leave_alone
-check "a two-second press breaks the sequence" 0 "$(called 'parkeze-ap')"
+check "a two-second press breaks the sequence" 0 "$(called 'pulzr-ap')"
 
 fresh; held 12
-check "a hold past the threshold releases the gateway" 1 "$(called 'parkeze-adopt --release')"
+check "a hold past the threshold releases the gateway" 1 "$(called 'pulzr-adopt --release')"
 check "and resets it" 1 "$(called 'factoryreset -y')"
 check "and reboots" 1 "$(called 'reboot')"
 
 fresh; tap; tap; tap; tap; held 12; leave_alone
 check "four presses then a hold is a hold" 1 "$(called 'factoryreset -y')"
-check "with no setup mode behind it" 0 "$(called 'parkeze-ap')"
+check "with no setup mode behind it" 0 "$(called 'pulzr-ap')"
 
 fresh; tap; tap; tap; tap; held 5; leave_alone
-check "four presses then the dead zone is nothing" 0 "$(called 'parkeze-ap')"
+check "four presses then the dead zone is nothing" 0 "$(called 'pulzr-ap')"
 check "and no reset" 0 "$(called 'factoryreset')"
 
 fresh; held 9
 check "a press just short of the threshold resets nothing" 0 "$(called 'factoryreset')"
-check "and releases nothing" 0 "$(called 'parkeze-adopt')"
+check "and releases nothing" 0 "$(called 'pulzr-adopt')"
 
 fresh; tap; tap; tap; tap; at 0; button pressed; leave_alone
-check "the sequence is not read while the button is down" 0 "$(called 'parkeze-ap')"
+check "the sequence is not read while the button is down" 0 "$(called 'pulzr-ap')"
 rm -f "${SANDBOX}/go"
 button released 12
 check "and what it turned out to be is read on release" 1 "$(called 'factoryreset -y')"
 
-export PARKEZE_AP_RC=2
+export PULZR_AP_RC=2
 fresh; tap; tap; tap; tap; leave_alone
-check "a refusal lights the alert" 1 "$(called 'parkeze-led status alert')"
-check "on every light" 1 "$(called 'parkeze-led cloud alert')"
-check "held from the daemon, then let go" 1 "$(called 'parkeze-led --hold 0')"
-unset PARKEZE_AP_RC
+check "a refusal lights the alert" 1 "$(called 'pulzr-led status alert')"
+check "on every light" 1 "$(called 'pulzr-led cloud alert')"
+check "held from the daemon, then let go" 1 "$(called 'pulzr-led --hold 0')"
+unset PULZR_AP_RC
 
 echo "tmpfs /tmp tmpfs rw 0 0" > "${SANDBOX}/mounts"
 fresh; held 12
-check "no overlay: the gateway is not released for a reset that cannot happen" 0 "$(called 'parkeze-adopt')"
+check "no overlay: the gateway is not released for a reset that cannot happen" 0 "$(called 'pulzr-adopt')"
 check "no overlay: nothing is reset" 0 "$(called 'factoryreset')"
 echo "/dev/ubi0_1 /overlay ubifs rw 0 0" > "${SANDBOX}/mounts"
 
@@ -209,26 +209,26 @@ mv "${BIN}/factoryreset.off" "${BIN}/factoryreset"
 
 mkdir -p "${SANDBOX}/rc.button"
 stub uci
-sed -e "s#/etc/parkeze/board.conf#${SANDBOX}/rc.conf#" \
+sed -e "s#/etc/pulzr/board.conf#${SANDBOX}/rc.conf#" \
     -e "s#/etc/rc.button/#${SANDBOX}/rc.button/#" \
-    "${FEED}/parkeze-io/files/etc/uci-defaults/50-parkeze-io" > "${SANDBOX}/50-parkeze-io"
-echo 'PARKEZE_BUTTON_RESET="reset"' > "${SANDBOX}/rc.conf"
+    "${FEED}/pulzr-io/files/etc/uci-defaults/50-pulzr-io" > "${SANDBOX}/50-pulzr-io"
+echo 'PULZR_BUTTON_RESET="reset"' > "${SANDBOX}/rc.conf"
 echo stock > "${SANDBOX}/rc.button/reset"
-sh "${SANDBOX}/50-parkeze-io"
-check "/etc/rc.button/reset is the handler, not stock" /usr/libexec/parkeze-reset-button \
+sh "${SANDBOX}/50-pulzr-io"
+check "/etc/rc.button/reset is the handler, not stock" /usr/libexec/pulzr-reset-button \
     "$(readlink "${SANDBOX}/rc.button/reset")"
 rm -f "${SANDBOX}/rc.button/reset"
-echo 'PARKEZE_BUTTON_RESET=""' > "${SANDBOX}/rc.conf"
-sh "${SANDBOX}/50-parkeze-io"
+echo 'PULZR_BUTTON_RESET=""' > "${SANDBOX}/rc.conf"
+sh "${SANDBOX}/50-pulzr-io"
 check "a board with no button gets no link" "" "$(ls "${SANDBOX}/rc.button")"
 
 # ── the setup AP ────────────────────────────────────────────────────────────
 
-rm -f "${BIN}/parkeze-ap" "${BIN}/uci"
-install_script "${FEED}/parkeze-ap/files/usr/sbin/parkeze-ap"
-touch "${SANDBOX}/etc/parkeze/board.conf"
+rm -f "${BIN}/pulzr-ap" "${BIN}/uci"
+install_script "${FEED}/pulzr-ap/files/usr/sbin/pulzr-ap"
+touch "${SANDBOX}/etc/pulzr/board.conf"
 
-# uci over a key=value file, with what parkeze-ap uses of it.
+# uci over a key=value file, with what pulzr-ap uses of it.
 UCI_DB="${SANDBOX}/uci.db"; export UCI_DB
 cat > "${BIN}/uci" <<'EOF'
 #!/usr/bin/env python3
@@ -301,21 +301,21 @@ chmod +x "${BIN}/ubus"
 command -v sha256sum >/dev/null 2>&1 || {
     printf '#!/bin/sh\nexec shasum -a 256 "$@"\n' > "${BIN}/sha256sum"; chmod +x "${BIN}/sha256sum"; }
 
-AP="${BIN}/parkeze-ap"
+AP="${BIN}/pulzr-ap"
 db() { uci -q get "$1" 2>/dev/null; }
 reset_ap() {
     cat > "${UCI_DB}" <<'EOF'
 wireless.radio0=wifi-device
 wireless.radio0.disabled=1
-parkeze.ap=ap
-parkeze.ap.enabled=0
-parkeze.ap.window=1800
-parkeze.identity.serial=0123456789ab
+pulzr.ap=ap
+pulzr.ap.enabled=0
+pulzr.ap.window=1800
+pulzr.identity.serial=0123456789ab
 EOF
-    rm -rf "${SANDBOX}/run/ap" "${SANDBOX}/etc/parkeze/ap"
+    rm -rf "${SANDBOX}/run/ap" "${SANDBOX}/etc/pulzr/ap"
     : > "${LOG}"
-    unset PARKEZE_BACKHAUL_CHECK_RC
-    export PARKEZE_BACKHAUL_CHECK_RC=1
+    unset PULZR_BACKHAUL_CHECK_RC
+    export PULZR_BACKHAUL_CHECK_RC=1
 }
 
 reset_ap
@@ -324,13 +324,13 @@ check "master switch off: the button still raises it" 0 "${rc}"
 check "on the setup network" setup "$(db wireless.parkeze_ap.network)"
 check "unadopted: open" none "$(db wireless.parkeze_ap.encryption)"
 check "for the configured window" 1800 "$(cat "${SANDBOX}/run/ap/window")"
-check "and journalled as the button" 1 "$(grep -c '"reason":"button"' "${SANDBOX}/etc/parkeze/ap/raises.log")"
+check "and journalled as the button" 1 "$(grep -c '"reason":"button"' "${SANDBOX}/etc/pulzr/ap/raises.log")"
 # The shape, not the value: a machine with an eth0 uses its MAC.
 check "its name reads Pulzar, and ends in six hex" yes \
     "$("${AP}" ssid | grep -qE '^Pulzar-[0-9a-f]{6}$' && echo yes || echo no)"
 
 reset_ap
-echo 'parkeze.adoption.state=adopted' >> "${UCI_DB}"
+echo 'pulzr.adoption.state=adopted' >> "${UCI_DB}"
 "${AP}" button >/dev/null
 check "adopted: never open" psk2+ccmp "$(db wireless.parkeze_ap.encryption)"
 key="$(db wireless.parkeze_ap.key)"
@@ -343,14 +343,14 @@ reset_ap
 check "unadopted: nothing to report" null "$("${AP}" report)"
 
 reset_ap
-export PARKEZE_BACKHAUL_CHECK_RC=0
+export PULZR_BACKHAUL_CHECK_RC=0
 rc=0; "${AP}" button >/dev/null || rc=$?
 check "a working uplink refuses, with its own exit" 2 "${rc}"
 check "and raises nothing" "" "$(db wireless.parkeze_ap.mode)"
 check "and leaves no marker" no "$([ -e "${SANDBOX}/run/ap/button" ] && echo yes || echo no)"
 
 reset_ap
-echo 'parkeze.ap.button=0' >> "${UCI_DB}"
+echo 'pulzr.ap.button=0' >> "${UCI_DB}"
 rc=0; "${AP}" button >/dev/null || rc=$?
 check "turned off for the button" 4 "${rc}"
 check "and raises nothing" "" "$(db wireless.parkeze_ap.mode)"
@@ -413,25 +413,25 @@ check "an association is left alone" 0 "$(db wireless.parkeze_sta.disabled)"
 
 reset_ap
 report_json() { "${AP}" report | python3 -c 'import json,sys; v=json.load(sys.stdin); print(v if not isinstance(v,dict) else v["ssid"]+"|"+("key" if len(v["key"])==16 else "nokey"))'; }
-echo 'parkeze.adoption.state=adopted' >> "${UCI_DB}"
+echo 'pulzr.adoption.state=adopted' >> "${UCI_DB}"
 check "an adopted gateway reports its AP" "Pulzar-abc123|key" "$(PATH="${BIN}:${PATH}" report_json | sed 's/Pulzar-[0-9a-f]*/Pulzar-abc123/')"
-echo "parkeze.ap.ssid=Bob's \"AP\"" >> "${UCI_DB}"
+echo "pulzr.ap.ssid=Bob's \"AP\"" >> "${UCI_DB}"
 check "a configured SSID stays JSON" "Bob's \"AP\"|key" "$(report_json)"
-sed -i.bak '/^parkeze.ap.ssid=/d' "${UCI_DB}"
-sed -i.bak '/^parkeze.adoption.state=/d' "${UCI_DB}"
+sed -i.bak '/^pulzr.ap.ssid=/d' "${UCI_DB}"
+sed -i.bak '/^pulzr.adoption.state=/d' "${UCI_DB}"
 check "nothing to say on an unadopted gateway is null, not gone" "None" "$(report_json)"
-echo 'parkeze.ap.button=0' >> "${UCI_DB}"
-echo 'parkeze.ap.enabled=0' >> "${UCI_DB}"
+echo 'pulzr.ap.button=0' >> "${UCI_DB}"
+echo 'pulzr.ap.enabled=0' >> "${UCI_DB}"
 check "no way to raise it says so" "False" "$(report_json)"
-sed -i.bak -e '/^parkeze.ap.button=/d' -e '/^parkeze.ap.enabled=/d' "${UCI_DB}"
+sed -i.bak -e '/^pulzr.ap.button=/d' -e '/^pulzr.ap.enabled=/d' "${UCI_DB}"
 sed -i.bak '/=wifi-device$/d' "${UCI_DB}"
 check "nor does a board with no radio" "False" "$(report_json)"
 
 # ── the watchdog ────────────────────────────────────────────────────────────
 
-install_script "${FEED}/parkeze-ap/files/usr/sbin/parkeze-ap-watchdog"
-mv "${BIN}/parkeze-ap" "${BIN}/parkeze-ap.real"
-stub parkeze-ap
+install_script "${FEED}/pulzr-ap/files/usr/sbin/pulzr-ap-watchdog"
+mv "${BIN}/pulzr-ap" "${BIN}/pulzr-ap.real"
+stub pulzr-ap
 
 # One pass of its loop: the second sleep ends it.
 cat > "${BIN}/sleep" <<EOF
@@ -439,7 +439,7 @@ cat > "${BIN}/sleep" <<EOF
 if [ -e "${SANDBOX}/slept" ]; then rm -f "${SANDBOX}/slept"; kill \$PPID; exit 0; fi
 touch "${SANDBOX}/slept"
 EOF
-one_pass() { rm -f "${SANDBOX}/slept"; : > "${LOG}"; "${BIN}/parkeze-ap-watchdog" 2>/dev/null & wait $! 2>/dev/null; }
+one_pass() { rm -f "${SANDBOX}/slept"; : > "${LOG}"; "${BIN}/pulzr-ap-watchdog" 2>/dev/null & wait $! 2>/dev/null; }
 
 raised() {
     mkdir -p "${SANDBOX}/run/ap"
@@ -448,33 +448,33 @@ raised() {
     [ "${1:-}" = button ] && touch "${SANDBOX}/run/ap/button"
 }
 
-reset_ap; raised button; export PARKEZE_BACKHAUL_CHECK_RC=1; one_pass
-check "master switch off does not take down what the button raised" 0 "$(called 'parkeze-ap down')"
-check "it asks about every uplink" 1 "$(called 'parkeze-backhaul-check --any')"
-check "and looks after the station" 1 "$(called 'parkeze-ap station-check')"
+reset_ap; raised button; export PULZR_BACKHAUL_CHECK_RC=1; one_pass
+check "master switch off does not take down what the button raised" 0 "$(called 'pulzr-ap down')"
+check "it asks about every uplink" 1 "$(called 'pulzr-backhaul-check --any')"
+check "and looks after the station" 1 "$(called 'pulzr-ap station-check')"
 
-reset_ap; raised; export PARKEZE_BACKHAUL_CHECK_RC=1; one_pass
-check "master switch off takes down anything else" 1 "$(called 'parkeze-ap down')"
+reset_ap; raised; export PULZR_BACKHAUL_CHECK_RC=1; one_pass
+check "master switch off takes down anything else" 1 "$(called 'pulzr-ap down')"
 
-reset_ap; raised button; export PARKEZE_BACKHAUL_CHECK_RC=0; one_pass
-check "an uplink coming back takes the button's AP down" 1 "$(called 'parkeze-ap down')"
+reset_ap; raised button; export PULZR_BACKHAUL_CHECK_RC=0; one_pass
+check "an uplink coming back takes the button's AP down" 1 "$(called 'pulzr-ap down')"
 
-reset_ap; raised button; echo 1 > "${SANDBOX}/run/ap/raised"; export PARKEZE_BACKHAUL_CHECK_RC=1; one_pass
-check "and so does its window" 1 "$(called 'parkeze-ap down')"
+reset_ap; raised button; echo 1 > "${SANDBOX}/run/ap/raised"; export PULZR_BACKHAUL_CHECK_RC=1; one_pass
+check "and so does its window" 1 "$(called 'pulzr-ap down')"
 
-reset_ap; export PARKEZE_BACKHAUL_CHECK_RC=1
-echo 'parkeze.ap.fallback=1' >> "${UCI_DB}"
-echo 'parkeze.ap.fallback_after=0' >> "${UCI_DB}"
+reset_ap; export PULZR_BACKHAUL_CHECK_RC=1
+echo 'pulzr.ap.fallback=1' >> "${UCI_DB}"
+echo 'pulzr.ap.fallback_after=0' >> "${UCI_DB}"
 one_pass
-check "master switch off still stops the fallback" 0 "$(called 'parkeze-ap up')"
+check "master switch off still stops the fallback" 0 "$(called 'pulzr-ap up')"
 
 # ── does any uplink work ────────────────────────────────────────────────────
 
-install_script "${FEED}/parkeze-base/files/usr/sbin/parkeze-backhaul-check"
+install_script "${FEED}/pulzr-base/files/usr/sbin/pulzr-backhaul-check"
 sed -e "s#/lib/functions/network.sh#${SANDBOX}/lib/network.sh#" \
-    "${FEED}/parkeze-base/files/usr/share/parkeze/cellular.sh" > "${SANDBOX}/lib/cellular.sh"
+    "${FEED}/pulzr-base/files/usr/share/pulzr/cellular.sh" > "${SANDBOX}/lib/cellular.sh"
 sed -e "s#/lib/functions/network.sh#${SANDBOX}/lib/network.sh#" \
-    "${FEED}/parkeze-base/files/usr/share/parkeze/wired.sh" > "${SANDBOX}/lib/wired.sh"
+    "${FEED}/pulzr-base/files/usr/share/pulzr/wired.sh" > "${SANDBOX}/lib/wired.sh"
 { echo 'network.wan=interface'; echo 'network.wan_lan1=interface'; } >> "${UCI_DB}"
 
 # netifd, as far as these scripts ask it: UP names the interfaces that are up.
@@ -496,9 +496,9 @@ case " ${CONNECTS:-} " in *" ${dev:-none} "*) printf '0.123456' ;; *) printf '0.
 EOF
 chmod +x "${BIN}/curl"
 
-stub parkeze-wifi-uplink
+stub pulzr-wifi-uplink
 stub wg
-any() { "${BIN}/parkeze-backhaul-check" --any; }
+any() { "${BIN}/pulzr-backhaul-check" --any; }
 
 export UP="" CONNECTS=""
 got="$(any)"; check "nothing up: nothing works" "1:" "$?:${got}"
@@ -515,10 +515,10 @@ got="$(any)"; check "a second wired uplink counts, with the first one dead" "0:w
 export UP="wan_lan1" CONNECTS=""
 got="$(any)"; check "and goes nowhere like any other" "1:" "$?:${got}"
 
-export UP="wwifi" CONNECTS="" PARKEZE_WIFI_UPLINK_RC=0
+export UP="wwifi" CONNECTS="" PULZR_WIFI_UPLINK_RC=0
 got="$(any)"; check "WiFi" "0:wifi" "$?:${got}"
 
-export UP="wwifi" CONNECTS="dev-wwifi" PARKEZE_WIFI_UPLINK_RC=1
+export UP="wwifi" CONNECTS="dev-wwifi" PULZR_WIFI_UPLINK_RC=1
 got="$(any)"; check "WiFi at a sign-in page does not count, whatever it connects to" "1:" "$?:${got}"
 
 export UP="wwan" CONNECTS="dev-wwan"
@@ -527,8 +527,8 @@ got="$(any)"; check "cellular" "0:cellular" "$?:${got}"
 export UP="wan wwan" CONNECTS="dev-wwan"
 got="$(any)"; check "a dead wired lease does not hide cellular" "0:cellular" "$?:${got}"
 
-mkdir -p "${SANDBOX}/etc/parkeze/wireguard"
-echo '{}' > "${SANDBOX}/etc/parkeze/wireguard/tunnel.json"
+mkdir -p "${SANDBOX}/etc/pulzr/wireguard"
+echo '{}' > "${SANDBOX}/etc/pulzr/wireguard/tunnel.json"
 cat > "${BIN}/wg" <<'EOF'
 #!/bin/sh
 echo "peer $(date +%s)"
@@ -539,14 +539,14 @@ got="$(any)"; check "a live tunnel is an uplink, with nothing to ask" "0:tunnel"
 
 # ── what the LAN ports reach ────────────────────────────────────────────────
 
-lan="${FEED}/parkeze-lan/files/etc/uci-defaults/25-parkeze-lan"
+lan="${FEED}/pulzr-lan/files/etc/uci-defaults/25-pulzr-lan"
 check "the console is open to the LAN ports" "set firewall.devlan_console.dest_port='80 443 8443'" \
     "$(grep 'devlan_console.dest_port' "${lan}")"
 check "SSH is not" 0 "$(grep -c "dest_port='[^']*\b22\b" "${lan}")"
 
 # ── what the setup network hands out ────────────────────────────────────────
 
-ap="${FEED}/parkeze-ap/files/etc/uci-defaults/60-parkeze-ap"
+ap="${FEED}/pulzr-ap/files/etc/uci-defaults/60-pulzr-ap"
 check "the setup AP advertises no router" 1 "$(grep -c "dhcp.setup.dhcp_option='3'" "${ap}")"
 check "and no DNS server" 1 "$(grep -c "dhcp.setup.dhcp_option='6'" "${ap}")"
 check "and forwards nothing" 1 "$(grep -c "setup_zone.forward='REJECT'" "${ap}")"

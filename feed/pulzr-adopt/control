@@ -1,0 +1,12 @@
+Package: pulzr-adopt
+Provides: parkeze-adopt
+Replaces: parkeze-adopt
+Conflicts: parkeze-adopt
+Depends: ucode, ucode-mod-uci, curl, ca-bundle, openssl-util, qrencode, jsonfilter
+Maintainer: Joseph Telaak <joseph@pulzr.net>
+Architecture: all
+Description: One-touch provisioning and adoption.
+ Mints a claim identity at first boot, shows it as a QR over SSH and in the
+ console, and completes adoption on its own once somebody scans it. Receives
+ MQTT credentials and the fleet recovery anchor, and enrols the gateway's
+ WireGuard key for the management tunnel.

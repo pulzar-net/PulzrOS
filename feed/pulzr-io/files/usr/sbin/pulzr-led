@@ -1,0 +1,303 @@
+#!/bin/sh
+#
+# Drive one logical LED.
+#
+#   pulzr-led <name> on|off|blink <ms-on> <ms-off>|flash|heartbeat
+#   pulzr-led <name> path wired|cellular|none     which backhaul is carrying us
+#   pulzr-led <name> breathe|solid <r|g|b|y|w>    RGB LEDs; plain ones just light
+#   pulzr-led <name> setup|alert     setup mode is on; the gateway said no
+#   pulzr-led --hold <seconds>       keep pulzr-io-daemon off the lights
+#   pulzr-led --held                 exit 0 while something holds them
+#   pulzr-led --has <name>           exit 0 if that logical LED is really there
+#   pulzr-led --list                 what this board actually has
+#   pulzr-led --test                 walk every LED, for bring-up
+#
+# Logical names — power, status, lora, cloud, cellular — are mapped to physical
+# LEDs by the board (PULZR_LED_* in board.conf). Everything else in the system
+# speaks logical names only, so a board with three LEDs and a board with five
+# run the same code and a board that lacks one simply does nothing when it is
+# asked for.
+#
+# That last property matters more than it looks: a Pi has two LEDs and a
+# RAK7289CV2 has six. Without a mapping layer, every caller would need to know
+# which board it is on, and the Pi case would be a pile of conditionals.
+
+. "${PULZR_BOARD_CONF:-/etc/pulzr/board.conf}"
+
+LEDS="${PULZR_LEDS:-/sys/class/leds}"
+
+# Resolve a logical name to a physical LED directory, or empty.
+resolve() {
+    local logical="$1" physical=""
+    case "${logical}" in
+        power)    physical="${PULZR_LED_POWER}" ;;
+        status)   physical="${PULZR_LED_STATUS}" ;;
+        lora)     physical="${PULZR_LED_LORA}" ;;
+        lora2)    physical="${PULZR_LED_LORA2}" ;;
+        cloud)    physical="${PULZR_LED_CLOUD}" ;;
+        cellular) physical="${PULZR_LED_CELLULAR}" ;;
+        *)        return 1 ;;
+    esac
+    [ -n "${physical}" ] || return 1
+    case "${physical}" in
+        rgb:*)
+            rgb_present "${physical#rgb:}" || return 1
+            echo "${physical}"
+            return 0 ;;
+    esac
+    [ -d "${LEDS}/${physical}" ] || return 1
+    echo "${LEDS}/${physical}"
+}
+
+max_brightness() {
+    cat "$1/max_brightness" 2>/dev/null || echo 1
+}
+
+# ── the RGB light ───────────────────────────────────────────────────────────
+#
+# The big light on top of a RAK7268 is an AW2013 three-channel driver on I2C,
+# which the kernel's leds-aw2013 exposes as three LEDs: red:status,
+# green:status and blue:status. A board maps a logical LED onto such a set as
+# `rgb:<function>`, e.g. PULZR_LED_CLOUD="rgb:status".
+#
+# The breathing is the chip's own fade. The pattern trigger's hw_pattern tells
+# it the rise, hold, fall and dark times once and it breathes forever with no
+# help from us; a userspace loop would be a wakeup every few dozen
+# milliseconds on a board this small. A driver without hardware patterns gets
+# the same four stages as a software pattern, which the kernel plays itself.
+
+# Rise, hold, fall and dark, in ms; the AW2013 rounds each up to 130ms * 2^n.
+# 2s up, 2s down and a short rest: a slow breath. This is the knob to turn if
+# it reads too twitchy or too sleepy on a real unit.
+BREATHE="${PULZR_LED_BREATHE:-2080 130 2080 260}"
+RGB_CACHE="${PULZR_LED_CACHE:-/var/run/pulzr}/led-rgb"
+
+rgb_present() {
+    local c
+    for c in red green blue; do [ -d "${LEDS}/${c}:$1" ] || return 1; done
+}
+
+# Colour is which of the three channels are lit. y is red+green.
+rgb_channels() {
+    case "$1" in
+        r) echo red ;; g) echo green ;; b) echo blue ;;
+        y) echo "red green" ;; w) echo "red green blue" ;;
+        off) echo "" ;;
+        *) return 1 ;;
+    esac
+}
+
+# rgb_show <steady|breathe> <colour|off>, on the set named by RGB.
+rgb_show() {
+    local mode="$1" color="$2" lit c dir max sig pat
+    lit="$(rgb_channels "${color}")" || return 1
+
+    # The daemon re-asserts state every few seconds. Sending the same thing
+    # again would restart the fade from the bottom each time, which reads as a
+    # stutter; only touch the light when what it should show has changed.
+    sig="${mode}:${color}"
+    [ "$(cat "${RGB_CACHE}-${RGB}" 2>/dev/null)" = "${sig}" ] && return 0
+
+    for c in red green blue; do
+        put none "${LEDS}/${c}:${RGB}/trigger"
+        put 0 "${LEDS}/${c}:${RGB}/brightness"
+    done
+    for c in ${lit}; do
+        dir="${LEDS}/${c}:${RGB}"
+        max="$(max_brightness "${dir}")"
+        # Without kmod-ledtrig-pattern there is no pattern trigger to select
+        # and no pattern file appears; a steady light beats a dark one.
+        if [ "${mode}" = breathe ] && put pattern "${dir}/trigger" &&
+           [ -e "${dir}/pattern" ]; then
+            set -- ${BREATHE}
+            pat="0 $1 ${max} $2 ${max} $3 0 $4"
+            { [ -e "${dir}/hw_pattern" ] && put "${pat}" "${dir}/hw_pattern"; } ||
+                put "${pat}" "${dir}/pattern"
+        else
+            put "${max}" "${dir}/brightness"
+        fi
+    done
+
+    mkdir -p "$(dirname "${RGB_CACHE}")" 2>/dev/null
+    echo "${sig}" > "${RGB_CACHE}-${RGB}" 2>/dev/null
+    return 0
+}
+
+# What each generic state means on a light that can do colour.
+rgb_state() {
+    case "$1" in
+        path)
+            # The same three answers a plain LED gives with on / blink / off,
+            # said in colour: breathing is "alive", and which colour is which
+            # path. Cellular is yellow because it works but is billed; solid
+            # red is deliberately not breathing, so a light that has stopped
+            # breathing is itself the signal.
+            case "$2" in
+                wired)    rgb_show breathe b ;;
+                cellular) rgb_show breathe y ;;
+                *)        rgb_show steady r ;;
+            esac ;;
+        breathe) rgb_show breathe "${2:-b}" ;;
+        solid)   rgb_show steady "${2:-w}" ;;
+        on)      rgb_show steady w ;;
+        off)     rgb_show steady off ;;
+        blink|flash|heartbeat) rgb_show breathe w ;;
+        # Colours nothing else uses, on the one light a RAK7268 has.
+        setup) rgb_show breathe g ;;
+        alert) rgb_show breathe r ;;
+        *) echo "unknown LED state '$1'" >&2; return 2 ;;
+    esac
+}
+
+# The braces matter: `echo x > f 2>/dev/null` opens f first, so a failed open
+# is reported by the shell before the 2>/dev/null takes effect and the error
+# lands in the log anyway. Silencing has to wrap the whole command.
+put()     { { echo "$1" > "$2"; } 2>/dev/null; }
+
+# Held by uptime, not by a process: whatever asked may be killed, and a light
+# the daemon has stopped driving must not stay that way. The wall clock would
+# jump when NTP lands on a board with no RTC.
+HOLD_FILE="${PULZR_LED_CACHE:-/var/run/pulzr}/led-hold"
+UPTIME="${PULZR_UPTIME:-/proc/uptime}"
+
+uptime_seconds() {
+    local up
+    read -r up _ < "${UPTIME}"
+    echo "${up%.*}"
+}
+
+case "${1:-}" in
+    --hold)
+        mkdir -p "$(dirname "${HOLD_FILE}")" 2>/dev/null
+        if [ "${2:-0}" -gt 0 ]; then
+            echo "$(( $(uptime_seconds) + $2 ))" > "${HOLD_FILE}"
+        else
+            rm -f "${HOLD_FILE}"
+        fi
+        exit 0
+        ;;
+    --held)
+        read -r until < "${HOLD_FILE}" 2>/dev/null || exit 1
+        [ "$(uptime_seconds)" -lt "${until:-0}" ]
+        exit $?
+        ;;
+    --has)
+        # For the console, which sees one directory per LED and an RGB light
+        # as three of them.
+        resolve "${2:?usage: pulzr-led --has <name>}" >/dev/null 2>&1
+        exit $?
+        ;;
+    --list)
+        printf '%-10s %-24s %s\n' LOGICAL PHYSICAL PRESENT
+        for logical in power status lora lora2 cloud cellular; do
+            path="$(resolve "${logical}" 2>/dev/null)" && state=yes || state=no
+            eval "physical=\${PULZR_LED_$(echo "${logical}" | tr '[:lower:]' '[:upper:]')}"
+            printf '%-10s %-24s %s\n' "${logical}" "${physical:--}" "${state}"
+        done
+        echo
+        echo "Physical LEDs this kernel exposes:"
+        ls -1 "${LEDS}" 2>/dev/null | sed 's/^/  /' || echo "  (none)"
+        exit 0
+        ;;
+    --test)
+        # Bring-up aid. The LED map is the single most likely thing in a new
+        # board file to be wrong, and this is how you find out in ten seconds
+        # rather than by wondering why the cloud light never comes on.
+        for logical in power status lora lora2 cloud cellular; do
+            path="$(resolve "${logical}" 2>/dev/null)" || continue
+            echo "${logical} -> ${path}"
+            case "${path}" in
+                rgb:*)
+                    RGB="${path#rgb:}"
+                    for c in r g b; do rgb_state solid "${c}"; sleep 1; done
+                    rgb_state breathe b; sleep 5
+                    rgb_state off
+                    continue ;;
+            esac
+            put none "${path}/trigger"
+            put "$(max_brightness "${path}")" "${path}/brightness"
+            sleep 1
+            put 0 "${path}/brightness"
+        done
+        exit 0
+        ;;
+esac
+
+NAME="${1:?usage: pulzr-led <name> <state>}"
+STATE="${2:?usage: pulzr-led <name> <state>}"
+
+path="$(resolve "${NAME}")" || exit 0   # absent LED: not an error, just nothing
+
+case "${path}" in
+    rgb:*)
+        RGB="${path#rgb:}"
+        rgb_state "${STATE}" "${3:-}"
+        exit $?
+        ;;
+esac
+
+trigger() { put "$1" "${path}/trigger"; }
+bright()  { put "$1" "${path}/brightness"; }
+
+case "${STATE}" in
+    on)
+        trigger none
+        bright "$(max_brightness "${path}")"
+        ;;
+    off)
+        trigger none
+        bright 0
+        ;;
+    blink)
+        # Kernel-side timer, so the blink keeps going without a process
+        # babysitting it. A userspace blink loop on a gateway is a wakeup every
+        # few hundred milliseconds forever, which is a real cost on a board
+        # this small.
+        trigger timer
+        put "${3:-500}" "${path}/delay_on"
+        put "${4:-500}" "${path}/delay_off"
+        ;;
+    flash)
+        # A single visible pulse — one uplink, one blink.
+        trigger oneshot
+        put 1 "${path}/invert"
+        put 60 "${path}/delay_on"
+        put 60 "${path}/delay_off"
+        put 1 "${path}/shot"
+        ;;
+    heartbeat)
+        trigger heartbeat
+        ;;
+    path)
+        # Which backhaul is carrying us, on a light that can only be on, off or
+        # blinking. The RGB LED says the same thing in colour (see rgb_state).
+        case "${3:-}" in
+            wired)    trigger none; bright "$(max_brightness "${path}")" ;;
+            cellular) trigger timer; put 1000 "${path}/delay_on"; put 1000 "${path}/delay_off" ;;
+            *)        trigger none; bright 0 ;;
+        esac
+        ;;
+    setup)
+        # One short flash a second: not a code anything else here uses, and
+        # readable across a room from a light that can only blink.
+        trigger timer
+        put 200 "${path}/delay_on"
+        put 800 "${path}/delay_off"
+        ;;
+    alert)
+        trigger timer
+        put 100 "${path}/delay_on"
+        put 100 "${path}/delay_off"
+        ;;
+    breathe|solid)
+        # Colour and fading are the RGB LED's; a plain one can only be lit.
+        trigger none
+        bright "$(max_brightness "${path}")"
+        ;;
+    *)
+        echo "unknown LED state '${STATE}'" >&2
+        exit 2
+        ;;
+esac
+
+exit 0

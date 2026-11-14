@@ -5,7 +5,7 @@ serial line, an SSH session, a Pi's own screen, or the USB cable on a board
 that can be a USB device.
 
 ```
-parkeze-tui
+pulzr-tui
 ```
 
 ## Where it runs
@@ -13,9 +13,9 @@ parkeze-tui
 | | How you get there | Sign-in |
 |---|---|---|
 | Serial console | it is already there | the web console's |
-| SSH as root | `parkeze-tui` at the shell | none: you are root |
-| SSH as `parkeze` | `ssh parkeze@<gateway>`; Ctrl-C disconnects | the web console's |
-| parkeze.net **Console** | a gateway's page, as an organization's admin | parkeze.net's; no shell |
+| SSH as root | `pulzr-tui` at the shell | none: you are root |
+| SSH as `pulzr` | `ssh pulzr@<gateway>`; Ctrl-C disconnects | the web console's |
+| Pulzar Cloud **Console** | a gateway's page, as an organization's admin | Pulzar Cloud's; no shell |
 | HDMI (Pi) | it is already there, when a screen was attached at boot | the web console's |
 | USB serial (Pi 4, Pi 5) | the port that appears beside the USB network | the web console's |
 
@@ -27,32 +27,32 @@ gateway in a car park are physical access, and [`auth.md`](auth.md) is plain
 that physical access proves nothing. A port signs itself out after fifteen
 minutes without a key.
 
-### From parkeze.net
+### From Pulzar Cloud
 
-An organization's admin on parkeze.net gets this console on their gateway, not
-a shell: a root shell on ParkezeOS is a copy of ParkezeOS. parkeze.net opens an
+An organization's admin on Pulzar Cloud gets this console on their gateway, not
+a shell: a root shell on PulzarOS is a copy of PulzarOS. Pulzar Cloud opens an
 SSH session whose only command is
 
 ```
-parkeze-tui --remote
+pulzr-tui --remote
 ```
 
 and, on a gateway that trusts its certificate authority, names that command
 as the certificate's `force-command`, so sshd runs nothing else whatever the
 client asks for. In this mode there is no sign-in — the person signed in to
-parkeze.net, which records who opened the session — and no `!`. Changes are
-journalled `by: parkeze.net`; `q` ends the session. Parkeze staff still get a
-shell from parkeze.net.
+Pulzar Cloud, which records who opened the session — and no `!`. Changes are
+journalled `by: Pulzar Cloud`; `q` ends the session. Pulzar staff still get a
+shell from Pulzar Cloud.
 
-### Sign in with Parkeze, without a browser
+### Sign in with Pulzar, without a browser
 
 The web console's handoff lands a token on a browser origin, and a terminal
 has none. So the terminal does it the way a television signs in to a
 streaming service:
 
-1. The gateway starts a sign-in with parkeze.net and shows a code and a QR of
-   `net.parkeze.com/gateway-access#signin=<code>`.
-2. Somebody signed in to parkeze.net — on a phone, usually — opens it, sees
+1. The gateway starts a sign-in with Pulzar Cloud and shows a code and a QR of
+   `app.pulzr.net/gateway-access#signin=<code>`.
+2. Somebody signed in to Pulzar Cloud — on a phone, usually — opens it, sees
    which gateway is asking, and approves or refuses. That needs net-admin, as
    the browser handoff does, and is audited against them.
 3. The gateway polls, and collects the same fleet-signed token the browser
@@ -63,12 +63,12 @@ streaming service:
 Only the gateway can start or collect its own sign-in: both calls carry its
 claim secret, as `/report` does. The code on the screen is an address, not a
 key; seeing it lets you ask somebody to approve, and collect nothing. No token
-is stored on parkeze.net while a sign-in waits — it is minted when the gateway
+is stored on Pulzar Cloud while a sign-in waits — it is minted when the gateway
 collects it. Online only; offline, recovery is the way in. A QR that will not
 scan: the code typed at `app.pulzr.net/gateway-access` works the same.
 
-The server half is `net-api/plugins/gateway_ops/console_signin.py` in
-parkeze.net; the gateway half is `parkeze-console-signin` and `auth.uc`.
+The gateway half is `pulzr-console-signin` and `auth.uc`; the cloud answers
+the sign-in start and collect calls.
 
 ## Parity, and how it is kept
 
@@ -101,9 +101,9 @@ serial terminal its size again.
 
 ## The shell
 
-Only for Parkeze: a TUI started from a root shell, or a session parkeze.net
+Only for Pulzar: a TUI started from a root shell, or a session Pulzar Cloud
 signed as staff's ([`auth.md`](auth.md), "Who gets root"). Not for the local
-password, an organization admin's Parkeze or recovery sign-in, or a remote
+password, an organization admin's Pulzar or recovery sign-in, or a remote
 session; a development image lets any signed-in session through. There, `!`
 drops to a login shell on the same terminal; `exit` or Ctrl-D comes back
 to the console, redrawn and refreshed. The TUI steps aside rather than running
@@ -127,11 +127,11 @@ frame in colour is several KB. So only lines that changed are sent, and a page
 that is not live blocks on the keyboard instead of redrawing on a timer. Live
 pages stop refreshing after fifteen minutes without a key.
 
-`PARKEZE_ASCII=1` and `PARKEZE_COLOR=0|16|256|24` override what it detects.
+`PULZR_ASCII=1` and `PULZR_COLOR=0|16|256|24` override what it detects.
 
 ## The mark
 
-The logo is drawn by `parkeze-logo` from `/usr/share/parkeze/logo.txt`: eight
+The logo is drawn by `pulzr-logo` from `/usr/share/pulzr/logo.txt`: eight
 rows of half-block cells, sixteen pixels high. The login banner draws it beside
 the wordmark, as does the TUI's sign-in screen, and Overview on a screen tall
 enough to spare the rows.
@@ -171,4 +171,4 @@ UCODE=/tmp/ucode/build/ucode scripts/run-tui.sh
 Runs the real pages against canned gateway state from
 `scripts/tui-fixture/api.uc`. Add `--console` for the sign-in screens; the
 fixture's password `wrong` fails and `initial` forces a password change. `--remote`
-is the session parkeze.net opens.
+is the session Pulzar Cloud opens.

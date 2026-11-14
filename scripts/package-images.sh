@@ -8,7 +8,7 @@
 #
 # ImageBuilder produces four files per board with names like
 #
-#   openwrt-24.10.0-parkeze-0.1.0-bcm27xx-bcm2711-rpi-4-squashfs-factory.img.gz
+#   openwrt-24.10.0-pulzr-0.1.0-bcm27xx-bcm2711-rpi-4-squashfs-factory.img.gz
 #
 # which tells you everything except which one to write to a card. Downloading a
 # CI artifact and being handed four of those is not a usable release.
@@ -52,7 +52,7 @@ sha() {
   else shasum -a 256 "$1" | cut -d' ' -f1; fi
 }
 
-base="ParkezeOS-${VERSION}-${BOARD}"
+base="PulzrOS-${VERSION}-${BOARD}"
 
 # A board that boots from soldered flash has no card image, just the one
 # firmware file: U-Boot's TFTP menu writes it to a blank unit and sysupgrade
@@ -72,7 +72,7 @@ fi
 factory="$(find "${SRC}" -maxdepth 1 -name '*squashfs-factory.img.gz' | head -n1)"
 [ -n "${factory}" ] || die "no squashfs-factory image for ${BOARD}"
 
-# And the one for a gateway already running ParkezeOS.
+# And the one for a gateway already running PulzarOS.
 sysupgrade="$(find "${SRC}" -maxdepth 1 -name '*squashfs-sysupgrade.img.gz' | head -n1)"
 
 log "Packaging ${BOARD}"
@@ -87,7 +87,7 @@ log "Packaging ${BOARD}"
 # holding all device config — is simply absent from the file, and writing the
 # image leaves whatever was there before untouched.
 #
-# On a card that has run ParkezeOS before, that means a re-flash silently keeps
+# On a card that has run PulzarOS before, that means a re-flash silently keeps
 # the old overlay: old passwords, old identity, old /etc/config, and
 # /etc/uci-defaults still marked as already-run, so the new image's first-boot
 # scripts never execute. The device boots the new squashfs wearing the old

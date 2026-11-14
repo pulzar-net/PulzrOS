@@ -15,7 +15,7 @@ Download the image, then **Choose OS → Use custom** and pick the `.img.xz`.
 Imager decompresses it for you; there is no need to unzip anything first.
 
 ```bash
-gh run download --repo Pulzr/PulzrOS -n parkezeos-rpi4
+gh run download --repo Pulzr/PulzrOS -n pulzros-rpi4
 ```
 
 or grab the artifact from the Actions run in the browser.
@@ -23,18 +23,18 @@ or grab the artifact from the Actions run in the browser.
 Leave Imager's OS customization alone — the gear icon that offers to preset a
 hostname, WiFi and SSH keys. It writes a Raspberry Pi OS-shaped config that
 OpenWrt does not read, so nothing you set there applies and the image looks
-broken. ParkezeOS configures itself on first boot instead.
+broken. PulzarOS configures itself on first boot instead.
 
 ### Just download a file
 
-From a CI artifact — `gh run download -n parkezeos-rpi4`, or the Actions run
+From a CI artifact — `gh run download -n pulzros-rpi4`, or the Actions run
 in the browser — or from a tagged release if one has been cut:
 
 | File | For |
 |---|---|
-| `ParkezeOS-<version>-rpi4.img.xz` | writing to a blank card. Smaller download. |
-| `ParkezeOS-<version>-rpi4.img.gz` | the same image, for a tool that dislikes xz. |
-| `ParkezeOS-<version>-rpi4-sysupgrade.img.gz` | **upgrading** a gateway already running ParkezeOS, from its console. Not for a blank card. |
+| `PulzrOS-<version>-rpi4.img.xz` | writing to a blank card. Smaller download. |
+| `PulzrOS-<version>-rpi4.img.gz` | the same image, for a tool that dislikes xz. |
+| `PulzrOS-<version>-rpi4-sysupgrade.img.gz` | **upgrading** a gateway already running PulzarOS, from its console. Not for a blank card. |
 | `sha256sums.txt` | verify before writing. |
 
 Open the `.img.xz` in Etcher or Imager's *Use custom* and write it. No need to
@@ -84,7 +84,7 @@ anybody wants, renamed. For the record, the four are:
 | | what it is |
 |---|---|
 | `squashfs-factory` | **the default.** Read-only rootfs plus a writeable overlay — the OpenWrt layout that failsafe mode and `jffs2reset` need. The reset button's factory-reset path depends on it. |
-| `squashfs-sysupgrade` | for upgrading a gateway already running ParkezeOS, from its own console. Not for a blank card. |
+| `squashfs-sysupgrade` | for upgrading a gateway already running PulzarOS, from its own console. Not for a blank card. |
 | `ext4-factory` | writable rootfs, no overlay. A factory reset has nothing to discard. Only for development. |
 | `ext4-sysupgrade` | as above, for upgrades. |
 
@@ -94,15 +94,15 @@ A minute or two while the gateway generates its identity, its console
 certificate and its one-time password.
 
 Most of the time nobody connects to it at all: plugged into anything with a
-route out, it registers itself with parkeze.net and appears in the pending list
+route out, it registers itself with Pulzar Cloud and appears in the pending list
 there, where the installer adopts it by matching the EUI on the label. The ways
 below are for when that has not happened.
 
 | | |
 |---|---|
-| **Password** | On the boot partition as `parkeze-initial-password.txt` — the card mounts on any laptop. Or set your own before first boot by writing `parkeze-password.txt` there; it is applied and then deleted. |
-| **Ethernet** | `https://parkeze-<serial>.local/`, or `https://192.168.61.1/` if mDNS is blocked. The gateway never hands out an address — your laptop will self-assign `169.254.x.x` and say it has no internet, which is expected. See [`access.md`](access.md). |
-| **WiFi** | off by default. `parkeze_<mac>`, open while the gateway is unadopted, once somebody enables it from the console or parkeze.net. |
+| **Password** | On the boot partition as `pulzr-initial-password.txt` — the card mounts on any laptop. Or set your own before first boot by writing `pulzr-password.txt` there; it is applied and then deleted. |
+| **Ethernet** | `https://pulzr-<serial>.local/`, or `https://192.168.61.1/` if mDNS is blocked. The gateway never hands out an address — your laptop will self-assign `169.254.x.x` and say it has no internet, which is expected. See [`access.md`](access.md). |
+| **WiFi** | off by default. `pulzr_<mac>`, open while the gateway is unadopted, once somebody enables it from the console or Pulzar Cloud. |
 | **Serial** | 115200 8N1 on the GPIO header. The banner prints the console address and the initial password. |
 
 All three show the same claim code. Scan it or enter it at
@@ -128,7 +128,7 @@ from U-Boot over TFTP — not by writing a whole-disk image, which is why
 `BOARD_INSTALL` exists rather than `flash.sh` guessing from the file extension.
 
 
-## Re-flashing a card that has run ParkezeOS before
+## Re-flashing a card that has run PulzarOS before
 
 It works, and it gives you a genuinely clean device. That was not always true.
 
@@ -163,40 +163,15 @@ would have on a first boot.
 
 ## Upgrading a running gateway
 
-### From a Mac, through Pulzr Net
-
-An adopted gateway anywhere, including one on a Wi-Fi uplink in a field:
-
-```
-scripts/upgrade-gateway.sh "Cigar Curer" 0.3.6       # a release, by gateway name or id
-scripts/upgrade-gateway.sh --check "Cigar Curer" 0.3.6   # stage and check only
-scripts/upgrade-gateway.sh <gateway> ./my-image.bin  # a local build
-```
-
-It needs `kubectl` access to the cluster and, for a release, `gh` signed in. It
-reaches the gateway over its management tunnel from the gateway-link pod and
-does what the console's firmware page does: stage the image (on the card when
-there is one), compare its sha256, `sysupgrade -T`, `parkeze-firmware verify`
-the signature, `parkeze-firmware pending`, then `sysupgrade` keeping settings.
-It then waits for the gateway's first report after the upgrade and prints the
-version in it.
-
-**A GL-SFT1200 has no card and 128MB of RAM,** with about 20MB free on a
-running gateway against a 15.6MB image (0.3.6). The console's 16MB of headroom
-refuses that, so pass `--low-memory`, which leaves 4MB. The image cannot be
-staged on flash instead: NAND sysupgrade deletes and recreates `rootfs_data`
-while it writes, and only `/tmp` survives into the RAM root it runs from
-(OpenWrt's `nand.sh` and `stage2`).
-
 ### By hand
 
-Root over SSH takes the fleet key or a parkeze.net certificate, or on a
+Root over SSH takes the fleet key or a Pulzar Cloud certificate, or on a
 development image a key in `boards/common/ssh/dev/`; root has no password
 ([`auth.md`](auth.md), "Who gets root"). Anywhere else, upgrade from the
-console or from parkeze.net.
+console or from Pulzar Cloud.
 
 ```
-scp ParkezeOS-<ver>-<board>-sysupgrade.img.gz root@<gateway>:/tmp/fw.img.gz
+scp PulzrOS-<ver>-<board>-sysupgrade.img.gz root@<gateway>:/tmp/fw.img.gz
 ssh root@<gateway> 'sha256sum /tmp/fw.img.gz'      # check it against the .sha256
 ssh root@<gateway> 'sysupgrade -n /tmp/fw.img.gz'
 ```
@@ -206,7 +181,7 @@ times on a Pi 3: the new squashfs lands correctly in `/rom`, but
 `/overlay/upper` survives the upgrade, so any file the previous boot had
 written keeps masking the new one underneath it. The gateway then runs new
 code with old configuration, which mostly works — and is exactly the kind of
-mostly that hides a problem. In one case `/etc/parkeze/board.conf` reported
+mostly that hides a problem. In one case `/etc/pulzr/board.conf` reported
 the previous build's commit while `/rom` held the new one.
 
 So follow an upgrade with:

@@ -1,7 +1,7 @@
 @import './tokens.css';
 
 /* Base. Component styling lives in CSS modules beside each component, the way
-   parkeze.net does it — this file holds only what is genuinely global. */
+   Pulzar Cloud does it — this file holds only what is genuinely global. */
 
 /* overscroll: no rubber-band bounce, on the page or any scrolling list. It
    drags the whole console past its edges and reads as a web page. */
@@ -11,7 +11,7 @@ html, body, #root {
   height: 100%;
   margin: 0;
   padding: 0;
-  /* Inter and Outfit are webfonts on parkeze.net. A gateway console has to
+  /* Inter and Outfit are webfonts on Pulzar Cloud. A gateway console has to
      render with no internet at all, so they are asked for locally and fall
      through to the system stack rather than blocking first paint on a font
      that will never arrive. */

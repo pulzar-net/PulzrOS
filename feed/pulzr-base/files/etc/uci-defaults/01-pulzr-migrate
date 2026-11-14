@@ -1,0 +1,30 @@
+#!/bin/sh
+#
+# A gateway upgraded from ParkezeOS arrives with its state under the old
+# names. Move it before anything else reads it: this is numbered 01 so it runs
+# ahead of every other uci-defaults script in every package, and those read
+# /etc/config/pulzr and /etc/pulzr as though they had always been there.
+# See pulzr-legacy for what moves, and for why the old copies stay.
+
+# OpenWrt's prepare_rootfs runs every uci-defaults script during image
+# assembly, with IPKG_INSTROOT set and absolute paths resolving to the build
+# host. Nothing here belongs to a build host.
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+
+# Not exit 0 on failure: uci-defaults scripts that fail stay and run again on
+# the next boot, which is what a half-moved gateway needs.
+/usr/sbin/pulzr-legacy forward || exit 1
+
+# The LAN defaults write these under the new names. ParkezeOS wrote them as
+# parkeze_dst and devlan_parkeze_<zone>; left alone they would sit beside the
+# new ones, a second copy of the same rules. A rollback to ParkezeOS writes its
+# own again, so nothing is lost by dropping them here.
+uci -q delete dhcp.parkeze_dst
+uci -q delete firewall.parkeze_dst
+for rule in $(uci -q show firewall | sed -n 's/^firewall\.\(devlan_parkeze_[^.=]*\)=rule$/\1/p'); do
+    uci -q delete "firewall.${rule}"
+done
+uci -q commit dhcp
+uci -q commit firewall
+
+exit 0

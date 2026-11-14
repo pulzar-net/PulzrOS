@@ -3,7 +3,7 @@
 
     strip-lua-comments.py <file>...
 
-The Lua counterpart of strip-shell-comments.py, for parkeze-rak-power:
+The Lua counterpart of strip-shell-comments.py, for pulzr-rak-power:
 whole-line `--` comments go and everything else stays. A `--` after code may
 be inside a string, and the long comments worth removing are the whole-line
 ones anyway.

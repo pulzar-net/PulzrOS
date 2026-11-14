@@ -30,17 +30,17 @@ import own from './Lan.module.css';
  * tunnel forwards are open.
  *
  * Per MAC: the policy (parkeze or internet), the reservation and the cellular
- * rule. Tunnel forwards are listed and never opened here: they are net-api's
+ * rule. Tunnel forwards are listed and never opened here: they are the cloud's
  * (lan-forward). Exposed ports are opened here, because they are the site's:
  * a port on the wired or WiFi uplink to a reserved client, never over the
- * tunnel or cellular (parkeze-lan). Everything set here is in parkeze-lan's
- * state, which is what parkeze.net's `lan` op reads.
+ * tunnel or cellular (pulzr-lan). Everything set here is in pulzr-lan's
+ * state, which is what Pulzar Cloud's `lan` op reads.
  */
 
 const POLICIES: { value: LanClient['policy']; label: string }[] = [
-  // `parkeze` is the stored value from before the rename: Pulzr Net's own
+  // `pulzr` is the stored value from before the rename: Pulzar Cloud's own
   // servers (HTTPS and MQTT), NTP and the gateway's DNS, nothing else.
-  { value: 'parkeze', label: 'Pulzr Net' },
+  { value: 'parkeze', label: 'Pulzar Cloud' },
   { value: 'internet', label: 'Internet' },
 ];
 
@@ -336,8 +336,8 @@ function isPrivate(address: string) {
   return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127);
 }
 
-// Every forward is one net-api opened over MQTT (lan-forward); the console
-// has no way to open one, so "Parkeze Net" is always who.
+// Every forward is one the cloud opened over MQTT (lan-forward); the console
+// has no way to open one, so "Pulzar Cloud" is always who.
 function Forwards({ forwards, nameOf }: { forwards: LanForward[]; nameOf: (ip: string) => string | null | undefined }) {
   return (
     <Section title="Tunnel Forwards" icon={ArrowRightLeft}>
@@ -354,7 +354,7 @@ function Forwards({ forwards, nameOf }: { forwards: LanForward[]; nameOf: (ip: s
                   <span className="mono">
                     {[nameOf(f.ip), `${f.ip}:${f.dport}`].filter(Boolean).join(' ')}
                   </span>
-                  <span className={styles.dim}>Parkeze Net, closes in {duration(f.expiresIn)}</span>
+                  <span className={styles.dim}>Pulzar Cloud, closes in {duration(f.expiresIn)}</span>
                 </span>
               }
             />

@@ -99,7 +99,7 @@ const EXPLAIN: Record<string, (ssid: string, detail?: string | null) => Explanat
 // explanation already says.
 const SERVER_SAID = new Set(['password_expired', 'bad_credentials', 'mschap_failed', 'account_disabled', 'restricted_hours', 'no_permission']);
 
-const SEEN_KEY = 'parkeze.wifi-failure-seen';
+const SEEN_KEY = 'pulzr.wifi-failure-seen';
 
 function readSeen() {
   try {

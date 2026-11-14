@@ -1,0 +1,5 @@
+# The secret the AP passphrase comes from. Without this every upgrade changed
+# the passphrase of every adopted gateway, and the copy the platform holds for
+# whoever is standing at one was wrong until the next report.
+/etc/pulzr/ap/
+/etc/parkeze/ap/

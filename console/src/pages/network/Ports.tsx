@@ -23,7 +23,7 @@ import styles from './Ports.module.css';
 
 /**
  * What each Ethernet port is for, what is on it, and the VLANs it carries
- * (parkeze-ports), laid out the way a switch's own page is: the jacks in a
+ * (pulzr-ports), laid out the way a switch's own page is: the jacks in a
  * row, coloured by link, and a table of every port and VLAN with what is at
  * the other end. A row opens its port to edit.
  *
@@ -81,7 +81,7 @@ export default function Ports() {
   });
   const change = usePortsChange();
   const features = useFeatures();
-  // Who is behind each LAN port: parkeze-lan reads it off the bridge's
+  // Who is behind each LAN port: pulzr-lan reads it off the bridge's
   // forwarding table, the same answer as the LAN page's Port column.
   const lan = useQuery({
     queryKey: ['lan'],

@@ -1,0 +1,38 @@
+#!/bin/sh
+#
+# A card put in after boot should just work, and one pulled out should stop
+# being claimed as present.
+#
+# The remove half matters more than the add half. A card yanked while mounted
+# leaves a mount whose device is gone: every read blocks, every write fails,
+# and anything that trusted pulzr.storage.present sits there waiting on IO
+# that cannot complete. Recording it gone and lazily unmounting is what keeps
+# a pulled card from turning into a hung service.
+
+case "${ACTION}" in add|remove) ;; *) exit 0 ;; esac
+
+# Whole disks and their partitions, nothing else. This fires for every block
+# device the kernel sees, including the mtdblocks a RAK's own rootfs lives on
+# and the loop devices the image build leaves behind.
+case "${DEVNAME}" in
+    mmcblk*|sd[a-z]*|nvme*) ;;
+    *) exit 0 ;;
+esac
+
+if [ "${ACTION}" = "remove" ]; then
+    # Only if it was ours. Another block device disappearing is not a reason
+    # to drop the card we are still using.
+    mounted="$(uci -q get pulzr.storage.device)"
+    case "${mounted}" in
+        "/dev/${DEVNAME}"|"") ;;
+        *) exit 0 ;;
+    esac
+    logger -t storage -p daemon.info "${DEVNAME} removed"
+    /usr/sbin/pulzr-storage-detect --umount >/dev/null 2>&1
+    exit 0
+fi
+
+# Add. Backgrounded: a hotplug handler blocks the kernel's hotplug queue while
+# it runs, and mounting a cold card is slow enough to be worth getting out of
+# the way of every other event behind it.
+( /usr/sbin/pulzr-storage-detect >/dev/null 2>&1 & )

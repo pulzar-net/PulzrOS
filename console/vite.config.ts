@@ -15,7 +15,7 @@ export default defineConfig({
   },
   build: {
     // build.sh points this straight at the package payload.
-    outDir: process.env.PARKEZE_CONSOLE_OUT || 'dist',
+    outDir: process.env.PULZR_CONSOLE_OUT || 'dist',
     emptyOutDir: true,
     // No sourcemaps in the image: they are larger than the code and there is
     // no debugger attached to a gateway on a pole.
@@ -40,7 +40,7 @@ export default defineConfig({
     // `npm run dev` against a real gateway on the bench.
     proxy: {
       '/api': {
-        target: process.env.PARKEZE_GATEWAY || 'https://192.168.61.1',
+        target: process.env.PULZR_GATEWAY || 'https://192.168.61.1',
         changeOrigin: true,
         secure: false,
       },

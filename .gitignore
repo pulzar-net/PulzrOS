@@ -7,28 +7,28 @@
 out/
 
 # The console's build output, which build.sh writes straight into the
-# parkeze-console package payload. Generated on every build — never commit it,
+# pulzr-console package payload. Generated on every build — never commit it,
 # or a stale copy ships instead of the source in console/.
-feed/parkeze-console/files/www/
+feed/pulzr-console/files/www/
 
 # The fleet-keys bundle, assembled by build.sh from boards/common/ssh/fleet/
 # on every build — committing it would let a stale copy ship after somebody's
 # key is removed.
-boards/common/files/usr/share/parkeze/fleet-keys
-# Developers' own keys for a PARKEZE_DEV=1 image. People's, not the platform's.
+boards/common/files/usr/share/pulzr/fleet-keys
+# Developers' own keys for a PULZR_DEV=1 image. People's, not the platform's.
 boards/common/ssh/dev/
 # The SSH CA's public line, copied in by build.sh from boards/common/ssh/.
-boards/common/files/usr/share/parkeze/ssh/
+boards/common/files/usr/share/pulzr/ssh/
 
 # The fleet recovery PUBLIC key, copied in by build.sh. Public, but it belongs
 # to a deployment rather than to this repo — an image built from a checkout
 # should use whichever key that deployment uses, not one frozen in git.
-boards/common/files/etc/parkeze/recovery.pub
+boards/common/files/etc/pulzr/recovery.pub
 recovery_ed25519.pub
 
 # The firmware signing PUBLIC key, same reasoning: build.sh copies it in, and
 # which key an image trusts is a property of the deployment that built it.
-boards/common/files/etc/parkeze/firmware.pub
+boards/common/files/etc/pulzr/firmware.pub
 firmware_ed25519.pub
 
 console/node_modules/

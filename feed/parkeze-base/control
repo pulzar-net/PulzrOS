@@ -1,9 +1,0 @@
-Package: parkeze-base
-Depends: ucode, ucode-mod-uci, ucode-mod-fs, ucode-mod-ubus, uci, ip-full, curl, jshn, jsonfilter, ucode-mod-socket, openssh-server, openssh-keygen, dropbearconvert
-Maintainer: Joseph Telaak <joseph@parkeze.com>
-Architecture: all
-Description: Parkeze gateway base configuration, identity and branding.
- Network defaults, device identity derived from board serial, the shared UCI
- schema every other Parkeze package reads, and the login banner — whose
- wordmark is rendered from a FIGlet font at print time, because OpenWrt
- packages no figlet to depend on.

@@ -1,0 +1,236 @@
+#!/bin/sh
+#
+# Confine the WireGuard tunnel's traffic to a backhaul we chose on purpose.
+#
+#   pulzr-wireguard-route apply     point the tunnel at the best backhaul
+#   pulzr-wireguard-route flush     remove the rule and table
+#   pulzr-wireguard-route status    report which path the tunnel is on
+#
+# WHY THIS EXISTS
+#
+# A management tunnel left alone would keep itself alive over whatever route
+# the kernel finds — keepalives every 25 seconds, forever, wherever that
+# happens to be. That is fine on wired and a bill on a metered SIM, so this
+# decides the tunnel's egress explicitly rather than letting it drift onto
+# whatever the main routing table says today.
+#
+# UNMETERED, OR NOTHING
+#
+# Wired and WiFi are allowed; cellular is not, by default —
+# PULZR_WIREGUARD_ALLOW_CELLULAR is "0" on every board — and that is not
+# about the cost of a 25-second keepalive. It is that a cellular gateway is
+# already reachable: the cloud holds an OpenVPN tunnel open into the SIM
+# provider's CGNAT'd network, and every SIM answers on a fixed address inside
+# it. A second tunnel over the same SIM
+# to reach the same box is two management paths for one gateway, for nothing.
+#
+# WiFi is allowed for the mirror of that reason: the objection to cellular is
+# the bill, and joining somebody's WiFi does not produce one. A gateway
+# backhauled over WiFi is reachable exactly as a wired one is.
+#
+# Enrolment is not gated by this — `pulzr-wireguard` enrols regardless of
+# backhaul, so a gateway that is cellular-only today has a tunnel sitting
+# ready the moment ethernet actually appears, rather than enrolling late and
+# making whoever is waiting watch a round trip. Only routing is confined here:
+# on a cellular-only gateway `apply` below refuses to route wg0's traffic over
+# it, so it sits enrolled and unreachable until wired shows up. Per-gateway,
+# cellular is tried at all only when it is actually usable — a modem with a
+# gateway address — so none of this changes anything on a board with no modem.
+#
+# This is still confinement, not "whatever is up wins": the table holds
+# exactly one route, chosen here, and an unreachable rule below it means a
+# gap between the two — wired just dropped, cellular has not registered yet —
+# drops the tunnel's packets rather than leaking them onto a path nobody
+# decided to trust with it.
+#
+# HOW
+#
+# WireGuard marks the encrypted UDP it sends with the interface's fwmark. A
+# routing rule sends marked packets to a table of our own, and that table
+# holds a default route via whichever backhaul `apply` chose. Below it, an
+# unreachable rule for the same mark, so a marked packet never falls through
+# to the main table when our table is empty.
+#
+# The mark is on the *outer* packets, which is exactly the traffic that must
+# be confined: the encrypted datagrams to the hub, not what travels inside
+# wg0.
+#
+# QUICK, NOT EVENTUALLY
+#
+# `apply` is called straight from the hotplug handlers for both the wired and
+# the cellular interface, on every ifup and ifdown of either — not just wired
+# ifup. Table 97 is the only thing that has to change to re-home the tunnel:
+# wg0 itself is untouched, so a failover costs one route replace, not a new
+# handshake. The alternative — leaving table 97 alone and waiting for
+# somebody to notice the handshake has gone stale — is what used to happen
+# with a wired-only tunnel, and it was minutes, not seconds.
+
+set -e
+
+. /lib/functions/network.sh
+. /etc/pulzr/board.conf
+# cellular_gateway: wwan, or usbwan — a HiLink dongle or a tethered phone,
+# which is an Ethernet device on DHCP like the wired uplink and billed like
+# the SIM. Asking for wwan alone let the tunnel onto a phone's data plan.
+. /usr/share/pulzr/cellular.sh
+# wired_gateway: the first usable wired uplink, of however many pulzr-ports
+# made.
+. /usr/share/pulzr/wired.sh
+
+TABLE_ID="${PULZR_WIREGUARD_TABLE:-97}"
+MARK="${PULZR_WIREGUARD_MARK:-0x9700}"
+MASK="0xff00"
+WIFI_IFACE="${PULZR_WAN_WIFI_IFACE:-wwifi}"
+# Where the last-applied egress is remembered, purely to notice a change.
+# tmpfs: forgetting it across a reboot means one extra report at most, not a
+# wrong answer.
+STATE=/var/run/pulzr/wireguard-egress
+
+log() { logger -t wireguard-route -p daemon.info "$*"; }
+
+# The L3 device and gateway of an interface, as netifd currently sees them.
+# Read live rather than from UCI: a lease that has not come up yet has a
+# configured interface and no gateway, and installing a default route to a
+# gateway that does not answer is worse than having no route. Shared between
+# wired and cellular — an interface is an interface once it has one.
+#
+# network_get_device (.l3_device), not network_get_physdev (.device): the
+# latter is only populated for an interface with a statically configured
+# device, which a DHCP-managed wired WAN happens to be and a modemmanager one
+# never is — wwan reported a real gateway and an empty device, so cellular
+# read as unusable even attached and registered. .l3_device is what netifd
+# actually ended up using either way.
+iface_gateway() {
+  local gw dev
+  network_get_gateway gw "$1" || return 1
+  network_get_device dev "$1" || return 1
+  [ -n "${gw}" ] && [ -n "${dev}" ] || return 1
+  echo "${gw} ${dev}"
+}
+
+# The WiFi's lease, only once pulzr-wifi-uplink has seen it reach the
+# internet. A guest network hands out a lease and a gateway before anybody has
+# signed in, and the tunnel pinned there sent its keepalives into the sign-in
+# page. pulzr-wifi-uplink re-runs `apply` when its answer changes.
+wifi_gateway() {
+  /usr/sbin/pulzr-wifi-uplink usable 2>/dev/null || return 1
+  iface_gateway "${WIFI_IFACE}"
+}
+
+# Tell Pulzar Cloud promptly when the tunnel's path actually changes, rather
+# than however long it takes the six-hourly report or a stale handshake to
+# say so. `pulzr-claim report` already no-ops in half a second when this
+# gateway is not adopted, so this is safe to call unconditionally.
+announce_if_changed() {
+  local via="$1" previous=""
+  mkdir -p "$(dirname "${STATE}")"
+  [ -f "${STATE}" ] && previous="$(cat "${STATE}")"
+  [ "${via}" = "${previous}" ] && return 0
+  echo "${via}" > "${STATE}"
+  [ -z "${previous}" ] && return 0    # first apply since boot: nothing to announce
+  log "tunnel egress changed: ${previous} -> ${via}"
+  ( pulzr-claim report >/dev/null 2>&1 & ) 2>/dev/null || true
+}
+
+apply() {
+  local spec gw dev via
+
+  if spec="$(wired_gateway)"; then
+    via=wired
+    spec="${spec% *}"
+  # WiFi counts as wired here, and that is not an oversight. The reason the
+  # tunnel is kept off cellular is the bill — see the header — and joining
+  # somebody's WiFi does not produce one. A gateway backhauled over WiFi with
+  # no tunnel would be a gateway nobody can reach for no reason at all.
+  elif spec="$(wifi_gateway)"; then
+    via=wifi
+  elif [ "${PULZR_WIREGUARD_ALLOW_CELLULAR:-0}" = "1" ] \
+       && spec="$(cellular_gateway)"; then
+    via=cellular
+  else
+    log "no usable backhaul for the tunnel — leaving the table empty so its traffic is dropped rather than escaping"
+    ip route flush table "${TABLE_ID}" 2>/dev/null || true
+    install_rule
+    announce_if_changed none
+    return 0
+  fi
+
+  gw="${spec% *}"; dev="${spec#* }"
+  ip route flush table "${TABLE_ID}" 2>/dev/null || true
+  ip route add default via "${gw}" dev "${dev}" table "${TABLE_ID}"
+  log "tunnel egress pinned to ${dev} via ${gw} (${via})"
+
+  install_rule
+  announce_if_changed "${via}"
+}
+
+install_rule() {
+  # Idempotent: this runs on every ifup/ifdown of either backhaul.
+  ip rule del fwmark "${MARK}/${MASK}" table "${TABLE_ID}" 2>/dev/null || true
+  ip rule add fwmark "${MARK}/${MASK}" table "${TABLE_ID}" priority 30000
+
+  # An unreachable fallback *below* the main table, so that a marked packet
+  # never falls through to main when our table is empty. Without this the
+  # whole scheme leaks in exactly the situation it exists for.
+  ip rule del fwmark "${MARK}/${MASK}" unreachable 2>/dev/null || true
+  ip rule add fwmark "${MARK}/${MASK}" unreachable priority 30001
+}
+
+flush() {
+  ip rule del fwmark "${MARK}/${MASK}" table "${TABLE_ID}" 2>/dev/null || true
+  ip rule del fwmark "${MARK}/${MASK}" unreachable 2>/dev/null || true
+  ip route flush table "${TABLE_ID}" 2>/dev/null || true
+  # NOT the state file. `restart` calls stop (this) then start, and start's
+  # apply() needs to still remember what the egress was *before* the bounce
+  # to announce a real recovery — cellular back to wired, say. Every wired
+  # ifup runs a full restart for other reasons (re-enrolment, re-resolving
+  # the endpoint), and clearing this here meant that path could never
+  # announce anything: apply() always saw a blank "previous" and skipped it,
+  # exactly the transition an operator most wants to hear about.
+  log "tunnel routing confinement removed"
+}
+
+status() {
+  # Used by the console and by the status reporter. Prints JSON because both
+  # consumers parse it and neither wants to scrape prose.
+  #
+  # `wiredUsable` is kept exactly as it was — several things already parse it
+  # — and `via` is additive: which path the tunnel is actually on right now,
+  # including "none" and, on a board that never allows it, "cellular" never
+  # appearing at all.
+  local wired_spec cell_spec wired_usable="false" cell_usable="false"
+  local wgw wdev cgw cdev via="none" wifi_usable="false"
+
+  local wiface=""
+  if wired_spec="$(wired_gateway)"; then
+    wired_usable="true"
+    set -- ${wired_spec}
+    wgw="$1"; wdev="$2"; wiface="$3"
+    via=wired
+  fi
+  # The same order apply() pins the tunnel in: wired, then WiFi, then
+  # cellular. This used to skip WiFi, so a gateway whose tunnel was on WiFi
+  # told Pulzar Cloud it was wired.
+  if wifi_gateway >/dev/null; then
+    wifi_usable="true"
+    [ "${via}" = "none" ] && via=wifi
+  fi
+  if [ "${PULZR_WIREGUARD_ALLOW_CELLULAR:-0}" = "1" ] \
+     && cell_spec="$(cellular_gateway)"; then
+    cell_usable="true"; cgw="${cell_spec% *}"; cdev="${cell_spec#* }"
+    [ "${via}" = "none" ] && via=cellular
+  fi
+
+  printf '{"wiredUsable":%s,"iface":"%s","gateway":"%s","device":"%s","reason":"%s",' \
+    "${wired_usable}" "${wiface}" "${wgw:-}" "${wdev:-}" \
+    "$([ "${wired_usable}" = "true" ] && echo "" || echo "wired WAN is down")"
+  printf '"wifiUsable":%s,"cellularUsable":%s,"via":"%s"}\n' \
+    "${wifi_usable}" "${cell_usable}" "${via}"
+}
+
+case "${1:-}" in
+  apply)  apply ;;
+  flush)  flush ;;
+  status) status ;;
+  *) echo "usage: $0 {apply|flush|status}" >&2; exit 2 ;;
+esac

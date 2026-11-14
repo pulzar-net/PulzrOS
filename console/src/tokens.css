@@ -1,8 +1,8 @@
 /* ================================================================
-   ParkezeOS gateway console — design tokens
+   PulzarOS gateway console — design tokens
 
-   Lifted verbatim from parkeze.net/console/src/index.css, which in
-   turn copies my.parkeze.com. Three products, one set of values.
+   Lifted verbatim from the Pulzar Cloud console's design tokens, so the
+   gateway console and the cloud console read as one product.
    Do not drift: if a token changes there, change it here.
 
    Everything below this block is the gateway console's own, and is
@@ -62,7 +62,7 @@
   /* ---- network signal scale ----
      RSSI / SNR quality, weak → strong. Net-specific: the dashboard has no
      equivalent, but these are derived from the shared status colors so a
-     coverage map still reads as Parkeze. */
+     coverage map still reads as Pulzar. */
   --signal-none:   #cbd5e1;
   --signal-weak:   #ef4444;
   --signal-fair:   #f59e0b;
@@ -95,7 +95,7 @@
   --hue-slate:  #64748b;
 }
 
-/* The same values parkeze.net hangs on html.dark, keyed to the OS instead.
+/* The same values Pulzar Cloud hangs on html.dark, keyed to the OS instead.
    Nothing here ever set that class, so they never applied; a gateway console
    has no account to remember a choice against, and the technician's phone
    already says which one they want. */

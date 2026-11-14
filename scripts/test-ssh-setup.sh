@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 #
-# Run parkeze-ssh-setup against a sandboxed /etc/ssh.
+# Run pulzr-ssh-setup against a sandboxed /etc/ssh.
 #
 #   scripts/test-ssh-setup.sh
 #
-# What it writes decides whether parkeze.net can open a shell on a gateway at
+# What it writes decides whether Pulzar Cloud can open a shell on a gateway at
 # all: the principal a certificate must name, the CA sshd trusts, and the host
-# key parkeze.net has pinned. A wrong principal is a gateway that refuses every
+# key Pulzar Cloud has pinned. A wrong principal is a gateway that refuses every
 # certificate, and one marked as trusting the CA is never tried with the fleet
 # key; a new host key is a gateway refused as an impostor. None of it can be
 # checked without a gateway except like this, with dropbearconvert, ssh-keygen,
@@ -15,10 +15,10 @@
 set -uo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SETUP="${ROOT_DIR}/feed/parkeze-base/files/usr/sbin/parkeze-ssh-setup"
-SHIPPED_CONFIG="${ROOT_DIR}/feed/parkeze-base/files/usr/share/parkeze/ssh/sshd_config"
-SHIPPED_CA="${ROOT_DIR}/boards/common/ssh/parkeze_user_ca.pub"
-KEYS_ONLY="${ROOT_DIR}/feed/parkeze-console/files/usr/libexec/parkeze-root-keys-only"
+SETUP="${ROOT_DIR}/feed/pulzr-base/files/usr/sbin/pulzr-ssh-setup"
+SHIPPED_CONFIG="${ROOT_DIR}/feed/pulzr-base/files/usr/share/pulzr/ssh/sshd_config"
+SHIPPED_CA="${ROOT_DIR}/boards/common/ssh/pulzr_user_ca.pub"
+KEYS_ONLY="${ROOT_DIR}/feed/pulzr-console/files/usr/libexec/pulzr-root-keys-only"
 
 command -v python3 >/dev/null 2>&1 || { echo "python3 is required" >&2; exit 2; }
 
@@ -32,7 +32,7 @@ mkdir -p "${STUBS}"
 cat > "${STUBS}/uci" <<'EOF'
 #!/bin/sh
 [ "$1" = "-q" ] && shift
-[ "$1 $2" = "get parkeze.identity.gateway_eui" ] || exit 1
+[ "$1 $2" = "get pulzr.identity.gateway_eui" ] || exit 1
 [ -n "${EUI:-}" ] || exit 1
 echo "${EUI}"
 EOF
@@ -102,10 +102,10 @@ export SANDBOX
 SSH="${SANDBOX}/etc/ssh"
 SHARE="${SANDBOX}/share"
 DROPBEAR="${SANDBOX}/etc/dropbear"
-export PARKEZE_SSH_DIR="${SSH}" PARKEZE_SSH_SHARE="${SHARE}" PARKEZE_DROPBEAR_DIR="${DROPBEAR}"
+export PULZR_SSH_DIR="${SSH}" PULZR_SSH_SHARE="${SHARE}" PULZR_DROPBEAR_DIR="${DROPBEAR}"
 PASSWD="${SANDBOX}/etc/passwd"
 SHADOW_FILE="${SANDBOX}/etc/shadow"
-export PARKEZE_PASSWD="${PASSWD}" PARKEZE_SHADOW="${SHADOW_FILE}"
+export PULZR_PASSWD="${PASSWD}" PULZR_SHADOW="${SHADOW_FILE}"
 
 # ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -124,7 +124,7 @@ fresh() {
     rm -rf "${SANDBOX}/etc" "${SHARE}" "${SANDBOX}/log"
     mkdir -p "${DROPBEAR}" "${SHARE}"
     cp "${SHIPPED_CONFIG}" "${SHARE}/sshd_config"
-    cp "${SHIPPED_CA}" "${SHARE}/parkeze_user_ca.pub"
+    cp "${SHIPPED_CA}" "${SHARE}/pulzr_user_ca.pub"
     echo "dropbear ed25519 key" > "${DROPBEAR}/dropbear_ed25519_host_key"
     echo "dropbear rsa key" > "${DROPBEAR}/dropbear_rsa_host_key"
     printf '%s\n' 'root:x:0:0:root:/root:/bin/ash' 'daemon:*:1:1:daemon:/var:/bin/false' > "${PASSWD}"
@@ -142,8 +142,8 @@ check "sshd_config is the shipped one" cmp -s "${SHARE}/sshd_config" "${SSH}/ssh
 check "the principal is the EUI, lowercased" [ "$(cat "${SSH}/auth_principals/root")" = "ac1f09fffe0a1b2c" ]
 check "the principal is one line" [ "$(wc -l < "${SSH}/auth_principals/root" | tr -d ' ')" = 1 ]
 check "the principals file is 0644" [ "$(mode "${SSH}/auth_principals/root")" = 644 ]
-check "the CA is where parkeze.net's docs say" cmp -s "${SHIPPED_CA}" "${SSH}/parkeze_user_ca.pub"
-check "the CA config is exactly the documented two lines" [ "$(cat "${SSH}/sshd_config.d/parkeze-ca.conf")" = "TrustedUserCAKeys ${SSH}/parkeze_user_ca.pub
+check "the CA is where Pulzar Cloud's docs say" cmp -s "${SHIPPED_CA}" "${SSH}/pulzr_user_ca.pub"
+check "the CA config is exactly the documented two lines" [ "$(cat "${SSH}/sshd_config.d/pulzr-ca.conf")" = "TrustedUserCAKeys ${SSH}/pulzr_user_ca.pub
 AuthorizedPrincipalsFile ${SSH}/auth_principals/%u" ]
 check "dropbear's ed25519 key is carried over" grep -q "dropbear ed25519 key" "${SSH}/ssh_host_ed25519_key"
 check "dropbear's rsa key is carried over" grep -q "dropbear rsa key" "${SSH}/ssh_host_rsa_key"
@@ -189,8 +189,8 @@ for eui in "" "ac1f09fffe0a1b2" "ac1f09fffe0a1b2cd" "zz1f09fffe0a1b2c" "ac1f09ff
     export EUI="${eui}"
     setup
     check "no principal for '${eui}'" [ ! -e "${SSH}/auth_principals/root" ]
-    check "no CA config for '${eui}'" [ ! -e "${SSH}/sshd_config.d/parkeze-ca.conf" ]
-    check "no CA for '${eui}'" [ ! -e "${SSH}/parkeze_user_ca.pub" ]
+    check "no CA config for '${eui}'" [ ! -e "${SSH}/sshd_config.d/pulzr-ca.conf" ]
+    check "no CA for '${eui}'" [ ! -e "${SSH}/pulzr_user_ca.pub" ]
     check "not trusted for '${eui}'" not setup --trusts-ca
 done
 check "the reason is logged" grep -q "no valid gateway EUI" "${SANDBOX}/log"
@@ -199,21 +199,21 @@ export EUI=ac1f09fffe0a1b2c
 # ── no CA in the image, or not one CA ───────────────────────────────────────
 
 fresh
-rm "${SHARE}/parkeze_user_ca.pub"
+rm "${SHARE}/pulzr_user_ca.pub"
 setup
-check "no CA config without a CA" [ ! -e "${SSH}/sshd_config.d/parkeze-ca.conf" ]
+check "no CA config without a CA" [ ! -e "${SSH}/sshd_config.d/pulzr-ca.conf" ]
 check "no principal without a CA" [ ! -e "${SSH}/auth_principals/root" ]
 check "sshd_config still written" [ -s "${SSH}/sshd_config" ]
 
 fresh
-cat "${SHIPPED_CA}" "${SHIPPED_CA}" > "${SHARE}/parkeze_user_ca.pub"
+cat "${SHIPPED_CA}" "${SHIPPED_CA}" > "${SHARE}/pulzr_user_ca.pub"
 setup
-check "two CA lines are refused" [ ! -e "${SSH}/sshd_config.d/parkeze-ca.conf" ]
+check "two CA lines are refused" [ ! -e "${SSH}/sshd_config.d/pulzr-ca.conf" ]
 
 fresh
-echo "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQ parkeze-net-ssh-ca" > "${SHARE}/parkeze_user_ca.pub"
+echo "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQ pulzr-net-ssh-ca" > "${SHARE}/pulzr_user_ca.pub"
 setup
-check "a CA that is not ed25519 is refused" [ ! -e "${SSH}/sshd_config.d/parkeze-ca.conf" ]
+check "a CA that is not ed25519 is refused" [ ! -e "${SSH}/sshd_config.d/pulzr-ca.conf" ]
 
 # ── a gateway flashed with this image ───────────────────────────────────────
 
@@ -228,22 +228,24 @@ check "no RSA key is made" [ ! -e "${SSH}/ssh_host_rsa_key" ]
 
 fresh
 setup
-check "parkeze is in passwd, uid 0, after root" [ "$(tail -n1 "${PASSWD}")" = "parkeze:x:0:0:Parkeze console:/root:/bin/ash" ]
+check "pulzr is in passwd, uid 0, after root" [ "$(tail -n1 "${PASSWD}")" = "pulzr:x:0:0:Pulzar console:/root:/bin/ash" ]
 check "root is still the first uid 0" [ "$(awk -F: '$3 == 0 { print $1; exit }' "${PASSWD}")" = root ]
-check "parkeze has an empty password field" grep -qx 'parkeze::0:0:99999:7:::' "${SHADOW_FILE}"
+check "pulzr has an empty password field" grep -qx 'pulzr::0:0:99999:7:::' "${SHADOW_FILE}"
 check "root's shadow entry is untouched" grep -qx 'root:\*:19000:0:99999:7:::' "${SHADOW_FILE}"
 check "shadow stays 0600" [ "$(mode "${SHADOW_FILE}")" = 600 ]
 check "passwd stays 0644" [ "$(mode "${PASSWD}")" = 644 ]
 before="$(mtimes)"
 setup
 check "a second boot rewrites neither" [ "$(mtimes)" = "${before}" ]
-echo 'parkeze:x:1000:1000::/home/parkeze:/bin/ash' >> "${PASSWD}"
+echo 'pulzr:x:1000:1000::/home/pulzr:/bin/ash' >> "${PASSWD}"
 setup
-check "a stray parkeze line is replaced, not doubled" [ "$(grep -c '^parkeze:' "${PASSWD}")" = 1 ]
-check "and it is the console's" grep -qx 'parkeze:x:0:0:Parkeze console:/root:/bin/ash' "${PASSWD}"
-check "the shipped config forces the TUI for parkeze" grep -qx '    ForceCommand /usr/sbin/parkeze-tui --console' "${SHIPPED_CONFIG}"
-check "the parkeze block is the last thing in the file" [ "$(awk '/^Match /{m=NR} END{print (m > 0)}' "${SHIPPED_CONFIG}")" = 1 ]
-check "nothing after it but its own indented lines" [ -z "$(awk 'f && !/^    / && NF {print} /^Match User parkeze$/{f=1}' "${SHIPPED_CONFIG}")" ]
+check "a stray pulzr line is replaced, not doubled" [ "$(grep -c '^pulzr:' "${PASSWD}")" = 1 ]
+check "the ParkezeOS name is the same account" grep -qx 'parkeze:x:0:0:Pulzar console:/root:/bin/ash' "${PASSWD}"
+check "and has no password either" grep -qx 'parkeze::0:0:99999:7:::' "${SHADOW_FILE}"
+check "and it is the console's" grep -qx 'pulzr:x:0:0:Pulzar console:/root:/bin/ash' "${PASSWD}"
+check "the shipped config forces the TUI for pulzr" grep -qx '    ForceCommand /usr/sbin/pulzr-tui --console' "${SHIPPED_CONFIG}"
+check "the pulzr block is the last thing in the file" [ "$(awk '/^Match /{m=NR} END{print (m > 0)}' "${SHIPPED_CONFIG}")" = 1 ]
+check "nothing after it but its own indented lines" [ -z "$(awk 'f && !/^    / && NF {print} /^Match User pulzr,parkeze$/{f=1}' "${SHIPPED_CONFIG}")" ]
 
 # ── root signs in by key or certificate only ────────────────────────────────
 
@@ -252,7 +254,7 @@ check "no password logins" grep -qx "PasswordAuthentication no" "${SHIPPED_CONFI
 check "no empty-password logins" grep -qx "PermitEmptyPasswords no" "${SHIPPED_CONFIG}"
 
 shadow="${SANDBOX}/shadow"
-keys_only() { PARKEZE_SHADOW="${shadow}" TMPDIR="${SANDBOX}" sh "${KEYS_ONLY}"; }
+keys_only() { PULZR_SHADOW="${shadow}" TMPDIR="${SANDBOX}" sh "${KEYS_ONLY}"; }
 printf '%s\n' 'root:$6$rounds=100000$salt$hash:19000:0:99999:7:::' 'daemon:*:0:0:99999:7:::' > "${shadow}"
 keys_only
 check "a console password on root is taken away" grep -qx 'root:\*:19000:0:99999:7:::' "${shadow}"

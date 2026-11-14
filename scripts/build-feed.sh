@@ -106,7 +106,7 @@ package_one() {
     -exec chmod 0755 {} +
 
   # An empty payload installs nothing and says nothing about it, which is how
-  # an image once booted with none of ParkezeOS in it. Refused here.
+  # an image once booted with none of PulzarOS in it. Refused here.
   [ -n "$(find "${stage}/data" -type f -print -quit)" ] \
     || { echo "error: ${name} (${want_arch:-all}) has no files to ship" >&2; exit 1; }
 
@@ -125,10 +125,21 @@ package_one() {
     echo "name:${name}"
     echo "version:${PKG_VERSION}"
     echo "arch:${arch}"
-    echo "origin:parkeze"
+    echo "origin:pulzr"
     awk '/^Maintainer:/ { sub(/^Maintainer: */, ""); print "maintainer:" $0 }' "${control}"
+    # Conflicts: become `!name` entries in depends, which is how apk says it.
     awk '/^Depends:/ { sub(/^Depends: */, ""); gsub(/, */, " "); d = d (d ? " " : "") $0 }
+         /^Conflicts:/ { sub(/^Conflicts: */, ""); n = split($0, c, /, */)
+                         for (i = 1; i <= n; i++) d = d (d ? " " : "") "!" c[i] }
          END { if (d) print "depends:" d }' "${control}"
+    # A renamed package carries its old name as a provides at its own version,
+    # so anything still asking for the old name is answered, and replaces it,
+    # so apk lets this package's files over the old one's. Used by the
+    # pulzr-* packages for the parkeze-* names ParkezeOS shipped.
+    awk -v v="${PKG_VERSION}" '/^Provides:/ { sub(/^Provides: */, ""); n = split($0, p, /, */)
+                                for (i = 1; i <= n; i++) o = o (o ? " " : "") p[i] "=" v }
+         END { if (o) print "provides:" o }' "${control}"
+    awk '/^Replaces:/ { sub(/^Replaces: */, ""); gsub(/, */, " "); print "replaces:" $0 }' "${control}"
     awk '/^Description:/ { sub(/^Description: */, ""); d = $0; on = 1; next }
          on && /^ / { sub(/^ +/, ""); d = d " " $0; next }
          { on = 0 }

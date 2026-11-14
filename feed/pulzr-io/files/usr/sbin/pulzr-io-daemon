@@ -1,0 +1,206 @@
+#!/bin/sh
+#
+# Drive the front panel from real system state.
+#
+# THE BLINK CODES
+#
+# A gateway is usually installed somewhere with no screen and no laptop, so the
+# LEDs are the entire diagnostic surface for whoever is standing in front of
+# it. They are chosen so that the three questions an installer actually has —
+# is it on, can it talk to us, is the radio working — each have their own
+# light, and so that the answer is readable from across a car park.
+#
+#   power     solid            up
+#
+#   status    heartbeat        healthy and adopted
+#             blink 1Hz        up but wants attention: not adopted, claim
+#                              revoked, or running at reduced channel count
+#             blink 5Hz        fault: no concentrator at all
+#
+#   cloud     solid            reachable over the wired path (management tunnel)
+#             blink 1s/1s      reachable over cellular only — working, but
+#                              every byte is billed
+#             off              no management path at all
+#             (on an RGB breathing LED, the RAK7268's big light on top: breathes
+#              blue on wired, breathes yellow on cellular, solid red when there
+#              is no path — breathing means alive)
+#
+#   cellular  solid            modem attached
+#             blink            attaching
+#             off              no modem, or disabled
+#
+#   lora      flash            one flash per uplink heard
+#
+# SETUP MODE
+#
+# While the setup AP is up, status and cloud both show `setup`: one short flash
+# a second, green breathing on an RGB light. Whoever pressed the button four
+# times is looking for this. If the gateway refused, every light flashes fast
+# for six seconds (`alert`, red breathing on an RGB light) and then goes back
+# to the codes above. See pulzr-reset-button. A RAK7289CV2 has neither status
+# nor cloud, so its LoRa lights show it, and stop showing uplinks meanwhile.
+#
+# ON A BOARD WITH FEWER LEDS
+#
+# A Pi has two. `cloud` and `cellular` have nowhere to go, so their state is
+# folded into `status`: an adopted gateway with no management path blinks the
+# attention code rather than the healthy heartbeat. Nothing pretends the board
+# has lights it does not have, and nothing goes unreported.
+#
+# COST
+#
+# The poll below is deliberately cheap and deliberately local. It reads UCI,
+# sysfs and the kernel's WireGuard state — nothing here touches the network, and in
+# particular nothing here spends cellular data to decide what colour a light
+# should be.
+
+. /etc/pulzr/board.conf
+. /usr/share/pulzr/cellular.sh
+
+INTERVAL="${PULZR_IO_INTERVAL:-5}"
+STATS=/var/run/pulzr/lora/uplinks
+
+led() { /usr/sbin/pulzr-led "$@"; }
+
+has_led() {
+    eval "test -n \"\${PULZR_LED_$(echo "$1" | tr '[:lower:]' '[:upper:]')}\""
+}
+
+backhaul_state() {
+    # wired | cellular | none. Same order of preference as the cloud uses, so the
+    # light and the console agree about which path is in play.
+    # Wired means the management tunnel is up — or, before there is one, that
+    # the wired WAN has a gateway. Kernel and netifd state only: this runs
+    # every few seconds and must never probe anything.
+    case "$(/usr/sbin/pulzr-backhaul-check --tunnel 2>/dev/null)" in
+        up) echo wired; return ;;
+        none)
+            /usr/sbin/pulzr-wireguard-route status 2>/dev/null | grep -q '"wiredUsable":true' \
+                && { echo wired; return; } ;;
+    esac
+    if cellular_gateway >/dev/null; then
+        echo cellular; return
+    fi
+    echo none
+}
+
+concentrator_state() {
+    # ok | partial | none
+    local status
+    status="$(uci -q get pulzr.concentrator.status)"
+    case "${status}" in
+        present) echo ok ;;
+        partial) echo partial ;;
+        *)       echo none ;;
+    esac
+}
+
+modem_state() {
+    # up | attaching | absent. Present is ModemManager's word, or a USB
+    # Ethernet modem bound to usbwan: an AT modem has no cdc-wdm0, and a
+    # HiLink dongle has nothing ModemManager sees at all.
+    local usb
+    usb="$(uci -q get network.usbwan.device)"
+    [ "$(uci -q get pulzr.cellular.modem_present)" = 1 ] || [ -c /dev/cdc-wdm0 ] \
+        || { [ -n "${usb}" ] && [ -e "/sys/class/net/${usb}" ]; } \
+        || { echo absent; return; }
+    if cellular_gateway >/dev/null; then
+        echo up
+    else
+        echo attaching
+    fi
+}
+
+# ── uplink flashes ──────────────────────────────────────────────────────────
+# The forwarder does not offer a hook, so pulzr-forwarder-stats keeps a
+# running total from the log and it is differenced here.
+# One flash per poll when anything arrived, rather than one per packet: a
+# gateway hearing forty uplinks in five seconds should look busy, not seizure-
+# inducing, and flashing forty times would take longer than the poll anyway.
+last_uplinks=0
+lora_setup=0
+
+# Whether the setup AP is up. A file pulzr-ap keeps, so this costs nothing.
+ap_up() { [ -f /var/run/pulzr/ap/raised ]; }
+
+uplink_count() {
+    /usr/sbin/pulzr-forwarder-stats --record >/dev/null 2>&1
+    [ -f "${STATS}" ] && cat "${STATS}" 2>/dev/null || echo 0
+}
+
+# ── boot ────────────────────────────────────────────────────────────────────
+
+led power on
+led status blink 100 100      # fast blink while we work out what is going on
+
+trap 'led status off; led cloud off; exit 0' TERM INT
+
+while :; do
+    # The reset button is saying something on these lights. Only until it has
+    # finished, and pulzr-led --hold expires by itself if it never does.
+    if led --held; then
+        sleep "${INTERVAL}"
+        continue
+    fi
+
+    backhaul="$(backhaul_state)"
+    concentrator="$(concentrator_state)"
+    adopted="$(uci -q get pulzr.adoption.state)"
+
+    # ── cloud ───────────────────────────────────────────────────────────────
+    # Which path, not how to draw it: a plain LED is solid / 1Hz / off, the RGB
+    # one on a RAK7268 breathes blue, breathes yellow, or sits solid red.
+    if ap_up; then
+        led cloud setup
+    else
+        led cloud path "${backhaul}"
+    fi
+
+    # ── cellular ────────────────────────────────────────────────────────────
+    case "$(modem_state)" in
+        up)        led cellular on ;;
+        attaching) led cellular blink 300 300 ;;
+        absent)    led cellular off ;;
+    esac
+
+    # ── status ──────────────────────────────────────────────────────────────
+    # Worst thing first. A gateway with no concentrator AND no backhaul should
+    # show the concentrator fault, because that is the one somebody standing in
+    # front of it can do something about.
+    if ap_up; then
+        # First of all, because it is the one state somebody is standing in
+        # front of the gateway to see.
+        led status setup
+    elif [ "${concentrator}" = none ]; then
+        led status blink 100 100
+    elif [ "${concentrator}" = partial ]; then
+        led status blink 500 500
+    elif [ "${adopted}" != adopted ] || [ -s /etc/pulzr/claim/next/id ]; then
+        # Not adopted, or adopted with a revoked claim and a new one waiting:
+        # either way it wants claiming, and the code is on the console.
+        led status blink 500 500
+    elif ! has_led cloud && [ "${backhaul}" = none ]; then
+        # No cloud LED on this board, so status carries the bad news.
+        led status blink 500 500
+    else
+        led status heartbeat
+    fi
+
+    # ── lora ────────────────────────────────────────────────────────────────
+    now="$(uplink_count)"
+    if ap_up && ! has_led status && ! has_led cloud; then
+        led lora setup
+        led lora2 setup
+        lora_setup=1
+    elif [ "${lora_setup}" = 1 ]; then
+        led lora off
+        led lora2 off
+        lora_setup=0
+    elif [ "${now}" -gt "${last_uplinks}" ] 2>/dev/null; then
+        led lora flash
+        led lora2 flash
+    fi
+    last_uplinks="${now}"
+
+    sleep "${INTERVAL}"
+done

@@ -1,0 +1,199 @@
+#!/bin/sh
+#
+# GNSS position and fix state.
+#
+#   pulzr-gps status    JSON: fix, satellites, position, source
+#   pulzr-gps read      one-shot read straight from the receiver
+#   pulzr-gps sync      write the current position into UCI as the
+#                         gateway's reference coordinates
+#
+# ── WHO OWNS THE SERIAL PORT ───────────────────────────────────────────────
+#
+# Concentratord opens the GNSS tty itself when it is configured with
+# `gnss_dev_path`, and it does not share. That is the right arrangement — the
+# forwarder needs GPS *time* and PPS for fine timestamping, not just a
+# position, and only the process holding the port can have those.
+#
+# It does mean this cannot read the receiver while the forwarder is running.
+# So position comes from two places depending on who has the port:
+#
+#   forwarder running   a cached position, if something has written one.
+#                       Concentratord sends its position to the network
+#                       server rather than logging it, so today nothing does,
+#                       and status says so rather than inventing one.
+#   forwarder stopped   a direct read.
+#
+# A cached position going stale is not a problem worth solving: gateways do not
+# move, and one that has moved has bigger problems than a stale coordinate.
+#
+# ── WHERE THE POSITION COMES FROM ──────────────────────────────────────────
+#
+# pulzr.gps.source, set from the console's GNSS page:
+#
+#   auto           the receiver goes to slot 0's concentrator, and the first
+#                  position recorded — receiver or modem — stands. What every
+#                  gateway did before there was a choice.
+#   concentrator   the receiver goes to the concentrator in pulzr.gps.slot.
+#   modem          the cellular modem's GNSS. No concentrator gets a receiver;
+#                  each reports the recorded position.
+#   device         a separate serial or USB receiver (pulzr.gps.device, set
+#                  by detection from source_device). No concentrator opens it,
+#                  so it can always be read directly.
+
+. /etc/pulzr/board.conf
+
+CACHE=/var/run/pulzr/gps.json
+
+device() { uci -q get pulzr.gps.device; }
+baud()   { uci -q get pulzr.gps.baud || echo 9600; }
+
+gps_source() { uci -q get pulzr.gps.source || echo auto; }
+
+# The modem's GNSS, as the same five fields parse_nmea prints. mmcli shows "--"
+# for a field it has no value for yet; that is no fix, not a position.
+read_modem() {
+    local index kv lat lon alt
+    index="$(mmcli -L 2>/dev/null | sed -n 's|.*/Modem/\([0-9]*\).*|\1|p' | head -n1)"
+    [ -n "${index}" ] || return 1
+    kv="$(mmcli -m "${index}" --location-get --output-keyvalue 2>/dev/null)"
+    lat="$(echo "${kv}" | sed -n 's/^modem\.location\.gps\.latitude *: *//p')"
+    lon="$(echo "${kv}" | sed -n 's/^modem\.location\.gps\.longitude *: *//p')"
+    alt="$(echo "${kv}" | sed -n 's/^modem\.location\.gps\.altitude *: *//p')"
+    case "${lat}" in ''|--) echo "0 0 0 0 0"; return 0 ;; esac
+    echo "1 0 ${lat} ${lon} ${alt:-0}"
+}
+
+forwarder_running() {
+    /etc/init.d/pulzr-packet-forwarder running >/dev/null 2>&1
+}
+
+# Parse a burst of NMEA into the fields we care about.
+#
+# GGA carries fix quality, satellite count and altitude; RMC carries the
+# position in the same degrees-minutes form and a validity flag. Reading GGA
+# alone is the common shortcut and it is wrong on receivers that report a
+# position before the fix is usable.
+parse_nmea() {
+    awk -F, '
+        /^\$G[PNLABQ]GGA/ {
+            if ($7 != "" && $7 != "0") { fix=$7; sats=$8+0; alt=$10+0;
+                                          lat=$3; lat_h=$4; lon=$5; lon_h=$6 }
+        }
+        /^\$G[PNLABQ]RMC/ { if ($3 == "A") valid=1 }
+        END {
+            if (fix == "" || !valid) { print "0 0 0 0 0"; exit }
+            # ddmm.mmmm -> decimal degrees.
+            ld = int(lat / 100); lm = lat - (ld * 100); dlat = ld + lm / 60
+            od = int(lon / 100); om = lon - (od * 100); dlon = od + om / 60
+            if (lat_h == "S") dlat = -dlat
+            if (lon_h == "W") dlon = -dlon
+            printf "%s %d %.6f %.6f %.1f\n", fix, sats, dlat, dlon, alt
+        }'
+}
+
+read_receiver() {
+    local port; port="$(device)"
+    [ -c "${port}" ] || return 1
+    # A separate receiver is never given to a concentrator, so nothing else
+    # holds its port.
+    [ "$(gps_source)" != "device" ] && forwarder_running && return 1
+
+    stty -F "${port}" "$(baud)" raw -echo 2>/dev/null || return 1
+    # Long enough to catch a GGA and an RMC even at 1Hz with a slow start.
+    timeout 4 head -c 2048 "${port}" 2>/dev/null | parse_nmea
+}
+
+emit() {
+    local fix="$1" sats="$2" lat="$3" lon="$4" alt="$5" source="$6"
+    local status; status="$(uci -q get pulzr.gps.status || echo absent)"
+
+    if [ "${source}" = "modem" ]; then
+        if [ "$(uci -q get pulzr.cellular.gps_capable)" != "1" ]; then
+            printf '{"present":false,"fix":false,"source":"modem","reason":"The modem has no GNSS."}\n'
+            return
+        fi
+        if [ "${fix:-0}" = "0" ]; then
+            printf '{"present":true,"fix":false,"source":"modem","reason":"The modem has no fix yet."}\n'
+            return
+        fi
+        printf '{"present":true,"fix":true,"latitude":%s,"longitude":%s,"altitude":%s,"source":"modem"}\n' \
+            "${lat}" "${lon}" "${alt}"
+        return
+    fi
+
+    if [ "${status}" != "present" ]; then
+        printf '{"present":false,"fix":false,"reason":"No GNSS receiver detected."}\n'
+        return
+    fi
+    if [ "${fix:-0}" = "0" ]; then
+        printf '{"present":true,"fix":false,"device":"%s","source":"%s","reason":"The receiver has no fix yet."}\n' \
+            "$(device)" "${source}"
+        return
+    fi
+    printf '{"present":true,"fix":true,"quality":%s,"satellites":%s,"latitude":%s,"longitude":%s,"altitude":%s,"device":"%s","source":"%s"}\n' \
+        "${fix}" "${sats}" "${lat}" "${lon}" "${alt}" "$(device)" "${source}"
+}
+
+case "${1:-status}" in
+status)
+    if [ "$(gps_source)" = "modem" ]; then
+        set -- $(read_modem 2>/dev/null || echo "0 0 0 0 0")
+        emit "$1" "$2" "$3" "$4" "$5" modem
+    elif [ "$(gps_source)" != "device" ] && forwarder_running; then
+        # The forwarder has the port. Use whatever it last reported.
+        if [ -s "${CACHE}" ]; then
+            cat "${CACHE}"
+        else
+            printf '{"present":true,"fix":false,"device":"%s","source":"forwarder","reason":"The forwarder holds the receiver, so it cannot be read here."}\n' \
+                "$(device)"
+        fi
+    else
+        set -- $(read_receiver 2>/dev/null || echo "0 0 0 0 0")
+        emit "$1" "$2" "$3" "$4" "$5" direct
+    fi
+    ;;
+
+read)
+    forwarder_running && {
+        echo "The packet forwarder holds $(device). Stop it first, or use 'status'." >&2
+        exit 1
+    }
+    set -- $(read_receiver 2>/dev/null || echo "0 0 0 0 0")
+    emit "$1" "$2" "$3" "$4" "$5" direct
+    ;;
+
+sync)
+    # Freeze the current position as the gateway's reference coordinates.
+    #
+    # Used for the fake_gps path: a gateway with no GNSS still needs to report
+    # a location to the network server, and one that *has* GNSS can have its
+    # position captured once at install and then reported without depending on
+    # a fix every boot.
+    result="$(pulzr-gps status)"
+    lat="$(echo "${result}" | jsonfilter -e '@.latitude' 2>/dev/null)"
+    lon="$(echo "${result}" | jsonfilter -e '@.longitude' 2>/dev/null)"
+    alt="$(echo "${result}" | jsonfilter -e '@.altitude' 2>/dev/null)"
+
+    [ -n "${lat}" ] && [ -n "${lon}" ] || {
+        echo "No fix — nothing to record." >&2; exit 1; }
+
+    recorded_from=gnss
+    [ "$(gps_source)" = "modem" ] && recorded_from=modem
+
+    uci -q batch <<EOF
+set pulzr.location=location
+set pulzr.location.latitude='${lat}'
+set pulzr.location.longitude='${lon}'
+set pulzr.location.altitude='${alt:-0}'
+set pulzr.location.source='${recorded_from}'
+set pulzr.location.fixed_at='$(date -u +%Y-%m-%dT%H:%M:%SZ)'
+EOF
+    uci commit pulzr
+    echo "Recorded ${lat}, ${lon} (${alt:-0} m)."
+    ;;
+
+*)
+    echo "usage: pulzr-gps {status|read|sync}" >&2
+    exit 2
+    ;;
+esac

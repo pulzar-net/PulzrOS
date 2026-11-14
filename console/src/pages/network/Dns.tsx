@@ -18,13 +18,13 @@ import { duration, uplinkName } from '@/lib/format';
 import styles from '../Pages.module.css';
 
 /**
- * The resolver the gateway and its LAN use (parkeze-dns): upstream servers,
+ * The resolver the gateway and its LAN use (pulzr-dns): upstream servers,
  * local names, rebind protection. Each section applies on its own, as
  * GL.iNet's cards do.
  *
- * parkeze-dns refuses a name under a Parkeze domain and a server list that
- * cannot resolve Parkeze; its message is shown as it comes. Everything here is
- * in UCI dhcp, which is what parkeze.net's `dns` op reads.
+ * pulzr-dns refuses a name under a Pulzar domain and a server list that
+ * cannot resolve Pulzar; its message is shown as it comes. Everything here is
+ * in UCI dhcp, which is what Pulzar Cloud's `dns` op reads.
  *
  * Dynamic DNS is the customer's own name in their own Cloudflare zone, for
  * ports exposed on the LAN page. The token is write-only here: the gateway

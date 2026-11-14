@@ -1,0 +1,17 @@
+Package: pulzr-usb-gadget
+Provides: parkeze-usb-gadget
+Replaces: parkeze-usb-gadget
+Conflicts: parkeze-usb-gadget
+Depends: pulzr-tui, umdns, dnsmasq-full
+Maintainer: Joseph Telaak <joseph@pulzr.net>
+Architecture: all
+Description: The console over a USB cable, as a network and a serial port.
+ Presents the board's USB device port to a laptop as a network interface —
+ with an address from DHCP and the gateway at pulzr.local — and as a serial
+ port running the terminal UI. For boards whose SoC has a USB device
+ controller wired to a connector; see PACKAGES_USB_GADGET in
+ boards/common/board.conf.
+ .
+ The kernel modules are not dependencies: they are per target, and only the
+ targets with a device controller have them. PACKAGES_USB_GADGET installs
+ them alongside this on the boards that take the feature.

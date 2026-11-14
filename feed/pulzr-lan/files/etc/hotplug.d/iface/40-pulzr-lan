@@ -1,0 +1,12 @@
+#!/bin/sh
+#
+# A bridge port loses its isolation flag whenever it leaves and rejoins the
+# bridge, and netifd rejoins them on every ifup.
+#
+# The uplinks: exposed ports answer on the wired and WiFi uplinks' current
+# devices and addresses, and the cellular rules match the cellular devices.
+# A new lease is a new address, so every change reloads them.
+case "${INTERFACE}:${ACTION}" in
+	devlan:ifup|devlan:ifupdate) /usr/sbin/pulzr-lan isolate ;;
+	wan:if*|wan_*:if*|wwifi:if*|wwan:if*|usbwan:if*) /usr/sbin/pulzr-lan links ;;
+esac

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Drive parkeze-cellular-watchdog through a dead link, a stranded one, a live
+# Drive pulzr-cellular-watchdog through a dead link, a stranded one, a live
 # one and the cases that must leave it alone, against stubs.
 #
 #   scripts/test-cellular-watchdog.sh
@@ -15,7 +15,7 @@
 set -uo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-WATCHDOG="${ROOT_DIR}/feed/parkeze-cellular/files/usr/sbin/parkeze-cellular-watchdog"
+WATCHDOG="${ROOT_DIR}/feed/pulzr-cellular/files/usr/sbin/pulzr-cellular-watchdog"
 
 SANDBOX="$(mktemp -d)"
 trap 'rm -rf "${SANDBOX}"' EXIT
@@ -32,8 +32,8 @@ stub sleep '[ "$1" = 60 ] || exit 0
 n=$(( $(cat "$SANDBOX/ticks") + 1 )); echo $n > "$SANDBOX/ticks"
 [ "$RX_MODE" = grow ] && echo $(( n * 100 )) > "$RX"
 [ $n -ge "$TICKS" ] && kill $PPID; exit 0'
-stub uci 'case "$3" in parkeze.cellular.modem_present) echo 1 ;; network.wwan.disabled) echo "$DISABLED" ;; esac'
-stub parkeze-backhaul-check 'case "$1" in
+stub uci 'case "$3" in pulzr.cellular.modem_present) echo 1 ;; network.wwan.disabled) echo "$DISABLED" ;; esac'
+stub pulzr-backhaul-check 'case "$1" in
   --tunnel) echo "$TUNNEL" ;;
   --cellular) exit "$CELL_PROBE" ;;
   *) exit 1 ;;
@@ -55,7 +55,7 @@ stub mmcli 'case "$*" in
              echo 10 > "$RX"
              [ -n "$RESET_TO" ] && { echo "$RESET_TO" > "$SANDBOX/mm"; echo false > "$SANDBOX/up"; } ;;
 esac; exit 0'
-stub parkeze-hwline 'echo "hwline $*" >> "$ACTIONS"; echo 10 > "$RX"
+stub pulzr-hwline 'echo "hwline $*" >> "$ACTIONS"; echo 10 > "$RX"
 [ -n "$RESET_TO" ] && { echo "$RESET_TO" > "$SANDBOX/mm"; echo false > "$SANDBOX/up"; }; exit 0'
 stub reboot 'echo reboot >> "$ACTIONS"'
 
@@ -70,7 +70,7 @@ run() {
   SANDBOX="${SANDBOX}" RX="${RX}" ACTIONS="${ACTIONS}" TICKS="${ticks}" RX_MODE="${rx_mode}" \
     TUNNEL="${tunnel}" CELL_PROBE="${cell_probe}" RESET_TO="$9" IFUP_FIXES="${10}" \
     DISABLED="${11}" \
-    PARKEZE_SYS_NET="${SANDBOX}/net" PARKEZE_UPTIME_FILE="${SANDBOX}/uptime" \
+    PULZR_SYS_NET="${SANDBOX}/net" PULZR_UPTIME_FILE="${SANDBOX}/uptime" \
     PATH="${STUBS}:${PATH}" sh "${WATCHDOG}" 2>/dev/null &
   wait $! 2>/dev/null
   local got; got="$(paste -sd, "${ACTIONS}")"

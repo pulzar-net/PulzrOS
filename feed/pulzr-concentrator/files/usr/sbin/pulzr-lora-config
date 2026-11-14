@@ -1,0 +1,318 @@
+#!/bin/sh
+#
+# Render the LoRa configuration for one slot.
+#
+#   pulzr-lora-config <slot-index> <output-dir>
+#
+# Writes into <output-dir>:
+#
+#   concentratord.toml   ChirpStack Concentratord: which part, which bus, which
+#   region.toml          reset line, and the channel plan it listens on.
+#   channels.toml
+#   mqtt-forwarder.toml  ChirpStack MQTT Forwarder: where the frames go.
+#
+# The gateway runs only the gateway half of ChirpStack. Concentratord drives
+# the SX130x; the forwarder carries its frames to the cloud network server over
+# MQTT, authenticated with the credentials adoption issued. Nothing on the
+# gateway is a network server.
+#
+# Three inputs are combined, and keeping them separate is the whole reason a
+# Pi with a WM1302 and a RAK7289CV2 share this file:
+#
+#   the part      /usr/share/pulzr/concentrator/<model>.json — which
+#                 concentratord build, its default model, whether it does LBT.
+#   the region    /usr/share/pulzr/region/<REGION>/ — channel plan and the
+#                 topic prefix the server-side region listens on.
+#   the board     /etc/pulzr/board.conf and UCI — bus, device node, reset
+#                 line, this gateway's EUI and MQTT credentials.
+#
+# The output is written under /var/run, not /etc: it is derived, and a copy on
+# flash would be one more thing that can disagree with what it was derived from.
+
+set -e
+
+SLOT="${1:?slot index}"
+OUT="${2:?output dir}"
+
+. /etc/pulzr/board.conf
+
+PROFILE_DIR=/usr/share/pulzr/concentrator
+REGION_DIR=/usr/share/pulzr/region
+STATE_DIR=/var/run/pulzr/lora
+
+die() { echo "slot ${SLOT}: $*" >&2; exit 1; }
+
+# An unset option is normal here — no power-enable line, no GNSS, not adopted
+# yet — and `uci get` exits non-zero for one, which under `set -e` ends the
+# script silently in the middle of an assignment. Every read goes through this.
+get() { uci -q get "$1" || true; }
+
+section="slot${SLOT}"
+active="$(get "pulzr.${section}.active")"
+bus="$(get "pulzr.${section}.bus")"
+device="$(get "pulzr.${section}.device")"
+reset="$(get "pulzr.${section}.reset_gpio")"
+power="$(get "pulzr.${section}.power_gpio")"
+region="$(get pulzr.lorawan.region)"; region="${region:-US915}"
+eui="$(get pulzr.identity.gateway_eui)"
+
+[ -n "${active}" ] || die "no active concentrator"
+
+profile="${PROFILE_DIR}/${active}.json"
+plan="${REGION_DIR}/${region}"
+[ -f "${profile}" ] || die "no profile ${profile}"
+[ -f "${plan}/region.conf" ] || die "no region plan ${plan}"
+. "${plan}/region.conf"
+
+chipset="$(jsonfilter -i "${profile}" -e '@.concentratord')"
+[ -n "${chipset}" ] || die "${active} cannot be driven by concentratord"
+
+# Model: the operator's choice, then the board's, then the part's default. It
+# selects the TX gain table, so a board that knows its module says so.
+model="$(get "pulzr.${section}.model")"
+[ -n "${model}" ] || model="${PULZR_CONCENTRATOR_MODEL}"
+[ -n "${model}" ] || model="$(jsonfilter -i "${profile}" -e '@.model')"
+
+# A region that mandates listen-before-talk on a part that cannot do it is a
+# configuration error, not something to paper over — transmitting without LBT
+# where it is required is a regulatory problem, not a performance one.
+if [ "${LBT_REQUIRED}" = "1" ] && [ "$(jsonfilter -i "${profile}" -e '@.lbt')" != "true" ]; then
+    die "region ${region} requires listen-before-talk but ${active} does not support it"
+fi
+
+mkdir -p "${OUT}"
+cp "${plan}/region.toml" "${OUT}/region.toml"
+cp "${plan}/channels.toml" "${OUT}/channels.toml"
+
+# Concentratord and its forwarder find each other on these sockets, one pair
+# per slot.
+events="ipc:///tmp/pulzr_${section}_event"
+commands="ipc:///tmp/pulzr_${section}_command"
+
+# ── concentratord.toml ──────────────────────────────────────────────────────
+
+flags=""
+case "${bus}" in
+    spi) ;;
+    usb) flags="\"USB\","
+         # ttyACM for the RAK5146 USB module's own STM32, which presents as
+         # CDC-ACM — see probe_usb() in pulzr-concentrator-detect. ttyUSB
+         # for the CP210x/FT2232H bridge chip the other USB variants (RAK2287
+         # USB, WM1302 USB) use instead, which is a different kernel driver
+         # and a different device node. Both are "sx1302_usb" to detection;
+         # only the actual /dev node tells them apart.
+         #
+         # A board that names its USB node keeps it. head -1 is only correct
+         # when there is exactly one concentrator to find — true on a Pi with a
+         # single USB stick, false on the RAK7289CV2, whose two RAK5146s are
+         # ttyACM0 and ttyACM1. Handing both slots head -1 pointed them at the
+         # same ttyACM0, so slot 1 fought slot 0 for one radio and the other
+         # eight channels never came up. A declared node ("usb:/dev/lora1:-"
+         # in board.conf, a ttyACM by its hub port) is recorded per slot by
+         # detection; only the kit's bare "usb" needs the guess.
+         case "${device}" in
+             /dev/*) ;;
+             *) device="$(ls /dev/ttyACM* /dev/ttyUSB* 2>/dev/null | head -n1)" ;;
+         esac ;;
+    *)   die "bus '${bus}' is not supported by concentratord" ;;
+esac
+
+# One slot has the receiver: one gateway, one position, and two processes
+# opening the same tty is a fault that looks like intermittent GPS. Which slot
+# is the GNSS source setting's call (pulzr-gps has the options); slot 0 unless
+# it says otherwise. A modem or a separate receiver as the source means no
+# concentrator gets it, and each reports the recorded position instead.
+gps_device="$(get pulzr.gps.device)"
+gps_source="$(get pulzr.gps.source)"
+gps_slot=""
+case "${gps_source:-auto}" in
+    auto|concentrator) gps_slot="$(get pulzr.gps.slot)"; gps_slot="${gps_slot:-0}" ;;
+esac
+gps=""
+if [ "${SLOT}" = "${gps_slot}" ] && [ "$(get pulzr.gps.status)" = "present" ] && [ -c "${gps_device}" ]; then
+    flags="${flags}\"GNSS\","
+    gps="gnss_dev_path=\"${gps_device}\""
+fi
+
+# The EUI is the gateway's, from UCI, on slot 0. A second slot takes its
+# chip's own EUI: ChirpStack sees it as a second gateway, which is honest about
+# what it is until multi-slot aggregation exists.
+gateway_id=""
+[ "${SLOT}" = "0" ] && [ -n "${eui}" ] && gateway_id="gateway_id=\"${eui}\""
+
+chip="/dev/${PULZR_GPIOCHIP:-gpiochip0}"
+
+# Stamp each uplink with the gateway's own clock, so one the buffer holds
+# through an outage reaches the LNS with when it was heard rather than when it
+# was finally sent. But only once NTP has set that clock: there is no RTC, so
+# after a power cut the clock restarts from whatever sysfixtime found, and a
+# timestamp hours wrong that the LNS accepts is worse than none — without one
+# it falls back to its own receive time, which is at least honest.
+# /etc/hotplug.d/ntp/40-pulzr-lora-time turns this on at first sync.
+time_fallback=false
+[ -f /var/run/pulzr/clock-synced ] && time_fallback=true
+
+{
+    cat <<EOF
+[concentratord]
+log_level="INFO"
+log_to_syslog=true
+stats_interval="30s"
+disable_crc_filter=false
+
+[concentratord.api]
+event_bind="${events}"
+command_bind="${commands}"
+
+[gateway]
+lorawan_public=true
+model="${model}"
+region="${CONCENTRATORD_REGION}"
+model_flags=[${flags}]
+antenna_gain=0
+time_fallback_enabled=${time_fallback}
+${gateway_id}
+com_dev_path="${device}"
+${gps}
+EOF
+    # Reset and power-enable pins, but never on USB.
+    #
+    # A USB concentrator resets itself: on a RAK5146 USB the module's own STM32
+    # owns that line, and on the CP210x/FT2232H variants it is on the adapter
+    # board. Either way nothing on the Pi's header is connected to the
+    # concentrator, so the pins in board.conf — which describe the SPI HAT that
+    # board normally carries — address something else entirely.
+    #
+    # Detection copies those pins into the slot whatever bus it finds, which is
+    # right for the record and wrong for this file. Leaving them out keeps the
+    # file honest; it is not what stopped a USB concentrator. concentratord
+    # sets pins up only on SPI (chirpstack-concentratord-sx1302 main.rs), and
+    # the hang on "Starting the concentrator" was pulzr-gps-detect probing
+    # the concentrator's tty and changing its baud rate (e35cb65).
+    if [ "${bus}" != "usb" ]; then
+        [ -n "${reset}" ] && printf '%s_reset_chip="%s"\n%s_reset_pin=%s\n' "${chipset}" "${chip}" "${chipset}" "${reset}"
+        [ -n "${power}" ] && printf '%s_power_en_chip="%s"\n%s_power_en_pin=%s\n' "${chipset}" "${chip}" "${chipset}" "${power}"
+    fi
+    [ -n "${PULZR_CONCENTRATOR_I2C}" ] && printf 'i2c_dev_path="%s"\n' "${PULZR_CONCENTRATOR_I2C}"
+
+    # With no receiver the network server still needs to know where the
+    # gateway is: the reference coordinates recorded at install.
+    if [ -z "${gps}" ]; then
+        latitude="$(get pulzr.location.latitude)"
+        longitude="$(get pulzr.location.longitude)"
+        altitude="$(get pulzr.location.altitude)"
+        cat <<EOF
+
+[gateway.location]
+latitude=${latitude:-0}
+longitude=${longitude:-0}
+altitude=${altitude:-0}
+EOF
+    fi
+} > "${OUT}/concentratord.toml"
+
+# ── mqtt-forwarder.toml ─────────────────────────────────────────────────────
+#
+# TLS with the system CA bundle. The forwarder only turns TLS on when a CA path
+# is set, so leaving ca_cert empty against an ssl:// server fails to connect
+# rather than falling back to anything.
+#
+# Connection state goes to a file through the forwarder's callbacks, so the
+# console can say "connected" without scraping the log for a message whose
+# wording belongs to somebody else.
+
+host="$(get pulzr.mqtt.host)"
+port="$(get pulzr.mqtt.port)"; port="${port:-${PULZR_MQTT_PORT:-8883}}"
+[ -n "${host}" ] || host="${PULZR_MQTT_HOST}"
+
+# Adoption may name the prefix; otherwise the region's.
+topic_prefix="$(get pulzr.mqtt.topic_prefix)"
+topic_prefix="${topic_prefix:-${TOPIC_PREFIX}}"
+
+mkdir -p "${STATE_DIR}"
+state="${STATE_DIR}/${section}.mqtt"
+
+# ── through the local broker, or straight out ───────────────────────────────
+#
+# When buffering is on the forwarder publishes to a broker on loopback and a
+# bridge carries it to ${host} — see pulzr-lora-buffer. The forwarder cannot
+# tell the difference and does not need to.
+#
+# On a private port, not 1883, because the mosquitto package's own init owns
+# 1883 and would otherwise take these uplinks and drop them. See the note in
+# pulzr-lora-buffer.
+#
+# QoS 1 in that mode, and it is load-bearing rather than tidy: a mosquitto
+# bridge does not queue QoS 0 messages, because QoS 0 obliges it to deliver
+# nothing. Left at 0, an outage would buffer exactly nothing while every part
+# of this looked like it was working. Over loopback the acknowledgement costs
+# a round trip to a process on the same machine.
+#
+# No TLS and no credentials on that leg: it is 127.0.0.1, the broker listens
+# nowhere else, and the bridge is what holds the real credentials.
+#
+# The setting is not enough on its own: what decides this is whether there is
+# actually a broker to publish to, so the rendered config is what gets tested.
+# pulzr-packet-forwarder renders it before reaching here, and the render
+# fails when mosquitto is missing or the gateway is not adopted — in which case
+# pointing the forwarder at loopback would send every uplink to a closed port,
+# which looks exactly like working until somebody counts them.
+buffer="$(get pulzr.lorawan.buffer)"
+buffer="${buffer:-${PULZR_LORA_BUFFER:-0}}"
+[ -s "${STATE_DIR}/mosquitto.conf" ] || buffer=0
+if [ "${buffer}" = "1" ]; then
+    mqtt_server="tcp://127.0.0.1:${PULZR_LORA_BUFFER_PORT:-18831}"
+    mqtt_user=""
+    mqtt_pass=""
+    mqtt_qos=1
+    mqtt_ca=""
+else
+    mqtt_server="ssl://${host}:${port}"
+    mqtt_user="$(get pulzr.mqtt.username)"
+    mqtt_pass="$(get pulzr.mqtt.password)"
+    mqtt_qos=0
+    mqtt_ca="/etc/ssl/certs/ca-certificates.crt"
+fi
+
+cat > "${OUT}/mqtt-forwarder.toml" <<EOF
+[logging]
+level="info"
+log_to_syslog=true
+
+[mqtt]
+topic_prefix="${topic_prefix}"
+json=false
+server="${mqtt_server}"
+username="${mqtt_user}"
+password="${mqtt_pass}"
+qos=${mqtt_qos}
+clean_session=false
+keep_alive_interval="30s"
+client_id="${eui}-${section}"
+ca_cert="${mqtt_ca}"
+# A broker that is down or refusing us should not be retried every second: it
+# fills the log, and on cellular it spends the data plan.
+reconnect_interval="30s"
+
+[backend]
+enabled="concentratord"
+
+[backend.concentratord]
+event_url="${events}"
+command_url="${commands}"
+
+# What this gateway is, attached to every stats message: firmware version and
+# addresses reach Pulzar Cloud over the connection the gateway already has.
+[metadata]
+split_delimiter="="
+
+[metadata.commands]
+facts=["/usr/sbin/pulzr-gateway-facts"]
+
+[callbacks]
+on_mqtt_connected=["/bin/sh", "-c", "echo connected > ${state}"]
+on_mqtt_connection_error=["/bin/sh", "-c", "echo error > ${state}"]
+EOF
+chmod 0600 "${OUT}/mqtt-forwarder.toml"
+
+exit 0

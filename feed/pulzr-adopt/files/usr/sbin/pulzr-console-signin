@@ -1,0 +1,66 @@
+#!/bin/sh
+#
+# Signing in to the terminal UI with a Pulzar account, from a phone.
+#
+#   pulzr-console-signin start          JSON: {code, url, expiresIn, interval}
+#   pulzr-console-signin poll <code>    JSON: {state[, subject, token]}
+#
+# The browser handoff needs a browser on this side of the cable; a serial
+# console has none. So the terminal shows a code and a QR of Pulzar Cloud's
+# approval page, somebody already signed in there approves it, and this
+# collects the token — the same signed handoff the browser gets, marked for
+# the terminal and for this one request. auth.uc checks both before it opens
+# anything. The server half, and why each step is gated the way it is, is
+# the cloud's plugins/gateway_ops/console_signin.py.
+#
+# Both calls prove they come from this gateway with the claim secret, as
+# `pulzr-claim poll` does: only an adopted gateway has a Pulzar account to
+# sign in with, and only this one may start or collect its own sign-in.
+
+. /etc/pulzr/board.conf
+
+STATE=/etc/pulzr/claim
+NET_URL="${PULZR_NET_URL:-https://app.pulzr.net}"
+
+fail() { printf '{"error":"%s"}\n' "$1"; exit 1; }
+
+[ "$(uci -q get pulzr.adoption.state)" = adopted ] \
+    || fail "This gateway is not adopted."
+[ -s "${STATE}/id" ] && [ -s "${STATE}/secret" ] \
+    || fail "This gateway has no claim identity."
+
+# The proof, plus whatever the call adds. The code is checked here as well as
+# on the server: it goes into a JSON string by printf.
+body() {
+    printf '{"claimId":"%s","secret":"%s"%s}' \
+        "$(cat "${STATE}/id")" "$(cat "${STATE}/secret")" "$1"
+}
+
+call() {
+    local raw status
+    # Status kept, as pulzr-claim keeps it: an error's body is JSON with a
+    # sentence in it, and that sentence is what the screen should show.
+    raw="$(curl -sS --max-time 15 -w '\n%{http_code}' -X POST "${NET_URL}$1" \
+               -H 'Content-Type: application/json' -d "$2" 2>/dev/null)" \
+        || fail "Could not reach Pulzar."
+    status="$(echo "${raw}" | tail -n1)"
+    echo "${raw}" | sed '$d'
+    [ "${status}" -lt 400 ] 2>/dev/null
+}
+
+case "$1" in
+    start)
+        call /api/v1/gateway-ops/console-signin "$(body '')"
+        ;;
+    poll)
+        case "$2" in
+            [0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z]-[0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z]) ;;
+            *) fail "Malformed code." ;;
+        esac
+        call /api/v1/gateway-ops/console-signin/poll "$(body ",\"code\":\"$2\"")"
+        ;;
+    *)
+        echo "usage: $0 start | poll <code>" >&2
+        exit 2
+        ;;
+esac

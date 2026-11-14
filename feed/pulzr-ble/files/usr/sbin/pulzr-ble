@@ -1,0 +1,142 @@
+#!/bin/sh
+#
+# Bluetooth beacons, heard by this gateway and handed to Pulzar Cloud.
+#
+#   pulzr-ble state    on, off, or absent -- one word, for the facts report
+#   pulzr-ble attach   power the chip and bring hci0 up; nothing if it is up
+#   pulzr-ble run      scan and publish until killed (procd runs this)
+#
+# ── WHAT IT SENDS ──────────────────────────────────────────────────────────
+#
+# Every advertisement from a beacon it is told to listen for, at most one per
+# beacon per interval (the latest, with the best signal of the interval), as
+#
+#   parkeze/gateway/<eui>/ble/up
+#   {"time": 1791784502, "adverts": [{"mac": "BC5729049964", "rssi": -61,
+#                                     "data": "0201060303aafe..."}]}
+#
+# `data` is the advertising data exactly as the radio received it. Nothing
+# here knows what a beacon means: Pulzar Cloud decodes it with the device
+# type's codec, the same way it decodes a KGateway's raw frames, so a new
+# sensor model is a codec there and never a firmware change here.
+#
+# On the gateway's own broker identity, under its own EUI, which is the only
+# topic of that shape mqtt-authorizer lets it publish -- so Pulzar Cloud can
+# take the gateway's identity from the topic.
+#
+# ── WHY THESE TOOLS ────────────────────────────────────────────────────────
+#
+# This build installs packages, it does not compile them, so the scanner is
+# made of what OpenWrt ships: hcitool turns passive scanning on and keeps it
+# on, hcidump -R prints every HCI event as hex, and awk keeps the
+# advertising reports. A C scanner would be smaller and is not available.
+#
+# ── COST ───────────────────────────────────────────────────────────────────
+#
+# A beacon advertises every second or so. Sending each one would be most of a
+# SIM's allowance; one message per interval with one line per beacon is not.
+# Only beacons whose MAC starts with one of `pulzr.ble.oui` are sent: a car
+# park is full of phones and watches, and none of them is ours to upload.
+
+. /etc/pulzr/board.conf
+
+STATE_DIR=/var/run/pulzr/ble
+
+log() { logger -t pulzr-ble -p daemon.info "$*"; }
+
+enabled() { [ "$(uci -q get pulzr.ble.enabled)" = 1 ]; }
+
+# A radio this build can drive: the board's own, or a dongle btusb attached.
+radio() {
+    [ -n "${PULZR_BT}" ] && return 0
+    ls /sys/class/bluetooth/hci* >/dev/null 2>&1
+}
+
+state() {
+    if ! radio; then echo absent
+    elif enabled; then echo on
+    else echo off
+    fi
+}
+
+# The chip's enable line, high. Through sysfs because it is on the firmware's
+# GPIO expander, whose number depends on the order the chips registered in.
+power() {
+    [ -n "${PULZR_BT_POWER}" ] || return 0
+    local label="${PULZR_BT_POWER%:*}" line="${PULZR_BT_POWER##*:}" chip gpio
+    for chip in /sys/class/gpio/gpiochip*; do
+        [ "$(cat "${chip}/label" 2>/dev/null)" = "${label}" ] || continue
+        gpio=$(( $(cat "${chip}/base") + line ))
+        [ -d "/sys/class/gpio/gpio${gpio}" ] || echo "${gpio}" > /sys/class/gpio/export
+        echo out > "/sys/class/gpio/gpio${gpio}/direction"
+        # Low first: a chip left powered by a previous attempt answers at the
+        # baud rate that attempt set, and hciattach starts at 115200.
+        echo 0 > "/sys/class/gpio/gpio${gpio}/value"; sleep 1
+        echo 1 > "/sys/class/gpio/gpio${gpio}/value"; sleep 1
+        return 0
+    done
+    log "no gpiochip labelled ${label}; the chip may be held in reset"
+    return 0
+}
+
+attach() {
+    if [ ! -e /sys/class/bluetooth/hci0 ] && [ "${PULZR_BT}" = uart ]; then
+        [ -e "${PULZR_BT_UART}" ] || {
+            # The wiring is applied at boot; turned on since, it waits for one.
+            log "${PULZR_BT_UART} is not a tty yet; Bluetooth needs a reboot"
+            return 1
+        }
+        power
+        # -t: a chip that does not answer must not hold this forever.
+        hciattach -t 15 "${PULZR_BT_UART}" "${PULZR_BT_CHIP}" "${PULZR_BT_BAUD}" noflow \
+            >/dev/null 2>&1 || { log "hciattach failed on ${PULZR_BT_UART}"; return 1; }
+    fi
+    [ -e /sys/class/bluetooth/hci0 ] || { log "no Bluetooth controller"; return 1; }
+    hciconfig hci0 up
+}
+
+run() {
+    enabled || exit 0
+    attach || exit 1
+    mkdir -p "${STATE_DIR}"
+
+    local eui host user pass oui min_rssi interval
+    eui="$(uci -q get pulzr.identity.gateway_eui)"
+    host="$(uci -q get pulzr.mqtt.host)"
+    user="$(uci -q get pulzr.mqtt.username)"
+    pass="$(uci -q get pulzr.mqtt.password)"
+    oui="$(uci -q get pulzr.ble.oui | tr 'a-f' 'A-F')"
+    min_rssi="$(uci -q get pulzr.ble.min_rssi || echo -100)"
+    interval="$(uci -q get pulzr.ble.interval || echo 10)"
+    [ -n "${eui}" ] && [ -n "${host}" ] && [ -n "${user}" ] || { log "not adopted yet"; exit 1; }
+
+    # Passive, with duplicates: no scan requests on the air, and every
+    # advertisement reported rather than the first from each address -- a
+    # beacon's state is in its later advertisements, not its first.
+    hcitool -i hci0 lescan --passive --duplicates >/dev/null 2>&1 &
+    local scan=$!
+
+    hcidump -i hci0 -R 2>/dev/null | awk -f /usr/share/pulzr/ble-adverts.awk \
+        -v oui="${oui}" -v min_rssi="${min_rssi}" -v interval="${interval}" \
+        -v stats="${STATE_DIR}/stats.json" \
+      | mosquitto_pub -h "${host}" -p 8883 --capath /etc/ssl/certs -u "${user}" -P "${pass}" \
+        -t "parkeze/gateway/${eui}/ble/up" -q 0 -l >/dev/null 2>&1 &
+    local publish=$!
+
+    log "scanning on hci0, sending ${oui:-every beacon} to Pulzar Cloud every ${interval}s"
+    # Either half ending ends the service and procd starts it again: a scan
+    # that stopped would otherwise leave a publisher with nothing to say, and
+    # a broker that went away a scan with nobody to hear it.
+    trap 'kill ${scan} $(pgrep -P $$) 2>/dev/null; hciconfig hci0 down 2>/dev/null; exit 0' TERM INT
+    while kill -0 "${scan}" 2>/dev/null && kill -0 "${publish}" 2>/dev/null; do sleep 5; done
+    kill "${scan}" $(pgrep -P $$) 2>/dev/null
+    log "scan or publisher stopped; restarting"
+    exit 1
+}
+
+case "$1" in
+    state)  state ;;
+    attach) attach ;;
+    run)    run ;;
+    *)      echo "usage: pulzr-ble state|attach|run" >&2; exit 2 ;;
+esac

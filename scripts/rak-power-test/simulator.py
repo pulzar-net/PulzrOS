@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A Modbus RTU bus for parkeze-rak-power's tests: the RAK7289CV2's power
+"""A Modbus RTU bus for pulzr-rak-power's tests: the RAK7289CV2's power
 board watchdog and battery pack as ChirpStack's RAK support talks to them.
 
     simulator.py <dir>

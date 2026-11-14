@@ -39,7 +39,7 @@ export interface RecoveryChallenge {
     nonce: string;
     issued: number;
     expiresIn: number;
-    /** The single string an operator transcribes into parkeze.net. */
+    /** The single string an operator transcribes into Pulzar Cloud. */
     code: string;
   };
   hostname: string;
@@ -125,7 +125,7 @@ export interface Modem {
 }
 
 export interface NetworkStatus {
-  /** The fixed console address, on the port parkeze-ports puts it on. */
+  /** The fixed console address, on the port pulzr-ports puts it on. */
   console: InterfaceStatus;
   /** The link-local address on the same port, for a laptop plugged straight
       in. Up independently of whether the uplink has a lease. */
@@ -299,7 +299,7 @@ export interface GpsStatus {
     source: string | null;
     fixedAt: string | null;
   };
-  /** Where the position comes from. See parkeze-gps for each source. */
+  /** Where the position comes from. See pulzr-gps for each source. */
   config: {
     source: GnssSource;
     /** The concentrator the receiver is given to, for 'concentrator'. */
@@ -384,7 +384,7 @@ export interface ClaimStatus {
   /** 'reclaiming': adopted, but the claim was revoked (the gateway changed
       hands or was released) and claimId is the new one waiting to be adopted. */
   adoption: 'unadopted' | 'adopting' | 'adopted' | 'reclaiming';
-  /** Whether parkeze.net already knows about this pending claim. When it does
+  /** Whether Pulzar Cloud already knows about this pending claim. When it does
       the QR is a short URL; when it does not it carries the gateway's identity
       inline so a scan still works with no uplink. */
   registered: boolean;
@@ -443,14 +443,14 @@ export interface EthernetPort {
   servesDhcp: boolean;
 }
 
-/** The USB device port, on a board built with one; see parkeze-usb-gadget. */
+/** The USB device port, on a board built with one; see pulzr-usb-gadget. */
 export interface UsbPort {
   /** The gadget is built and attached to the controller. */
   present: boolean;
   /** A host has enumerated it: a laptop is on the other end. */
   connected: boolean;
   state: string;
-  /** The mDNS name on the cable, parkeze.local. */
+  /** The mDNS name on the cable, pulzr.local. */
   name: string;
   /** The gateway's fixed address on the cable. */
   address: string;
@@ -472,7 +472,7 @@ export interface AccessStatus {
         security: 'psk' | 'open' | 'eap';
         up: boolean;
         /** Whether it reaches the internet: `portal` wants a sign-in first,
-            `offline` answers nothing. See parkeze-wifi-uplink. */
+            `offline` answers nothing. See pulzr-wifi-uplink. */
         uplink: 'open' | 'portal' | 'offline' | 'unchecked';
         address: string | null;
         signal: number | null;
@@ -536,7 +536,7 @@ export interface SystemStats {
   processes: { pid: number; name: string; rss: number }[];
 }
 
-/** parkeze-stats' ring, averaged into at most 360 points. */
+/** pulzr-stats' ring, averaged into at most 360 points. */
 export interface SystemHistory {
   interval: number;
   points: {
@@ -598,7 +598,7 @@ export interface LanLink {
   speed: number | null;
 }
 
-/** A tunnel forward net-api opened (lan-forward). Read here, never opened. */
+/** A tunnel forward the cloud opened (lan-forward). Read here, never opened. */
 export interface LanForward {
   port: number;
   ip: string;
@@ -606,7 +606,7 @@ export interface LanForward {
   expiresIn: number;
 }
 
-/** `parkeze-lan status`; see docs/lan.md. */
+/** `pulzr-lan status`; see docs/lan.md. */
 export interface LanStatus {
   configured: boolean;
   address?: string;
@@ -619,7 +619,7 @@ export interface LanStatus {
   exposedOn?: { uplink: string; address: string }[];
 }
 
-/** A port on the uplinks forwarded to a client for good (parkeze-lan expose). */
+/** A port on the uplinks forwarded to a client for good (pulzr-lan expose). */
 export interface LanExposed {
   proto: 'tcp' | 'udp';
   port: number;
@@ -629,7 +629,7 @@ export interface LanExposed {
 
 // ── dns ─────────────────────────────────────────────────────────────────────
 
-/** `parkeze-dns status`. */
+/** `pulzr-dns status`. */
 export interface DnsStatus {
   upstream: {
     /** auto: the servers each uplink's lease or bearer handed out. */
@@ -665,7 +665,7 @@ export interface DdnsStatus {
 // ── uplinks ─────────────────────────────────────────────────────────────────
 
 /** A netifd uplink interface: wwifi, wwan, usbwan, or a wired one,
-    wan or wan_<device> (parkeze-ports). */
+    wan or wan_<device> (pulzr-ports). */
 export type UplinkIface = string;
 
 export interface Uplink {
@@ -684,7 +684,7 @@ export interface Uplink {
   metric: number | null;
 }
 
-/** `parkeze-uplinks status`. */
+/** `pulzr-uplinks status`. */
 export interface UplinksStatus {
   order: UplinkIface[];
   /** The uplink carrying traffic now. */
@@ -712,7 +712,7 @@ export interface PortUplink {
   addressing: Addressing;
   state: { up: boolean; address: string | null; gateway: string | null; dns?: string[] };
   /** The router at the end of it: its MAC from the ARP table, its maker as
-      Pulzr Net named it on the last report. */
+      Pulzar Cloud named it on the last report. */
   router: { address: string; mac: string | null; maker: string | null } | null;
   /** The public side, for the uplink the last report left on. */
   internet: { address: string | null; provider: { name: string | null; asn: number | null } | null } | null;
@@ -724,7 +724,7 @@ export interface PortNeighbor {
   name: string | null;
   description: string | null;
   chassis: string | null;
-  /** The chassis MAC's maker, as Pulzr Net named it. */
+  /** The chassis MAC's maker, as Pulzar Cloud named it. */
   maker?: string | null;
   managementAddress: string | null;
   capabilities: string[];
@@ -753,7 +753,7 @@ export interface Port {
   vlans: PortVlan[];
 }
 
-/** `parkeze-ports status`. */
+/** `pulzr-ports status`. */
 export interface PortsStatus {
   ports: Port[];
   /** The port the console's fixed addresses are on, or null. */
@@ -777,7 +777,7 @@ export interface PortsLayout {
 // ── speed tests ─────────────────────────────────────────────────────────────
 
 /** One test: `direct` on one uplink to a LibreSpeed server, or `tunnel`,
-    measured by Pulzr Net over WireGuard. */
+    measured by Pulzar Cloud over WireGuard. */
 export interface SpeedResult {
   at: number;
   test: 'direct' | 'tunnel';
@@ -798,7 +798,7 @@ export interface SpeedResult {
   error?: string;
 }
 
-/** `parkeze-speedtest status`. */
+/** `pulzr-speedtest status`. */
 export interface SpeedtestStatus {
   schedule: { every: 'off' | 'daily' | 'weekly'; at: string; duration: number };
   running: { startedAt: number } | null;

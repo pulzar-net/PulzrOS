@@ -1,0 +1,89 @@
+#!/bin/sh
+#
+# Read the version register of an SX130x and print it as 0xNN.
+#
+#   sx130x_probe /dev/spidev0.0
+#   sx130x_probe --uart /dev/ttyAMA0
+#
+# Exists so that concentrator detection can ask the chip rather than infer from
+# the wiring. Implemented over spi-tools' `spi-pipe` rather than as a compiled
+# helper: it is a two-byte transfer, and keeping it in shell keeps every
+# package in this feed architecture-independent.
+#
+# Register 0x00 is CHIP_VERSION on the SX1301/2/3. The read transaction is a
+# byte with the top bit clear (read) and the register in the low seven bits,
+# followed by a dummy byte during which the part shifts the value out.
+
+DEV=""
+MODE="spi"
+
+case "$1" in
+  --uart) MODE="uart"; DEV="$2" ;;
+  *)      DEV="$1" ;;
+esac
+
+[ -n "${DEV}" ] || { echo "usage: sx130x_probe [--uart] <device>" >&2; exit 2; }
+[ -c "${DEV}" ] || exit 1
+
+if [ "${MODE}" = "uart" ]; then
+  # The UART parts speak the same register protocol wrapped in a framing layer
+  # that we do not implement here. Rather than pretend, report that we cannot
+  # tell: the caller treats a non-zero exit as "not this bus", which is the
+  # honest answer until somebody puts a UART concentrator on the bench.
+  #
+  # Do not be tempted to `return 0` here to make a UART board come up — that
+  # turns "unknown" into "detected" and the failure moves to the packet
+  # forwarder, where it is much harder to read.
+  exit 1
+fi
+
+command -v spi-pipe >/dev/null 2>&1 || {
+  echo "spi-pipe not installed" >&2
+  exit 1
+}
+
+# Ask for a chip version, and accept only versions that exist.
+#
+# THE FRAME IS FIVE BYTES, AND THE DATA IS THE FIFTH
+#
+# From the HAL's own SPI layer (sx1302_hal, libloragw/src/loragw_spi.c):
+#
+#     out_buf[0] = spi_mux_target;
+#     out_buf[1] = READ_ACCESS | ((address >> 8) & 0x7F);
+#     out_buf[2] =              ((address >> 0) & 0xFF);
+#     out_buf[3] = 0x00;
+#     command_size = 5;
+#     *data = in_buf[command_size - 1];
+#
+# Four bytes of command, then one more clocked out while the part answers. This
+# used to send four and read the fourth, which is the byte *before* the answer
+# — so a working SX1302 read back as 00 00 00 00 and every probe on this
+# hardware said "absent". Measured on a Waveshare SX1302 HAT: four bytes gives
+# 00 00 00 00, five gives 00 00 00 00 10.
+#
+# Rejecting 00 and ff was never enough on its own either: a Pi with nothing on
+# the header was measured returning a constant 0xa2 on /dev/spidev0.1 for every
+# register. So the answer has to be a version a real part gives.
+#
+# hexdump rather than od: the BusyBox on the image has no od.
+speed="${PULZR_SPI_SPEED:-2000000}"
+read_spi() {
+  printf "$1" | spi-pipe -d "${DEV}" -s "${speed}" -b "$2" 2>/dev/null \
+    | hexdump -ve '1/1 "%02x"'
+}
+
+# SX1302/SX1303: mux target 0x00, address 0x5606 (COMMON_VERSION), read.
+# 0x10 is an SX1302, 0x12 an SX1303.
+v="$(read_spi '\000\126\006\000\000' 5 | cut -c9-10)"
+case "${v}" in
+  10|12) echo "0x${v}"; exit 0 ;;
+esac
+
+# SX1301: register 1 (version), two bytes, answer in the second. A different
+# part with a different HAL and a different frame.
+v="$(read_spi '\001\000' 2 | cut -c3-4)"
+case "${v}" in
+  67) echo "0x${v}"; exit 0 ;;
+esac
+
+exit 1

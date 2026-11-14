@@ -13,7 +13,7 @@ process, so a two-slot board runs two of it.
 
 Modeling every board as a list of slots, rather than treating one concentrator
 as the general case and 16-channel as a special case, is what keeps the
-RAK7289CV2 from being a fork. `parkeze-concentrator-detect` and the packet
+RAK7289CV2 from being a fork. `pulzr-concentrator-detect` and the packet
 forwarder init both just loop.
 
 ## Declaring slots
@@ -22,13 +22,13 @@ In `boards/<id>/board.conf`:
 
 ```sh
 # A kit — probe every bus.
-PARKEZE_CONCENTRATOR_SLOTS="auto"
+PULZR_CONCENTRATOR_SLOTS="auto"
 
 # One fixed concentrator.
-PARKEZE_CONCENTRATOR_SLOTS="spi:/dev/spidev0.0:17"
+PULZR_CONCENTRATOR_SLOTS="spi:/dev/spidev0.0:17"
 
 # Two.
-PARKEZE_CONCENTRATOR_SLOTS="spi:/dev/spidev0.0:17 spi:/dev/spidev1.0:18"
+PULZR_CONCENTRATOR_SLOTS="spi:/dev/spidev0.0:17 spi:/dev/spidev1.0:18"
 ```
 
 Syntax is `<bus>:<device>:<reset-gpio>[:<power-gpio>]`, or `auto`.
@@ -41,7 +41,7 @@ Syntax is `<bus>:<device>:<reset-gpio>[:<power-gpio>]`, or `auto`.
 | Probed at boot | yes, every bus | no: the board declares the part, and a dead one shows as concentratord not running |
 | Operator-editable in the console | yes — bus, device node, reset GPIO, part | no |
 
-`PARKEZE_CONCENTRATOR_CONFIGURABLE` controls the last row, and the console
+`PULZR_CONCENTRATOR_CONFIGURABLE` controls the last row, and the console
 reads it from the device rather than deciding for itself.
 
 The reasoning: on a Pi, what is attached genuinely varies and changes when
@@ -70,9 +70,9 @@ The gateway half of ChirpStack, and nothing server-side. Per slot:
 | `chirpstack-concentratord-<chip>` | drives the SX130x, resets it on start, publishes frames on a local socket |
 | `chirpstack-mqtt-forwarder` | carries those frames to the cloud network server over MQTT/TLS |
 
-`parkeze-lora-config` renders both configs from the profile, the region
+`pulzr-lora-config` renders both configs from the profile, the region
 directory and UCI. The forwarder authenticates with the credentials adoption
-issued (`parkeze.mqtt.*`) and publishes under the region's `TOPIC_PREFIX`,
+issued (`pulzr.mqtt.*`) and publishes under the region's `TOPIC_PREFIX`,
 which has to match the `topic_prefix` of the region enabled in ChirpStack.
 Until a gateway is adopted it has no credentials: the radio still runs, and
 the uplinks go nowhere.
@@ -93,7 +93,7 @@ thing to do before the RAK7289CV2 ships.
 ## Adding a part
 
 Drop a JSON file into
-`feed/parkeze-concentrator/files/usr/share/parkeze/concentrator/`. That is the
+`feed/pulzr-concentrator/files/usr/share/pulzr/concentrator/`. That is the
 whole of it — the console's hardware menu reads that directory, so a new part
 appears as a selectable option with no UI change and no SPA rebuild.
 
@@ -116,7 +116,7 @@ timestamping needs.
 | Pi + USB concentrator | a second tty on the same stick |
 | RAK WisGate | integrated, declared by the board |
 
-`parkeze-gps-detect` probes UART first, then USB, listening for NMEA. It
+`pulzr-gps-detect` probes UART first, then USB, listening for NMEA. It
 detects the *receiver*, not a fix — a gateway being configured in a rack before
 it goes on a roof should still show its GPS as present.
 
@@ -132,7 +132,7 @@ until the other starts. In that build the GPS goes on USB.
 We give concentratord the GNSS tty itself in `gnss_dev_path`, and it holds
 the port — only the process holding it has GPS time. It sends its position to
 the network server rather than logging it, so while it runs the gateway cannot
-read the receiver locally, and `parkeze-gps status` says so rather than
+read the receiver locally, and `pulzr-gps status` says so rather than
 reporting a stale fix. Stopping the LoRa service frees the port for a direct
 read.
 
@@ -150,7 +150,7 @@ has one position.
 These are different and the console shows both.
 
 A gateway announces its **reference** position — captured once at install with
-`parkeze-gps sync`, or set manually — whether or not the receiver has a fix on
+`pulzr-gps sync`, or set manually — whether or not the receiver has a fix on
 any given boot. That is deliberate: gateways do not move, and one whose antenna
 is under snow should keep reporting where it is.
 

@@ -9,7 +9,7 @@
 # It lives in the board files overlay rather than in a package, and that is
 # load-bearing: build.sh copies this tree over the rootfs after apk has
 # installed everything, so it replaces the package's copy. Shipping it inside
-# parkeze-concentrator instead put the same path in two packages, and the
+# pulzr-concentrator instead put the same path in two packages, and the
 # package manager refused both ("Cannot install package modemmanager" from
 # opkg, on every board; apk refuses the same clash).
 #
@@ -54,7 +54,7 @@
 
 # ── the concentrator is not a modem ────────────────────────────────────────
 #
-# Matched on the USB ids probe_usb() recognises in parkeze-concentrator-detect:
+# Matched on the USB ids probe_usb() recognises in pulzr-concentrator-detect:
 # CP2102N (RAK5146/RAK2287 USB), FT2232H (WM1302 USB), and the STM32 CDC-ACM
 # that is the RAK5146 module's own MCU. Keep the two lists together — a
 # concentrator this file does not know about is one ModemManager will take.
@@ -80,11 +80,11 @@ esac
 
 # ── nor is a RAK power board ───────────────────────────────────────────────
 #
-# Same harm on a different port: AT probes written to the bus parkeze-rak-power
+# Same harm on a different port: AT probes written to the bus pulzr-rak-power
 # feeds the power board's watchdog on, mid-frame, and ModemManager changing
 # the tty's line settings under it. Matched by the USB port board.conf names,
-# as parkeze-rak-power finds it, so a CH340 anywhere else is left alone.
-__pkz_power="$(sed -n "s/^PARKEZE_RAK_POWER_USB='\(.*\)'\$/\1/p" /etc/parkeze/board.conf 2>/dev/null)"
+# as pulzr-rak-power finds it, so a CH340 anywhere else is left alone.
+__pkz_power="$(sed -n "s/^PULZR_RAK_POWER_USB='\(.*\)'\$/\1/p" /etc/pulzr/board.conf 2>/dev/null)"
 if [ -n "${__pkz_power}" ]; then
     case "${DEVPATH}" in
         */"${__pkz_power}:1.0"/*)

@@ -1,0 +1,12 @@
+#!/bin/sh
+# Bind the cellular interface to the modem on first boot.
+
+# OpenWrt's prepare_rootfs runs every uci-defaults script during image
+# assembly, with IPKG_INSTROOT set. There is no modem on a build runner, and
+# probing for one there would only record the runner's hardware.
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+
+# Backgrounded: ModemManager can take twenty seconds to enumerate a cold modem,
+# and first boot should not stall on it.
+( /usr/sbin/pulzr-modem-detect >/dev/null 2>&1 ) &
+exit 0

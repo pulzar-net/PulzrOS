@@ -1,6 +1,6 @@
 # Backhaul and management paths
 
-A Parkeze gateway has two uplinks and two management paths, and the difference
+A Pulzar gateway has two uplinks and two management paths, and the difference
 between them is money.
 
 ## The uplinks
@@ -12,10 +12,10 @@ between them is money.
 | Operator-configurable in the console | **no** | yes (APN, on/off) |
 | Route metric | 10 | 20 (`wwan`), 21 (`usbwan`) |
 
-Both are defined in `feed/parkeze-base/files/etc/uci-defaults/20-parkeze-network`,
-except `usbwan`, which `parkeze-usb-cellular` adds on boards that have it.
+Both are defined in `feed/pulzr-base/files/etc/uci-defaults/20-pulzr-network`,
+except `usbwan`, which `pulzr-usb-cellular` adds on boards that have it.
 
-On a board with the `failover` feature these metrics are parkeze-uplinks',
+On a board with the `failover` feature these metrics are pulzr-uplinks',
 from the order the site chooses; see "Failover" below.
 
 ### Cellular adapters
@@ -34,14 +34,14 @@ to the gateway:
 
 `wwan` is `proto modemmanager` whatever the modem speaks: ModemManager picks
 QMI, MBIM or AT, and the proto runs pppd when the bearer says PPP.
-`parkeze-modem-detect` binds it by the modem's sysfs path, which is the same
+`pulzr-modem-detect` binds it by the modem's sysfs path, which is the same
 for all three, and reads the kind off the control ports ModemManager lists.
 
 `usbwan` is a DHCP client. A HiLink dongle or a phone runs the modem, a NAT
 and a DHCP server of its own, and shows the gateway a USB Ethernet port, so
-ModemManager has nothing to talk to. `parkeze-usb-cellular` binds `usbwan` to
+ModemManager has nothing to talk to. `pulzr-usb-cellular` binds `usbwan` to
 whichever device appeared: one on those four drivers, not a port the board
-names (`PARKEZE_PORT_IFACE`, `PARKEZE_LAN_PORTS`) or a bridge member, and with
+names (`PULZR_PORT_IFACE`, `PULZR_LAN_PORTS`) or a bridge member, and with
 no control port on the same USB device. One with a control port is a modem
 ModemManager drives as `wwan`. Huawei and ZTE devices, and any the kernel flags
 as a WWAN function, read as HiLink; anything else as a phone. Only the label
@@ -61,26 +61,26 @@ AT modems; QMI is the RAK's and the one that has.
 `usbwan` is a DHCP lease on an Ethernet device, which is exactly what the wired
 uplink is, and nothing about the device says it is billed. Every rule here that
 keeps traffic off the SIM treats it as cellular anyway, through one list:
-`/usr/share/parkeze/cellular.sh` names `wwan` and `usbwan`, and nothing names
+`/usr/share/pulzr/cellular.sh` names `wwan` and `usbwan`, and nothing names
 `wwan` alone any more.
 
 | | `usbwan` |
 |---|---|
 | Route metric | 21: behind wired, an open WiFi and the modem |
-| Management tunnel | refused unless `PARKEZE_WIREGUARD_ALLOW_CELLULAR` (`parkeze-wireguard-route`) |
-| LoRaWAN uplinks | refused when `parkeze.lorawan.allow_cellular` is 0 (`parkeze-lora-route`) |
-| `parkeze-backhaul-check` | the cellular path |
-| Traffic | the Cellular column on Network > LAN; `parkeze-cellular-usage` |
-| Report | `modemPresent`, `modemModel` and `modemKind`, no `simIccid`; net-api keeps `modemKind` once its report handler lists it |
+| Management tunnel | refused unless `PULZR_WIREGUARD_ALLOW_CELLULAR` (`pulzr-wireguard-route`) |
+| LoRaWAN uplinks | refused when `pulzr.lorawan.allow_cellular` is 0 (`pulzr-lora-route`) |
+| `pulzr-backhaul-check` | the cellular path |
+| Traffic | the Cellular column on Network > LAN; `pulzr-cellular-usage` |
+| Report | `modemPresent`, `modemModel` and `modemKind`, no `simIccid`; the cloud keeps `modemKind` once its report handler lists it |
 | "Use cellular as a backhaul" | turns it off with `wwan` |
 | Firewall zone | wan, not cellular |
 
 The zone is the one exception, and it is about who is on the far side, not
 about the bill. The cellular zone admits SSH and the console because the far
-side of a 1NCE SIM is the carrier network gateway-link reaches through. The far
+side of a 1NCE SIM is the carrier network the cloud reaches through. The far
 side of `usbwan` is a dongle's or a phone's NAT, a box nobody here runs, and
-gateway-link cannot reach the gateway through it. So `cellular_ip` in
-`parkeze-gateway-facts` stays `wwan`'s.
+the cloud cannot reach the gateway through it. So `cellular_ip` in
+`pulzr-gateway-facts` stays `wwan`'s.
 
 A dongle in HiLink mode has no SIM ModemManager can read, so the console and
 the report have the adapter's kind and the name its USB descriptor gives, and
@@ -99,31 +99,31 @@ on by default.
 
 There can be more than one. Any port, or a VLAN on one, can be an uplink
 ([ports.md](ports.md)): `wan` for the board's uplink port, `wan_<device>` for
-any other. Each takes the place in parkeze-uplinks' order its wired kind
+any other. Each takes the place in pulzr-uplinks' order its wired kind
 does, is tracked as `wan` always was, and the tunnel and LoRa routing take
-the first usable one (`/usr/share/parkeze/wired.sh`).
+the first usable one (`/usr/share/pulzr/wired.sh`).
 
 Backhaul > Ethernet sets each one to DHCP or to a static address, gateway and
 DNS. This used to be read-only, on the reasoning that the uplink was
-parkeze.net's to decide. That broke the one case it mattered for: a site whose
+Pulzar Cloud's to decide. That broke the one case it mattered for: a site whose
 network needs a static address is a site where the gateway cannot reach
-parkeze.net at all until somebody standing there says so, and that person had
+Pulzar Cloud at all until somebody standing there says so, and that person had
 no way to.
 
 Two properties make it safe to offer:
 
 - **A change that cuts somebody off comes back.** Addressing is applied the
-  way a port change is, through `parkeze-ports set`: kept only once the page
+  way a port change is, through `pulzr-ports set`: kept only once the page
   reaches the gateway again, undone after 90 seconds otherwise. Somebody
-  working through Pulzr Net on the uplink the tunnel rides is the one a wrong
+  working through Pulzar Cloud on the uplink the tunnel rides is the one a wrong
   static address would have stranded. A static address inside the console's,
   link-local, the LAN's, the setup AP's or the USB port's subnet is refused,
   as are two uplinks on one subnet.
 - **The tunnel follows on its own.** Bringing a wired uplink up fires the
   tunnel's hotplug handler, which restarts it over the new route, and the
-  report, which tells parkeze.net the gateway is wired.
+  report, which tells Pulzar Cloud the gateway is wired.
 
-The addressing is kept with the port in `/etc/config/parkeze`, not only in
+The addressing is kept with the port in `/etc/config/pulzr`, not only in
 `network.<iface>`, so a sysupgrade, which rebuilds `network.wan` as DHCP,
 no longer drops a static address.
 
@@ -135,7 +135,7 @@ no longer drops a static address.
 
 A joined WiFi network (`wwifi`, joined from the console) sits between the two:
 free like ethernet, so preferred to cellular, at metric 15 — but only once
-`parkeze-wifi-uplink` has seen it reach the internet.
+`pulzr-wifi-uplink` has seen it reach the internet.
 
 A guest network hands out a lease and a default gateway before anybody has
 signed in to it, and netifd calls that interface up. Before this check, that
@@ -158,7 +158,7 @@ Metric 30 rather than no route: the check needs one to send its own request out
 of the radio, and behind both other uplinks nothing picks it.
 
 The probe's name is asked of the WiFi's own DNS servers, on a socket bound to
-the WiFi device (`parkeze-wifi-resolve`), and the sign-in proxy resolves the
+the WiFi device (`pulzr-wifi-resolve`), and the sign-in proxy resolves the
 same way. Not the gateway's resolver: it may ask over cellular and get the real
 address, where a portal that hijacks DNS answers with its own. Not `nslookup`
 against the WiFi's servers either: with the WiFi at metric 30 the route to them
@@ -166,12 +166,12 @@ is the SIM's, which is how USCGuest's OpenDNS was first asked over cellular.
 And not a host route to those servers, which would move every lookup the
 gateway makes onto a captive WiFi and send MQTT and reports to the portal. A change of
 answer re-applies the tunnel and LoRa routing and sends a report, so
-parkeze.net shows `wifiUplink` beside the gateway. `roam()` treats `portal` and
+Pulzar Cloud shows `wifiUplink` beside the gateway. `roam()` treats `portal` and
 `offline` as down, except while somebody is signing in (see access.md).
 
 ### Cellular comes back on its own
 
-`parkeze-cellular-watchdog` keeps the cellular link carrying traffic. It was
+`pulzr-cellular-watchdog` keeps the cellular link carrying traffic. It was
 written for two 1NCE outages, each of which left a gateway offline with
 nothing on it that would ever try again.
 
@@ -208,7 +208,7 @@ acts when:
 | 30 min | `wwan` down | reboot |
 
 A reboot happens only when the gateway has been up six hours and nothing
-reaches parkeze.net, and the uplink buffer writes its queue to the card first.
+reaches Pulzar Cloud, and the uplink buffer writes its queue to the card first.
 The traffic row is skipped while the wired tunnel is up, because a SIM behind
 ethernet is silent by design. Nothing happens while cellular is turned off in
 the console (`network.wwan.disabled`) or there is no modem. A HiLink dongle or
@@ -228,7 +228,7 @@ nothing for a modem that has written the SIM off.
 The metrics alone fail over only when netifd takes an interface down. A cable
 to a site router whose own internet is gone keeps its carrier and its lease,
 so `wan` stays at metric 10 and everything goes into it while the SIM behind
-it works. On a board with `failover` (the Opal), `parkeze-uplinks` fixes that:
+it works. On a board with `failover` (the Opal), `pulzr-uplinks` fixes that:
 
 | | |
 |---|---|
@@ -239,8 +239,8 @@ it works. On a board with `failover` (the Opal), `parkeze-uplinks` fixes that:
 | Back | after 3 answers in a row |
 | Tracked by default | Ethernet |
 | Cellular | untracked unless turned on: a ping every 10 s is about 40 MB a month |
-| WiFi | parkeze-wifi-uplink's portal check is its health; it calls `parkeze-uplinks apply` instead of setting its own metric |
-| Settings | `parkeze.uplinks` in UCI, kept across a sysupgrade |
+| WiFi | pulzr-wifi-uplink's portal check is its health; it calls `pulzr-uplinks apply` instead of setting its own metric |
+| Settings | `pulzr.uplinks` in UCI, kept across a sysupgrade |
 
 A failed uplink keeps its route, at the back, because the next probe has to
 leave through it. An uplink with no link, or no longer tracked, loses its
@@ -248,8 +248,8 @@ tracked state and comes back unchecked, which counts as healthy: waiting for
 proof would hold a fresh cable back for half a minute after every boot.
 
 When an uplink goes down or comes back, the tunnel and LoRa routing are
-re-applied and a report is sent. `parkeze-wireguard-route` asks
-`parkeze-uplinks usable wan` before pinning the tunnel to the cable, so a
+re-applied and a report is sent. `pulzr-wireguard-route` asks
+`pulzr-uplinks usable wan` before pinning the tunnel to the cable, so a
 dead cable moves the tunnel to the WiFi where there is one, and otherwise
 leaves it waiting, as unplugging would.
 
@@ -275,21 +275,21 @@ cannot reach the management plane from the internet", staying silent under a
 scan is worth the slightly worse debuggability.
 
 Management works the other way round. The gateway *originates* a WireGuard
-tunnel to the parkeze.net hub, and gateway-link reaches it back down that
+tunnel to the Pulzar Cloud hub, and the cloud reaches it back down that
 tunnel. No inbound port on the uplink is ever needed or opened.
 
 ## The management paths
 
 ```
                     ┌──────────────────┐
-                    │   parkeze.net    │
+                    │   Pulzar Cloud    │
                     └────────┬─────────┘
                              │
                  ┌───────────┴───────────┐
                  │                       │
         ┌────────▼────────┐    ┌─────────▼─────────┐
-        │  gateway-link   │    │   gateway-link    │
-        │  WireGuard hub  │    │  on the 1NCE VPN  │
+        │  WireGuard hub  │    │  cellular VPN     │
+        │  (cloud)        │    │  (cloud)          │
         └────────┬────────┘    └─────────┬─────────┘
                  │  free                 │  metered
         ┌────────▼────────┐    ┌─────────▼─────────┐
@@ -299,7 +299,7 @@ tunnel. No inbound port on the uplink is ever needed or opened.
                         gateway
 ```
 
-`net-api` chooses between them in `_management_host()`:
+The cloud chooses between them:
 
 1. `mgmt_host`, if an operator pinned one.
 2. The gateway's tunnel address, if the hub has had a handshake from it
@@ -311,34 +311,24 @@ tunnel. No inbound port on the uplink is ever needed or opened.
 Plain kernel WireGuard, hub-and-spoke. There is no mesh and no coordination
 server, and each gateway has one peer — the hub — at a single `/32`.
 
-**Which hub.** An organization that has its own hub gets it: a
-`wireguard-hub-<slug>` pod on the organization's own subnet and UDP port
-(parkeze.net's `gateway-planes` chart, `wireguard_hubs` table). Every other
-gateway is on Parkeze's hub in gateway-link's pod (`wg.net.parkeze.com:51820`,
-`100.96.0.0/16`), which is also where every gateway enrolled before org hubs
-existed stays until staff move it. parkeze.net picks the hub at enrolment
-(`hub_for_org` in `net-api/utils/wireguard.py`); the gateway takes whatever
-endpoint, hub key and hub address the answer gives, so nothing here differs
-by organization. A gateway transferred to another organization is moved off
-the old owner's hub the next time it enrols.
-
-Chosen over Tailscale, which this replaced, because a 128MB MIPS gateway could
-not carry it: `tailscaled` is a 26MB Go binary that left about 13MB of RAM free
-at boot and stalled startup for minutes. WireGuard is in the kernel; the
-package is about 60KB and there is no daemon.
+**Which hub.** The cloud picks the hub at enrolment and the gateway takes
+whatever endpoint, hub key and hub address the answer gives, so nothing here
+differs by organization. A gateway keeps the hub host it was given: one
+enrolled before the rename may name `wg.net.parkeze.com:51820`, and that name
+keeps answering.
 
 **Enrollment.** The gateway generates its keypair on first start
-(`/etc/parkeze/wireguard/`, private half 0600) and only the public half ever
-leaves it. Once adopted, `parkeze-wireguard-enroll` posts that key to
+(`/etc/pulzr/wireguard/`, private half 0600) and only the public half ever
+leaves it. Once adopted, `pulzr-wireguard-enroll` posts that key to
 `/api/v1/gateway-ops/wireguard/enroll`, proving which gateway it is with the
 claim secret exactly as `/claim/poll` does, and gets back its tunnel address,
 the hub's endpoint and the hub's public key. It retries in the background until
-parkeze.net answers, so it works the same for a gateway adopted online, one
+Pulzar Cloud answers, so it works the same for a gateway adopted online, one
 adopted from a signed offline bundle that later gets internet, and one whose
 key has changed. The keypair survives firmware upgrades (`keep.d`).
 
 **Why not netifd's `proto wireguard`.** It keeps the private key in
-`/etc/config/network`, which is world-readable. `parkeze-wireguard` creates
+`/etc/config/network`, which is world-readable. `pulzr-wireguard` creates
 `wg0` itself and hands the kernel the key file.
 
 **Who may reach a gateway on the tunnel.** `wg0` is its own firewall zone,
@@ -354,13 +344,13 @@ it expires. See [lan.md](lan.md). The site's network is never behind it.
 
 ## The tunnel does not run over cellular by default
 
-`PARKEZE_WIREGUARD_ALLOW_CELLULAR` is `"0"` on every board today, and turning
+`PULZR_WIREGUARD_ALLOW_CELLULAR` is `"0"` on every board today, and turning
 it on is a real option, not a hard constraint — but off is the right default.
 
 **Why.** Not primarily cost, though a tunnel left alone would keep itself
 alive over whatever route it finds — a keepalive every 25 seconds, forever,
 which is negligible against a SIM's allowance either way. The real reason is
-that a cellular gateway is already reachable: gateway-link holds an OpenVPN
+that a cellular gateway is already reachable: the cloud holds an OpenVPN
 tunnel open into the SIM provider's CGNAT'd network, and every SIM answers on
 a fixed address inside it (see "The management paths" above). WireGuard over
 the same SIM to reach the same box would be a second management path doing the
@@ -372,7 +362,7 @@ first one's job.
    *encrypted outer* UDP it sends to the hub — the traffic that must be
    confined — rather than anything that travels inside `wg0`.
 
-2. `parkeze-wireguard-route` puts a routing rule for that mark ahead of the
+2. `pulzr-wireguard-route` puts a routing rule for that mark ahead of the
    main table, pointing at table 97, which contains the wired default route and
    nothing else.
 
@@ -385,7 +375,7 @@ The service refuses to bring the tunnel up if the rules did not install.
 
 **What it means operationally.** When ethernet drops, the hub stops hearing
 the gateway and its handshake goes stale. That is the designed behavior, not a
-fault: parkeze.net sees it and manages the gateway over the SIM instead. A
+fault: Pulzar Cloud sees it and manages the gateway over the SIM instead. A
 cellular-only gateway simply never completes a handshake, at no cost — its
 packets have no route. The one thing that can escape is the DNS lookup for the
 hub's name when the tunnel starts, a few bytes.
@@ -401,10 +391,10 @@ The obvious implementation of "is my gateway reachable" is to ping it. On this
 fleet the obvious implementation is the expensive one. If you extend that
 endpoint, extend it from an API that already knows.
 
-`parkeze-backhaul-check` on the device follows the same rule: the wired path is
+`pulzr-backhaul-check` on the device follows the same rule: the wired path is
 tested from the kernel's last WireGuard handshake (free), and the cellular path
 only asks
-whether a TCP connection to parkeze.net completes — no TLS, no certificate
+whether a TCP connection to Pulzar Cloud completes — no TLS, no certificate
 chain. That is about 700 bytes, against roughly 6KB for an HTTPS GET to a health
 endpoint. It is not the 200 of a bare handshake because nothing on the image can
 stop there: BusyBox `nc` is the minimal build without `-z`, and there is no
@@ -412,16 +402,16 @@ ucode socket module, so curl connects in plain HTTP to the HTTPS port and the
 answer is whether the connection was made. It only tests cellular at all when
 the wired path is already known to be down.
 
-The probe host comes from `PARKEZE_NET_URL`. It used to be a literal
-`parkeze.net`, which no longer resolves, and the `nc -z` it ran never worked on
+The probe host comes from `PULZR_NET_URL`. It used to be a literal
+`Pulzar Cloud`, which no longer resolves, and the `nc -z` it ran never worked on
 this image either — so until this was fixed the cellular path could not test as
 up on any gateway.
 
 ### "Online" on the claim screen is a different question
 
 Before adoption there is no tunnel, so "manageable" is false for every gateway
-and says nothing about whether it can reach us. `parkeze-claim status` answers
+and says nothing about whether it can reach us. `pulzr-claim status` answers
 the unadopted case from its own polling instead: each register and poll attempt
-records whether parkeze.net answered, and `online` is true if one did within the
+records whether Pulzar Cloud answered, and `online` is true if one did within the
 last two hours. No extra bytes — the claim loop was making those requests anyway.
-Once adopted, `online` goes back to `parkeze-backhaul-check`.
+Once adopted, `online` goes back to `pulzr-backhaul-check`.

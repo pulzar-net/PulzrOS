@@ -2,7 +2,7 @@
 
 Each Ethernet port is an **uplink**, a **LAN** port for devices (the devlan
 zone, [lan.md](lan.md)), or **unused**, and can carry tagged VLANs, each with
-a role of its own. Network > Ports in the console, `parkeze-ports` on the
+a role of its own. Network > Ports in the console, `pulzr-ports` on the
 gateway.
 
 ## Why roles, and where VLANs come in
@@ -22,7 +22,7 @@ removed cleanly. Tags on the wire need a tagged switch on the far end to see.
 
 ## What a layout becomes
 
-`parkeze-ports render` writes it into network, firewall and dhcp:
+`pulzr-ports render` writes it into network, firewall and dhcp:
 
 | | |
 |---|---|
@@ -31,27 +31,27 @@ removed cleanly. Tags on the wire need a tagged switch on the far end to see.
 | A VLAN | a `vlan_<port>_<vid>` 8021q device |
 | The console's `192.168.61.1` and `169.254.61.1` | on the board's uplink port while it is an uplink, else the first port that is one, and nowhere when none is: a LAN port already answers at `192.168.64.1` with DHCP |
 | dnsmasq | never answers on an uplink's device |
-| parkeze-uplinks | a new wired uplink is tracked and goes after the last wired one in the order |
+| pulzr-uplinks | a new wired uplink is tracked and goes after the last wired one in the order |
 
-The layout and each uplink's addressing live in `/etc/config/parkeze`
-(`port_<name>`, `vlan_<name>_<vid>`). `19-parkeze-ports` seeds it from the
-board, keeping whatever `network.wan` had, before `20-parkeze-network`
-rebuilds the defaults; `29-parkeze-ports` writes it back over them.
+The layout and each uplink's addressing live in `/etc/config/pulzr`
+(`port_<name>`, `vlan_<name>_<vid>`). `19-pulzr-ports` seeds it from the
+board, keeping whatever `network.wan` had, before `20-pulzr-network`
+rebuilds the defaults; `29-pulzr-ports` writes it back over them.
 
 ## Kept only once confirmed
 
 A port change can cut off whoever makes it: the laptop on the LAN jack that
 becomes an uplink, or the tunnel on the uplink that becomes a LAN port when
-the change came through Pulzr Net. So:
+the change came through Pulzar Cloud. So:
 
 1. `set` keeps the configuration it replaces on flash
-   (`/etc/parkeze/ports/rollback`), applies the new one, and starts a timer.
+   (`/etc/pulzr/ports/rollback`), applies the new one, and starts a timer.
 2. The page confirms by reaching the gateway again, no sooner than 15 seconds
    after the reload finished (`confirm` refuses earlier: the network is still
    moving).
 3. Nothing confirms within 90 seconds: the old configuration comes back. A
    reboot inside the window undoes it at boot, before the network starts
-   (`/etc/init.d/parkeze-ports`, START=11).
+   (`/etc/init.d/pulzr-ports`, START=11).
 
 A second change inside the window keeps the first snapshot, the one known to
 work. At least one port has to stay an uplink or a LAN port untagged, so a
@@ -64,10 +64,10 @@ was back on the tunnel 17 seconds after that.
 ## Managing it
 
 ```
-parkeze-ports status          every port, its role, VLANs, addressing, a pending change
-parkeze-ports set <file>|-    a whole layout as JSON; undone unless confirmed
-parkeze-ports confirm         keep it (exit 3 while it settles)
-parkeze-ports revert          undo it now
+pulzr-ports status          every port, its role, VLANs, addressing, a pending change
+pulzr-ports set <file>|-    a whole layout as JSON; undone unless confirmed
+pulzr-ports confirm         keep it (exit 3 while it settles)
+pulzr-ports revert          undo it now
 ```
 
 A layout:
@@ -83,4 +83,4 @@ A layout:
 ```
 
 Over MQTT, `ports` answers with `status`, read-only, as `uplinks` and `dns`
-do: the layout is the site's, and Pulzr Net shows it beside the gateway.
+do: the layout is the site's, and Pulzar Cloud shows it beside the gateway.

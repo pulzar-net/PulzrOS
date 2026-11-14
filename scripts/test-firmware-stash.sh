@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# parkeze-firmware pending must not delete the image it is about to install.
+# pulzr-firmware pending must not delete the image it is about to install.
 #
 #   scripts/test-firmware-stash.sh
 #
@@ -12,28 +12,29 @@
 set -uo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-FIRMWARE="${ROOT_DIR}/feed/parkeze-base/files/usr/sbin/parkeze-firmware"
+FIRMWARE="${ROOT_DIR}/feed/pulzr-base/files/usr/sbin/pulzr-firmware"
 
 SANDBOX="$(mktemp -d)"
 trap 'rm -rf "${SANDBOX}"' EXIT
 STUBS="${SANDBOX}/bin"
-DIR="${SANDBOX}/card/parkeze/firmware"
+DIR="${SANDBOX}/card/pulzr/firmware"
 mkdir -p "${STUBS}" "${DIR}"
 
 stub() { printf '#!/bin/sh\n%s\n' "$2" > "${STUBS}/$1"; chmod +x "${STUBS}/$1"; }
-stub uci "case \"\$3\" in parkeze.storage.mount) echo '${SANDBOX}/card' ;; parkeze.storage.*) echo 1 ;; esac"
+stub uci "case \"\$3\" in pulzr.storage.mount) echo '${SANDBOX}/card' ;; pulzr.storage.*) echo 1 ;; esac"
 stub logger 'exit 0'
 command -v sha256sum >/dev/null || stub sha256sum 'shasum -a 256 "$1"'
 
-sed -e 's|^\. /etc/parkeze/board.conf|:|' \
+sed -e 's|^\. /etc/pulzr/board.conf|:|' \
     -e "s|^JOURNAL_DIR=.*|JOURNAL_DIR=${SANDBOX}/journal|" \
-    "${FIRMWARE}" > "${SANDBOX}/parkeze-firmware"
+    -e "s|/usr/sbin/pulzr-legacy back|:|" \
+    "${FIRMWARE}" > "${SANDBOX}/pulzr-firmware"
 
-IMAGE="${DIR}/parkeze-firmware.img"
+IMAGE="${DIR}/pulzr-firmware.img"
 head -c 4096 /dev/urandom > "${IMAGE}"
 touch "${DIR}/stale.img"
 
-PATH="${STUBS}:${PATH}" sh "${SANDBOX}/parkeze-firmware" pending "${IMAGE}" test
+PATH="${STUBS}:${PATH}" sh "${SANDBOX}/pulzr-firmware" pending "${IMAGE}" test
 
 fail=0
 [ -f "${IMAGE}" ] || { echo "FAIL: the staged image was deleted before sysupgrade"; fail=1; }

@@ -1,0 +1,21 @@
+#!/bin/sh
+#
+# Daily speed tests unless somebody chose otherwise; a sysupgrade keeps their
+# choice.
+
+# OpenWrt's prepare_rootfs runs every uci-defaults script during image
+# assembly, with IPKG_INSTROOT set and absolute paths resolving to the build
+# host. Everything below belongs to the device, so defer it to first boot.
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+
+if [ -z "$(uci -q get pulzr.speedtest)" ]; then
+    uci -q batch <<EOT
+set pulzr.speedtest=speedtest
+set pulzr.speedtest.every='daily'
+set pulzr.speedtest.duration='10'
+EOT
+    uci commit pulzr
+fi
+
+/etc/init.d/pulzr-speedtest enable
+exit 0

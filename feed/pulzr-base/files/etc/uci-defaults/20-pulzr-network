@@ -1,0 +1,339 @@
+#!/bin/sh
+#
+# Network defaults.
+#
+# THE SHAPE OF A PULZR GATEWAY'S NETWORKING
+#
+# There is one ethernet port and it does not have a role. It carries three
+# addresses simultaneously and permanently:
+#
+#   wan        dhcp — the backhaul, up the moment the cable reaches a network
+#   console    192.168.61.1, fixed, printed on the label
+#   linklocal  169.254.61.1, so a laptop plugged straight in reaches the
+#              console over mDNS with nothing configured on either end
+#
+#   wwan       cellular. The fallback backhaul, enabled out of the box.
+#
+# WHY NO ROLE
+#
+# Field setup must not depend on WiFi, which leaves this port as the only way
+# to reach a gateway locally. It therefore has to work both as an uplink and as
+# a console port, and it cannot be asked which one it is: a site network with
+# static addressing and a bare laptop segment are indistinguishable from the
+# gateway's side. Guessing wrong in one direction serves DHCP onto a customer's
+# network; guessing wrong in the other strands the installer.
+#
+# Holding every address at once makes the question moot. The cost is that we
+# never hand an address to a directly-connected laptop — and link-local already
+# covers that.
+#
+# HOW A GATEWAY IS ACTUALLY SET UP
+#
+# Usually nobody connects to it at all. Plugged into anything with a route out,
+# it takes DHCP, registers its claim with Pulzar Cloud and appears in the
+# pending list. The installer matches the EUI on the label and adopts it from
+# the Pulzar Cloud console. Local access is the fallback for when that does not
+# happen, which is why it must work with zero configuration rather than well.
+
+# OpenWrt's prepare_rootfs runs every uci-defaults script during image
+# assembly, with IPKG_INSTROOT set and absolute paths resolving to the build
+# host. Everything below belongs to the device, so defer it to first boot.
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+
+. /etc/pulzr/board.conf
+
+# ── The single ethernet port ────────────────────────────────────────────────
+#
+# Deliberately NOT a bridge: the stock config puts eth0 in br-lan, and leaving
+# it there while also naming eth0 as the wan device means the bridge wins and
+# wan never comes up. A single-port gateway has nothing to bridge.
+#
+# netifd is happy to carry several logical interfaces on one device, so the
+# three below coexist: the dhcp client negotiates its lease while the two
+# static addresses stay up regardless of whether it ever gets one.
+uci -q batch <<EOF
+delete network.lan
+delete network.wan
+delete network.wan6
+
+set network.wan=interface
+set network.wan.device='${PULZR_PORT_IFACE:-eth0}'
+set network.wan.proto='dhcp'
+set network.wan.metric='10'
+
+set network.console=interface
+set network.console.device='${PULZR_PORT_IFACE:-eth0}'
+set network.console.proto='static'
+set network.console.ipaddr='${PULZR_LAN_IPADDR}'
+set network.console.netmask='${PULZR_LAN_NETMASK}'
+
+set network.linklocal=interface
+set network.linklocal.device='${PULZR_PORT_IFACE:-eth0}'
+set network.linklocal.proto='static'
+set network.linklocal.ipaddr='169.254.61.1'
+set network.linklocal.netmask='255.255.0.0'
+EOF
+
+# Never serve DHCP. A gateway that answers DHCP on a network it does not own
+# hands out addresses on the wrong subnet and takes down whatever listens —
+# an outage we caused, on equipment that is not ours, and hard for the site to
+# trace back to a LoRaWAN gateway.
+#
+# There is no case where we need to: a laptop plugged straight in self-assigns
+# a link-local address on its own. Turning this on is a bench convenience and
+# is off by default.
+uci -q set dhcp.lan.ignore='1'
+
+# ── Cellular ────────────────────────────────────────────────────────────────
+# Defined here rather than in pulzr-cellular so that the whole network shape
+# is in one file and readable at a glance. pulzr-cellular owns the modem
+# lifecycle; this owns what the interface *is*.
+#
+# A higher metric than wan: when both are up, wired wins and cellular costs
+# nothing. When wired is down, cellular is the only default route and carries
+# the control plane.
+if [ "${PULZR_WAN_CELL_ENABLED}" = "1" ]; then
+# proto modemmanager, not qmi: OpenWrt 24.10 shipped no uqmi, which is what
+# provides the qmi proto. ModemManager wants the modem's *sysfs path* in
+# `device`, which cannot be known at build time — pulzr-modem-detect fills it
+# in on first boot and whenever the modem re-enumerates, and until it does the
+# interface simply does not come up.
+uci -q batch <<EOF
+delete network.wwan
+set network.wwan=interface
+set network.wwan.proto='modemmanager'
+set network.wwan.apn='${PULZR_CELL_APN:-iot.1nce.net}'
+set network.wwan.auth='none'
+set network.wwan.iptype='ipv4'
+set network.wwan.metric='20'
+set network.wwan.disabled='0'
+EOF
+fi
+
+# ── Firewall ────────────────────────────────────────────────────────────────
+#
+# The ethernet port is in the wan zone and the wan zone accepts nothing.
+#
+# This is the rule that makes a wired backhaul safe. The gateway sits on a
+# customer network we do not control and cannot assess, often with a public
+# address behind it. Its console, its SSH and its API must not be reachable
+# from there — not on a non-standard port, not "just on the LAN side of their
+# router".
+#
+# Management arrives the other way round: the gateway *originates* a WireGuard
+# tunnel to the Pulzar Cloud hub, and the cloud reaches it back down that
+# tunnel. An inbound port on the uplink is never needed and is never opened —
+# the hub's replies are return traffic, and the keepalive holds the mapping.
+#
+# DROP rather than REJECT. REJECT answers with an ICMP error, which confirms
+# something is listening; DROP says nothing.
+#
+# There is one zone, not two, even though the port carries console addresses as
+# well. Two zones over one device would have fw4 matching both on `iifname
+# eth0` and the outcome would depend on rule order — exactly the kind of
+# ambiguity this config exists to avoid. Local access is carved out by source
+# address instead, below, which is unambiguous.
+# Every stock zone and forwarding goes, by iteration rather than by index.
+#
+# The previous version deleted firewall.@zone[1] then @zone[0] and added one
+# back. On a Pi 3 that produced a gateway with NO effective zone for eth0: SSH
+# and dnsmasq's resolver answered from the site network, and a port with
+# nothing behind it replied RST instead of staying silent — which is the
+# signature of packets never reaching a zone at all. Anonymous-section indices
+# depend on what the stock config happens to contain and shift underneath each
+# delete; naming the section removes the guesswork and makes this idempotent.
+while uci -q delete firewall.@forwarding[0]; do :; done
+while uci -q delete firewall.@zone[0]; do :; done
+
+# The backstop, and the reason the failure above was as bad as it was.
+#
+# fw4 sends traffic on an interface belonging to no zone to the chain default,
+# which stock sets to ACCEPT. So a firewall that fails to build its zone does
+# not fail closed — it fails wide open, silently, on a network we do not own.
+#
+# DROP here means the worst case of any future mistake is an unreachable
+# gateway rather than an exposed one. Every address we intend to answer on is
+# granted explicitly below.
+uci -q batch <<EOF
+set firewall.@defaults[0].input='DROP'
+set firewall.@defaults[0].forward='DROP'
+set firewall.@defaults[0].output='ACCEPT'
+set firewall.@defaults[0].syn_flood='1'
+
+set firewall.wan=zone
+set firewall.wan.name='wan'
+set firewall.wan.input='DROP'
+set firewall.wan.output='ACCEPT'
+set firewall.wan.forward='DROP'
+set firewall.wan.masq='1'
+set firewall.wan.mtu_fix='1'
+set firewall.wan.network='wan console linklocal'
+EOF
+
+# ── Local console access ────────────────────────────────────────────────────
+#
+# The two carve-outs that let a directly-connected laptop in, matched on source
+# address rather than on interface.
+#
+#   169.254.0.0/16   a host only holds one of these when it is on a segment
+#                    with no DHCP server — which, on this port, means it is
+#                    plugged into the gateway and nothing else.
+#   192.168.61.0/24  our own fixed subnet. A laptop only reaches the gateway
+#                    from here if someone configured it deliberately.
+#
+# Neither range shows up on a working site network, so this opens nothing on a
+# customer LAN in practice. It is not the security boundary regardless —
+# authentication is, and a laptop cabled to the port is inside any perimeter we
+# could draw anyway. The carve-out only keeps a routed network from reaching
+# the login page at all.
+#
+# SSH is included: the QR-code claim flow is shown over SSH, and on a gateway
+# with no display it is the one path that works when the web console will not.
+n=0
+for src in '169.254.0.0/16' "${PULZR_LAN_IPADDR%.*}.0/24"; do
+	n=$((n + 1))
+	uci -q batch <<EOF
+set firewall.console_${n}=rule
+set firewall.console_${n}.name='Allow-console-${n}'
+set firewall.console_${n}.src='wan'
+set firewall.console_${n}.src_ip='${src}'
+set firewall.console_${n}.proto='tcp'
+set firewall.console_${n}.dest_port='22 80 443 8443'
+set firewall.console_${n}.target='ACCEPT'
+EOF
+done
+
+# mDNS, so the console answers to pulzr-<serial>.local. Restricted to the
+# link-local range: responding to multicast discovery on a customer network
+# would advertise the gateway to everything on it.
+uci -q batch <<EOF
+set firewall.console_mdns=rule
+set firewall.console_mdns.name='Allow-mDNS-local'
+set firewall.console_mdns.src='wan'
+set firewall.console_mdns.src_ip='169.254.0.0/16'
+set firewall.console_mdns.proto='udp'
+set firewall.console_mdns.dest_port='5353'
+set firewall.console_mdns.target='ACCEPT'
+EOF
+
+# ── Temporary LAN access ────────────────────────────────────────────────────
+#
+# `pulzr-local-access open` admits the subnet of the port's DHCP lease, for a
+# bounded time, so a bench gateway can be reached from the LAN it sits on. The
+# rule itself is written to tmpfs; this only says where to look for it.
+#
+# fw4 skips an include whose file does not exist, which is the normal state:
+# absent after every boot, absent once the window closes. A window cannot
+# survive a reboot because nothing about it is on flash except this pointer.
+uci -q batch <<EOF
+set firewall.local_access=include
+set firewall.local_access.type='nftables'
+set firewall.local_access.path='/var/run/pulzr/local-access/rules.nft'
+set firewall.local_access.position='chain-pre'
+set firewall.local_access.chain='input_wan'
+EOF
+
+# ── The management tunnel ───────────────────────────────────────────────────
+#
+# wg0 is its own zone, and it admits exactly what the cloud needs: the
+# console and SSH. No forwarding and no masquerade — the tunnel reaches this
+# gateway and nothing behind it, so a compromised hub is not a route onto the
+# site.
+#
+# No source-address match is needed. WireGuard only accepts a packet whose
+# inner source is in the sending peer's allowed IPs, and the one peer is the
+# hub at a single /32 — so anything that arrives on wg0 came from the hub.
+#
+# `device` rather than `network`: wg0 is created by pulzr-wireguard, not by
+# netifd, and does not exist until the gateway has enrolled.
+#
+# 8443 is the WiFi sign-in proxy (signin.uc in pulzr-console), on a port of
+# its own so a portal's page never shares an origin with the console. It is
+# opened wherever the console is, because it is reached the same ways.
+#
+# 8080 is the console in plain HTTP (30-pulzr-console), opened here and
+# nowhere else: WireGuard is already the encryption on this path, and TLS
+# inside it was the cost of every connection the cloud opened.
+uci -q batch <<EOF
+set firewall.mgmt=zone
+set firewall.mgmt.name='mgmt'
+set firewall.mgmt.input='DROP'
+set firewall.mgmt.output='ACCEPT'
+set firewall.mgmt.forward='DROP'
+set firewall.mgmt.device='wg0'
+
+set firewall.mgmt_console=rule
+set firewall.mgmt_console.name='Allow-management-tunnel'
+set firewall.mgmt_console.src='mgmt'
+set firewall.mgmt_console.proto='tcp'
+set firewall.mgmt_console.dest_port='22 80 443 8080 8443'
+set firewall.mgmt_console.target='ACCEPT'
+EOF
+
+# ── Cellular management ─────────────────────────────────────────────────────
+#
+# Its own zone, pulled out of "wan" rather than left there: a wired backhaul's
+# "an inbound port on the uplink is never needed" does not hold for cellular,
+# which has no WireGuard tunnel to originate one — PULZR_WIREGUARD_ALLOW_CELLULAR
+# is off by default, on the reasoning that a second tunnel over the same SIM
+# the cloud already reaches through its own OpenVPN link into the SIM
+# provider's network would be redundant. That link is how the cloud gets to
+# this gateway's cellular address at all, and until now nothing here admitted
+# it once it arrived: SSH and the console both timed out, because wwan sat in
+# the same zone as the wired uplink and inherited the same DROP.
+#
+# No source-address match, same reasoning as wg0's: the SIM's own private
+# address is only reachable at all from inside the carrier's network, which
+# only 1NCE's infrastructure and the cloud's own VPN peer can route into —
+# unlike the wired case, where the far end of the cable is a customer network
+# we neither control nor trust.
+uci -q batch <<EOF
+set firewall.cellular=zone
+set firewall.cellular.name='cellular'
+set firewall.cellular.input='DROP'
+set firewall.cellular.output='ACCEPT'
+set firewall.cellular.forward='DROP'
+set firewall.cellular.mtu_fix='1'
+set firewall.cellular.network='wwan'
+
+set firewall.cellular_console=rule
+set firewall.cellular_console.name='Allow-cellular-management'
+set firewall.cellular_console.src='cellular'
+set firewall.cellular_console.proto='tcp'
+set firewall.cellular_console.dest_port='22 80 443 8443'
+set firewall.cellular_console.target='ACCEPT'
+EOF
+
+# DHCP client replies, which the wan DROP would otherwise eat along with
+# everything else. Without this the lease never completes and the backhaul
+# never comes up.
+uci -q batch <<EOF
+set firewall.wan_dhcp=rule
+set firewall.wan_dhcp.name='Allow-DHCP-client'
+set firewall.wan_dhcp.src='wan'
+set firewall.wan_dhcp.proto='udp'
+set firewall.wan_dhcp.src_port='67'
+set firewall.wan_dhcp.dest_port='68'
+set firewall.wan_dhcp.target='ACCEPT'
+EOF
+
+# ── dnsmasq ─────────────────────────────────────────────────────────────────
+#
+# Bound to loopback. It was answering DNS queries from the site network — an
+# open resolver sitting on somebody else's LAN, which is both an amplification
+# reflector and a thing their security team will eventually come asking about.
+#
+# Nothing needs it to listen anywhere else: this gateway serves no DHCP and has
+# no DNS clients. It resolves for itself, over 127.0.0.1. pulzr-ap adds
+# br-setup to this list for the setup AP's DHCP, and pulzr-lan its own bridge.
+uci -q batch <<EOF
+set dhcp.@dnsmasq[0].localservice='1'
+set dhcp.@dnsmasq[0].interface='lo'
+set dhcp.@dnsmasq[0].notinterface='${PULZR_PORT_IFACE:-eth0}'
+EOF
+
+uci commit network
+uci commit firewall
+uci commit dhcp
+
+exit 0

@@ -73,7 +73,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # parkeze.net offers a release to a gateway when the release's version
+      # Pulzar Cloud offers a release to a gateway when the release's version
       # is newer than the one the gateway reports, and a gateway reports
       # VERSION — not the tag. Tag v0.3.0 on a tree whose VERSION still says
       # 0.2.0 and every gateway that installs it goes on reporting 0.2.0 and
@@ -143,6 +143,7 @@ jobs:
           ./scripts/test-ssh-setup.sh
           ./scripts/test-cellular-watchdog.sh
           ./scripts/test-firmware-stash.sh
+          ./scripts/test-legacy.sh
 
       # The reset button, the setup AP and which uplinks count: shell that
       # otherwise only runs on a gateway, behind a physical button.
@@ -154,7 +155,7 @@ jobs:
       - name: Hardware descriptor and lines
         run: ./scripts/test-hwdesc.sh
 
-      # parkeze-rak-power against a fake bus and a simulated power board. The
+      # pulzr-rak-power against a fake bus and a simulated power board. The
       # watchdog it feeds is what keeps a DC-powered RAK7289CV2 on, and no
       # bench unit has answered on that bus to catch a wrong frame.
       - name: RAK power board
@@ -170,8 +171,8 @@ jobs:
 
       # Failover moves a site's traffic between uplinks, and the case it
       # exists for, a cable that keeps its link while the internet behind it
-      # is gone, is one no bench reproduces on demand. parkeze-uplinks and
-      # parkeze-dns run against a JSON uci and a fake netifd and ping.
+      # is gone, is one no bench reproduces on demand. pulzr-uplinks and
+      # pulzr-dns run against a JSON uci and a fake netifd and ping.
       - name: Uplinks and DNS
         run: UCODE=/tmp/ucode/build/ucode scripts/test-router.sh
 
@@ -193,7 +194,7 @@ jobs:
           done
           while IFS= read -r f; do
             # Shebang-aware: /usr/sbin also holds ucode programs and
-            # parkeze-rak-power's Lua, and feeding either to `sh -n` reports a
+            # pulzr-rak-power's Lua, and feeding either to `sh -n` reports a
             # syntax error in perfectly good code.
             case "$(head -c 32 "$f")" in
               '#!'*ucode*|'#!'*lua*) continue ;;
@@ -288,7 +289,7 @@ jobs:
         if: runner.environment == 'github-hosted'
         with:
           name: console
-          path: feed/parkeze-console/files/www
+          path: feed/pulzr-console/files/www
           retention-days: 1
           if-no-files-found: error
 
@@ -297,7 +298,7 @@ jobs:
         run: |
           h="$HANDOFF/$GITHUB_RUN_ID/console"
           rm -rf "$h"; mkdir -p "$h"
-          cp -a feed/parkeze-console/files/www/. "$h/"
+          cp -a feed/pulzr-console/files/www/. "$h/"
 
   # ───────────────────────────────────────────────────────────────────────
   feed:
@@ -311,30 +312,32 @@ jobs:
         if: runner.environment == 'github-hosted'
         with:
           name: console
-          path: feed/parkeze-console/files/www
+          path: feed/pulzr-console/files/www
 
       - name: Take the console
         if: runner.environment == 'self-hosted'
         run: |
-          mkdir -p feed/parkeze-console/files/www
-          cp -a "$HANDOFF/$GITHUB_RUN_ID/console/." feed/parkeze-console/files/www/
+          mkdir -p feed/pulzr-console/files/www
+          cp -a "$HANDOFF/$GITHUB_RUN_ID/console/." feed/pulzr-console/files/www/
 
       # The recovery PUBLIC key. Without it images still build, but cannot be
       # adopted offline — build.sh warns rather than failing, which is right
       # for a fork or a PR from somebody without the secret.
+      # The secret keeps its original name (PARKEZE_*): renaming it is a change to
+      # the repository settings, and the key it holds is not being rotated.
       - name: Install the fleet recovery anchor
         env:
           RECOVERY_PUBKEY: ${{ secrets.PARKEZE_RECOVERY_PUBKEY }}
         run: |
           if [ -n "${RECOVERY_PUBKEY}" ]; then
             printf '%s\n' "${RECOVERY_PUBKEY}" > "${RUNNER_TEMP}/recovery.pub"
-            echo "PARKEZE_RECOVERY_PUBKEY=${RUNNER_TEMP}/recovery.pub" >> "$GITHUB_ENV"
+            echo "PULZR_RECOVERY_PUBKEY=${RUNNER_TEMP}/recovery.pub" >> "$GITHUB_ENV"
           else
             echo "::warning::No PARKEZE_RECOVERY_PUBKEY secret — images cannot be adopted offline."
           fi
 
       # The firmware signing PUBLIC key, which is what lets a gateway tell
-      # whether Parkeze built an image before it writes it over itself. Same
+      # whether Pulzar built an image before it writes it over itself. Same
       # shape and same warn-rather-than-fail reasoning as the anchor above.
       # Only needed here: the image stage receives the overlay as an artifact
       # with this already in it.
@@ -344,7 +347,7 @@ jobs:
         run: |
           if [ -n "${FIRMWARE_PUBKEY}" ]; then
             printf '%s\n' "${FIRMWARE_PUBKEY}" > "${RUNNER_TEMP}/firmware.pub"
-            echo "PARKEZE_FIRMWARE_PUBKEY=${RUNNER_TEMP}/firmware.pub" >> "$GITHUB_ENV"
+            echo "PULZR_FIRMWARE_PUBKEY=${RUNNER_TEMP}/firmware.pub" >> "$GITHUB_ENV"
           else
             echo "::warning::No PARKEZE_FIRMWARE_PUBKEY secret — gateways from this build cannot check whether an image is ours."
           fi
@@ -441,7 +444,7 @@ jobs:
         if: runner.environment == 'github-hosted'
         with:
           name: console
-          path: feed/parkeze-console/files/www
+          path: feed/pulzr-console/files/www
 
       - uses: actions/download-artifact@v4
         if: runner.environment == 'github-hosted'
@@ -451,8 +454,8 @@ jobs:
       - name: Take the console and the feed
         if: runner.environment == 'self-hosted'
         run: |
-          mkdir -p feed/parkeze-console/files/www
-          cp -a "$HANDOFF/$GITHUB_RUN_ID/console/." feed/parkeze-console/files/www/
+          mkdir -p feed/pulzr-console/files/www
+          cp -a "$HANDOFF/$GITHUB_RUN_ID/console/." feed/pulzr-console/files/www/
           cp -a "$HANDOFF/$GITHUB_RUN_ID/feed/." .
 
       - name: Install build dependencies
@@ -515,7 +518,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: runner.environment == 'github-hosted'
         with:
-          name: parkezeos-${{ matrix.board }}
+          name: pulzros-${{ matrix.board }}
           path: out/release/*
           # Long enough to flash a unit next week, short enough that the
           # storage quota is not spent on every push to a branch.
@@ -550,7 +553,7 @@ jobs:
       - uses: actions/download-artifact@v4
         if: runner.environment == 'github-hosted'
         with:
-          pattern: parkezeos-*
+          pattern: pulzros-*
           path: artifacts
 
       - name: Take the images
@@ -568,8 +571,8 @@ jobs:
           ls -la release
 
       # Sign each image, so a gateway can tell it is ours before it writes one
-      # over itself. Produces <image>.parkeze.json beside each, which travels
-      # with the image and is what parkeze-firmware verifies.
+      # over itself. Produces <image>.pulzr.json beside each, which travels
+      # with the image and is what pulzr-firmware verifies.
       #
       # Skipped, loudly, when the secret is not set — a fork building a tag has
       # no access to it, and a release of unsigned images is better than a
@@ -597,7 +600,7 @@ jobs:
 
             # -A on every base64: openssl wraps at 64 columns by default, and a
             # wrapped value inside a JSON string is a different string from the
-            # one that was signed. parkeze-adopt hit exactly this.
+            # one that was signed. pulzr-adopt hit exactly this.
             manifest="$(printf '{"sha256":"%s","board":"","version":"%s","built":"%s"}' \
                           "${digest}" "${GITHUB_REF_NAME}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
                         | openssl base64 -A)"
@@ -626,7 +629,7 @@ jobs:
             rm -f "${body}" "${pub}" "${sig}"
 
             printf '{"manifest":"%s","signature":"%s"}\n' "${manifest}" "${signature}" \
-              > "${image}.parkeze.json"
+              > "${image}.pulzr.json"
             echo "signed ${image} (${digest})"
           done
           ls -la release

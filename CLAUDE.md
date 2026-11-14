@@ -52,5 +52,5 @@ password into every gateway before now.
 ## Comments
 
 Explain why, not what. The comments worth having are the ones recording a
-decision that looks wrong until you know what it cost — `parkeze-wireguard-route`
-and `20-parkeze-network` are the shape of it.
+decision that looks wrong until you know what it cost — `pulzr-wireguard-route`
+and `20-pulzr-network` are the shape of it.

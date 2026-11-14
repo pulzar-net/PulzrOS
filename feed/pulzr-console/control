@@ -1,0 +1,11 @@
+Package: pulzr-console
+Provides: parkeze-console
+Replaces: parkeze-console
+Conflicts: parkeze-console
+Depends: uhttpd, uhttpd-mod-ucode, ucode, ucode-mod-fs, ucode-mod-uci, ucode-mod-ubus, ucode-mod-digest, openssl-util, px5g-mbedtls, umdns
+Maintainer: Joseph Telaak <joseph@pulzr.net>
+Architecture: all
+Description: The Pulzar gateway console.
+ A single-page web interface and its ucode API, replacing LuCI. Local
+ authentication, Pulzar Cloud SSO handoff, and offline recovery via signed
+ challenge-response.

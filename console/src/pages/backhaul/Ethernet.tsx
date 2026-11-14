@@ -18,11 +18,11 @@ import styles from '../Pages.module.css';
 
 /**
  * Every wired uplink, one card each: a port, or a VLAN on one, that
- * parkeze-ports has as an uplink. Each one's addressing is DHCP or static.
+ * pulzr-ports has as an uplink. Each one's addressing is DHCP or static.
  *
  * Applied like a port change, because it is one: a wrong static address on
  * the uplink the tunnel rides takes the gateway away from somebody working
- * through Pulzr Net, and the change is undone unless this page reaches the
+ * through Pulzar Cloud, and the change is undone unless this page reaches the
  * gateway again afterwards.
  */
 

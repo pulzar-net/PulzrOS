@@ -6,7 +6,7 @@ types a credential into the device and nobody goes back to it.
 ## The happy path
 
 ```
-  gateway                    installer's phone              parkeze.net
+  gateway                    installer's phone              Pulzar Cloud
   ───────                    ─────────────────              ───────────
   first boot
    └ mint claim identity
@@ -33,7 +33,7 @@ the phone.
 
 | | Where it lives | What knowing it gets you |
 |---|---|---|
-| `claim_id` | in the QR, on the screen, in the SSH banner | the ability to *claim* the gateway — which needs a Parkeze login and is audited |
+| `claim_id` | in the QR, on the screen, in the SSH banner | the ability to *claim* the gateway — which needs a Pulzar login and is audited |
 | `secret` | only on the gateway | the ability to *be* the gateway and collect its credentials |
 
 This split is the whole security argument. A QR on a screen in a rack is
@@ -41,7 +41,7 @@ visible to anyone walking past. Seeing it lets them add the gateway to an
 organization they can already administer — which is not an attack — but not
 fetch its broker credentials or enroll a tunnel key, because both need the
 preimage of the commitment and
-the commitment is all parkeze.net ever stores.
+the commitment is all Pulzar Cloud ever stores.
 
 ## When the gateway has no internet
 
@@ -54,13 +54,13 @@ The QR carries the gateway's identity inline instead of just a claim id:
 https://app.pulzr.net/adopt#o1.<claim_id>.<eui>.<commitment[:24]>.<board>
 ```
 
-parkeze.net builds the pending claim from the scan alone. From there:
+Pulzar Cloud builds the pending claim from the scan alone. From there:
 
 - **If the gateway later gets an uplink**, it polls, presents the full secret,
   the stored 24-character prefix is checked and upgraded to the full
   commitment, and adoption finishes on its own. Nothing else is needed.
 
-- **If it never will**, parkeze.net produces a *signed adoption bundle* the
+- **If it never will**, Pulzar Cloud produces a *signed adoption bundle* the
   installer pastes into the gateway's own console. The gateway verifies it
   against the fleet public key baked into the image at build time.
 
@@ -73,7 +73,7 @@ online.
 
 ## When the claim is revoked
 
-parkeze.net revokes every claim a gateway was adopted with when it is
+Pulzar Cloud revokes every claim a gateway was adopted with when it is
 released, or adopted again by code. A transfer to another organization does
 not: the claim is the gateway's identity, and the previous owner has no root
 to have read the secret with. From then on its reports and tunnel enrolments
@@ -89,12 +89,12 @@ owns the gateway can adopt it. When it does, the new claim replaces the old
 one, the bundle is installed as at first adoption (a new broker password), and
 the gateway enrols again, which moves the tunnel to the new owner's hub.
 
-One waiting claim at a time. It is registered once; if parkeze.net later says
+One waiting claim at a time. It is registered once; if Pulzar Cloud later says
 it has never heard of it, it is registered again under the same code, and if
-parkeze.net refuses it outright, a new one replaces it. A report that is
+Pulzar Cloud refuses it outright, a new one replaces it. A report that is
 accepted again drops it.
 
-`parkeze-claim reclaiming` says whether one is waiting; `parkeze-claim status`
+`pulzr-claim reclaiming` says whether one is waiting; `pulzr-claim status`
 shows it, with `state` `reclaiming`.
 
 ## Where the code appears
@@ -103,10 +103,10 @@ shows it, with `state` `reclaiming`.
   screen — no login form, because there is nothing yet to protect and a
   password prompt in front of a factory-fresh device is the thing that makes
   provisioning feel like work.
-- **The SSH login banner.** `/etc/profile.d/99-parkeze-claim.sh` renders the QR
+- **The SSH login banner.** `/etc/profile.d/99-pulzr-claim.sh` renders the QR
   as ANSI half-blocks, which fits an 80×24 serial console. It prints nothing
   once the gateway is adopted.
-- **An SPI/I²C OLED**, eventually. `parkeze-claim qr` already emits the payload
+- **An SPI/I²C OLED**, eventually. `pulzr-claim qr` already emits the payload
   on its own, so a display driver is a consumer of that and needs no changes
   here.
 

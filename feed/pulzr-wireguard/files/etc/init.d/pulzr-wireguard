@@ -1,0 +1,127 @@
+#!/bin/sh /etc/rc.common
+#
+# The management tunnel: WireGuard to the Pulzar Cloud hub, wired preferred and
+# cellular as a fast fallback. See pulzr-wireguard-route for how the choice
+# is made and confined.
+#
+# the cloud reaches this gateway's console and SSH through the hub. The
+# gateway dials out, so nothing at the site has to accept an inbound
+# connection, and the keepalive holds the NAT mapping open.
+#
+# WHY NOT netifd's `proto wireguard`
+#
+# netifd reads the private key from /etc/config/network, which is world-
+# readable and which the console's network API reads. Here the key stays in
+# /etc/pulzr/wireguard/private (0600) and is handed to the kernel with
+# `wg set ... private-key <file>`. The kernel module does the work; there is no
+# daemon to supervise.
+#
+# STATES
+#
+#   not adopted          no tunnel, and any old one is torn down
+#   adopted, no config   enrolment runs in the background until Pulzar Cloud
+#                        answers, then this service restarts itself
+#   adopted, configured  wg0 up, routed over whichever backhaul is chosen
+#
+# The keypair is generated here on first start, on the gateway. Only the public
+# half is ever sent anywhere.
+
+START=96
+STOP=10
+
+DIR=/etc/pulzr/wireguard
+TUNNEL="${DIR}/tunnel.json"
+IFACE=wg0
+
+log() { logger -t wireguard -p daemon.info "$*"; }
+
+ensure_keys() {
+    [ -s "${DIR}/private" ] && [ -s "${DIR}/public" ] && return 0
+    mkdir -p "${DIR}"
+    chmod 0700 "${DIR}"
+    ( umask 077; wg genkey > "${DIR}/private" )
+    wg pubkey < "${DIR}/private" > "${DIR}/public"
+    log "generated this gateway's WireGuard keypair"
+}
+
+down() {
+    ip link del dev "${IFACE}" 2>/dev/null
+    /usr/sbin/pulzr-wireguard-route flush >/dev/null 2>&1
+}
+
+start() {
+    . /etc/pulzr/board.conf
+    [ "${PULZR_WIREGUARD_ENABLED:-1}" = "1" ] || { log "disabled on this board"; return 0; }
+
+    ensure_keys
+
+    if [ "$(uci -q get pulzr.adoption.state)" != "adopted" ]; then
+        down
+        return 0
+    fi
+
+    # Enrolled with a key this gateway no longer holds — a reset keypair, or a
+    # restored config — means the hub knows the wrong peer. Enrol again.
+    if [ -s "${TUNNEL}" ] \
+       && [ "$(jsonfilter -i "${TUNNEL}" -e '@.publicKey')" != "$(cat "${DIR}/public")" ]; then
+        log "enrolled key differs from this gateway's; re-enrolling"
+        rm -f "${TUNNEL}"
+    fi
+
+    if [ ! -s "${TUNNEL}" ]; then
+        down
+        /usr/sbin/pulzr-wireguard-enroll --background
+        return 0
+    fi
+
+    local address endpoint hub_key hub_address
+    address="$(jsonfilter -i "${TUNNEL}" -e '@.address')"
+    endpoint="$(jsonfilter -i "${TUNNEL}" -e '@.endpoint')"
+    hub_key="$(jsonfilter -i "${TUNNEL}" -e '@.hubPublicKey')"
+    hub_address="$(jsonfilter -i "${TUNNEL}" -e '@.hubAddress')"
+    if [ -z "${address}" ] || [ -z "${endpoint}" ] || [ -z "${hub_key}" ] || [ -z "${hub_address}" ]; then
+        log "tunnel config is incomplete; re-enrolling"
+        rm -f "${TUNNEL}"
+        /usr/sbin/pulzr-wireguard-enroll --background
+        return 0
+    fi
+
+    # Confinement first, and fail closed: a tunnel with no table at all is
+    # worse than no tunnel, because its packets would go out over whatever
+    # the main table says instead of somewhere this script chose. The table
+    # itself decides wired vs. cellular vs. nothing — see its own header.
+    /usr/sbin/pulzr-wireguard-route apply || {
+        logger -t wireguard -p daemon.err "could not set up the tunnel's routing; not starting it"
+        down
+        return 1
+    }
+
+    # Recreated rather than edited, so no stale peer or address survives a
+    # re-enrolment. The endpoint's name is resolved here, once; the hotplug
+    # handler restarts this on every wired ifup, which re-resolves it.
+    ip link del dev "${IFACE}" 2>/dev/null
+    ip link add dev "${IFACE}" type wireguard || {
+        logger -t wireguard -p daemon.err "no WireGuard support in this kernel"
+        return 1
+    }
+    wg set "${IFACE}" \
+        private-key "${DIR}/private" \
+        fwmark "${PULZR_WIREGUARD_MARK:-0x9700}" \
+        peer "${hub_key}" \
+            endpoint "${endpoint}" \
+            allowed-ips "${hub_address}/32" \
+            persistent-keepalive 25 || {
+        logger -t wireguard -p daemon.err "could not configure ${IFACE} (endpoint ${endpoint})"
+        ip link del dev "${IFACE}" 2>/dev/null
+        return 1
+    }
+    ip address add "${address}" dev "${IFACE}"
+    ip link set "${IFACE}" up
+    ip route replace "${hub_address}/32" dev "${IFACE}"
+
+    log "tunnel up: ${address} to hub ${hub_address} at ${endpoint}"
+}
+
+stop() {
+    down
+}

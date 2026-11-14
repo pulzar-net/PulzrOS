@@ -36,26 +36,26 @@ cover — a bench unit, a gateway being reconfigured before it is claimed.
 
 The password is **unique per unit**, generated on first boot from
 `/dev/urandom`, and on the label, the boot partition of a Pi
-(`parkeze-initial-password.txt`) and the root login banner. It is not
-`parkeze/parkeze` — which is what the previous ParkezeOS shipped on every
+(`pulzr-initial-password.txt`) and the root login banner. It is not
+`pulzr/pulzr` — which is what the previous PulzarOS shipped on every
 image, and which means one published README is root on the entire fleet. It is
 the console's password and nothing else: root has none (below).
 
-The cleartext copy lives at `/etc/parkeze/console/initial-password`, mode 0600,
+The cleartext copy lives at `/etc/pulzr/console/initial-password`, mode 0600,
 so an installer can read it off the device. The console nags on every page
 until it is changed, and deletes the cleartext the moment it is.
 
 ### 2. Adopted and online
 
-parkeze.net is the identity provider. The console accepts a signed one-time
+Pulzar Cloud is the identity provider. The console accepts a signed one-time
 handoff token minted by `recovery-service`, so an operator already
 authenticated centrally lands signed in without a second password.
 
-**Local password login is disabled on adoption** — `parkeze.console.local_login`
+**Local password login is disabled on adoption** — `pulzr.console.local_login`
 goes to `0` — not merely discouraged.
 
 The terminal UI has no browser to receive that handoff, so it collects the same
-token itself: it shows a code, somebody approves it on parkeze.net from a
+token itself: it shows a code, somebody approves it on Pulzar Cloud from a
 phone, and the gateway picks the token up. The token is marked for the terminal
 and for that one request, and the web console refuses tokens marked for
 anything. See [`tui.md`](tui.md).
@@ -74,7 +74,7 @@ gateway to reach anything:
 
 The sign-in button asks first whether the browser can reach the platform, and
 goes to recovery with a notice if it cannot. The platform returns a token only to
-a private IP, so a browser that came by `parkeze.local` is returned to the
+a private IP, so a browser that came by `pulzr.local` is returned to the
 address the request reached the gateway on (`address` in `/api/auth/methods`).
 
 The same holds from a LAN port and from the setup AP. See
@@ -83,13 +83,13 @@ The same holds from a LAN port and from the setup AP. See
 ### On the bench: a LAN window
 
 The ethernet port's firewall admits only `169.254.0.0/16` and the console
-subnet, so a gateway on a bench LAN is reachable only through parkeze.net.
+subnet, so a gateway on a bench LAN is reachable only through Pulzar Cloud.
 From a root shell (SSH as root, or the serial console of a development image):
 
 ```
-parkeze-local-access open [minutes]   # default 60, at most 1440
-parkeze-local-access close
-parkeze-local-access status
+pulzr-local-access open [minutes]   # default 60, at most 1440
+pulzr-local-access close
+pulzr-local-access status
 ```
 
 `open` admits the subnet of the port's DHCP lease on 22, 80 and 443, and prints
@@ -110,10 +110,10 @@ the window and the link live in `/var/run`, so a reboot closes all of it.
    a84041ffff1234ab.9f3c2b1a8e7d6c5b4a39281f.1789330979
    ```
 
-2. The operator carries it to parkeze.net on a second device. A phone has
+2. The operator carries it to Pulzar Cloud on a second device. A phone has
    cellular even when the gateway's uplink is dead.
 
-3. parkeze.net checks they are a net-admin, claims the nonce in
+3. Pulzar Cloud checks they are a net-admin, claims the nonce in
    `gateway_recovery_events` (a unique index, so a nonce can be signed exactly
    once), writes an audit row, and has `recovery-service` sign those exact
    bytes with the fleet Ed25519 key.
@@ -121,7 +121,7 @@ the window and the link live in `/var/run`, so a reboot closes all of it.
 4. The operator carries the base64 signature back and types or pastes it in.
 
 5. The gateway verifies it with `openssl pkeyutl -verify -pubin -rawin` against
-   `/etc/parkeze/recovery.pub`, spends the challenge, and grants a 30-minute
+   `/etc/pulzr/recovery.pub`, spends the challenge, and grants a 30-minute
    session that the UI banners as a recovery session with a live countdown.
 
 ### What this buys
@@ -147,7 +147,7 @@ reflashing it. Two things prevent that:
 - `build.sh` bakes the fleet **public** key into the image, so a gateway has an
   anchor from first boot — this is also what makes offline adoption possible at
   all. An image built without one warns loudly.
-- `parkeze-adopt` refuses to complete if neither the bundle nor the image
+- `pulzr-adopt` refuses to complete if neither the bundle nor the image
   supplies an anchor, and leaves local sign-in enabled rather than locking the
   gateway into a state with no way back in.
 
@@ -156,12 +156,13 @@ reflashing it. Two things prevent that:
 One Ed25519 keypair for the whole fleet.
 
 - **Public half** — installed on every gateway at adoption, at
-  `/etc/parkeze/recovery.pub`.
+  `/etc/pulzr/recovery.pub`.
 - **Private half** — exists only in `recovery-service`, mounted read-only from
   the secret store. Never in an environment variable in production: those show
   up in `docker inspect` and in whatever shipped your logs.
 
-Generate it with `parkeze.net/tools/generate-recovery-key.sh`.
+Generate the pair with whatever key tooling the platform operator uses; an
+image build needs only the public half.
 
 If the private key leaks, the security property above is gone for **every
 gateway already deployed**, retroactively — not just future ones. Rotating
@@ -182,8 +183,8 @@ until they are re-adopted.
   traverse the filesystem.
 - **Cookies** — HttpOnly, Secure, SameSite=Strict, Path=/.
 - **CSRF** — every non-GET must echo the session's CSRF token in
-  `X-Parkeze-CSRF`. Belt-and-braces over SameSite, because the console is also
-  reachable through the parkeze.net proxy under a different origin where
+  `X-Pulzar-CSRF`. Belt-and-braces over SameSite, because the console is also
+  reachable through the Pulzar Cloud proxy under a different origin where
   SameSite reasoning gets subtle.
 - **Lockout** — 5 failures per source address, then 15 minutes. Per-address and
   not per-account: there is one account, so a per-account counter is a denial
@@ -208,31 +209,31 @@ cannot change from outside.
 
 OpenSSH's `sshd` on port 22, on every board. dropbear, which every image
 before it ran, cannot check a certificate, and certificates are how
-parkeze.net reaches a gateway's shell: one signed for this gateway's EUI and
+Pulzar Cloud reaches a gateway's shell: one signed for this gateway's EUI and
 nothing else, valid for five minutes, `permit-pty` only for the browser
 terminal. A certificate leaked from one session opens one gateway for five
-minutes. parkeze.net's `docs/gateway-ssh-certificates.md` is the other half.
+minutes. Pulzar Cloud's `docs/gateway-ssh-certificates.md` is the other half.
 
-What sshd trusts is written at every boot by `parkeze-ssh-setup`:
+What sshd trusts is written at every boot by `pulzr-ssh-setup`:
 
 | File | From |
 |---|---|
-| `/etc/ssh/sshd_config` | `/usr/share/parkeze/ssh/sshd_config` in the image |
-| `/etc/ssh/parkeze_user_ca.pub` | `boards/common/ssh/parkeze_user_ca.pub` in this repo, via the image |
-| `/etc/ssh/sshd_config.d/parkeze-ca.conf` | `TrustedUserCAKeys` and `AuthorizedPrincipalsFile` |
+| `/etc/ssh/sshd_config` | `/usr/share/pulzr/ssh/sshd_config` in the image |
+| `/etc/ssh/pulzr_user_ca.pub` | `boards/common/ssh/pulzr_user_ca.pub` in this repo, via the image |
+| `/etc/ssh/sshd_config.d/pulzr-ca.conf` | `TrustedUserCAKeys` and `AuthorizedPrincipalsFile` |
 | `/etc/ssh/auth_principals/root` | the gateway's EUI, 16 lowercase hex |
-| `/root/.ssh/authorized_keys` | the fleet key; on a development image also `boards/common/ssh/dev/` and site keys (`parkeze-fleet-keys`) |
+| `/root/.ssh/authorized_keys` | the fleet key; on a development image also `boards/common/ssh/dev/` and site keys (`pulzr-fleet-keys`) |
 
 Rewritten from the image each boot rather than kept, because sysupgrade keeps
 conffiles and `/etc/ssh/sshd_config` is one: a change shipped in a release
 would otherwise never reach a gateway that had been upgraded once. The fleet
-key stays in `authorized_keys` until every gateway trusts the CA. parkeze.net
+key stays in `authorized_keys` until every gateway trusts the CA. Pulzar Cloud
 uses a certificate only for a gateway marked as trusting the CA, and only with
 `GATEWAY_SSH_CERTIFICATES` set. Staff mark it today; the report carries
-`sshCa: true` once the running sshd trusts the CA, for net-api to mark it
+`sshCa: true` once the running sshd trusts the CA, for the cloud to mark it
 itself.
 
-**Host keys.** parkeze.net pins the key a gateway reports, so the first boot
+**Host keys.** Pulzar Cloud pins the key a gateway reports, so the first boot
 without dropbear converts dropbear's keys (`dropbearconvert`) and sshd presents
 the key already pinned. dropbear's files stay, and keep.d carries both, so a
 rollback to a dropbear image presents the same key again.
@@ -242,10 +243,10 @@ rollback to a dropbear image presents the same key again.
 ```
 sshd -T | grep -Ei 'trustedusercakeys|authorizedprincipalsfile'
 cat /etc/ssh/auth_principals/root
-logread | grep parkeze-net          # the key ID of every certificate login
+logread | grep pulzr-net          # the key ID of every certificate login
 ```
 
-An image built without `boards/common/ssh/parkeze_user_ca.pub` gets no CA
+An image built without `boards/common/ssh/pulzr_user_ca.pub` gets no CA
 configuration and is reached with the fleet key, as before.
 
 **Rotating the CA** is a firmware release: put the new public line in
@@ -260,80 +261,78 @@ All public; nothing in `boards/common/ssh/` is secret.
 | Path | What it is |
 |---|---|
 | `fleet/*.pub` | baked into root's `authorized_keys` (`install_ops_keys` in `build.sh`) |
-| `parkeze_user_ca.pub` | the CA above; one `ssh-ed25519` line, copied from parkeze.net's `secrets/parkeze_ssh_ca.pub` |
+| `pulzr_user_ca.pub` | the CA above; one `ssh-ed25519` line, the operator's SSH user CA, public half |
 | `dev/*.pub` | people's keys for a development image, ignored by git |
 
 The CA is outside the `fleet/` glob on purpose: in `authorized_keys` its
 private half would open every gateway directly, and `build.sh` refuses an
 image that puts it there.
 
-`fleet/parkeze-fleet.pub`'s private half is parkeze.net's, not a person's:
-`tools/generate-fleet-ssh-key.sh` in that repo makes the pair and gateway-link
-mounts the private half. Access follows whoever runs the platform, and no
+`fleet/pulzr-fleet.pub`'s private half belongs to the platform operator, not a
+person: the cloud holds it. Access follows whoever runs the platform, and no
 laptop key ships in an image. It is RSA because gateways still on a dropbear
 image accept nothing else. To use it locally:
 
 ```bash
-# in parkeze.net
-tools/generate-fleet-ssh-key.sh secrets
-cp secrets/fleet_ssh_rsa.pub ../ParkezeOS/boards/common/ssh/fleet/parkeze-fleet.pub
-ssh -i secrets/fleet_ssh_rsa root@192.168.61.1
+ssh-keygen -t rsa -b 4096 -f fleet_ssh_rsa -N ''
+cp fleet_ssh_rsa.pub boards/common/ssh/fleet/pulzr-fleet.pub   # your own deployment's key
+ssh -i fleet_ssh_rsa root@192.168.61.1
 ```
 
 Rotating it is a rebuild: a new pair, then reflash or push the new
 `authorized_keys` over the management tunnel with the old key. No re-adoption.
-`PARKEZE_OPS_KEYS=0 ./build.sh <board>` builds an image with no fleet key at
+`PULZR_OPS_KEYS=0 ./build.sh <board>` builds an image with no fleet key at
 all, reached only by certificate.
 
 ## Who gets root
 
-A root shell on ParkezeOS is a copy of ParkezeOS, so on a production image it
-is Parkeze's: the fleet key, the certificates parkeze.net signs for staff, and
-a console session parkeze.net has signed as staff's. An organization's admin
+A root shell on PulzarOS is a copy of PulzarOS, so on a production image it
+is Pulzar's: the fleet key, the certificates Pulzar Cloud signs for staff, and
+a console session Pulzar Cloud has signed as staff's. An organization's admin
 runs their gateway through the console — the web console, the TUI on a port,
-and parkeze.net's **Console** (`parkeze-tui --remote`, see
+and Pulzar Cloud's **Console** (`pulzr-tui --remote`, see
 [`tui.md`](tui.md)) — and never gets the shell under it. Before 0.3.1 root's
 password was the console's, so anybody with the label was root.
 
 | | Production image | Development image |
 |---|---|---|
-| Root's password | none (`*`, `parkeze-root-keys-only`) | none |
+| Root's password | none (`*`, `pulzr-root-keys-only`) | none |
 | SSH as root | fleet key, staff certificate | also `boards/common/ssh/dev/*.pub`, site keys |
 | SSH with a password | refused | refused |
-| `ssh parkeze@<gateway>` | the TUI, behind the console's sign-in | the same |
+| `ssh pulzr@<gateway>` | the TUI, behind the console's sign-in | the same |
 | Serial console | the TUI, behind the console's sign-in | the stock root shell |
 | HDMI, USB serial | the TUI, behind the console's sign-in | the same |
 | The TUI's `!` | a staff session, or a TUI started from a root shell | any signed-in session |
 | Failsafe mode | off | on |
 | Site keys on the card | ignored, and removed from a gateway that has them | accepted until adopted |
 
-**`ssh parkeze@<gateway>`** is how a technician on the site network reaches
-the console, where the label's password used to open a root shell. `parkeze`
-is uid 0 with no password of its own (`parkeze-ssh-setup` writes it after
-root's line every boot), and sshd's `Match User parkeze` block runs
-`parkeze-tui --console` whatever the client asks for — no command, sftp,
+**`ssh pulzr@<gateway>`** is how a technician on the site network reaches
+the console, where the label's password used to open a root shell. `pulzr`
+is uid 0 with no password of its own (`pulzr-ssh-setup` writes it after
+root's line every boot), and sshd's `Match User pulzr` block runs
+`pulzr-tui --console` whatever the client asks for — no command, sftp,
 forwarding or `~/.ssh/rc`. So the account is the console's sign-in and nothing
-else: the local password while it is allowed, Parkeze or recovery once adopted,
+else: the local password while it is allowed, Pulzar or recovery once adopted,
 and `!` only for staff. Sign-in failures count against the client's address,
 and Ctrl-C ends the session.
 
 **Staff sessions.** Organization admins sign in to a gateway's console with
-Parkeze and with recovery as well as staff do, so the kind of session cannot
-say who it is. parkeze.net says it, signed with the recovery key the gateway
+Pulzar and with recovery as well as staff do, so the kind of session cannot
+say who it is. Pulzar Cloud says it, signed with the recovery key the gateway
 already trusts: a terminal sign-in approved by staff carries `shell: true` in
 its token, and staff recovering a gateway are given a signature over
 `<challenge>.shell` instead of over the challenge. `auth.uc` records either as
 the session's `shell`; nothing a client sends can set it. The web console has
 no shell, and a token for it cannot carry the mark.
 
-**Upgrading.** `parkeze-root-keys-only` runs at every boot, so a gateway from
+**Upgrading.** `pulzr-root-keys-only` runs at every boot, so a gateway from
 an older release loses root's password on its first boot of this one. The
 serial console moves to the TUI from the boot after that, because procd reads
 `/etc/inittab` once; on the first boot `system.ttylogin` makes the stock login
 ask for root's password, which no longer exists.
 
-**A development image** is `PARKEZE_DEV=1 ./build.sh <board>`. Its version
-ends in `-dev`, which parkeze.net shows, and CI refuses to build one, so a
+**A development image** is `PULZR_DEV=1 ./build.sh <board>`. Its version
+ends in `-dev`, which Pulzar Cloud shows, and CI refuses to build one, so a
 release never is. Put your public key in `boards/common/ssh/dev/` (ignored by git).
 
 **What this does not cover** is the hardware. A Pi's root filesystem is a

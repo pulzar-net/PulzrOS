@@ -1,0 +1,15 @@
+Package: pulzr-usb-cellular
+Provides: parkeze-usb-cellular
+Replaces: parkeze-usb-cellular
+Conflicts: parkeze-usb-cellular
+Depends: pulzr-base, pulzr-cellular
+Maintainer: Joseph Telaak <joseph@pulzr.net>
+Architecture: all
+Description: A USB cellular adapter that is an Ethernet device, as an uplink.
+ Brings a HiLink dongle or a tethered phone up as usbwan, a DHCP client that
+ every Pulzar script treats as cellular: billed, kept from the management
+ tunnel and, when the site says so, from LoRaWAN uplinks.
+ .
+ The kernel modules and usb-modeswitch are not dependencies: they are per
+ target, and PACKAGES_USB_CELLULAR in boards/common/board.conf installs them
+ alongside this on the boards with a USB host port to plug one into.

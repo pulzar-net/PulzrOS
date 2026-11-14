@@ -1,0 +1,12 @@
+Package: pulzr-mqtt
+Provides: parkeze-mqtt
+Replaces: parkeze-mqtt
+Conflicts: parkeze-mqtt
+Depends: mosquitto-client-ssl, jsonfilter
+Maintainer: Joseph Telaak <joseph@pulzr.net>
+Architecture: all
+Description: Manage a gateway over MQTT instead of its web console.
+ Answers a fixed set of questions and performs a fixed set of actions on the
+ connection the gateway already holds, so that reading a gateway's state costs
+ a few hundred bytes rather than the console's quarter-megabyte bundle. Every
+ operation is enumerated in the agent; there is no "run this".

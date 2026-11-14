@@ -1,0 +1,55 @@
+# What a gateway is, carried across a firmware upgrade.
+#
+# sysupgrade keeps /etc/config/* and whatever is listed in keep.d, and nothing
+# else. Before this file existed that meant /etc/config/pulzr survived — the
+# UCI that says "adopted" — while everything that makes the adoption usable was
+# thrown away. An upgraded gateway believed it was adopted and could not prove
+# who it was: the claim secret was gone, so its reports were refused.
+#
+# The WireGuard keypair is kept for the same reason: the hub knows this
+# gateway by its public key, so a new key after every upgrade would mean
+# re-enrolling, and a tunnel that is down until it does.
+#
+# board.conf is deliberately NOT here. It describes the image, and has to come
+# from the new one or the gateway would report the old version forever.
+/etc/pulzr/claim/
+/etc/parkeze/claim/
+/etc/pulzr/console/
+/etc/parkeze/console/
+/etc/pulzr/wireguard/
+/etc/parkeze/wireguard/
+/etc/pulzr/recovery.pub
+/etc/parkeze/recovery.pub
+# The upgrade journal, which exists to be read on the boot *after* an upgrade:
+# what we came from, who asked, and which stashed image undoes it. Written by
+# the old system and read by the new one, so the one reboot it has to survive
+# is the one it is about. In /tmp or /var/run it would be gone exactly when it
+# was wanted. See pulzr-firmware.
+/etc/pulzr/upgrade/
+/etc/parkeze/upgrade/
+# Keys a technician provisioned on this unit. Pulzar's own key is NOT here:
+# it comes from the image, so that rotating it is a firmware upgrade rather
+# than a visit. See pulzr-fleet-keys.
+/etc/pulzr/site-keys
+/etc/parkeze/site-keys
+# Speed test history (pulzr-speedtest), so its chart does not start over at
+# every upgrade.
+/etc/pulzr/speedtest/
+/etc/parkeze/speedtest/
+# SSH host keys. Pulzar Cloud pins the one a gateway reports, so a new key after
+# an upgrade is a gateway nobody can open a shell on until it reports again.
+# dropbear's as well as sshd's: they are the same keys (see pulzr-ssh-setup),
+# and a rollback to a dropbear image should present the one that is pinned.
+/etc/ssh/ssh_host_ed25519_key
+/etc/ssh/ssh_host_ed25519_key.pub
+/etc/ssh/ssh_host_rsa_key
+/etc/ssh/ssh_host_rsa_key.pub
+/etc/dropbear/dropbear_ed25519_host_key
+/etc/dropbear/dropbear_rsa_host_key
+# ── ParkezeOS compatibility ───────────────────────────────────────────────
+# Every /etc/pulzr path above is listed under its old /etc/parkeze name as
+# well. pulzr-legacy keeps the two in step (it writes the old names just
+# before each sysupgrade), so rolling back to a ParkezeOS image finds the
+# claim identity, the WireGuard key and everything else where that image
+# looks for it. The marker says which side is current; see pulzr-legacy.
+/etc/parkeze/.synced-from-pulzr

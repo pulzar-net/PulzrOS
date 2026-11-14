@@ -1,0 +1,17 @@
+#!/bin/sh
+#
+# The port layout, from the board, unless one is kept.
+#
+# Before 20-pulzr-network on purpose: that script rebuilds network.wan as
+# DHCP on every sysupgrade, and a gateway upgraded from before pulzr-ports
+# existed keeps whatever static address network.wan had only if it is read
+# here first. 29-pulzr-ports writes the layout back once everything else
+# has built its part.
+
+# OpenWrt's prepare_rootfs runs every uci-defaults script during image
+# assembly, with IPKG_INSTROOT set and absolute paths resolving to the build
+# host. Everything below belongs to the device, so defer it to first boot.
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+
+/usr/sbin/pulzr-ports seed
+exit 0

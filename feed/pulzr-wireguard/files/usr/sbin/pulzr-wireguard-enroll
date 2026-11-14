@@ -1,0 +1,97 @@
+#!/bin/sh
+#
+# Enrol this gateway's WireGuard key with Pulzar Cloud and fetch its tunnel.
+#
+#   pulzr-wireguard-enroll                once, in the foreground
+#   pulzr-wireguard-enroll --background   retry until it works, detached
+#
+# Separate from adoption rather than part of the bundle, so one call covers
+# every way a gateway becomes adopted — online, or from a signed offline bundle
+# that could not have carried a tunnel — and a replaced key. It proves which
+# claim it is with the claim secret, exactly as /claim/poll does, and sends only
+# the public key. The answer is not secret: an address, the hub's endpoint and
+# the hub's public key.
+
+. /etc/pulzr/board.conf
+
+NET_URL="${PULZR_NET_URL:-https://app.pulzr.net}"
+CLAIM=/etc/pulzr/claim
+DIR=/etc/pulzr/wireguard
+TUNNEL="${DIR}/tunnel.json"
+LOCK=/var/run/pulzr-wireguard-enroll.pid
+
+log() { logger -t wireguard -p daemon.info "$*"; }
+
+enroll() {
+    local id secret key raw status response address
+    [ "$(uci -q get pulzr.adoption.state)" = "adopted" ] || return 2
+    id="$(cat "${CLAIM}/id" 2>/dev/null)"
+    secret="$(cat "${CLAIM}/secret" 2>/dev/null)"
+    key="$(cat "${DIR}/public" 2>/dev/null)"
+    [ -n "${id}" ] && [ -n "${secret}" ] || { log "no claim identity to enrol with"; return 2; }
+    [ -n "${key}" ] || { log "no WireGuard key yet"; return 1; }
+
+    raw="$(curl -sS --max-time 20 -w '\n%{http_code}' \
+        -H 'Content-Type: application/json' \
+        -X POST "${NET_URL}/api/v1/gateway-ops/wireguard/enroll" \
+        -d "$(printf '{"claimId":"%s","secret":"%s","publicKey":"%s"}' "${id}" "${secret}" "${key}")" \
+        2>/dev/null)" || return 1
+    status="$(echo "${raw}" | tail -n1)"
+    response="$(echo "${raw}" | sed '$d')"
+
+    # The claim was revoked: this gateway changed hands or was released.
+    # Retrying cannot help, and the tunnel it has keeps working meanwhile.
+    # pulzr-claim counts the answer, and the report loop is restarted so the
+    # second answer it needs arrives in a minute rather than in six hours.
+    if [ "${status}" = "404" ] && \
+       [ "$(echo "${response}" | jsonfilter -e '@.error' 2>/dev/null)" = "No such gateway." ]; then
+        log "claim ${id} is revoked; not enrolling until this gateway is claimed again"
+        pulzr-claim note-revoked >/dev/null 2>&1
+        /etc/init.d/pulzr-report restart >/dev/null 2>&1
+        return 2
+    fi
+    [ "${status}" = "200" ] || { log "enrolment refused (${status}): ${response}"; return 1; }
+
+    address="$(echo "${response}" | jsonfilter -e '@.address' 2>/dev/null)"
+    [ -n "${address}" ] || { log "enrolment answered without an address"; return 1; }
+
+    # Recorded with the key it was issued for, so a later key change is noticed.
+    mkdir -p "${DIR}"
+    printf '{"address":"%s","endpoint":"%s","hubPublicKey":"%s","hubAddress":"%s","publicKey":"%s"}\n' \
+        "${address}" \
+        "$(echo "${response}" | jsonfilter -e '@.endpoint')" \
+        "$(echo "${response}" | jsonfilter -e '@.hubPublicKey')" \
+        "$(echo "${response}" | jsonfilter -e '@.hubAddress')" \
+        "${key}" > "${TUNNEL}.tmp"
+    mv "${TUNNEL}.tmp" "${TUNNEL}"
+    log "enrolled: tunnel address ${address}"
+    /etc/init.d/pulzr-wireguard restart >/dev/null 2>&1
+    return 0
+}
+
+case "$1" in
+    --background)
+        # One retry loop at a time; the service calls this on every start.
+        if [ -f "${LOCK}" ] && kill -0 "$(cat "${LOCK}")" 2>/dev/null; then
+            exit 0
+        fi
+        (
+            echo $$ > "${LOCK}"
+            delay=15
+            while :; do
+                enroll; rc=$?
+                [ "${rc}" = 0 ] && break
+                [ "${rc}" = 2 ] && break     # not adopted, or nothing to enrol with
+                sleep "${delay}"
+                # Back off to five minutes: an unreachable platform should not
+                # be asked every few seconds, and wired is not metered but the
+                # log partition is small.
+                [ "${delay}" -lt 300 ] && delay=$((delay * 2))
+            done
+            rm -f "${LOCK}"
+        ) </dev/null >/dev/null 2>&1 &
+        ;;
+    *)
+        enroll
+        ;;
+esac

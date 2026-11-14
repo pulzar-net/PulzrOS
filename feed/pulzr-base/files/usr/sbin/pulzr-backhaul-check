@@ -1,0 +1,169 @@
+#!/bin/sh
+#
+# Is Pulzar Cloud reachable, and by which path?
+#
+#   pulzr-backhaul-check          exit 0 if manageable, 1 if not
+#   pulzr-backhaul-check --json   report both paths
+#   pulzr-backhaul-check --tunnel print the tunnel state: none|waiting|up
+#   pulzr-backhaul-check --cellular  exit 0 if Pulzar Cloud answers out of
+#                                   the cellular device itself, whatever
+#                                   the wired path is doing
+#   pulzr-backhaul-check --any    exit 0 and print which uplink, if any of
+#                                   them really works: tunnel, wired, wifi or
+#                                   cellular. For a person at the gateway,
+#                                   not for a loop: see below
+#
+# BUDGET
+#
+# This runs periodically and one of the two paths it tests is billed by the
+# megabyte. So the cellular test only asks whether a TCP connection to
+# Pulzar Cloud completes: no TLS, no certificate chain. An HTTPS GET to a health
+# endpoint is closer to 6KB once the chain is counted, for an answer no better.
+#
+# It costs about 700 bytes, not the 200 a bare handshake would. The image has
+# no tool that can stop at the handshake: BusyBox nc here is the minimal build
+# with no -z or -w (so the `nc -w 5 -z` this used to run failed for every host,
+# and the cellular path could never test as up), and there is no ucode socket
+# module. curl is already a dependency, so it connects in plain HTTP to the
+# HTTPS port — ~83 bytes out, a ~400-byte "wrong protocol" reply back — and the
+# decision is whether the connection was made, not what came back. Adding
+# ucode-mod-socket would get this to the handshake alone, if that difference
+# ever matters on a real bill.
+#
+# The wired path is free, so it gets the fuller check.
+
+. /etc/pulzr/board.conf
+. /usr/share/pulzr/cellular.sh
+. /usr/share/pulzr/wired.sh
+
+JSON=0
+[ "$1" = "--json" ] && JSON=1
+
+# ── the management tunnel ───────────────────────────────────────────────────
+# A handshake inside the last three minutes means the hub is hearing us: the
+# keepalive is 25s, and WireGuard re-handshakes at least every two minutes
+# while traffic flows. Read from the kernel, so it costs nothing on the wire.
+tunnel_state() {
+    [ -s /etc/pulzr/wireguard/tunnel.json ] || { echo none; return; }
+    local last
+    last="$(wg show wg0 latest-handshakes 2>/dev/null | awk '{print $2}' | sort -n | tail -n1)"
+    if [ -n "${last}" ] && [ "${last}" -gt 0 ] && [ $(( $(date +%s) - last )) -lt 180 ]; then
+        echo up
+    else
+        echo waiting
+    fi
+}
+
+[ "$1" = "--tunnel" ] && { tunnel_state; exit 0; }
+
+# Derived from PULZR_NET_URL rather than spelled out again. The default here
+# used to be a literal hostname that stopped existing when the platform
+# moved — it is NXDOMAIN now, so the handshake below could
+# never connect and the cellular path tested as down on every gateway whose
+# wired path was down. That is precisely the case this check exists for: it is
+# what the fallback AP watchdog and the reset-button LED read.
+#
+# board.conf already calls PULZR_NET_URL the one place a host is named. This
+# makes that true of the probe as well, so the next move is still one line.
+_net_host="${PULZR_NET_URL#*://}"
+CHECK_HOST="${PULZR_HEALTH_HOST:-${_net_host%%/*}}"
+CHECK_HOST="${CHECK_HOST:-app.pulzr.net}"
+CHECK_PORT="${PULZR_HEALTH_PORT:-443}"
+
+# time_connect is 0 unless the TCP handshake completed, whatever curl does
+# afterwards — the far end answering plain HTTP on an HTTPS port with an error
+# is the expected outcome, not a failure. Timeouts cap how long a dead network
+# can hold the link open. With a device, the socket is bound to it, so the
+# answer is about that link and not whichever route the main table prefers.
+connects() {
+    local connected
+    connected="$(curl -s --connect-timeout 5 --max-time 6 -o /dev/null \
+                      ${1:+--interface "$1"} -w '%{time_connect}' \
+                      "http://${CHECK_HOST}:${CHECK_PORT}/" </dev/null 2>/dev/null)"
+    case "${connected}" in
+        ''|0|0.0|0.00000|0.000000) return 1 ;;
+    esac
+}
+
+if [ "$1" = "--cellular" ]; then
+    dev="$(cellular_device)"
+    [ -n "${dev}" ] && connects "${dev}"
+    exit
+fi
+
+# ── any uplink at all ───────────────────────────────────────────────────────
+# Asked when somebody presses the reset button for setup mode, and once a
+# minute while that AP stands. The default answer below is the wrong one for
+# that. It is about whether Pulzar Cloud can manage this gateway, so a wired
+# lease from a network that goes nowhere counts as up until there is a tunnel,
+# and WiFi with a dead tunnel counts as down. Those are the two cases a moved
+# gateway is most likely to be in.
+#
+# So each uplink is tried out of its own device. WiFi takes
+# pulzr-wifi-uplink's word instead of a connection, because a guest network
+# will complete a TCP handshake to anything and answer with its sign-in page.
+if [ "$1" = "--any" ]; then
+    [ "$(tunnel_state)" = up ] && { echo tunnel; exit 0; }
+
+    network_flush_cache
+    # Every wired uplink: a port can be one since 0.3.11, and a gateway moved
+    # onto its second one has an uplink all the same.
+    for _iface in $(wired_ifaces); do
+        if network_is_up "${_iface}" && network_get_gateway _gw "${_iface}" && [ -n "${_gw}" ] \
+           && network_get_device _dev "${_iface}" && connects "${_dev}"; then
+            echo wired
+            exit 0
+        fi
+    done
+    if network_is_up wwifi && pulzr-wifi-uplink usable; then
+        echo wifi
+        exit 0
+    fi
+    _dev="$(cellular_device)"
+    if [ -n "${_dev}" ] && connects "${_dev}"; then
+        echo cellular
+        exit 0
+    fi
+    exit 1
+fi
+
+# ── wired ───────────────────────────────────────────────────────────────────
+# The tunnel's own view is the honest answer for this path: it is the thing we
+# actually manage over, so "is the hub hearing us" is the question, not "does
+# the internet exist".
+#
+# Until there is a tunnel — not adopted yet, or still enrolling — there is
+# nothing to ask, and reporting the wired path as down would mark every new
+# gateway offline. So then it is "does the wired WAN have a gateway".
+wired_up=false
+tunnel="$(tunnel_state)"
+case "${tunnel}" in
+    up)      wired_up=true ;;
+    waiting) ;;
+    none)
+        pulzr-wireguard-route status 2>/dev/null \
+            | jsonfilter -e '@.wiredUsable' 2>/dev/null | grep -qx true && wired_up=true ;;
+esac
+
+# ── cellular ────────────────────────────────────────────────────────────────
+# Only tested if the wired path is down. When the tunnel is up we already know
+# we are manageable, and spending cellular bytes to confirm a second path we
+# are not using is precisely the waste this whole design avoids.
+#
+# Asked of netifd, not of device names. This looked for wwan0 or a route
+# mentioning wwan, which an AT modem's ppp-wwan only matched by accident and
+# a HiLink dongle's eth1 never would.
+cell_up=false
+if [ "${wired_up}" != "true" ]; then
+    if cellular_gateway >/dev/null; then
+        connects && cell_up=true
+    fi
+fi
+
+if [ "${JSON}" = 1 ]; then
+    printf '{"wired":%s,"cellular":%s,"tunnel":"%s","manageable":%s}\n' \
+        "${wired_up}" "${cell_up}" "${tunnel}" \
+        "$([ "${wired_up}" = true ] || [ "${cell_up}" = true ] && echo true || echo false)"
+fi
+
+[ "${wired_up}" = true ] || [ "${cell_up}" = true ]

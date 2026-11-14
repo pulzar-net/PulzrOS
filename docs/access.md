@@ -33,11 +33,11 @@ useless to anyone who is not already authorized.
 | Holds credentials | no | yes: tunnel key, MQTT password, org identity |
 | Setup AP | **open** | **WPA2, per-device key** |
 | Console offers | claim the gateway, the local password | nothing, without a platform signature |
-| Raised at boot | no, unless `parkeze.ap.onboarding` is on | no — only on fallback, or on request |
+| Raised at boot | no, unless `pulzr.ap.onboarding` is on | no — only on fallback, or on request |
 
 An unadopted gateway is a brick with a radio. There is nothing on it worth
 stealing, and the only useful thing anybody can do through the console is claim
-it — which requires a Parkeze login and is audited. Giving that away costs
+it — which requires a Pulzar login and is audited. Giving that away costs
 nothing and is what makes the out-of-box experience one tap.
 
 An adopted gateway is different, and gets two independent factors:
@@ -116,7 +116,7 @@ coming back, still works; the challenge waits ten minutes.
 For somebody who has moved a gateway and has no cable to it. Four short presses,
 then leave the button alone for three seconds.
 
-- **No uplink works:** the setup AP comes up for `parkeze.ap.window` (30 minutes).
+- **No uplink works:** the setup AP comes up for `pulzr.ap.window` (30 minutes).
   The status light flashes once a second, the RGB light breathes green, and a
   RAK7289CV2, which has neither, flashes its LoRa lights.
   Join `Pulzar-<six hex>`, open `https://192.168.62.1`, sign in, Backhaul > WiFi.
@@ -138,21 +138,21 @@ and a press of 2 seconds or more discards the count, so four presses followed by
 a hold is a hold. The checks are in `scripts/test-setup-mode.sh`.
 
 **How the button reaches this.** procd runs `/etc/rc.button/<button>` and nothing
-else, so `50-parkeze-io` links that to `parkeze-reset-button`. Before 0.3.6 it
+else, so `50-pulzr-io` links that to `pulzr-reset-button`. Before 0.3.6 it
 wrote a `button` section into `/etc/config/system`, which nothing reads, so on
 every gateway a press under a second rebooted and five seconds factory reset
 without releasing the gateway. Those gateways keep that behaviour until they run
 0.3.6.
 
-**What counts as an uplink.** `parkeze-backhaul-check --any`: a live tunnel, or
+**What counts as an uplink.** `pulzr-backhaul-check --any`: a live tunnel, or
 the platform answering out of any wired uplink (every port or VLAN with that
 role, not only `wan`) or the cellular device, or
-`parkeze-wifi-uplink` saying WiFi is `open`. Not a lease alone, and not WiFi
+`pulzr-wifi-uplink` saying WiFi is `open`. Not a lease alone, and not WiFi
 waiting at a sign-in page, which are both what a moved gateway tends to have.
 
-**The master switch does not apply.** `parkeze.ap.enabled` is off by default and
+**The master switch does not apply.** `pulzr.ap.enabled` is off by default and
 is about raising a radio unasked. With it in charge the gesture would do nothing
-on any gateway out of the box. `parkeze.ap.button=0` (Access page) is the switch
+on any gateway out of the box. `pulzr.ap.button=0` (Access page) is the switch
 for this, for a site that would rather have the truck roll.
 
 **The old network.** While a station is enabled on a radio, hostapd holds an AP on
@@ -172,7 +172,7 @@ only, so one that does not know this field drops it. Until it does, or for a
 gateway that never reported from 0.3.6, the only place to read the passphrase is
 the gateway's own Access page, and the way in to an adopted gateway with no uplink
 is a cable.
-The passphrase survives upgrades from 0.3.6 (`keep.d/parkeze-ap`). Before that
+The passphrase survives upgrades from 0.3.6 (`keep.d/pulzr-ap`). Before that
 each upgrade changed it.
 `setupAp` is `false` when no AP can come up here (no radio, or the button and the
 master switch both off), and the platform drops what it holds. `null` means this
@@ -180,7 +180,7 @@ report has nothing to say, after a failed read for instance, and leaves it alone
 the passphrase is what somebody needs if the uplink never comes back.
 
 **Where the feedback goes on an Opal.** Nowhere yet. Its light is an ET6326 on I2C
-and its kernel has no I2C driver, so `parkeze-led` has nothing to drive. The SSID
+and its kernel has no I2C driver, so `pulzr-led` has nothing to drive. The SSID
 appearing is the only sign that it worked, and the log (`logread | grep button`)
 the only sign that it did not. A driver is built on branch `et6326-leds` of
 `openwrt-gl-sft1200`, and has not run on a unit: see
@@ -189,19 +189,19 @@ the only sign that it did not. A driver is built on branch `et6326-leds` of
 ## Signing the gateway in to a WiFi portal
 
 The other direction: a WiFi network the gateway joined wants somebody to click
-through its sign-in page (`parkeze-wifi-uplink` says `portal`, backhaul.md).
+through its sign-in page (`pulzr-wifi-uplink` says `portal`, backhaul.md).
 That somebody has to be the gateway, since a portal admits the device that
 loaded it, by MAC and address. So the console's **Sign in** on the WiFi page
 opens the network's page *as the gateway*: a proxy on the gateway fetches it out
 of the WiFi radio and hands it to the browser — whether that browser is on the
-cable, on the setup AP, or on parkeze.net with the gateway on cellular.
+cable, on the setup AP, or on Pulzar Cloud with the gateway on cellular.
 
 - **Its own origin.** A portal's page is somebody else's HTML and script, and on
   the console's origin it could use the console session. The proxy is a second
   uhttpd on **8443** (`signin.uc`), opened wherever the console is, and the
-  console's own listener has no `/signin`. Through parkeze.net it is a second
+  console's own listener has no `/signin`. Through Pulzar Cloud it is a second
   device host for the same gateway: the console asks its own host for
-  `/__signin`, and net-api opens one that reaches 8443 (net-db 098).
+  `/__signin`, and the cloud opens one that reaches 8443.
 - **Getting in.** The console, signed in, mints a one-use ticket good for a
   minute; the proxy trades it for a cookie on its own origin, good for half an
   hour.
@@ -209,7 +209,7 @@ cable, on the setup AP, or on parkeze.net with the gateway on cellular.
   minutes after it opens. Not otherwise: on an open network it would be a way
   into whatever is behind the customer's WiFi.
 - **Names.** A portal's hostnames are resolved by the WiFi network's own DNS
-  servers, out of the WiFi device (`parkeze-wifi-resolve`), so a portal that
+  servers, out of the WiFi device (`pulzr-wifi-resolve`), so a portal that
   answers every name with its own address is followed to its page.
 - **What it passes on.** Never the browser's cookies (on a local address those
   include the console's session) or its Authorization. The portal's cookies
@@ -226,7 +226,7 @@ registration: the WiFi page shows the station's MAC for exactly that.
 
 A board with LAN ports (the Opal; a Pi with a USB adapter) has a simpler answer
 for a laptop: plug into a LAN port. It gets an address from the gateway and the
-console is at `https://192.168.64.1`, or `https://parkeze.local`. These ports
+console is at `https://192.168.64.1`, or `https://pulzr.local`. These ports
 reach the console, not SSH; see [`lan.md`](lan.md). Their DHCP is a device's and
 carries a default route, so a laptop on one may stop using its own WiFi for
 internet while the gateway has no uplink: then sign in with recovery, from a
@@ -285,12 +285,12 @@ be discovered.
 Plug a laptop into the port and open:
 
 ```
-https://parkeze-<serial>.local
+https://pulzr-<serial>.local
 ```
 
 That works with no configuration on either end: the laptop self-assigns a
 link-local address, and `umdns` answers the name on the link-local interface.
-`https://parkeze.local` works the same way and does not need the serial off
+`https://pulzr.local` works the same way and does not need the serial off
 the label: on the end of a cable there is only ever one gateway for it to
 mean. `https://192.168.61.1` is the fallback for when mDNS is blocked.
 
@@ -327,7 +327,7 @@ On a Pi 4 or Pi 5 the USB-C socket is also a way in. Plugged into a laptop,
 the gateway shows up as two things at once:
 
 - **A network interface.** The laptop gets an address by DHCP and the console
-  is at `https://parkeze.local`, or `https://192.168.63.1` without mDNS.
+  is at `https://pulzr.local`, or `https://192.168.63.1` without mDNS.
   Windows 11, macOS, Linux and ChromeOS need no driver (CDC-NCM).
 - **A serial port**, with the terminal UI on it behind the console's sign-in —
   see [`tui.md`](tui.md). Every OS binds it without a driver too.
@@ -369,15 +369,15 @@ A Pi with a screen attached at boot shows the terminal UI on it, behind the
 console's sign-in, in place of OpenWrt's passwordless login on tty1. With no
 screen attached, nothing runs: the firmware leaves HDMI unpowered, there is no
 framebuffer, and nothing draws. A screen plugged into a gateway that is already
-running stays dark until the next boot — see `parkeze-display-attached` for why
+running stays dark until the next boot — see `pulzr-display-attached` for why
 that trade was made.
 
 ## Most installs never touch any of this
 
 The normal path involves no local connection to the gateway. Plugged into
-anything with a route out, it takes DHCP, registers its claim with parkeze.net
+anything with a route out, it takes DHCP, registers its claim with Pulzar Cloud
 and appears in the pending list. The installer matches the EUI on the label and
-adopts it from the parkeze.net console, on their phone, without opening a
+adopts it from the Pulzar Cloud console, on their phone, without opening a
 laptop.
 
 Everything above is the fallback for when that does not happen — which is
@@ -385,12 +385,12 @@ exactly why it has to work with zero configuration rather than merely work.
 
 ## Turning it all off
 
-Both mechanisms are switchable from the console and from parkeze.net:
+Both mechanisms are switchable from the console and from Pulzar Cloud:
 
-- `parkeze.ap.enabled=0` — never raise a radio unasked, including on fallback.
+- `pulzr.ap.enabled=0` — never raise a radio unasked, including on fallback.
   **This is the default.** The AP is opt-in: field setup does not use WiFi, and a
   radio standing on a customer site is something we are responsible for.
-- `parkeze.ap.button=0` — four presses of the reset button do nothing.
+- `pulzr.ap.button=0` — four presses of the reset button do nothing.
 
 There is no switch for DHCP, because it is never served, and none for the
 ethernet port's console addresses, because switching them off would remove the

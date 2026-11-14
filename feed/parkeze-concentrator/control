@@ -1,8 +1,0 @@
-Package: parkeze-concentrator
-Depends: parkeze-base, ucode, ucode-mod-fs, ucode-mod-uci, jsonfilter, jshn, ca-bundle, coreutils-stty
-Maintainer: Joseph Telaak <joseph@parkeze.com>
-Architecture: all
-Description: LoRaWAN concentrator detection and packet forwarder supervision.
- Probes SPI, USB and UART for a Semtech SX130x concentrator, writes the
- detected hardware into UCI, and renders the packet forwarder configuration
- for the detected part and the configured region.

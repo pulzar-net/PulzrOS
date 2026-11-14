@@ -1,0 +1,10 @@
+#!/bin/sh
+#
+# A port that comes back on its own, a USB adapter replugged, rejoins the
+# bridge without the devlan interface going down, so no ifup follows it.
+# netifd adds it to the bridge after this event, hence the pause.
+[ "${ACTION}" = "add" ] || exit 0
+# The bridge's members as pulzr-ports set them, not the board's LAN ports:
+# any port, or a VLAN on one, can serve devices.
+case " $(uci -q get network.devlan_dev.ports) " in *" ${INTERFACE} "*) ;; *) exit 0 ;; esac
+( sleep 3; /usr/sbin/pulzr-lan isolate ) &

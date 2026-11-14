@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Write a ParkezeOS image to an SD card.
+# Write a PulzarOS image to an SD card.
 #
 #   ./flash.sh                     pick a board and a card, interactively
 #   ./flash.sh rpi4                pick a card for this board
@@ -57,8 +57,8 @@ images_for() {
   local board="$1"
   local preferred; preferred="$(board_field "${board}" BOARD_IMAGE_PREFERENCE)"
   {
-    find "${OUT_DIR}/release" -maxdepth 1 -name "ParkezeOS-*-${board}.img.gz" 2>/dev/null
-    find "${OUT_DIR}/release" -maxdepth 1 -name "ParkezeOS-*-${board}.img.xz" 2>/dev/null
+    find "${OUT_DIR}/release" -maxdepth 1 -name "PulzrOS-*-${board}.img.gz" 2>/dev/null
+    find "${OUT_DIR}/release" -maxdepth 1 -name "PulzrOS-*-${board}.img.xz" 2>/dev/null
     find "${OUT_DIR}/${board}" -maxdepth 1 -name "*${preferred}*.img.gz" 2>/dev/null
     find "${OUT_DIR}/${board}" -maxdepth 1 -name '*.img.gz' 2>/dev/null
   } | grep -v sysupgrade | awk '!seen[$0]++'
@@ -74,11 +74,11 @@ download_image() {
          --limit 1 --json databaseId --jq '.[0].databaseId' 2>/dev/null)"
   [ -n "${run}" ] || die "no successful build found in ${REPO}"
 
-  log "Downloading parkezeos-${board} from run ${run}"
+  log "Downloading pulzros-${board} from run ${run}"
   mkdir -p "${OUT_DIR}/release"
-  gh run download "${run}" --repo "${REPO}" --name "parkezeos-${board}" \
+  gh run download "${run}" --repo "${REPO}" --name "pulzros-${board}" \
      --dir "${OUT_DIR}/release" \
-    || die "could not download parkezeos-${board} — was that board built?"
+    || die "could not download pulzros-${board} — was that board built?"
 }
 
 # ── finding a disk ──────────────────────────────────────────────────────────
@@ -336,7 +336,7 @@ $(printf '\033[32m==>\033[0m') Done. Put the card in the ${BOARD} and power it o
   console certificate.
 
   Console     https://192.168.61.1/    (plug a laptop into the ethernet port)
-  WiFi        join "parkeze_<mac>" — it is open until the gateway is adopted
+  WiFi        join "pulzr_<mac>" — it is open until the gateway is adopted
   Serial      115200 8N1 on the GPIO header; the banner prints the console
               address and the one-time password
 

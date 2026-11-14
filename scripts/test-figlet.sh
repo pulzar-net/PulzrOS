@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Verify parkeze-figlet against the real thing.
+# Verify pulzr-figlet against the real thing.
 #
 #   UCODE=/path/to/ucode scripts/test-figlet.sh
 #
@@ -10,7 +10,7 @@
 # exercise every smushing rule the slant font asks for.
 #
 # `-w 9999` disables figlet's line wrapping, which is the one behavior
-# parkeze-figlet deliberately does not implement.
+# pulzr-figlet deliberately does not implement.
 #
 # Skips itself if figlet is not installed, so it can live in CI without making
 # figlet a build requirement: `brew install figlet` / `apt-get install figlet`.
@@ -19,8 +19,8 @@ set -uo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 UCODE="${UCODE:-ucode}"
-FONT="${ROOT_DIR}/feed/parkeze-base/files/usr/share/parkeze/fonts/slant.flf"
-RENDERER="${ROOT_DIR}/feed/parkeze-base/files/usr/sbin/parkeze-figlet"
+FONT="${ROOT_DIR}/feed/pulzr-base/files/usr/share/pulzr/fonts/slant.flf"
+RENDERER="${ROOT_DIR}/feed/pulzr-base/files/usr/sbin/pulzr-figlet"
 
 command -v figlet >/dev/null 2>&1 || {
   echo "figlet is not installed — skipping the renderer comparison."
@@ -36,9 +36,9 @@ command -v "${UCODE}" >/dev/null 2>&1 || {
 MODULES="$(dirname "$(command -v "${UCODE}")")/*.so"
 
 CASES=(
-  'Parkeze'
-  'Parkeze Gateway'
-  'parkeze-a1b2c3d4'
+  'Pulzar'
+  'Pulzar Gateway'
+  'pulzr-a1b2c3d4'
   'rpi3'
   'rpi5'
   'RAK7289CV2'

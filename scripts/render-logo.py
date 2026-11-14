@@ -22,7 +22,7 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SOURCE = ROOT / "console/public/icon.svg"
-OUTPUT = ROOT / "feed/parkeze-base/files/usr/share/parkeze/logo.txt"
+OUTPUT = ROOT / "feed/pulzr-base/files/usr/share/pulzr/logo.txt"
 
 # N: a node (.star). L: a link (.link). C: the core (.core). O: the orbit
 # ring (the ellipse's stroke). '.': nothing.

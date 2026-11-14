@@ -1,0 +1,402 @@
+#!/bin/sh
+#
+# The setup access point.
+#
+#   pulzr-ap status              JSON
+#   pulzr-ap up [--window N]     raise it, for N seconds (0 = until told)
+#   pulzr-ap button              the reset button's four presses: raise it
+#                                  unless an uplink works (exit codes below)
+#   pulzr-ap down                take it down
+#   pulzr-ap key                 print this unit's AP passphrase
+#   pulzr-ap ssid                print this unit's SSID
+#   pulzr-ap report              the SSID and passphrase, as JSON, for
+#                                  Pulzar Cloud. false if this gateway can never
+#                                  raise one; null if there is nothing to say
+#                                  this time
+#   pulzr-ap station-check       the watchdog's: see station_check below
+#
+# ── WHAT THIS IS FOR ───────────────────────────────────────────────────────
+#
+# A gateway on a pole that has dropped off the network is otherwise a ladder
+# and a laptop. The AP is the way back in: associate, open the console at the
+# setup address, sign in, give it WiFi credentials.
+#
+# ── THE BUTTON ─────────────────────────────────────────────────────────────
+#
+# Four presses of reset (pulzr-reset-button) raise this for somebody who has
+# moved a gateway. Separate from pulzr.ap.enabled, which is off by default
+# and is about raising a radio without anybody asking: a finger on the unit is
+# asking, and with the master switch off the gesture would do nothing on any
+# gateway out of the box. pulzr.ap.button='0' turns it off.
+#
+# It refuses while an uplink works, so a press cannot put a radio on a site
+# that does not need one. Nothing it opens is new: the same AP, on the same
+# terms below, for pulzr.ap.window seconds.
+#
+#   exit 0   raised, or it was up and its window starts again
+#   exit 1   could not raise it
+#   exit 2   an uplink works; prints which
+#   exit 3   no WiFi radio
+#   exit 4   pulzr.ap.button is off
+#
+# ── THE SECURITY PROBLEM, AND HOW IT IS RESOLVED ───────────────────────────
+#
+# An access point on a device in a public car park is a radio anyone in range
+# can talk to. The naive version of this feature — an open AP with a captive
+# portal that can reconfigure the gateway — is a fleet-wide remote takeover
+# with no authentication at all.
+#
+# The rule here is: **the AP is only as open as the gateway has something to
+# lose.**
+#
+#   UNADOPTED   The device holds no credentials: no tunnel, no MQTT
+#               password, no organisation. There is nothing to steal, and the
+#               only useful thing anybody can do is claim it — which needs a
+#               Pulzar login and is audited. So the AP is OPEN and the console
+#               is the provisioning flow. This is the out-of-box experience and
+#               it costs nothing to give away.
+#
+#   ADOPTED     The device now holds real credentials. So:
+#                 * the AP is WPA2, with a passphrase derived from this unit's
+#                   own secret — different on every gateway, printed on the
+#                   MOTD and readable from the console by anyone already
+#                   authorised;
+#                 * and the console behind it STILL demands a signature from
+#                   Pulzar Cloud before it will change anything.
+#
+#               Two independent factors, and neither is guessable from the
+#               street. See docs/access.md.
+#
+# ── WHY FORCING A GATEWAY OFFLINE GAINS NOTHING ────────────────────────────
+#
+# The obvious attack on a fallback like this is to cut or jam the uplink until
+# the gateway raises its AP. That works — and is useless, because an adopted
+# gateway's AP is WPA2 with a key the attacker does not have, and the console
+# behind it wants a signature from Pulzar Cloud. All the attacker achieves is a
+# log line that gets reported the moment the gateway is back.
+
+set -e
+
+. /etc/pulzr/board.conf
+
+STATE=/var/run/pulzr/ap
+# On flash, unlike the rest: a power cut with the station held must not leave
+# it off for good. The init script puts it back at boot.
+HELD=/etc/pulzr/ap/sta-held
+JOURNAL=/etc/pulzr/ap/raises.log
+# How long a station given a network gets to associate before the AP takes the
+# radio back. See station_check.
+JOIN_GRACE=120
+
+log() { logger -t ap -p daemon.notice "$*"; }
+
+adopted() { [ "$(uci -q get pulzr.adoption.state)" = "adopted" ]; }
+enabled() { [ "$(uci -q get pulzr.ap.enabled)" != "0" ]; }
+
+radio() {
+    # The first wifi-device UCI knows about. Boards without WiFi have none, and
+    # every entry point here exits cleanly in that case rather than erroring —
+    # a RAK unit with no radio should not log a failure once a minute.
+    uci -q show wireless 2>/dev/null \
+        | sed -n "s/^wireless\.\([^.]*\)=wifi-device$/\1/p" | head -n1
+}
+
+# ── identity ────────────────────────────────────────────────────────────────
+
+ssid() {
+    local configured mac
+    # `|| true`: unset is the normal case, and under `set -e` a failed
+    # assignment ended this function, so every caller got an empty name.
+    configured="$(uci -q get pulzr.ap.ssid)" || true
+    [ -n "${configured}" ] && { echo "${configured}"; return; }
+
+    # Pulzar-<last six of the MAC>. Per-unit, so a van full of gateways being
+    # staged does not present six identically-named networks, and stable across
+    # reflashes because it comes from hardware.
+    mac="$(cat /sys/class/net/eth0/address 2>/dev/null | tr -d ':' | tr 'A-Z' 'a-z')"
+    [ -n "${mac}" ] || mac="$(uci -q get pulzr.identity.serial | tail -c7)"
+    echo "Pulzar-$(echo "${mac}" | tail -c7)"
+}
+
+key() {
+    # The WPA2 passphrase, on an adopted gateway.
+    #
+    # Derived from a per-unit secret generated at first boot, NOT from the
+    # serial or the MAC. Both of those are printed on the case and visible in
+    # beacon frames — deriving the key from them would mean anyone who can see
+    # the network can compute the way onto it, which is the same as having no
+    # key at all.
+    local secret_file=/etc/pulzr/ap/secret
+    [ -s "${secret_file}" ] || return 1
+
+    # 16 characters of unambiguous base32. Long enough that offline cracking a
+    # WPA2 handshake is not worth anyone's afternoon, short enough to read off
+    # a screen and type into a phone.
+    sha256sum "${secret_file}" | cut -c1-32 \
+        | tr '0123456789abcdef' 'ABCDEFGHJKMNPQRS' | cut -c1-16
+}
+
+ensure_secret() {
+    local dir=/etc/pulzr/ap
+    [ -s "${dir}/secret" ] && return 0
+    mkdir -p "${dir}"; chmod 0700 "${dir}"
+    head -c 32 /dev/urandom | hexdump -ve '1/1 "%02x"' > "${dir}/secret"
+    chmod 0600 "${dir}/secret"
+    log "generated AP secret"
+}
+
+# ── the station on the same radio ───────────────────────────────────────────
+#
+# One radio has one channel, and a station decides it: while a station section
+# is enabled, hostapd holds the AP down until the station has associated. The
+# network of a gateway that has been moved is by definition not in range, so
+# the AP would never come up for exactly the person it is for.
+#
+# So setup mode takes the station off the radio, and gives it back when the AP
+# comes down. A join from the console turns it on again, which is the point,
+# and station_check takes it off once more if that join goes nowhere.
+
+hold_station() {
+    local dev="$1"
+    # Compat: the wireless section ids parkeze_sta and parkeze_ap are kept from ParkezeOS; a gateway
+    # upgraded or rolled back keeps its saved WiFi only if both images agree on them.
+    [ "$(uci -q get wireless.parkeze_sta.device)" = "${dev}" ] || return 0
+    [ "$(uci -q get wireless.parkeze_sta.disabled)" != "1" ] || return 0
+    uci -q set wireless.parkeze_sta.disabled='1'
+    mkdir -p "${HELD%/*}"
+    : > "${HELD}"
+    log "station off the radio for setup mode"
+}
+
+release_station() {
+    [ -e "${HELD}" ] || return 0
+    rm -f "${HELD}"
+    [ -n "$(uci -q get wireless.parkeze_sta.ssid)" ] || return 0
+    uci -q set wireless.parkeze_sta.disabled='0'
+}
+
+# Once a minute from the watchdog, in setup mode. A station that was given a
+# network and has not associated keeps the AP down, and the person with the
+# wrong password has no way back to the console to fix it: the radio returns to
+# the AP, where the WiFi page says why it failed. An association is left alone
+# whether or not it reaches the internet, since it may be waiting at a sign-in
+# page that the console opens.
+station_check() {
+    local dev now since
+    dev="$(radio)"
+    if [ -z "${dev}" ] || [ "$(uci -q get wireless.parkeze_sta.device)" != "${dev}" ] \
+       || [ "$(uci -q get wireless.parkeze_sta.disabled)" = "1" ] \
+       || ubus call network.interface.wwifi status 2>/dev/null \
+            | jsonfilter -e '@.up' 2>/dev/null | grep -qx true; then
+        rm -f "${STATE}/joining"
+        return 0
+    fi
+    now="$(date +%s)"
+    if [ ! -f "${STATE}/joining" ]; then
+        echo "${now}" > "${STATE}/joining"
+        return 0
+    fi
+    since="$(cat "${STATE}/joining")"
+    [ $(( now - since )) -ge "${JOIN_GRACE}" ] || return 0
+    log "station has not joined after $(( now - since ))s; the radio goes back to the AP"
+    rm -f "${STATE}/joining"
+    hold_station "${dev}"
+    uci commit wireless
+    wifi reload >/dev/null 2>&1 || true
+}
+
+# ── bringing it up ──────────────────────────────────────────────────────────
+
+up() {
+    local window="${1:-}"
+    local dev; dev="$(radio)"
+
+    [ -n "${dev}" ] || { log "no wifi radio on this board"; return 0; }
+    [ -f "${STATE}/button" ] || enabled \
+        || { log "AP is disabled in configuration; refusing to raise it"; return 1; }
+
+    ensure_secret
+    local net_ssid net_key encryption
+    net_ssid="$(ssid)"
+
+    if adopted; then
+        net_key="$(key)" || { log "no AP secret; refusing to raise an open AP on an adopted gateway"; return 1; }
+        encryption="psk2+ccmp"
+        log "raising ${net_ssid} (WPA2 — adopted gateway)"
+    else
+        # Nothing on this device is worth protecting yet, and an open network
+        # is what makes the out-of-box flow one tap. See the header.
+        net_key=""
+        encryption="none"
+        log "raising ${net_ssid} (open — gateway is not adopted)"
+    fi
+
+    # Never alongside OpenWrt's stock open AP — see 60-pulzr-ap. A radio
+    # that appeared after first boot (a USB adapter) can bring one back.
+    for iface in $(uci -q show wireless | sed -n 's/^wireless\.\([^.=]*\)=wifi-iface$/\1/p'); do
+        case "${iface}" in parkeze_*) ;; *) uci -q delete "wireless.${iface}" ;; esac
+    done
+
+    if [ -f "${STATE}/button" ]; then hold_station "${dev}"; fi
+
+    uci -q batch <<EOF
+set wireless.${dev}.disabled='0'
+delete wireless.parkeze_ap
+set wireless.parkeze_ap=wifi-iface
+set wireless.parkeze_ap.device='${dev}'
+set wireless.parkeze_ap.mode='ap'
+set wireless.parkeze_ap.network='setup'
+set wireless.parkeze_ap.ssid='${net_ssid}'
+set wireless.parkeze_ap.encryption='${encryption}'
+$([ -n "${net_key}" ] && echo "set wireless.parkeze_ap.key='${net_key}'")
+set wireless.parkeze_ap.isolate='1'
+set wireless.parkeze_ap.disabled='0'
+EOF
+    # isolate=1 stops associated clients talking to each other. Two installers
+    # on the same AP have no business reaching each other's laptops, and on an
+    # open AP it also stops a bystander probing whoever else has connected.
+
+    uci commit wireless
+    wifi reload >/dev/null 2>&1 || wifi up >/dev/null 2>&1
+
+    mkdir -p "${STATE}"
+    date +%s > "${STATE}/raised"
+    [ -n "${window}" ] && echo "${window}" > "${STATE}/window"
+
+    /usr/sbin/pulzr-led status setup 2>/dev/null || true
+    return 0
+}
+
+button() {
+    local via window
+
+    [ -n "$(radio)" ] || { echo "no radio"; return 3; }
+    if [ "$(uci -q get pulzr.ap.button)" = "0" ]; then
+        log "reset button: the setup AP is turned off for the button"
+        echo "turned off"
+        return 4
+    fi
+
+    # Up already: somebody wants longer.
+    if [ -f "${STATE}/raised" ]; then
+        date +%s > "${STATE}/raised"
+        echo "raised"
+        return 0
+    fi
+
+    if via="$(/usr/sbin/pulzr-backhaul-check --any 2>/dev/null)"; then
+        log "reset button: ${via} works, so no setup AP"
+        echo "${via}"
+        return 2
+    fi
+
+    window="$(uci -q get pulzr.ap.window || echo 1800)"
+    mkdir -p "${STATE}"
+    : > "${STATE}/button"
+    if ! up "${window}"; then
+        rm -f "${STATE}/button"
+        return 1
+    fi
+
+    # Read back by Pulzar Cloud with the fallback's raises: a gateway whose AP
+    # keeps appearing is telling you something.
+    mkdir -p "${JOURNAL%/*}"
+    printf '{"at":%s,"reason":"button"}\n' "$(date +%s)" >> "${JOURNAL}"
+    echo "raised"
+}
+
+# What somebody standing at this gateway needs to get onto its AP, for
+# Pulzar Cloud to give them. The gateway cannot show it: it has no screen, and
+# the console that would is behind the AP. So it goes up on the report while
+# there is an uplink, ahead of the day there is not.
+#
+# false and null are different answers. false says no AP can come up here, so
+# the platform drops what it holds. null only says this report has nothing, and
+# a passphrase already up there is what somebody will need if the uplink never
+# comes back, so one bad read must not take it away.
+report() {
+    local net_key
+    if [ -z "$(radio)" ] || { [ "$(uci -q get pulzr.ap.button)" = "0" ] && ! enabled; }; then
+        echo false
+        return 0
+    fi
+    adopted || { echo null; return 0; }
+    ensure_secret || { echo null; return 0; }
+    net_key="$(key)" || { echo null; return 0; }
+    # A configured SSID is anybody's text.
+    printf '{"ssid":"%s","key":"%s"}\n' \
+        "$(ssid | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')" "${net_key}"
+}
+
+down() {
+    local dev; dev="$(radio)"
+    [ -n "${dev}" ] || return 0
+
+    uci -q delete wireless.parkeze_ap || true
+    release_station
+    uci commit wireless
+    wifi reload >/dev/null 2>&1 || true
+
+    rm -f "${STATE}/raised" "${STATE}/window" "${STATE}/button" \
+          "${STATE}/manual" "${STATE}/joining"
+    log "AP down"
+    return 0
+}
+
+status() {
+    local dev raised window remaining clients
+    dev="$(radio)"
+
+    if [ -z "${dev}" ]; then
+        printf '{"capable":false,"reason":"This board has no WiFi radio."}\n'
+        return
+    fi
+
+    raised="$(cat "${STATE}/raised" 2>/dev/null || echo '')"
+    window="$(cat "${STATE}/window" 2>/dev/null || echo 0)"
+    remaining=0
+    if [ -n "${raised}" ] && [ "${window}" -gt 0 ]; then
+        remaining=$(( raised + window - $(date +%s) ))
+        [ "${remaining}" -lt 0 ] && remaining=0
+    fi
+
+    # Associated stations, so somebody watching the console can tell whether
+    # the person they are talking to on the phone has actually connected.
+    # `grep -c` prints its count AND exits non-zero when the count is zero, so
+    # the obvious `|| echo 0` appends a SECOND zero: clients became "0\n0",
+    # which made this whole object malformed JSON. The console's parse then
+    # failed, fell back to {capable:false}, and told the operator the board had
+    # no WiFi radio while the scan below it was listing networks.
+    #
+    # So: `|| true` to satisfy `set -e` without adding output, then validate
+    # that what came back is actually a number.
+    clients="$(iw dev "$(uci -q get wireless.parkeze_ap.ifname || echo wlan0)" \
+               station dump 2>/dev/null | grep -c '^Station' || true)"
+    case "${clients}" in
+        ''|*[!0-9]*) clients=0 ;;
+    esac
+
+    printf '{"capable":true,"enabled":%s,"up":%s,"ssid":"%s","secured":%s,"clients":%s,"remainingSeconds":%s,"fallback":%s,"fallbackAfter":%s,"button":%s,"raisedByButton":%s}\n' \
+        "$(enabled && echo true || echo false)" \
+        "$([ -n "${raised}" ] && echo true || echo false)" \
+        "$(ssid)" \
+        "$(adopted && echo true || echo false)" \
+        "${clients:-0}" \
+        "${remaining}" \
+        "$([ "$(uci -q get pulzr.ap.fallback)" != "0" ] && echo true || echo false)" \
+        "$(uci -q get pulzr.ap.fallback_after || echo 900)" \
+        "$([ "$(uci -q get pulzr.ap.button)" != "0" ] && echo true || echo false)" \
+        "$([ -f "${STATE}/button" ] && echo true || echo false)"
+}
+
+case "${1:-status}" in
+    status) status ;;
+    up)     shift; [ "${1:-}" = "--window" ] && shift; up "${1:-}" ;;
+    button) button ;;
+    down)   down ;;
+    report) report ;;
+    station-check) station_check ;;
+    key)    key || { echo "no AP secret yet" >&2; exit 1; } ;;
+    ssid)   ssid ;;
+    *) echo "usage: pulzr-ap {status|up|button|down|key|ssid|report|station-check}" >&2; exit 2 ;;
+esac

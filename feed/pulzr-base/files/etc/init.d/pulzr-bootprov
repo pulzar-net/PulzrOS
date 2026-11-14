@@ -1,0 +1,232 @@
+#!/bin/sh /etc/rc.common
+#
+# Provisioning through the FAT boot partition.
+#
+# WHY
+#
+# A gateway needs a credential the installer can actually obtain. The console
+# shows it, the label carries it, and the serial MOTD prints it — but if the
+# console is the broken thing, there is no label yet, and the unit has no
+# serial header, there is no way in at all.
+#
+# The FAT boot partition closes that. Every laptop can read and write it with
+# nothing but a card reader: no ext4 driver, no serial adapter, no Linux box.
+# And the card is in your hand at the moment you flash it.
+#
+# Three things, all optional, all refused once the gateway is adopted:
+#
+#   pulzr-password.txt         you write it. Becomes the initial password,
+#                                then is deleted from the card.
+#   pulzr-initial-password.txt we write it. The randomly generated password,
+#                                so it can be read by putting the card back.
+#                                Removed once the password has been changed.
+#   pulzr-authorized-keys      you write it. Installed as root's SSH key, on a
+#                                development build only (see docs/auth.md).
+#
+# WHY NOT A DEFAULT PASSWORD
+#
+# Because one published README would then be root on the entire fleet. That is
+# not hypothetical — the previous PulzarOS shipped pulzr/pulzr on every
+# image. A per-unit secret written to the card costs the installer exactly the
+# same effort and has none of that blast radius: learning one gateway's
+# password tells you nothing about any other.
+#
+# WHY WRITING IT TO THE CARD IS NOT THE SAME MISTAKE
+#
+# Whoever holds the card already holds the device — the rootfs is on it, and
+# anything that can mount ext4 can edit /etc/shadow directly. This grants no
+# access that physical possession did not. The one case where it lowers the bar
+# is somebody who can read FAT but not ext4, which is why none of it happens on
+# an adopted gateway: that is the same rule the setup AP follows in
+# docs/access.md — as open as the unit has something to lose.
+
+START=14
+
+STATE=/etc/pulzr/console
+MNT=""
+
+PW_IN="pulzr-password.txt"
+PW_OUT="pulzr-initial-password.txt"
+KEYS="pulzr-authorized-keys"
+
+# Find the boot partition, wherever it already is.
+#
+# The first version always tried to mount it itself and failed with "Resource
+# busy" on every Pi, because OpenWrt's bcm27xx target already mounts it at
+# /boot — so provisioning silently did nothing and no credential ever reached
+# the card. Use an existing mount when there is one; only mount our own when
+# there is not.
+#
+# When we do mount: mounting IS the filesystem test, so no blkid or block-mount
+# dependency, and a partition that is not FAT simply fails and we move on.
+BOOT_OWNED=""          # set when we mounted it ourselves and must unmount
+
+mount_boot() {
+	local dev mode="${1:-ro}" existing
+
+	# Already mounted by the system? Use it. Remount rw only if we need to
+	# write and it is currently read-only.
+	existing="$(awk '$3 == "vfat" { print $2; exit }' /proc/mounts 2>/dev/null)"
+	if [ -n "${existing}" ]; then
+		MNT="${existing}"
+		BOOT_DEV="$(awk '$3 == "vfat" { print $1; exit }' /proc/mounts)"
+		BOOT_OWNED=""
+		if [ "${mode}" = "rw" ] && ! awk -v m="${existing}" '$2 == m && $4 ~ /(^|,)rw(,|$)/' /proc/mounts | grep -q .; then
+			mount -o remount,rw "${existing}" 2>/dev/null || return 1
+		fi
+		return 0
+	fi
+
+	MNT=/tmp/.bootpart
+	mkdir -p "${MNT}"
+	for dev in /dev/mmcblk0p1 /dev/mmcblk1p1 /dev/sda1 /dev/sdb1; do
+		[ -b "${dev}" ] || continue
+		if mount -t vfat -o "${mode}",noatime "${dev}" "${MNT}" 2>/dev/null; then
+			BOOT_DEV="${dev}"
+			BOOT_OWNED=1
+			return 0
+		fi
+	done
+	rmdir "${MNT}" 2>/dev/null
+	return 1
+}
+
+umount_boot() {
+	sync
+	# Only unmount what we mounted. Unmounting /boot out from under the system
+	# because we borrowed it would be a poor trade for tidiness.
+	[ -n "${BOOT_OWNED}" ] || return 0
+	umount "${MNT}" 2>/dev/null
+	rmdir "${MNT}" 2>/dev/null
+}
+
+apply_password() {
+	local plain="$1" salt hash
+
+	salt="$(tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 16)"
+	hash="$(printf '%s\n' "${plain}" \
+	        | openssl passwd -6 -salt "rounds=100000\$${salt}" -stdin 2>/dev/null)"
+
+	case "${hash}" in
+		'$6$'*'$'*) : ;;
+		*) logger -t pulzr -p daemon.err \
+		     "could not hash the password from ${PW_IN}; leaving the generated one in place"
+		   return 1 ;;
+	esac
+
+	mkdir -p "${STATE}"
+	printf '%s' "${hash}" > "${STATE}/password"
+	chmod 0600 "${STATE}/password"
+	printf '%s\n' "${plain}" > "${STATE}/initial-password"
+	chmod 0600 "${STATE}/initial-password"
+	# Still "initial": a password chosen on a card and carried to the device is
+	# exactly the kind the console should insist on replacing.
+	touch "${STATE}/password-is-initial"
+	return 0
+}
+
+start() {
+	. /etc/pulzr/board.conf 2>/dev/null
+
+	# First, and before any of the conditions below: root's authorized_keys is
+	# composed from the image every boot, adopted or not. It is how a rotated
+	# fleet key reaches a gateway at all — see pulzr-fleet-keys.
+	/usr/sbin/pulzr-fleet-keys || \
+		logger -t pulzr -p daemon.err "could not compose authorized_keys"
+	# And nothing typed opens root, on a gateway upgraded from a release where
+	# root's password was the console's as much as on a new one.
+	/usr/libexec/pulzr-root-keys-only || \
+		logger -t pulzr -p daemon.err "could not take root's password away"
+	# The rest of what sshd trusts, for the same reason and before sshd (50)
+	# starts: its config, the CA and this gateway's principal. See
+	# pulzr-ssh-setup.
+	/usr/sbin/pulzr-ssh-setup
+
+	[ "${PULZR_BOOTPART_KEYS:-1}" = "1" ] || return 0
+
+	# Nothing below happens once the gateway has something to lose.
+	[ "$(uci -q get pulzr.adoption.state)" = "adopted" ] && return 0
+
+	mount_boot ro || return 0
+
+	# Spelled out rather than chained with || &&, whose precedence in sh is a
+	# trap and whose meaning here would not be obvious to the next reader.
+	local want_write=""
+	if [ -s "${MNT}/${PW_IN}" ]; then
+		want_write=1                      # a password to consume
+	elif [ -f "${STATE}/password-is-initial" ]; then
+		want_write=1                      # a generated password to publish
+	elif [ -f "${MNT}/${PW_OUT}" ]; then
+		want_write=1                      # a stale published password to remove
+	fi
+
+	if [ -s "${MNT}/${KEYS}" ] && [ "${PULZR_DEV:-0}" != 1 ]; then
+		logger -t pulzr -p daemon.warn \
+			"${KEYS} ignored: SSH keys from the card are for development builds"
+	elif [ -s "${MNT}/${KEYS}" ]; then
+		# Validated first: a truncated file written into authorized_keys would
+		# not fail, it would silently leave no working key and look like the
+		# feature is broken.
+		if grep -qE '^(ssh-(rsa|ed25519)|ecdsa-sha2-)' "${MNT}/${KEYS}"; then
+			# Site keys, not authorized_keys. That file is composed from
+			# these plus the image's fleet key by pulzr-fleet-keys —
+			# writing it directly here used to delete Pulzar's own access
+			# on any unit a technician provisioned.
+			mkdir -p /etc/pulzr
+			cat "${MNT}/${KEYS}" > /etc/pulzr/site-keys
+			chmod 0600 /etc/pulzr/site-keys
+			/usr/sbin/pulzr-fleet-keys || true
+			logger -t pulzr -p daemon.warn \
+				"installed SSH key(s) from ${BOOT_DEV}:/${KEYS}"
+		else
+			logger -t pulzr -p daemon.err \
+				"${KEYS} holds no recognisable public key; ignored"
+		fi
+	fi
+
+	[ -n "${want_write}" ] || { umount_boot; return 0; }
+
+	# Remount read-write only for the part that needs it, so a card that is
+	# merely being read is never opened for writing at all.
+	local chosen=""
+	[ -s "${MNT}/${PW_IN}" ] && chosen="$(head -n1 "${MNT}/${PW_IN}" | tr -d '\r\n')"
+	umount_boot
+	mount_boot rw || return 0
+
+	local operator_chose=""
+	if [ -n "${chosen}" ]; then
+		if [ "${#chosen}" -lt 8 ]; then
+			logger -t pulzr -p daemon.err \
+				"${PW_IN} is shorter than 8 characters; ignored"
+		elif apply_password "${chosen}"; then
+			operator_chose=1
+			logger -t pulzr -p daemon.warn \
+				"initial password set from ${BOOT_DEV}:/${PW_IN}"
+		fi
+		# Consumed either way. Leaving a chosen password sitting on the card
+		# forever is the one part of this that would be a real mistake.
+		rm -f "${MNT}/${PW_IN}"
+	fi
+
+	# Publish only a password the operator does not already know. Writing their
+	# own choice back out would undo the deletion above for no benefit.
+	if [ -n "${operator_chose}" ]; then
+		rm -f "${MNT}/${PW_OUT}"
+	elif [ -f "${STATE}/password-is-initial" ] && [ -s "${STATE}/initial-password" ]; then
+		{
+			echo "PulzarOS initial credentials"
+			echo
+			echo "  user      pulzr   (the console: https:// or ssh pulzr@ the gateway)"
+			echo "  password  $(cat "${STATE}/initial-password")"
+			echo
+			echo "This file disappears once the password is changed."
+			echo "Anyone holding this card already has full access to this"
+			echo "gateway, so this discloses nothing they could not already"
+			echo "obtain - but it is specific to THIS unit and no other."
+		} > "${MNT}/${PW_OUT}"
+	else
+		rm -f "${MNT}/${PW_OUT}"
+	fi
+
+	umount_boot
+}

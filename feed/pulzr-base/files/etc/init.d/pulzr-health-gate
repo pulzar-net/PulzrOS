@@ -1,0 +1,18 @@
+#!/bin/sh /etc/rc.common
+#
+# Judge the first boot after a firmware upgrade.
+#
+# START=98 so the things it judges are already trying: the network, the modem,
+# and pulzr-claim (95) which owns the report it finishes on. Starting earlier
+# would mean measuring a gateway that has not been given its chance yet and
+# rolling back firmware that was fine.
+#
+# Backgrounded, because the verdict takes up to ten minutes on a cold cellular
+# boot and procd's boot must not wait on it. It exits immediately on any boot
+# that is not the one after an upgrade, which is almost all of them.
+
+START=98
+
+start() {
+    ( /usr/sbin/pulzr-health-gate >/dev/null 2>&1 & )
+}

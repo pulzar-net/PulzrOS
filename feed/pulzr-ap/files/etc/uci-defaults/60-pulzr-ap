@@ -1,0 +1,141 @@
+#!/bin/sh
+#
+# The setup network and the AP defaults.
+#
+# ALL OF THIS IS OPT-IN AND OFF BY DEFAULT.
+#
+# Field setup does not use WiFi. A gateway is reached over its ethernet port
+# (see /etc/uci-defaults/20-pulzr-network) or, in the normal case, not
+# reached locally at all — it registers its claim with Pulzar Cloud over
+# whichever backhaul comes up and is adopted from there.
+#
+# The AP remains as a recovery path for a unit that has no working backhaul and
+# is somewhere its ethernet port cannot conveniently be reached. Turning it on
+# is a deliberate act, from the console or from Pulzar Cloud, because an AP on a
+# customer site is a radio we are responsible for and a second way in to
+# defend.
+
+# OpenWrt's prepare_rootfs runs every uci-defaults script during image
+# assembly, with IPKG_INSTROOT set and absolute paths resolving to the build
+# host. Everything below belongs to the device, so defer it to first boot.
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+
+. /etc/pulzr/board.conf
+
+# ── the setup network ───────────────────────────────────────────────────────
+# Its own interface and its own firewall zone, deliberately separate from the
+# LAN. A client on the setup AP can reach this gateway's console and nothing
+# else — not the LAN, not the WAN, not the management tunnel.
+uci -q batch <<EOF
+delete network.setup
+set network.setup=interface
+set network.setup.proto='static'
+set network.setup.ipaddr='${PULZR_SETUP_IPADDR:-192.168.62.1}'
+set network.setup.netmask='255.255.255.0'
+set network.setup.device='br-setup'
+
+delete network.device_setup
+set network.device_setup=device
+set network.device_setup.name='br-setup'
+set network.device_setup.type='bridge'
+
+delete dhcp.setup
+set dhcp.setup=dhcp
+set dhcp.setup.interface='setup'
+set dhcp.setup.start='100'
+set dhcp.setup.limit='50'
+set dhcp.setup.leasetime='1h'
+add_list dhcp.setup.dhcp_option='3'
+add_list dhcp.setup.dhcp_option='6'
+EOF
+# An address, and no router and no DNS server, as the USB port hands out. A
+# phone on this AP keeps its cellular data for everything but the console, and
+# that is what lets one phone do all of it: "Sign in with Pulzar" needs the
+# browser to reach the platform while the gateway cannot. A default route here
+# would point it at a gateway with no uplink. See docs/access.md for why that
+# beat the captive portal this used to attempt.
+
+# dnsmasq is bound to loopback by pulzr-base, because an open resolver on a
+# customer's LAN is not ours to run. DHCP for the setup bridge needs it there,
+# so that one interface is added back here — and only here, in the package
+# that owns the AP. br-setup exists only while the radio is up.
+uci -q del_list dhcp.@dnsmasq[0].interface='br-setup'
+uci -q add_list dhcp.@dnsmasq[0].interface='br-setup'
+
+# Left in the config by an earlier release's portal. It sent port 80 to port
+# 443, so plain HTTP arrived at a TLS listener.
+uci -q delete firewall.portal_redirect
+
+# The setup zone: input to the router only, no forwarding anywhere.
+#
+# `forward REJECT` and no zone-to-zone rule is what stops the open AP on an
+# unadopted gateway becoming a free anonymous internet connection attached to
+# somebody's site.
+uci -q batch <<EOF
+delete firewall.setup_zone
+set firewall.setup_zone=zone
+set firewall.setup_zone.name='setup'
+set firewall.setup_zone.network='setup'
+set firewall.setup_zone.input='REJECT'
+set firewall.setup_zone.output='ACCEPT'
+set firewall.setup_zone.forward='REJECT'
+
+delete firewall.setup_dns
+set firewall.setup_dns=rule
+set firewall.setup_dns.name='Setup DNS'
+set firewall.setup_dns.src='setup'
+set firewall.setup_dns.dest_port='53'
+set firewall.setup_dns.target='ACCEPT'
+
+delete firewall.setup_dhcp
+set firewall.setup_dhcp=rule
+set firewall.setup_dhcp.name='Setup DHCP'
+set firewall.setup_dhcp.src='setup'
+set firewall.setup_dhcp.dest_port='67'
+set firewall.setup_dhcp.proto='udp'
+set firewall.setup_dhcp.target='ACCEPT'
+
+delete firewall.setup_console
+set firewall.setup_console=rule
+set firewall.setup_console.name='Setup console'
+set firewall.setup_console.src='setup'
+set firewall.setup_console.dest_port='80 443 8443'
+set firewall.setup_console.proto='tcp'
+set firewall.setup_console.target='ACCEPT'
+EOF
+
+# ── OpenWrt's own AP ────────────────────────────────────────────────────────
+# `wifi config` writes one AP per radio before these scripts run: SSID
+# "OpenWrt", no encryption, on the LAN. It ships harmless only because the
+# radio ships disabled — and the first WiFi join enables the radio. On
+# a Pi 3 that put an open AP onto the console's LAN, and on its
+# single-radio chip it also knocked the WiFi uplink off every second, so the
+# join looked like it had failed. Ours are the parkeze_ sections; anything
+# else on a radio is deleted. Runs again after every sysupgrade, which is
+# what cleans the gateways already carrying it.
+for iface in $(uci -q show wireless | sed -n 's/^wireless\.\([^.=]*\)=wifi-iface$/\1/p'); do
+    case "${iface}" in parkeze_*) ;; *) uci -q delete "wireless.${iface}" ;; esac
+done
+uci -q commit wireless
+
+# ── AP policy ───────────────────────────────────────────────────────────────
+uci -q batch <<EOF
+set pulzr.ap=ap
+set pulzr.ap.enabled='${PULZR_AP_ENABLED:-0}'
+set pulzr.ap.onboarding='0'
+set pulzr.ap.fallback='${PULZR_AP_FALLBACK:-0}'
+set pulzr.ap.fallback_after='${PULZR_AP_FALLBACK_AFTER:-900}'
+set pulzr.ap.window='${PULZR_AP_WINDOW:-1800}'
+
+EOF
+# Only when unset: unlike the settings above, somebody may have turned this off
+# from the console, and this runs again after every upgrade.
+[ -n "$(uci -q get pulzr.ap.button)" ] \
+    || uci -q set pulzr.ap.button="${PULZR_AP_BUTTON:-1}"
+
+uci commit network
+uci commit firewall
+uci commit dhcp
+uci commit pulzr
+
+exit 0

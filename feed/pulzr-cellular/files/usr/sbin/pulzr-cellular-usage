@@ -1,0 +1,47 @@
+#!/bin/sh
+#
+# Track bytes over the cellular interface, so an operator and Pulzar Cloud can
+# both see what the SIM is spending.
+#
+#   pulzr-cellular-usage           print JSON
+#   pulzr-cellular-usage --record  add a sample to the rolling log
+#
+# Counters reset when the interface goes down, so a sample that is smaller than
+# the one before it is a re-attach, not a negative usage. Handled explicitly
+# below because getting it wrong produces enormous phantom usage spikes and
+# a support ticket about a bill that never happened.
+
+STATE=/etc/pulzr/cellular-usage
+
+. /usr/share/pulzr/cellular.sh
+
+# The device netifd has the billed uplink on: the modem's wwan0 or ppp-wwan,
+# or usbwan's eth1 or usb0 for a HiLink dongle or a phone. This used to match
+# wwan|rmnet|ppp against link names, which counted none of the last two.
+IFACE="$(cellular_device)"
+
+[ -n "${IFACE}" ] || { echo '{"error":"no cellular interface"}'; exit 1; }
+
+rx="$(cat "/sys/class/net/${IFACE}/statistics/rx_bytes" 2>/dev/null || echo 0)"
+tx="$(cat "/sys/class/net/${IFACE}/statistics/tx_bytes" 2>/dev/null || echo 0)"
+
+mkdir -p "$(dirname "${STATE}")"
+[ -f "${STATE}" ] || echo "0 0 0 0" > "${STATE}"
+read -r last_rx last_tx total_rx total_tx last_dev < "${STATE}"
+
+# A counter that went backwards means the interface bounced, and a different
+# device is a different counter: a modem and a phone can take turns. Either
+# way, credit the whole new reading rather than the difference.
+if [ "${IFACE}" != "${last_dev:-${IFACE}}" ]; then last_rx=0; last_tx=0; fi
+if [ "${rx}" -lt "${last_rx}" ]; then delta_rx="${rx}"; else delta_rx=$((rx - last_rx)); fi
+if [ "${tx}" -lt "${last_tx}" ]; then delta_tx="${tx}"; else delta_tx=$((tx - last_tx)); fi
+
+total_rx=$((total_rx + delta_rx))
+total_tx=$((total_tx + delta_tx))
+
+if [ "$1" = "--record" ]; then
+    echo "${rx} ${tx} ${total_rx} ${total_tx} ${IFACE}" > "${STATE}"
+fi
+
+printf '{"interface":"%s","sessionRx":%s,"sessionTx":%s,"totalRx":%s,"totalTx":%s}\n' \
+    "${IFACE}" "${rx}" "${tx}" "${total_rx}" "${total_tx}"

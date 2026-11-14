@@ -1,0 +1,14 @@
+#!/bin/sh /etc/rc.common
+#
+# The speed test scheduler: wakes every five minutes and runs the tests when
+# this gateway's slot comes round. See pulzr-speedtest.
+
+START=96
+USE_PROCD=1
+
+start_service() {
+    procd_open_instance
+    procd_set_param command /usr/sbin/pulzr-speedtest service
+    procd_set_param respawn 3600 5 0
+    procd_close_instance
+}

@@ -1,9 +1,0 @@
-Package: parkeze-uplinks
-Depends: parkeze-base, ucode, ucode-mod-fs, ucode-mod-uci
-Maintainer: Joseph Telaak <joseph@parkeze.com>
-Architecture: all
-Description: Uplink order and failover.
- Sets each uplink's route metric from an order the site chooses, and pings
- out of each tracked uplink so one that keeps its link but carries nothing
- is moved behind the others. Failover only: one uplink carries traffic at a
- time. For boards with the failover feature; see boards/common/board.conf.

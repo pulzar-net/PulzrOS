@@ -1,0 +1,318 @@
+#!/bin/sh
+#
+# What happened to this gateway's firmware, and what it can go back to.
+#
+#   pulzr-firmware status              JSON: state, versions, what is stashed
+#   pulzr-firmware pending <img> [who] record an upgrade about to be applied
+#   pulzr-firmware confirm             this boot is healthy; keep it
+#   pulzr-firmware rollback-target     print the image to flash to go back
+#
+# ── WHY THERE IS A JOURNAL AT ALL ──────────────────────────────────────────
+#
+# Until this existed, an upgrade left no trace. The console ran sysupgrade in
+# a background subshell and returned 202; nothing on the gateway recorded that
+# an upgrade had happened, what version it came from, or who asked for it. So
+# a gateway that came back up broken could not tell it had just been upgraded,
+# which is the one fact a recovery needs before it can do anything useful.
+#
+# Stock WisGateOS kept two variables in its U-Boot environment for this —
+# `last_fb_issuer` and `last_fb_timestamp`. They could not act on them, since
+# that bootloader has no bootcount and no second slot, but they could at least
+# answer "what did this to you". This is the same idea with somewhere to put
+# the answer.
+#
+# ── WHERE THE IMAGE TO GO BACK TO COMES FROM ───────────────────────────────
+#
+# Not from the running system: what is running is an unpacked rootfs, not the
+# .img that produced it, and there is no way to reconstitute one from the
+# other. So each upgrade stashes the image it is *installing*, and that copy
+# is what the upgrade after it rolls back to. Version N's image is written
+# when N is installed and read when N+1 fails.
+#
+# The consequence worth stating plainly: the first upgrade a gateway does
+# under this scheme has no predecessor stashed, so it cannot roll back. Every
+# one after it can. `status` reports that honestly rather than implying a
+# safety net that is not there yet.
+#
+# They go on the SD card because they do not fit anywhere else. A RAK has
+# ~1.5MB spare in a 32MB chip against a 26MB image; the card the case ships
+# with has 30GB. A gateway with no card keeps a journal and cannot roll back,
+# and says so.
+
+. /etc/pulzr/board.conf
+
+JOURNAL_DIR=/etc/pulzr/upgrade
+JOURNAL="${JOURNAL_DIR}/journal"
+
+log() { logger -t firmware -p daemon.info "$*"; }
+
+storage_dir() {
+    [ "$(uci -q get pulzr.storage.present)" = "1" ] || return 1
+    [ "$(uci -q get pulzr.storage.writable)" = "1" ] || return 1
+    local mount; mount="$(uci -q get pulzr.storage.mount)"
+    [ -d "${mount}/pulzr/firmware" ] || return 1
+    echo "${mount}/pulzr/firmware"
+}
+
+# Journal reads are `get key`, writes are `set key value`. Flat key=value
+# rather than JSON because every reader of it is shell, including the one that
+# runs before the console exists.
+get() {
+    [ -f "${JOURNAL}" ] || return 1
+    sed -n "s/^$1=//p" "${JOURNAL}" | tail -n1
+}
+
+set_keys() {
+    mkdir -p "${JOURNAL_DIR}"
+    local tmp="${JOURNAL}.new" key
+    : > "${tmp}"
+    # Carry forward anything not being overwritten by this call.
+    if [ -f "${JOURNAL}" ]; then
+        while IFS= read -r line; do
+            key="${line%%=*}"
+            for given in "$@"; do
+                [ "${key}" = "${given%%=*}" ] && continue 2
+            done
+            printf '%s\n' "${line}" >> "${tmp}"
+        done < "${JOURNAL}"
+    fi
+    for given in "$@"; do printf '%s\n' "${given}" >> "${tmp}"; done
+    mv "${tmp}" "${JOURNAL}"
+}
+
+digest() {
+    sha256sum "$1" 2>/dev/null | awk '{ print $1 }'
+}
+
+now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+
+case "${1:-status}" in
+
+# ── before the upgrade ──────────────────────────────────────────────────────
+#
+# Called by whatever is about to run sysupgrade, while the old system is still
+# the running one — this is the only moment at which "what we are now" can be
+# recorded, and the only moment the outgoing image is still identifiable.
+pending)
+    image="${2:?usage: pulzr-firmware pending <image> [issuer]}"
+    issuer="${3:-unknown}"
+    [ -s "${image}" ] || { echo "no such image: ${image}" >&2; exit 1; }
+
+    target_sha="$(digest "${image}")"
+
+    # Whatever the last upgrade stashed is what this one can fall back to. On
+    # the first run under this scheme there is nothing, which is recorded as
+    # an empty from_image rather than left to look like an error.
+    from_image="$(get target_image 2>/dev/null)"
+    [ -f "${from_image}" ] || from_image=""
+
+    stashed=""
+    if dir="$(storage_dir)"; then
+        # Named for its own digest, not for a version.
+        #
+        # The obvious name is the version — and it is wrong. At this point the
+        # running version is known and the image's version is not: this is the
+        # *outgoing* system inspecting an image built to replace it. Naming
+        # the file after the running version produced a 0.1.0-pending.img
+        # holding the 0.2.0 image, which is exactly the sort of thing somebody
+        # reads off a card at 2am and acts on. The digest is the one name that
+        # cannot be wrong, it is already in the journal beside it, and two
+        # installs of the same image collapse onto one file for free.
+        stashed="${dir}/${target_sha:-unknown}.img"
+        # Copy, then rename: a card pulled half way through a 26MB write
+        # leaves a partial file, and a partial file named as though it were
+        # whole is worse than no file at all.
+        if cp "${image}" "${stashed}.part" 2>/dev/null && sync 2>/dev/null; then
+            mv "${stashed}.part" "${stashed}" 2>/dev/null || stashed=""
+        else
+            rm -f "${stashed}.part" 2>/dev/null
+            stashed=""
+            log "could not stash the image on removable storage"
+        fi
+
+        # Keep only what is reachable: the image going on now, and the one it
+        # would fall back to. Everything older is a version nothing can decide
+        # to return to any more. 30GB takes a long time to fill 26MB at a
+        # time, but unbounded is unbounded, and a full card fails the next
+        # stash — which is the one that matters.
+        for old in "${dir}"/*.img "${dir}"/*.img.part; do
+            [ -f "${old}" ] || continue
+            [ "${old}" = "${stashed}" ] && continue
+            [ "${old}" = "${from_image}" ] && continue
+            # The console stages its upload in this same directory, and
+            # sysupgrade has yet to read it.
+            [ "${old}" = "${image}" ] && continue
+            rm -f "${old}" 2>/dev/null
+        done
+    fi
+
+    set_keys \
+        "state=pending" \
+        "issuer=${issuer}" \
+        "started_at=$(now)" \
+        "from_version=${PULZR_VERSION:-unknown}" \
+        "from_build=${PULZR_BUILD:-unknown}" \
+        "from_image=${from_image}" \
+        "target_sha256=${target_sha}" \
+        "target_image=${stashed}" \
+        "attempts=$(( $(get attempts 2>/dev/null || echo 0) + 1 ))"
+
+    # Last, so the old-name copy carries the journal just written. A rollback
+    # to ParkezeOS reads its state from the old paths; see pulzr-legacy.
+    /usr/sbin/pulzr-legacy back || log "could not write the ParkezeOS-path copy of this gateway's state"
+
+    log "upgrade pending: ${PULZR_VERSION:-unknown} -> (new image ${target_sha:-unknown}), by ${issuer}"
+    [ -n "${from_image}" ] || log "no previous image stashed yet — this upgrade cannot be rolled back"
+    ;;
+
+# ── after a healthy boot ────────────────────────────────────────────────────
+confirm)
+    [ "$(get state)" = "pending" ] || exit 0
+    set_keys \
+        "state=good" \
+        "confirmed_at=$(now)" \
+        "attempts=0"
+    log "upgrade to ${PULZR_VERSION:-unknown} confirmed healthy"
+    ;;
+
+# ── is this image ours ──────────────────────────────────────────────────────
+#
+#   pulzr-firmware verify <image> <manifest>
+#
+# Exit 0 if the manifest is signed by the key this image was built with and
+# its digest matches the image. Exit non-zero, with a reason on stderr, for
+# anything else — including "this build carries no key", which is a real
+# state: a lab image built without PULZR_FIRMWARE_PUBKEY cannot verify
+# anything and must say so rather than wave images through.
+#
+# The openssl invocation is copied from pulzr-adopt's bundle check, down to
+# the -A flags, because that is the one signature check in this image that has
+# been exercised in the field. Notably `openssl base64 -d -A` and not
+# `base64 -d`: BusyBox here has no base64 applet, which made every offline
+# adoption fail as "Malformed signature" until somebody worked out why.
+verify)
+    image="${2:?usage: pulzr-firmware verify <image> <manifest>}"
+    manifest_file="${3:?usage: pulzr-firmware verify <image> <manifest>}"
+    pubkey=/etc/pulzr/firmware.pub
+
+    [ -s "${image}" ] || { echo "no such image: ${image}" >&2; exit 1; }
+    [ -s "${manifest_file}" ] || { echo "That image came with no signature." >&2; exit 1; }
+    [ -f "${pubkey}" ] || { echo "This build carries no firmware signing key, so it \
+cannot check whether an image is ours." >&2; exit 1; }
+
+    body="$(jsonfilter -i "${manifest_file}" -e '@.manifest')"
+    signature="$(jsonfilter -i "${manifest_file}" -e '@.signature')"
+    [ -n "${body}" ] && [ -n "${signature}" ] \
+        || { echo "That signature file is not one of ours." >&2; exit 1; }
+
+    tmp_body=/tmp/.fw-body
+    tmp_sig=/tmp/.fw-sig
+    printf '%s' "${body}" > "${tmp_body}"
+    printf '%s' "${signature}" | openssl base64 -d -A > "${tmp_sig}" 2>/dev/null \
+        || { rm -f "${tmp_body}" "${tmp_sig}"; echo "Malformed signature." >&2; exit 1; }
+    [ -s "${tmp_sig}" ] \
+        || { rm -f "${tmp_body}" "${tmp_sig}"; echo "Malformed signature." >&2; exit 1; }
+
+    if ! openssl pkeyutl -verify -pubin -inkey "${pubkey}" -rawin \
+             -in "${tmp_body}" -sigfile "${tmp_sig}" >/dev/null 2>&1; then
+        rm -f "${tmp_body}" "${tmp_sig}"
+        echo "That image is not signed by Pulzar." >&2
+        exit 1
+    fi
+    rm -f "${tmp_body}" "${tmp_sig}"
+
+    # Signed, so the manifest can be trusted — but it describes *an* image,
+    # and this has to be that image. Without this the signature proves only
+    # that somebody once signed something, and any image could ride in behind
+    # a valid manifest for a different one.
+    claimed="$(printf '%s' "${body}" | openssl base64 -d -A 2>/dev/null \
+               | jsonfilter -e '@.sha256' 2>/dev/null)"
+    actual="$(digest "${image}")"
+    [ -n "${claimed}" ] && [ -n "${actual}" ] \
+        || { echo "Could not compare the image against its signature." >&2; exit 1; }
+    if [ "${claimed}" != "${actual}" ]; then
+        echo "That image does not match its signature — it is damaged, or it is \
+not the image that was signed." >&2
+        exit 1
+    fi
+    exit 0
+    ;;
+
+# What to flash to undo the pending upgrade, or nothing if we cannot.
+rollback-target)
+    target="$(get from_image)"
+    [ -n "${target}" ] && [ -f "${target}" ] || exit 1
+    echo "${target}"
+    ;;
+
+# ── put the previous firmware back ──────────────────────────────────────────
+#
+# Called by the health gate when a gateway has come up unable to reach
+# Pulzar Cloud after an upgrade. Does not decide anything: whether this is
+# warranted is the gate's judgement, and everything here is about doing it
+# safely once that judgement is made.
+rollback)
+    target="$(get from_image)"
+    [ -n "${target}" ] && [ -f "${target}" ] || {
+        # Recorded rather than silent. A gateway that needed to go back and
+        # could not is the state somebody has to be told about, because the
+        # next move is a visit.
+        set_keys "state=unrecoverable"
+        log "ERROR: this gateway needs its previous firmware and there is none stashed"
+        exit 1
+    }
+
+    # The stash is on a card that can be pulled, worn out, or quietly corrupt,
+    # and this is the one moment where flashing something damaged turns a
+    # broken gateway into a dead one. The filename is the digest the image had
+    # when it was stashed, so the file verifies itself: recompute and compare.
+    actual="$(digest "${target}")"
+    expected="$(basename "${target}" .img)"
+    if [ -z "${actual}" ] || [ "${actual}" != "${expected}" ]; then
+        set_keys "state=unrecoverable"
+        log "ERROR: the stashed image is damaged (${actual:-unreadable} is not ${expected}) — refusing to flash it"
+        exit 1
+    fi
+
+    # Written before the flash, not after: sysupgrade reboots, and a journal
+    # entry made after it is a journal entry that never happens. This is also
+    # what stops a loop — the next boot sees state=rolled-back rather than
+    # pending, so the gate leaves it alone instead of rolling back again to
+    # something older still.
+    set_keys \
+        "state=rolled-back" \
+        "rolled_back_at=$(now)" \
+        "rolled_back_to=${expected}"
+
+    /usr/sbin/pulzr-legacy back || log "could not write the ParkezeOS-path copy of this gateway's state"
+    log "rolling back to ${expected}"
+    # Settings kept, same as the forward path. The failure this exists for is
+    # the image; wiping config would also throw away the claim secret, which
+    # would stop the gateway proving who it is — turning a recoverable gateway
+    # into one nobody can adopt back.
+    sysupgrade "${target}"
+    ;;
+
+status)
+    state="$(get state 2>/dev/null)"
+    target="$(get from_image 2>/dev/null)"
+    can_roll_back=false
+    [ -n "${target}" ] && [ -f "${target}" ] && can_roll_back=true
+    printf '{"state":"%s","version":"%s","build":"%s","fromVersion":"%s","issuer":"%s","startedAt":"%s","confirmedAt":"%s","attempts":%s,"canRollBack":%s}\n' \
+        "${state:-none}" \
+        "${PULZR_VERSION:-unknown}" "${PULZR_BUILD:-unknown}" \
+        "$(get from_version 2>/dev/null)" \
+        "$(get issuer 2>/dev/null)" \
+        "$(get started_at 2>/dev/null)" \
+        "$(get confirmed_at 2>/dev/null)" \
+        "$(get attempts 2>/dev/null || echo 0)" \
+        "${can_roll_back}"
+    ;;
+
+*)
+    echo "usage: pulzr-firmware {status|pending <image> [issuer]|confirm|rollback-target}" >&2
+    exit 2
+    ;;
+esac
+
+exit 0

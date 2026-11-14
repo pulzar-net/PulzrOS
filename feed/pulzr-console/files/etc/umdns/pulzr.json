@@ -1,0 +1,10 @@
+{
+	"pulzr-console": {
+		"service": "_https._tcp.local",
+		"port": 443,
+		"txt": [
+			"path=/",
+			"vendor=Pulzar"
+		]
+	}
+}

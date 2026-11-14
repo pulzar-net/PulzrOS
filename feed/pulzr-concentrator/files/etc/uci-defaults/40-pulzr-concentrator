@@ -1,0 +1,28 @@
+#!/bin/sh
+# Seed the concentrator section and run the first detection.
+
+# OpenWrt's prepare_rootfs runs every uci-defaults script during image
+# assembly, with IPKG_INSTROOT set and absolute paths resolving to the build
+# host. Guarded before anything else, including the board.conf source below —
+# that path would otherwise resolve to the runner's filesystem.
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+
+. /etc/pulzr/board.conf
+
+uci -q batch <<EOF
+set pulzr.concentrator=concentrator
+set pulzr.concentrator.status='unknown'
+set pulzr.lorawan=lorawan
+set pulzr.lorawan.region='${PULZR_LORA_REGION:-US915}'
+EOF
+uci commit pulzr
+
+# Detection at image-build time would record the *builder's* hardware, so this
+# only ever runs on the device, on first boot.
+/usr/sbin/pulzr-concentrator-detect >/dev/null 2>&1 || true
+
+# GNSS after the concentrator, not before: the probe skips any serial port a
+# concentrator has claimed, and it can only know which those are once the
+# concentrator slots are in UCI.
+/usr/sbin/pulzr-gps-detect >/dev/null 2>&1 || true
+exit 0

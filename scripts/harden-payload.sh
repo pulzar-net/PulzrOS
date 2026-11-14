@@ -20,12 +20,12 @@
 #               the same for UCI config files and the sshd config, whose
 #               comments are as much rationale as any script's.
 #   Lua         whole-line comments removed (strip-lua-comments.py). Only
-#               parkeze-rak-power is Lua, for its Modbus library; compiling it the
+#               pulzr-rak-power is Lua, for its Modbus library; compiling it the
 #               way ucode is would need luac at OpenWrt's exact Lua build,
 #               whose number patch changes the bytecode.
 #   *.md        removed. Nothing on a gateway reads them.
 #
-# Run by build-feed.sh for every package unless PARKEZE_DEV=1, so a bench image
+# Run by build-feed.sh for every package unless PULZR_DEV=1, so a bench image
 # keeps readable source and a release never does.
 
 set -euo pipefail

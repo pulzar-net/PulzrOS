@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# parkeze-uplinks, parkeze-dns, parkeze-ports and parkeze-lan against a JSON-backed uci, a fake netifd
+# pulzr-uplinks, pulzr-dns, pulzr-ports and pulzr-lan against a JSON-backed uci, a fake netifd
 # and a ping that answers out of the devices it is told to.
 #
 #   UCODE=/path/to/ucode scripts/test-router.sh
@@ -42,16 +42,16 @@ check() {
 
 # system()'s timeout argument hangs ucode on macOS; on the gateway it bounds a
 # dnsmasq reload, which the fixture does not have.
-sed -e "s#/var/run/parkeze/uplinks.json#${T}/uplinks.json#" \
+sed -e "s#/var/run/pulzr/uplinks.json#${T}/uplinks.json#" \
     -e 's#while (true) sleep(round() \* 1000);#for (let k = 0; k < int(getenv("ROUNDS")); k++) round();#' \
-    "${ROOT}/feed/parkeze-uplinks/files/usr/sbin/parkeze-uplinks" > "${T}/uplinks.uc"
-sed -e "s#/etc/parkeze/board.conf#${T}/board.conf#" \
+    "${ROOT}/feed/pulzr-uplinks/files/usr/sbin/pulzr-uplinks" > "${T}/uplinks.uc"
+sed -e "s#/etc/pulzr/board.conf#${T}/board.conf#" \
     -e "s#/tmp/resolv.conf.d/resolv.conf.auto#${T}/resolv#" \
     -e "s#'/etc/config/ddns'#'${T}/ddns.conf'#" \
     -e "s#'/var/run/ddns/'#'${T}/ddns-run/'#" \
     -e "s#'/var/log/ddns/'#'${T}/ddns-log/'#" \
     -e 's/, [0-9]*000)/)/' \
-    "${ROOT}/feed/parkeze-dns/files/usr/sbin/parkeze-dns" > "${T}/dns.uc"
+    "${ROOT}/feed/pulzr-dns/files/usr/sbin/pulzr-dns" > "${T}/dns.uc"
 grep -q 'getenv("ROUNDS")' "${T}/uplinks.uc" || { echo "FAIL the run loop moved; update this script" >&2; exit 1; }
 
 up()  { "${UCODE}" -R -L "${ROOT}/scripts/router-fixture/*.uc" -L "${MODULES}" "${T}/uplinks.uc" "$@"; }
@@ -66,7 +66,7 @@ cat > "${UCI_JSON}" <<'EOF'
              "wwan": {".type": "interface", ".name": "wwan", "metric": "20"},
              "usbwan": {".type": "interface", ".name": "usbwan", "metric": "21"},
              "devlan": {".type": "interface", ".name": "devlan"}},
- "parkeze": {"uplinks": {".type": "uplinks", ".name": "uplinks", "track": ["wan"],
+ "pulzr": {"uplinks": {".type": "uplinks", ".name": "uplinks", "track": ["wan"],
              "track_ip": ["1.1.1.1", "8.8.8.8"], "interval": "10", "down": "3", "up": "2"}}}
 EOF
 echo '{"wan": {"up": true, "l3_device": "eth0"}, "wwan": {"up": true, "l3_device": "wwan0"}, "usbwan": {"up": false}}' > "${NET_JSON}"
@@ -108,7 +108,7 @@ check "second answer: back in front" 'online ["10","20","30"]' "$(state wan) $(m
 
 up order wwan wan >/dev/null
 check "order: cellular first, the rest appended" '["20","10","30"]' "$(metrics)"
-check "order: saved as named" '["wwan","wan"]' "$(jq -c .parkeze.uplinks.order "${UCI_JSON}")"
+check "order: saved as named" '["wwan","wan"]' "$(jq -c .pulzr.uplinks.order "${UCI_JSON}")"
 up order wan wifi >/dev/null 2>&1 && r=0 || r=$?
 check "order: an uplink the gateway lacks is refused" '2' "${r}"
 up order wan wan >/dev/null 2>&1 && r=0 || r=$?
@@ -129,7 +129,7 @@ ROUNDS=3 up run
 check "offline again" 'offline' "$(state wan)"
 up track wan off >/dev/null
 check "tracking off: state dropped, metric back" 'none ["10","20","30"]' "$(state wan) $(metrics)"
-check "tracking off: none rather than the default" '"none"' "$(jq -c .parkeze.uplinks.track "${UCI_JSON}")"
+check "tracking off: none rather than the default" '"none"' "$(jq -c .pulzr.uplinks.track "${UCI_JSON}")"
 check "tracking off: Ethernet untracked" 'untracked' "$(up status | jq -r '.uplinks[0].state')"
 up track wwifi on >/dev/null 2>&1 && r=0 || r=$?
 check "track: the WiFi has its own check" '2' "${r}"
@@ -144,7 +144,7 @@ check "link down: shown as down, cellular carrying" 'down wwan' "$(up status | j
 
 # ── dns ─────────────────────────────────────────────────────────────────────
 
-printf 'PARKEZE_NET_URL="https://net.parkeze.com"\nPARKEZE_MQTT_HOST="mqtt.parkeze.com"\n' > "${T}/board.conf"
+printf 'PULZR_NET_URL="https://net.parkeze.com"\nPULZR_MQTT_HOST="mqtt.parkeze.com"\n' > "${T}/board.conf"
 printf '# Interface wan\nnameserver 192.168.1.1\n# Interface wwan\nnameserver 10.0.0.53\nnameserver 192.168.1.1\n' > "${T}/resolv"
 cat > "${UCI_JSON}" <<'EOF'
 {"dhcp": {"cfg01411c": {".type": "dnsmasq", ".name": "cfg01411c", "rebind_protection": "1",
@@ -162,7 +162,7 @@ check "upstream: custom, ahead of the per-domain server" \
     '{"server":["9.9.9.9","149.112.112.112","/lan.example/10.1.1.1"],"noresolv":"1","rebind_protection":"1","rebind_domain":null}' \
     "$(dnsmasq)"
 out="$(dns upstream 10.9.9.9 2>&1)" && r=0 || r=$?
-check "upstream: a server that cannot resolve Parkeze is refused" \
+check "upstream: a server that cannot resolve Pulzar is refused" \
     '3 no answer from 10.9.9.9 for mqtt.parkeze.com' "${r} ${out}"
 for bad in "1.2.3" "1.1.1.1 1.1.1.1" "1.1.1.1 2.2.2.2 3.3.3.3 4.4.4.4"; do
     # shellcheck disable=SC2086
@@ -180,14 +180,14 @@ check "hosts: a-b and a.b stay two names" \
     '["nas","nas-2.site","nas.2.site"]' "$(dns status | jq -c '[.hosts[].name]')"
 for bad in net.parkeze.com x.mqtt.PARKEZE.com parkeze.com; do
     out="$(dns host "${bad}" 1.2.3.4 2>&1)" && r=0 || r=$?
-    check "hosts: ${bad} is Parkeze's" "2 names under parkeze.com are Parkeze's" "${r} ${out}"
+    check "hosts: ${bad} is Pulzar's" "2 names under parkeze.com are Pulzar's" "${r} ${out}"
 done
 out="$(dns host plc-1 1.2.3.4 2>&1)" && r=0 || r=$?
 check "hosts: a reservation's name is refused" "3 plc-1 is a reservation's name" "${r} ${out}"
 dns host -bad 1.2.3.4 >/dev/null 2>&1 && r=0 || r=$?
 check "hosts: a label may not start with a hyphen" '2' "${r}"
 dns host evilparkeze.com 1.2.3.4 >/dev/null && r=0 || r=$?
-check "hosts: a lookalike is not Parkeze's" '0' "${r}"
+check "hosts: a lookalike is not Pulzar's" '0' "${r}"
 dns unhost nas >/dev/null
 dns unhost nas >/dev/null 2>&1 && r=0 || r=$?
 check "unhost: gone, and a second time refused" '3 ["evilparkeze.com","nas-2.site","nas.2.site"]' \
@@ -241,15 +241,15 @@ check "ddns off: disabled, the token kept" '"0" true' \
 # /etc/config); here only what a layout renders to, what is refused, and that
 # a confirm too soon is refused.
 
-sed -e "s#/etc/parkeze/board.conf#${T}/board.conf#" \
-    -e "s#'/etc/parkeze/ports'#'${T}/ports'#" \
+sed -e "s#/etc/pulzr/board.conf#${T}/board.conf#" \
+    -e "s#'/etc/pulzr/ports'#'${T}/ports'#" \
     -e "s#'/etc/config/'#'${T}/config/'#" \
-    "${ROOT}/feed/parkeze-base/files/usr/sbin/parkeze-ports" > "${T}/ports.uc"
-grep -q "${T}/ports'" "${T}/ports.uc" || { echo "FAIL parkeze-ports' state path moved; update this script" >&2; exit 1; }
+    "${ROOT}/feed/pulzr-base/files/usr/sbin/pulzr-ports" > "${T}/ports.uc"
+grep -q "${T}/ports'" "${T}/ports.uc" || { echo "FAIL pulzr-ports' state path moved; update this script" >&2; exit 1; }
 mkdir -p "${T}/ports" "${T}/config"
 ports() { "${UCODE}" -R -L "${ROOT}/scripts/router-fixture/*.uc" -L "${MODULES}" "${T}/ports.uc" "$@"; }
 
-printf 'PARKEZE_PORT_IFACE="wan"\nPARKEZE_LAN_PORTS="lan1 lan2"\nPARKEZE_DEVLAN_IPADDR="192.168.64.1"\n' > "${T}/board.conf"
+printf 'PULZR_PORT_IFACE="wan"\nPULZR_LAN_PORTS="lan1 lan2"\nPULZR_DEVLAN_IPADDR="192.168.64.1"\n' > "${T}/board.conf"
 cat > "${UCI_JSON}" <<'EOF'
 {"network": {"wan": {".type": "interface", ".name": "wan", "device": "wan", "proto": "static",
                      "ipaddr": "10.0.0.50", "netmask": "255.255.255.0", "gateway": "10.0.0.1", "metric": "10"},
@@ -261,7 +261,7 @@ cat > "${UCI_JSON}" <<'EOF'
              "devlan": {".type": "interface", ".name": "devlan", "device": "br-devlan"}},
  "firewall": {"wan": {".type": "zone", ".name": "wan", "network": "wan console linklocal wwifi"}},
  "dhcp": {"cfg01": {".type": "dnsmasq", ".name": "cfg01", "notinterface": "wan"}},
- "parkeze": {"uplinks": {".type": "uplinks", ".name": "uplinks", "track": ["wan"], "order": ["wan", "wwan"]}}}
+ "pulzr": {"uplinks": {".type": "uplinks", ".name": "uplinks", "track": ["wan"], "order": ["wan", "wwan"]}}}
 EOF
 
 ports seed
@@ -269,7 +269,7 @@ check "seed: the board's shape, keeping wan's static address" \
     '[["wan","uplink","static"],["lan1","devices","dhcp"],["lan2","devices","dhcp"]]' \
     "$(ports status | jq -c '[.ports[] | [.name, .role, .addressing.mode]]')"
 ports seed
-check "seed: a kept layout is left alone" '3' "$(jq '[.parkeze[] | select(.[".type"] == "port")] | length' "${UCI_JSON}")"
+check "seed: a kept layout is left alone" '3' "$(jq '[.pulzr[] | select(.[".type"] == "port")] | length' "${UCI_JSON}")"
 
 cat > "${T}/layout.json" <<'EOF'
 {"ports": [{"name": "wan", "role": "devices"},
@@ -292,9 +292,9 @@ check "set: the console moves to the first uplink port" '"lan1"' "$(jq -c .netwo
 check "set: the wan zone, WiFi kept" '"wan_lan1 wan_lan2 wan_lan2_20 console linklocal wwifi"' \
     "$(jq -c .firewall.wan.network "${UCI_JSON}")"
 check "set: dnsmasq stays off every uplink" '["lan1","lan2","lan2.20"]' "$(jq -c .dhcp.cfg01.notinterface "${UCI_JSON}")"
-check "set: new uplinks tracked, wan gone" '["wan_lan1","wan_lan2","wan_lan2_20"]' "$(jq -c .parkeze.uplinks.track "${UCI_JSON}")"
+check "set: new uplinks tracked, wan gone" '["wan_lan1","wan_lan2","wan_lan2_20"]' "$(jq -c .pulzr.uplinks.track "${UCI_JSON}")"
 check "set: new uplinks ordered ahead of cellular" '["wan_lan1","wan_lan2","wan_lan2_20","wwan"]' \
-    "$(jq -c .parkeze.uplinks.order "${UCI_JSON}")"
+    "$(jq -c .pulzr.uplinks.order "${UCI_JSON}")"
 check "set: pending, by whom" 'tester' "$(ports status | jq -r .pending.by)"
 check "set: logged, then reloaded" 'reload' "$(grep -x reload "${T}/events" | head -n1)"
 ports confirm >/dev/null 2>&1 && r=0 || r=$?
@@ -325,18 +325,18 @@ ports set "${T}/layout.json" >/dev/null
 check "back: wan is wan again, the board's port" '["wan","dhcp"]' "$(jq -c '.network.wan | [.device, .proto]' "${UCI_JSON}")"
 check "back: VLAN devices gone" '0' "$(jq '[.network[] | select(.type == "8021q")] | length' "${UCI_JSON}")"
 check "back: the console on wan" '"wan"' "$(jq -c .network.console.device "${UCI_JSON}")"
-check "back: uplinks that went are out of the order" '["wan","wwan"]' "$(jq -c .parkeze.uplinks.order "${UCI_JSON}")"
+check "back: uplinks that went are out of the order" '["wan","wwan"]' "$(jq -c .pulzr.uplinks.order "${UCI_JSON}")"
 
 # ── lan: exposed ports and cellular rules ───────────────────────────────────
 #
-# What parkeze-lan loads into its table (the nft fixture logs each script),
+# What pulzr-lan loads into its table (the nft fixture logs each script),
 # and what it refuses. That the kernel takes the rules is the bench's to show.
 
-sed -e "s#'/etc/parkeze/lan'#'${T}/lan'#" \
+sed -e "s#'/etc/pulzr/lan'#'${T}/lan'#" \
     -e "s#'/tmp/dhcp.leases'#'${T}/leases'#" \
     -e 's/, [0-9]*000)/)/' \
-    "${ROOT}/feed/parkeze-lan/files/usr/sbin/parkeze-lan" > "${T}/lan.uc"
-grep -q "${T}/lan'" "${T}/lan.uc" || { echo "FAIL parkeze-lan's state path moved; update this script" >&2; exit 1; }
+    "${ROOT}/feed/pulzr-lan/files/usr/sbin/pulzr-lan" > "${T}/lan.uc"
+grep -q "${T}/lan'" "${T}/lan.uc" || { echo "FAIL pulzr-lan's state path moved; update this script" >&2; exit 1; }
 lan() { "${UCODE}" -R -L "${ROOT}/scripts/router-fixture/*.uc" -L "${MODULES}" "${T}/lan.uc" "$@"; }
 lastload() { awk '/^# load/ { buf = ""; next } { buf = buf $0 "\n" } END { printf "%s", buf }' "${T}/nft.log"; }
 : > "${T}/nft.log"
@@ -345,7 +345,7 @@ cat > "${UCI_JSON}" <<'EOF'
 {"network": {"devlan": {".type": "interface", ".name": "devlan", "ipaddr": "192.168.64.1", "netmask": "255.255.255.0"},
              "devlan_dev": {".type": "device", ".name": "devlan_dev", "name": "br-devlan", "ports": ["lan1", "lan2"]}},
  "dhcp": {"lan_c26c1dd1f7b3": {".type": "host", ".name": "lan_c26c1dd1f7b3", "mac": "c2:6c:1d:d1:f7:b3", "ip": "192.168.64.50"}},
- "firewall": {}, "parkeze": {}}
+ "firewall": {}, "pulzr": {}}
 EOF
 cat > "${NET_JSON}" <<'EOF'
 {"wan": {"up": true, "l3_device": "wan", "ipv4-address": [{"address": "10.0.0.50", "mask": 24}]},
@@ -360,9 +360,9 @@ EOF
 lan apply
 check "links: wired and WiFi uplinks by device and address, never the console or cellular" \
     '"lan1" . 10.9.0.2, "phy0-sta0" . 192.168.1.40, "wan" . 10.0.0.50' \
-    "$(lastload | sed -n 's/^add element inet parkeze_lan uplink_in { \(.*\) }$/\1/p' | tr ',' '\n' | sed 's/^ //' | sort | paste -sd, - | sed 's/,/, /g')"
+    "$(lastload | sed -n 's/^add element inet pulzr_lan uplink_in { \(.*\) }$/\1/p' | tr ',' '\n' | sed 's/^ //' | sort | paste -sd, - | sed 's/,/, /g')"
 check "links: the cellular devices" '"usb0", "wwan0"' \
-    "$(lastload | sed -n 's/^add element inet parkeze_lan cellular_if { \(.*\) }$/\1/p' | tr ',' '\n' | sed 's/^ //' | sort | paste -sd, - | sed 's/,/, /g')"
+    "$(lastload | sed -n 's/^add element inet pulzr_lan cellular_if { \(.*\) }$/\1/p' | tr ',' '\n' | sed 's/^ //' | sort | paste -sd, - | sed 's/,/, /g')"
 
 refuse_lan() {
     local what="$1"; shift
@@ -379,33 +379,33 @@ refuse_lan "sctp" expose sctp 8080 192.168.64.50
 lan expose tcp 8080 192.168.64.50 80 >/dev/null
 lan expose udp 8554 192.168.64.50 >/dev/null
 check "expose: kept in UCI" '[["tcp","8080","192.168.64.50","80"],["udp","8554","192.168.64.50","8554"]]' \
-    "$(jq -c '[.parkeze | to_entries[] | select(.value[".type"] == "lan_expose") | .value | [.proto, .port, .ip, .dport]] | sort' "${UCI_JSON}")"
-check "expose: loaded into the map" 'add element inet parkeze_lan expose_to { tcp . 8080 : 192.168.64.50 . 80, udp . 8554 : 192.168.64.50 . 8554 }' \
-    "$(lastload | grep '^add element inet parkeze_lan expose_to')"
+    "$(jq -c '[.pulzr | to_entries[] | select(.value[".type"] == "lan_expose") | .value | [.proto, .port, .ip, .dport]] | sort' "${UCI_JSON}")"
+check "expose: loaded into the map" 'add element inet pulzr_lan expose_to { tcp . 8080 : 192.168.64.50 . 80, udp . 8554 : 192.168.64.50 . 8554 }' \
+    "$(lastload | grep '^add element inet pulzr_lan expose_to')"
 check "expose: journalled" 'expose' "$(tail -n1 "${T}/lan/forwards.log" | jq -r .op)"
 refuse_lan "moving a reservation an exposed port points at" reserve c2:6c:1d:d1:f7:b3 192.168.64.60
 refuse_lan "releasing it" unreserve c2:6c:1d:d1:f7:b3
 lan unexpose udp 8554 >/dev/null
-check "unexpose: gone from UCI and the map" 'add element inet parkeze_lan expose_to { tcp . 8080 : 192.168.64.50 . 80 }' \
-    "$(lastload | grep '^add element inet parkeze_lan expose_to')"
+check "unexpose: gone from UCI and the map" 'add element inet pulzr_lan expose_to { tcp . 8080 : 192.168.64.50 . 80 }' \
+    "$(lastload | grep '^add element inet pulzr_lan expose_to')"
 check "status: exposed and where" '[{"proto":"tcp","port":8080,"ip":"192.168.64.50","dport":80}] 3' \
     "$(lan status | jq -c '.exposed' | tr -d '\n') $(lan status | jq '.exposedOn | length')"
 
 lan policy c2:6c:1d:d1:f7:b3 internet >/dev/null
 lan cellular c2:6c:1d:d1:f7:b3 allow tcp:554 udp:5000-5010 >/dev/null
-check "cellular: blocked ports loaded" 'add element inet parkeze_lan cell_block { c2:6c:1d:d1:f7:b3 . tcp . 554, c2:6c:1d:d1:f7:b3 . udp . 5000-5010 }' \
-    "$(lastload | grep '^add element inet parkeze_lan cell_block')"
+check "cellular: blocked ports loaded" 'add element inet pulzr_lan cell_block { c2:6c:1d:d1:f7:b3 . tcp . 554, c2:6c:1d:d1:f7:b3 . udp . 5000-5010 }' \
+    "$(lastload | grep '^add element inet pulzr_lan cell_block')"
 lan cellular c2:6c:1d:d1:f7:b3 block >/dev/null
-check "cellular: blocked outright" 'add element inet parkeze_lan cell_deny { c2:6c:1d:d1:f7:b3 }' \
-    "$(lastload | grep '^add element inet parkeze_lan cell_deny')"
-check "cellular: no per-port blocks under an outright one" '' "$(lastload | grep '^add element inet parkeze_lan cell_block' || true)"
+check "cellular: blocked outright" 'add element inet pulzr_lan cell_deny { c2:6c:1d:d1:f7:b3 }' \
+    "$(lastload | grep '^add element inet pulzr_lan cell_deny')"
+check "cellular: no per-port blocks under an outright one" '' "$(lastload | grep '^add element inet pulzr_lan cell_block' || true)"
 lan policy c2:6c:1d:d1:f7:b3 parkeze >/dev/null
 check "policy back to parkeze keeps the cellular rule" '"block"' \
-    "$(jq -c '.parkeze.lan_c26c1dd1f7b3.cellular' "${UCI_JSON}")"
+    "$(jq -c '.pulzr.lan_c26c1dd1f7b3.cellular' "${UCI_JSON}")"
 check "status: the client's cellular rule" '"block" "parkeze"' \
     "$(lan status | jq -c '.clients[0].cellular' | tr -d '\n') $(lan status | jq -c '.clients[0].policy')"
 lan cellular c2:6c:1d:d1:f7:b3 allow >/dev/null
-check "cellular: back to the default drops the section" 'null' "$(jq -c '.parkeze.lan_c26c1dd1f7b3' "${UCI_JSON}")"
+check "cellular: back to the default drops the section" 'null' "$(jq -c '.pulzr.lan_c26c1dd1f7b3' "${UCI_JSON}")"
 refuse_lan "a block that is not tcp or udp" cellular c2:6c:1d:d1:f7:b3 allow icmp:1
 refuse_lan "a backwards range" cellular c2:6c:1d:d1:f7:b3 allow udp:10-5
 

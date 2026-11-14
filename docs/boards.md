@@ -12,7 +12,7 @@ Only what is genuinely different about the hardware:
 - board-specific kernel modules (`PACKAGES_BOARD`)
 - which GPIO the concentrator's reset and power-enable lines are on
 - whether the concentrator is fixed or has to be probed, and in what order
-- which features it has (`PARKEZE_FEATURES`, see [features.md](features.md))
+- which features it has (`PULZR_FEATURES`, see [features.md](features.md))
 - any default that differs (LAN address, region, whether ethernet WAN is on)
 
 Everything else — the console, the auth model, the network shape, tunnel
@@ -35,24 +35,24 @@ confinement, the LoRa stack — is shared and must not be duplicated.
    ```
 
 2. Add board-specific kernel modules to `PACKAGES_BOARD`, and set
-   `PARKEZE_FEATURES` to what the board is for. A feature's packages come with
+   `PULZR_FEATURES` to what the board is for. A feature's packages come with
    the word; `build.sh` refuses a word the board cannot back
    ([features.md](features.md)).
 
 3. Declare the concentrator slots. See `docs/concentrators.md` for the model:
 
    - **Fixed hardware** (a RAK unit, a CM carrier): list each slot explicitly,
-     e.g. `PARKEZE_CONCENTRATOR_SLOTS="spi:/dev/spidev0.0:17"`, and set
-     `PARKEZE_CONCENTRATOR_CONFIGURABLE="0"`.
-   - **A kit** (a Pi): `PARKEZE_CONCENTRATOR_SLOTS="auto"`. Every bus is
+     e.g. `PULZR_CONCENTRATOR_SLOTS="spi:/dev/spidev0.0:17"`, and set
+     `PULZR_CONCENTRATOR_CONFIGURABLE="0"`.
+   - **A kit** (a Pi): `PULZR_CONCENTRATOR_SLOTS="auto"`. Every bus is
      probed and everything stays operator-editable.
 
-4. Map the LEDs and the button. `PARKEZE_LED_*` take names from
+4. Map the LEDs and the button. `PULZR_LED_*` take names from
    `/sys/class/leds`, and the only reliable way to fill them in is to look on
-   the running board — `parkeze-led --list` prints both the map and what the
-   kernel actually exposes, and `parkeze-led --test` walks them so a wrong name
+   the running board — `pulzr-led --list` prints both the map and what the
+   kernel actually exposes, and `pulzr-led --test` walks them so a wrong name
    is obvious in ten seconds. A board with fewer LEDs simply leaves names
-   unset; `parkeze-io-daemon` folds their state into the ones that exist rather
+   unset; `pulzr-io-daemon` folds their state into the ones that exist rather
    than pretending the board has more lights than it does.
 
 5. Optionally add `boards/<id>/files/` for literal files to overlay. These win
@@ -63,7 +63,7 @@ confinement, the LoRa stack — is shared and must not be duplicated.
 ## Adding a concentrator, not a board
 
 Drop a JSON file into
-`feed/parkeze-concentrator/files/usr/share/parkeze/concentrator/`. That is the
+`feed/pulzr-concentrator/files/usr/share/pulzr/concentrator/`. That is the
 whole of it — the console's hardware menu is built by reading that directory,
 so a new profile appears as a selectable option with no UI change and no SPA
 rebuild.
@@ -85,10 +85,10 @@ why detection disagrees.
 |---|---|---|---|
 | `rpi3` | bcm27xx/bcm2710 | 1 slot, `auto` | Kit. Any bus. |
 | `rpi4` | bcm27xx/bcm2711 | 1 slot, `auto` | Kit. Any bus. |
-| `rpi5` | bcm27xx/bcm2712 | 1 slot, `auto` | Kit. GPIO is behind the RP1 — see `PARKEZE_GPIOCHIP`. |
+| `rpi5` | bcm27xx/bcm2712 | 1 slot, `auto` | Kit. GPIO is behind the RP1 — see `PULZR_GPIOCHIP`. |
 | `rak7268c` | ramips/mt76x8 | 1 slot, fixed SPI | **Unverified.** 8 channels. |
 | `rak7268cv2` | ramips/mt76x8 | 1 slot, fixed SPI | Harvested. ImageBuilder from Pulzr/openwrt-rak7268cv2. 8 channels. |
-| `rak7289cv2` | ramips/mt76x8 | 2 slots, fixed USB | **Supported.** Full ParkezeOS bench-confirmed on a single-radio unit (concentratord, 8 ch, GPS, adoption); two-slot structure ready, LoRa1/LoRa2 order to be confirmed on a dual-card Pro. 16 channels. Power-board watchdog and battery pack per ChirpStack's RAK support, not yet seen answering ([rak-power.md](rak-power.md)). ImageBuilder from Pulzr/openwrt-rak7289cv2. |
+| `rak7289cv2` | ramips/mt76x8 | 2 slots, fixed USB | **Supported.** Full PulzarOS bench-confirmed on a single-radio unit (concentratord, 8 ch, GPS, adoption); two-slot structure ready, LoRa1/LoRa2 order to be confirmed on a dual-card Pro. 16 channels. Power-board watchdog and battery pack per ChirpStack's RAK support, not yet seen answering ([rak-power.md](rak-power.md)). ImageBuilder from Pulzr/openwrt-rak7289cv2. |
 | `gl-sft1200` | siflower/sf19a2890 | none: a router | **Booted.** GL.iNet Opal, the router IP devices sit behind on its two LAN ports ([lan.md](lan.md)). ImageBuilder from Pulzr/openwrt-gl-sft1200. |
 
 The Pi boards share `boards/common/raspberrypi.conf` and the RAK boards share
@@ -106,7 +106,7 @@ that same shipping firmware rather than a fresh harvest — [Pulzr/openwrt-rak72
 built from [openwrt-device-template](https://github.com/Pulzr/openwrt-device-template).
 Its two radios are RAK5146 (SX1303) cards on **USB** (`/dev/lora0` and
 `/dev/lora1`, linked by hub port to whichever ttyACM each card gets), not SPI — the one hardware difference from the Lite. A bench
-run of the full `24.10.0-1` ParkezeOS image confirmed it boots as
+run of the full `24.10.0-1` PulzarOS image confirmed it boots as
 `rakwireless,rak7289cv2` with concentratord driving the SX1303 on
 `/dev/ttyACM0` (8 channels, gateway ID read off the hardware) and GNSS on
 `/dev/ttyS1`; the absent second card was reported as the partial state. It is
@@ -120,7 +120,7 @@ builds the 25.12.6 tree with siflower's 6.18 kernel grafted in, and an
 ImageBuilder that carries the kernel, every kmod and the target's own
 packages while installing the release's userland. `check-deps.sh` lists what
 that ImageBuilder has to supply. Its README is the board's hardware record and
-the harvest and recovery procedure. The harvested unit has booted ParkezeOS
+the harvest and recovery procedure. The harvested unit has booted PulzarOS
 0.3.5 on its 25.12.6-2: all three ports at 1 Gbps, DHCP and DNS on devlan,
 the console on the WAN port and the TUI on serial, warm and cold. Adoption,
 cellular and failover have not been seen on it; it had no uplink and no
@@ -193,6 +193,6 @@ its size rather than assume one.
 
 When we build our own board around a CM, it does **not** source
 `raspberrypi.conf`. At that point the hardware is ours and known, so it
-declares its slots explicitly and sets `PARKEZE_CONCENTRATOR_CONFIGURABLE="0"`
+declares its slots explicitly and sets `PULZR_CONCENTRATOR_CONFIGURABLE="0"`
 — the same shape as the RAK boards. `raspberrypi.conf` is specifically the
 "somebody plugged an unknown HAT into this" case.

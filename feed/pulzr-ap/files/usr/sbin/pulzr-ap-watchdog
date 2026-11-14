@@ -1,0 +1,107 @@
+#!/bin/sh
+#
+# Raise the setup AP when the gateway has been unreachable for a while, and
+# take it down again when it is not needed.
+#
+# ── THE TRADE THIS MAKES ───────────────────────────────────────────────────
+#
+# Without a fallback, a gateway that loses its uplink needs a ladder. With
+# one, an attacker can force the AP up by cutting or jamming the link.
+#
+# We take the fallback, because the attacker gains nothing by forcing it: on an
+# adopted gateway the AP is WPA2 with a per-unit key, and the portal behind it
+# still demands a signature from Pulzar Cloud. See pulzr-ap's header.
+#
+# What the fallback is careful about is *duration*. A gateway does not sit
+# broadcasting forever after a bad afternoon:
+#
+#   * it waits `fallback_after` seconds of confirmed unreachability first,
+#     so a thirty-second blip does not raise a radio;
+#   * it stays up for `window` seconds, then drops;
+#   * it comes down immediately if the backhaul returns;
+#   * and every raise is recorded, and reported to Pulzar Cloud when the
+#     gateway is next online — a gateway whose AP keeps appearing is telling
+#     you something, whether that is a flaky SIM or somebody standing in the
+#     car park with a jammer.
+#
+# An AP raised by the reset button is not the fallback, and the two switches
+# above do not apply to it: it was asked for by a finger on the unit, with the
+# master switch off by default (see pulzr-ap). The window and "down when an
+# uplink returns" do, and it is the one case that asks about every uplink. An
+# unattended fallback only wants to know that it can be managed; somebody who
+# has just joined WiFi from the AP wants it gone the moment that WiFi works,
+# and the tunnel may be minutes behind.
+
+. /etc/pulzr/board.conf
+
+STATE=/var/run/pulzr/ap
+JOURNAL=/etc/pulzr/ap/raises.log
+
+INTERVAL=60
+
+log() { logger -t ap-watchdog -p daemon.info "$*"; }
+
+offline_since=0
+
+while :; do
+    sleep "${INTERVAL}"
+
+    enabled="$(uci -q get pulzr.ap.enabled)"
+    fallback="$(uci -q get pulzr.ap.fallback)"
+    after="$(uci -q get pulzr.ap.fallback_after || echo 900)"
+    window="$(uci -q get pulzr.ap.window || echo 1800)"
+
+    button=0
+    check=""
+    if [ -f "${STATE}/button" ]; then
+        button=1
+        check=--any
+        /usr/sbin/pulzr-ap station-check
+    fi
+
+    # The master switch is off: never raise, and take down anything already up.
+    if [ "${enabled}" = "0" ] && [ "${button}" = 0 ]; then
+        [ -f "${STATE}/raised" ] && /usr/sbin/pulzr-ap down
+        offline_since=0
+        continue
+    fi
+
+    if pulzr-backhaul-check ${check} >/dev/null 2>&1; then
+        # Reachable. Nothing needs an AP.
+        if [ -f "${STATE}/raised" ] && [ "$(cat "${STATE}/manual" 2>/dev/null)" != "1" ]; then
+            log "backhaul is back; dropping the fallback AP"
+            /usr/sbin/pulzr-ap down
+        fi
+        offline_since=0
+        continue
+    fi
+
+    # Unreachable.
+    now="$(date +%s)"
+    [ "${offline_since}" = 0 ] && offline_since="${now}"
+
+    if [ -f "${STATE}/raised" ]; then
+        # Already up. Expire it if its window has passed, so a gateway in a
+        # dead spot is not a permanently open radio.
+        raised="$(cat "${STATE}/raised")"
+        if [ "${window}" -gt 0 ] && [ $(( now - raised )) -ge "${window}" ]; then
+            log "AP window expired after ${window}s; dropping it"
+            /usr/sbin/pulzr-ap down
+            # Reset the clock so it can rise again after another full
+            # fallback_after, rather than immediately.
+            offline_since="${now}"
+        fi
+        continue
+    fi
+
+    [ "${enabled}" = "0" ] && continue
+    [ "${fallback}" = "0" ] && continue
+    [ $(( now - offline_since )) -ge "${after}" ] || continue
+
+    log "unreachable for $(( now - offline_since ))s; raising the setup AP"
+    if /usr/sbin/pulzr-ap up "${window}"; then
+        mkdir -p "$(dirname "${JOURNAL}")"
+        printf '{"at":%s,"reason":"backhaul-lost","offlineSeconds":%s}\n' \
+            "${now}" "$(( now - offline_since ))" >> "${JOURNAL}"
+    fi
+done

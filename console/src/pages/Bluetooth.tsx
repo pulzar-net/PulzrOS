@@ -19,9 +19,9 @@ interface BluetoothStatus {
 }
 
 /**
- * Scanning for parking beacons beside the LoRaWAN radio (parkeze-ble), and the
- * switch for it. The same switch is on the gateway's page in parkeze.net; both
- * write parkeze.ble.enabled, so whichever was used last is what holds.
+ * Scanning for parking beacons beside the LoRaWAN radio (pulzr-ble), and the
+ * switch for it. The same switch is on the gateway's page in Pulzar Cloud; both
+ * write pulzr.ble.enabled, so whichever was used last is what holds.
  */
 export default function Bluetooth() {
   const queryClient = useQueryClient();

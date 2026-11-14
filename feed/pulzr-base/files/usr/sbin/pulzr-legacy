@@ -1,0 +1,134 @@
+#!/bin/sh
+#
+# Carry a gateway's state between the ParkezeOS names and the PulzrOS names.
+#
+#   pulzr-legacy forward   first boot of a PulzrOS image on a gateway that was
+#                          running ParkezeOS: bring its state to the new paths
+#   pulzr-legacy back      just before a sysupgrade: write the state to the old
+#                          paths as well, so a rollback to ParkezeOS finds it
+#
+# ── WHY THIS EXISTS ────────────────────────────────────────────────────────
+#
+# The paths were renamed (/etc/config/parkeze -> /etc/config/pulzr,
+# /etc/parkeze/ -> /etc/pulzr/) and a gateway in the field carries everything
+# that makes it that gateway under the old names: the claim identity and
+# secret, the WireGuard private key, the broker credentials, whether it is
+# adopted, the console password, the AP secret. An upgrade that left those
+# behind would hand the cloud a stranger. An upgrade is a sysupgrade, which
+# restores only what the running image's keep list names, so the old names
+# arrive on the new image and this moves them.
+#
+# ── WHICH COPY IS CURRENT ──────────────────────────────────────────────────
+#
+# Both sets stay on disk after a forward, because a rollback to the last
+# ParkezeOS image restores whatever the keep list saved and that image reads
+# the old names only. Two copies need a rule for which one is right:
+#
+#   /etc/parkeze/.synced-from-pulzr present  the new paths are current.
+#   absent                                   the old paths are current.
+#
+# `forward` and `back` write the marker. The marker is in this image's keep
+# list and NOT in ParkezeOS's, so a gateway that went back to ParkezeOS and
+# is upgraded again from there arrives without it, and whatever ParkezeOS
+# changed in the meantime wins over the stale new copy.
+#
+# board.conf and firmware.pub belong to the image (they say what it was built
+# as and which key it trusts) and are never copied either way. recovery.pub
+# is copied: the keep list has always let the key a gateway was adopted with
+# outlive the image's own.
+#
+# PULZR_ROOT prefixes every path, so scripts/test-legacy.sh can run this
+# against a fake root.
+
+R="${PULZR_ROOT:-}"
+OLD="${R}/etc/parkeze"
+NEW="${R}/etc/pulzr"
+OLD_CONF="${R}/etc/config/parkeze"
+NEW_CONF="${R}/etc/config/pulzr"
+MARK="${OLD}/.synced-from-pulzr"
+
+log() { logger -t pulzr-legacy -p daemon.info "$*" 2>/dev/null || true; }
+
+# Image-owned names: never moved in either direction.
+owned() {
+    case "$1" in
+        board.conf|firmware.pub|.synced-from-pulzr) return 0 ;;
+    esac
+    return 1
+}
+
+# copy <from> <to>: a file or a tree, replacing whatever is at <to>.
+# Written beside the target and renamed, so a power cut leaves the old file,
+# not half of the new one.
+copy() {
+    local from="$1" to="$2"
+    rm -rf "${to}.new"
+    cp -pR "${from}" "${to}.new" || { rm -rf "${to}.new"; return 1; }
+    rm -rf "${to}"
+    mv "${to}.new" "${to}"
+}
+
+# sync_dir <from-dir> <to-dir> [prune]: every entry of <from-dir> that is not
+# image-owned. With prune, also the removal of entries <to-dir> has that
+# <from-dir> does not, so the two end up the same. Forward does not prune: the
+# new tree holds files the image put there, which the old one never had.
+sync_dir() {
+    local from="$1" to="$2" prune="${3:-}" p name
+    mkdir -p "${to}" || return 1
+    for p in "${from}"/* "${from}"/.[!.]*; do
+        [ -e "${p}" ] || [ -L "${p}" ] || continue
+        name="${p##*/}"
+        owned "${name}" && continue
+        copy "${p}" "${to}/${name}" || return 1
+    done
+    [ -n "${prune}" ] || return 0
+    for p in "${to}"/* "${to}"/.[!.]*; do
+        [ -e "${p}" ] || [ -L "${p}" ] || continue
+        name="${p##*/}"
+        owned "${name}" && continue
+        [ -e "${from}/${name}" ] || [ -L "${from}/${name}" ] || rm -rf "${p}"
+    done
+}
+
+mark() {
+    mkdir -p "${OLD}" || return 1
+    date -u +%Y-%m-%dT%H:%M:%SZ > "${MARK}.new" && mv "${MARK}.new" "${MARK}"
+}
+
+case "${1:-}" in
+
+forward)
+    # Nothing under the old names: a fresh flash, or already moved.
+    [ -d "${OLD}" ] || [ -f "${OLD_CONF}" ] || exit 0
+    # The new paths were written by a PulzrOS that later ran `back`.
+    [ -e "${MARK}" ] && exit 0
+
+    if [ -f "${OLD_CONF}" ]; then
+        copy "${OLD_CONF}" "${NEW_CONF}" || exit 1
+    fi
+    if [ -d "${OLD}" ]; then
+        sync_dir "${OLD}" "${NEW}" || exit 1
+    fi
+    mark || exit 1
+    log "state moved from the ParkezeOS paths"
+    ;;
+
+back)
+    # A gateway that never had the old names and has nothing to give them.
+    [ -f "${NEW_CONF}" ] || [ -d "${NEW}" ] || exit 0
+
+    [ -f "${NEW_CONF}" ] && { copy "${NEW_CONF}" "${OLD_CONF}" || exit 1; }
+    if [ -d "${NEW}" ]; then
+        sync_dir "${NEW}" "${OLD}" prune || exit 1
+    fi
+    mark || exit 1
+    log "state written to the ParkezeOS paths for a possible rollback"
+    ;;
+
+*)
+    echo "usage: pulzr-legacy {forward|back}" >&2
+    exit 2
+    ;;
+esac
+
+exit 0

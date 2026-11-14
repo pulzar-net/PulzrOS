@@ -1,0 +1,25 @@
+#!/bin/sh
+#
+# The uplink order and tracking, left as they are on a re-run: a sysupgrade
+# keeps the order somebody chose at the gateway.
+
+# OpenWrt's prepare_rootfs runs every uci-defaults script during image
+# assembly, with IPKG_INSTROOT set. The build host's network is not this
+# gateway's.
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+
+if [ -z "$(uci -q get pulzr.uplinks)" ]; then
+    uci -q batch <<EOT
+set pulzr.uplinks=uplinks
+add_list pulzr.uplinks.track='wan'
+add_list pulzr.uplinks.track_ip='1.1.1.1'
+add_list pulzr.uplinks.track_ip='8.8.8.8'
+set pulzr.uplinks.interval='10'
+set pulzr.uplinks.down='3'
+set pulzr.uplinks.up='3'
+EOT
+    uci commit pulzr
+fi
+
+/etc/init.d/pulzr-uplinks enable
+exit 0

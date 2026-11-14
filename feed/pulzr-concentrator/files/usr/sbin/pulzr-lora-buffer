@@ -1,0 +1,312 @@
+#!/bin/sh
+#
+# Hold uplinks locally when they cannot be sent, and replay them when they can.
+#
+#   pulzr-lora-buffer render   write the broker's config, if enabled
+#   pulzr-lora-buffer status   JSON: enabled, running, bridge up, how much is queued
+#
+# It does not start anything. procd does, from pulzr-packet-forwarder, so
+# the broker is supervised and respawned like everything else in the LoRa
+# stack — and so there is exactly one thing that can start it. Two mechanisms
+# able to launch a broker is two brokers on one port, eventually.
+#
+# ── WHAT THIS IS FOR ───────────────────────────────────────────────────────
+#
+# Without it, "do not send uplinks over cellular" means dropping them: the
+# forwarder publishes to a broker it cannot reach and nothing on the gateway
+# keeps what it could not send. That makes the setting a loss rather than a
+# trade, which is not much of a choice to offer anybody.
+#
+# With it, the forwarder publishes to a broker on loopback that is always
+# there, and a bridge carries those messages out when there is a path. A wired
+# outage becomes a delay instead of a hole in the data.
+#
+# ── WHY A WHOLE BROKER ─────────────────────────────────────────────────────
+#
+# Because the forwarder has nowhere to put a message it cannot send —
+# chirpstack-mqtt-forwarder is a thin bridge between concentratord and MQTT,
+# with no store of its own, and no amount of configuration gives it one.
+#
+# A stock WisGateOS unit does run `mosquitto -c /tmp/mosquitto.generated.conf`
+# beside its packet forwarder, which is where this idea came from — but that
+# is not a RAK design decision. It is the OpenWrt mosquitto package's own init
+# script, which generates exactly that path and is enabled on install. RAK
+# built a Lua data-broker and SQLite on top of it for their integrations; the
+# broker underneath is stock. Worth stating plainly, because "the vendor does
+# this too" was doing more work as an argument than it had earned.
+#
+# ── THE DETAIL THAT DECIDES WHETHER IT WORKS ───────────────────────────────
+#
+# A mosquitto bridge does not queue QoS 0 messages. Not a flag we are leaving
+# off — a bridge only stores what it is obliged to deliver, and QoS 0 obliges
+# it to nothing. The forwarder publishes at QoS 0 by default, so pointing it
+# at a local broker and stopping there would buffer precisely nothing while
+# looking like it worked.
+#
+# So pulzr-lora-config publishes at QoS 1 when buffering is on. Over
+# loopback that costs an acknowledgement to a process on the same machine,
+# which is nothing, and it is what makes the queue exist.
+#
+# ── WHERE THE QUEUE LIVES ──────────────────────────────────────────────────
+#
+# In memory, written to an SD card during an outage: the RAK's card in its
+# slot, or the card a Pi boots from. Not on flash: a queue is written
+# continuously by definition, and a RAK's 32MB of soldered NOR is not
+# somewhere to do that. A gateway with no card does not buffer at all — see
+# persistence_dir.
+
+. /etc/pulzr/board.conf
+
+CONF=/var/run/pulzr/lora/mosquitto.conf
+
+# Not 1883. The mosquitto package ships its own /etc/init.d/mosquitto at
+# START=80, enabled, which binds 1883 before this service starts at 97 — so
+# our broker could not bind and the forwarder, pointed at 1883, connected to
+# the stock one instead. That broker has no bridge, so it accepted every
+# uplink and dropped it, while every status this gateway reports looked fine.
+#
+# A port nobody else uses removes the whole class of collision: if our broker
+# is not running, the forwarder fails to connect loudly instead of handing its
+# uplinks to a stranger. 35-pulzr-mosquitto disables the stock service too,
+# but that is defence in depth, not the fix — a port is the fix.
+PORT="${PULZR_LORA_BUFFER_PORT:-18831}"
+
+log() { logger -t lora-buffer -p daemon.info "$*"; }
+
+get() { uci -q get "$1" || true; }
+
+enabled() {
+    local set; set="$(get pulzr.lorawan.buffer)"
+    [ -n "${set}" ] || set="${PULZR_LORA_BUFFER:-0}"
+    [ "${set}" = "1" ]
+}
+
+# A card to keep the queue on, or nothing — and nothing means no buffer.
+#
+# The storage card first, if pulzr-storage found one and it is writable.
+# Checked rather than assumed: a card that has worn read-only is exactly the
+# case where writing a queue to it would fail continuously.
+#
+# Otherwise the disk the system runs from, if that is a card. That is a Pi:
+# it boots from its SD, and pulzr-storage will never offer that disk
+# because it will never mount, format or fill the system's own. Writing a
+# file into the running root is not that — it is what the overlay is for.
+# Told apart by filesystem rather than by board: a RAK's writable layer is
+# jffs2 or ubifs on its NOR and never matches, so a RAK with no card in the
+# slot gets no buffer, and a board nobody has tried yet still lands on the
+# right side.
+persistence_dir() {
+    local mount
+    if [ "$(get pulzr.storage.present)" = "1" ] && [ "$(get pulzr.storage.writable)" = "1" ]; then
+        mount="$(get pulzr.storage.mount)"
+        [ -d "${mount}" ] && { echo "${mount}/pulzr/queue"; return 0; }
+    fi
+    awk '($2 == "/" || $2 == "/overlay") && $3 ~ /^(ext4|f2fs|btrfs)$/ { found = 1 }
+         END { exit !found }' /proc/mounts 2>/dev/null || return 1
+    echo /srv/pulzr/queue
+}
+
+# Whether broker <pid> holds an established TCP connection to remote port
+# <port>, which is the bridge and nothing else: with buffering on, the
+# forwarder talks to loopback. Read from the kernel, not from the broker's
+# bridge notifications: mosquitto (2.0.20) publishes the local state as "0"
+# only on its first connect attempt, then "1" on each connect, and the "0" for
+# a drop is a will on the remote broker. Locally, a bridge that was up once
+# reads "1" through every outage after it. Lags a real drop by up to ~1.5x the
+# bridge keepalive (60s), until TCP gives up on a peer that has gone quiet.
+bridge_up() {
+    local pid="$1" port inodes
+    port="$(printf ':%04X' "$2")"
+    inodes=" $(ls -l "/proc/${pid}/fd" 2>/dev/null \
+        | sed -n 's/.*socket:\[\([0-9]*\)\].*/\1/p' | tr '\n' ' ')"
+    awk -v port="${port}" -v inodes="${inodes}" '
+        $4 == "01" && substr($3, length($3) - 4) == port && index(inodes, " " $10 " ") { up = 1 }
+        END { exit !up }' /proc/net/tcp /proc/net/tcp6 2>/dev/null
+}
+
+render() {
+    local host port user pass prefix eui queue persist region plan
+    host="$(get pulzr.mqtt.host)"; [ -n "${host}" ] || host="${PULZR_MQTT_HOST}"
+    port="$(get pulzr.mqtt.port)"; port="${port:-${PULZR_MQTT_PORT:-8883}}"
+    user="$(get pulzr.mqtt.username)"
+    pass="$(get pulzr.mqtt.password)"
+    eui="$(get pulzr.identity.gateway_eui)"
+
+    # The topic prefix has to be the one the forwarder actually publishes
+    # under, and that is not always in UCI: pulzr-lora-config falls back to
+    # the region plan's TOPIC_PREFIX, so this has to fall back the same way.
+    #
+    # Getting this wrong would not fail, which is why it is worth closing:
+    # the bridge would connect, authenticate, and sit there mapping topics
+    # nothing publishes to. Defensive rather than diagnosed — adoption does
+    # normally write this key, so on an adopted gateway the fallback should
+    # never be reached.
+    prefix="$(get pulzr.mqtt.topic_prefix)"
+    if [ -z "${prefix}" ]; then
+        region="$(get pulzr.lorawan.region)"; region="${region:-US915}"
+        plan="/usr/share/pulzr/region/${region}/region.conf"
+        # shellcheck disable=SC1090
+        [ -f "${plan}" ] && . "${plan}"
+        prefix="${TOPIC_PREFIX}"
+    fi
+    [ -n "${prefix}" ] || { log "no topic prefix for region ${region:-?}; refusing to bridge nothing"; return 1; }
+
+    [ -n "${host}" ] && [ -n "${eui}" ] || { log "not adopted; nothing to bridge to"; return 1; }
+
+    # No card, no buffer. A queue only in RAM is lost to the reboot or power
+    # cut that is the likeliest end of a long outage, and meanwhile it is a
+    # broker in the middle of the data path, so it is not worth running.
+    persist="$(persistence_dir)" || { log "no SD card to keep a queue on; uplinks go straight out"; return 1; }
+    mkdir -p "${persist}" 2>/dev/null
+
+    # Bounded, because an unbounded queue on a 128MB gateway is a way to run
+    # the box out of memory during exactly the outage it was meant to survive.
+    # ~10k uplinks is hours of a busy site and a few megabytes.
+    queue="$(get pulzr.lorawan.queue_messages)"; queue="${queue:-10000}"
+
+    mkdir -p "$(dirname "${CONF}")"
+    {
+        cat <<EOF
+# Generated by pulzr-lora-buffer. Edits here are lost on the next render.
+
+# Loopback only. This broker exists for one process on this machine; exposing
+# it on any other address would be an unauthenticated MQTT broker on whatever
+# network the gateway is plugged into.
+listener ${PORT} 127.0.0.1
+allow_anonymous true
+
+# To syslog, so the gateway log has it. Without this mosquitto writes to
+# stderr, procd is not capturing stderr for this instance, and the broker is
+# the one process in the LoRa stack that cannot say what is wrong with it —
+# which is precisely the position this was debugged from.
+#
+# The bridge subtypes are the point. A bridge that connects and then forwards
+# nothing looks identical from outside to one that is working, and these lines
+# are the only place the difference shows up.
+log_dest syslog
+log_type error
+log_type warning
+log_type notice
+log_type information
+connection_messages true
+EOF
+
+        # Never on a timer. It used to autosave every 30s, which rewrote the
+        # whole database to the card twice a minute for the life of the
+        # gateway, almost always to record an empty queue. The queue lives in
+        # RAM; `watch` writes it out only while the uplink is down, which is
+        # the only time a power cut could cost anything.
+        cat <<EOF
+persistence true
+persistence_location ${persist}/
+autosave_interval 0
+
+connection pulzr
+address ${host}:${port}
+remote_username ${user}
+remote_password ${pass}
+bridge_cafile /etc/ssl/certs/ca-certificates.crt
+bridge_insecure false
+
+# false, so the remote session survives a disconnect and the broker knows it
+# still owes those messages. With a clean session every reconnect would start
+# empty, which is the queue quietly not existing.
+cleansession false
+
+# Exactly the topics the gateway's own credentials are allowed to use, in the
+# directions they are allowed to use them — see mqtt-authorizer. A wildcard
+# bridge would try to carry traffic the ACL denies and spend the outage
+# retrying things that will never be accepted.
+topic ${prefix}/gateway/${eui}/event/# out 1
+topic ${prefix}/gateway/${eui}/state/# out 1
+topic ${prefix}/gateway/${eui}/command/# in 1
+
+max_queued_messages ${queue}
+
+# Off: they are published to the local broker, which nothing reads, and on a
+# metered link the bridge would also carry them out.
+notifications false
+EOF
+    } > "${CONF}"
+    chmod 0600 "${CONF}"
+}
+
+case "${1:-status}" in
+
+render)
+    # Removed on every path that is not a successful render, because the file
+    # is what everything else reads to decide whether buffering is really on:
+    # pulzr-lora-config points the forwarder at loopback by it, and
+    # pulzr-lora-route confines the bridge's port by it. /var/run is tmpfs,
+    # so a reboot clears it — but turning buffering off from the console is a
+    # restart, not a reboot, and last run's file would outlive the setting.
+    if ! enabled; then rm -f "${CONF}"; exit 1; fi
+    command -v mosquitto >/dev/null 2>&1 || {
+        log "mosquitto is not installed; uplinks will not be buffered"
+        rm -f "${CONF}"; exit 1
+    }
+    render || { rm -f "${CONF}"; exit 1; }
+    ;;
+
+status)
+    on=false; enabled && on=true
+    running=false
+    # Whether uplinks are leaving the gateway, which the forwarder cannot say
+    # when it publishes here: its own connection is to loopback, and that is
+    # up whenever this broker is. null when there is no broker to ask.
+    bridge=null
+    pid="$(pgrep -f "mosquitto -c ${CONF}" 2>/dev/null | head -n1)"
+    if [ -n "${pid}" ]; then
+        running=true
+        remote="$(get pulzr.mqtt.port)"; remote="${remote:-${PULZR_MQTT_PORT:-8883}}"
+        bridge=false; bridge_up "${pid}" "${remote}" && bridge=true
+    fi
+    # What is waiting, as of the broker's last write to the card. That is
+    # current during an outage, which is when anybody asks, and stale-but-small
+    # otherwise: `watch` writes only while the uplink is down. Its size is the
+    # only answer available without an admin interface the package does not
+    # build.
+    queued_bytes=0
+    if persist="$(persistence_dir)" && [ -f "${persist}/mosquitto.db" ]; then
+        queued_bytes="$(wc -c < "${persist}/mosquitto.db" 2>/dev/null || echo 0)"
+    fi
+    printf '{"enabled":%s,"running":%s,"bridgeUp":%s,"persistent":%s,"port":%s,"queuedBytes":%s}\n' \
+        "${on}" "${running}" "${bridge}" \
+        "$(persistence_dir >/dev/null 2>&1 && echo true || echo false)" \
+        "${PORT}" "${queued_bytes}"
+    ;;
+
+watch)
+    # The card is a last resort, not the queue. While the uplink is up the
+    # queue drains as fast as it fills and there is nothing worth keeping, so
+    # nothing is written. While it is down, SIGUSR1 has the broker write its
+    # database every <interval>, so a power cut mid-outage costs at most that
+    # much. Once it is back, one more write, a cycle later so the queue has
+    # drained: otherwise the card keeps the outage's queue, and the next boot
+    # replays it (the LNS drops the repeats by frame counter, but it is noise).
+    persistence_dir >/dev/null || exit 0
+    interval="$(get pulzr.lorawan.buffer_save_seconds)"; interval="${interval:-60}"
+    port="$(get pulzr.mqtt.port)"; port="${port:-${PULZR_MQTT_PORT:-8883}}"
+    was_up=1
+    while sleep "${interval}"; do
+        pid="$(pgrep -f "mosquitto -c ${CONF}" | head -n1)"
+        [ -n "${pid}" ] || continue
+        if bridge_up "${pid}" "${port}"; then
+            [ "${was_up}" = 1 ] && continue
+            log "uplink back; writing the drained queue to the card once"
+            was_up=1
+        else
+            [ "${was_up}" = 1 ] && log "uplink down; writing the queue to the card every ${interval}s"
+            was_up=0
+        fi
+        kill -USR1 "${pid}" 2>/dev/null
+    done
+    ;;
+
+*)
+    echo "usage: pulzr-lora-buffer {render|status|watch}" >&2
+    exit 2
+    ;;
+esac
+
+exit 0

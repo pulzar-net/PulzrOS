@@ -1,0 +1,10 @@
+Package: pulzr-cellular
+Provides: parkeze-cellular
+Replaces: parkeze-cellular
+Conflicts: parkeze-cellular
+Depends: pulzr-base, modemmanager, kmod-usb-net-qmi-wwan, ucode, curl
+Maintainer: Joseph Telaak <joseph@pulzr.net>
+Architecture: all
+Description: Cellular backhaul management and data frugality.
+ Brings up the modem, and keeps the gateway's own traffic on the metered link
+ to the minimum that still allows it to be managed.
