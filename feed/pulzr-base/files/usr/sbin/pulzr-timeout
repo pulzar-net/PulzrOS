@@ -1,0 +1,49 @@
+#!/bin/sh
+#
+#   pulzr-timeout <seconds> <command> [argument...]
+#
+# coreutils' `timeout` for an image that has none: this BusyBox is built
+# without the applet and there is no coreutils. Calling `timeout` anyway does
+# not fail loudly, it fails as "timeout: not found" inside a `$(...)` that is
+# allowed to come back empty, which is how the report's stats section went out
+# as `{}` on every gateway and GPS read nothing on every board.
+# scripts/check-commands.sh refuses a bare `timeout` in the feed.
+#
+# The command's output and exit status pass through. Past the limit it gets
+# TERM, then KILL a second later (a read blocked on a silent tty ignores
+# TERM), and the exit status is 124, as coreutils'. Its stdin is /dev/null: a
+# background job's, in a shell without job control.
+
+secs="${1:?seconds}"
+shift
+[ "$#" -gt 0 ] || { echo "usage: pulzr-timeout <seconds> <command> [argument...]" >&2; exit 125; }
+
+"$@" &
+pid=$!
+
+# The watcher looks once a second rather than sleeping the whole limit, so a
+# command that finishes early leaves nothing behind for longer than that, and
+# nobody has to signal it (a signal can land before a trap is set).
+(
+    waited=0
+    while kill -0 "${pid}" 2>/dev/null; do
+        if [ "${waited}" -ge "${secs}" ]; then
+            kill -TERM "${pid}" 2>/dev/null
+            sleep 1
+            kill -KILL "${pid}" 2>/dev/null
+            exit 0
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+) &
+
+# 2>/dev/null: the shell's "Terminated" notice for a command it killed would
+# land in the log looking like a fault, not a limit doing its job.
+wait "${pid}" 2>/dev/null
+status=$?
+
+case "${status}" in
+    137|143) exit 124 ;;
+esac
+exit "${status}"

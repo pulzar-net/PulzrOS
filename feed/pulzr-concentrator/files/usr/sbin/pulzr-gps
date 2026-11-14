@@ -100,7 +100,7 @@ read_receiver() {
 
     stty -F "${port}" "$(baud)" raw -echo 2>/dev/null || return 1
     # Long enough to catch a GGA and an RMC even at 1Hz with a slow start.
-    timeout 4 head -c 2048 "${port}" 2>/dev/null | parse_nmea
+    pulzr-timeout 4 head -c 2048 "${port}" 2>/dev/null | parse_nmea
 }
 
 emit() {

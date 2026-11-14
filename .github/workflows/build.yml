@@ -135,6 +135,9 @@ jobs:
       - name: Check printf arguments match their formats
         run: ./scripts/check-printf.sh
 
+      - name: Check no script calls a command the image lacks
+        run: ./scripts/check-commands.sh
+
       # The claim's revocation path and sshd's trust: shell that otherwise
       # only runs on a gateway, against stubs for everything it calls.
       - name: Claim, SSH setup and cellular watchdog logic

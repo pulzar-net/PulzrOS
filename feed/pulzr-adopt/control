@@ -2,7 +2,7 @@ Package: pulzr-adopt
 Provides: parkeze-adopt
 Replaces: parkeze-adopt
 Conflicts: parkeze-adopt
-Depends: ucode, ucode-mod-uci, curl, ca-bundle, openssl-util, qrencode, jsonfilter
+Depends: pulzr-base, ucode, ucode-mod-uci, curl, ca-bundle, openssl-util, qrencode, jsonfilter
 Maintainer: Joseph Telaak <joseph@pulzr.net>
 License: Apache-2.0
 Architecture: all

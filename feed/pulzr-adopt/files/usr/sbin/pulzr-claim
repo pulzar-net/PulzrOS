@@ -587,7 +587,7 @@ facts() {
 stats_facts() {
     local out
     command -v pulzr-report-stats >/dev/null 2>&1 || { echo '{}'; return; }
-    out="$(timeout 30 pulzr-report-stats 2>/dev/null)"
+    out="$(pulzr-timeout 30 pulzr-report-stats 2>/dev/null)"
     if [ -n "${out}" ] && echo "${out}" | jsonfilter -e '@' >/dev/null 2>&1; then
         echo "${out}"
     else

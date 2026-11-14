@@ -36,8 +36,11 @@ check() {
 stub() { printf '#!/bin/sh\n%s\n' "$2" > "${BIN}/$1"; chmod +x "${BIN}/$1"; }
 unstub() { rm -f "${BIN}/$1"; }
 
-# `timeout` is not on a Mac; the stub drops the limit and runs the command.
-stub timeout 'shift; exec "$@"'
+# The image has no `timeout`, so neither does this test: the stub fails the
+# way a gateway does. The stub that used to stand in for it passed every case
+# here while every real report sent `{}`.
+stub timeout 'echo "timeout: not found" >&2; exit 127'
+cp "${ROOT_DIR}/feed/pulzr-base/files/usr/sbin/pulzr-timeout" "${BIN}/pulzr-timeout"
 
 cat > "${BIN}/jsonfilter" <<'EOF'
 #!/usr/bin/env python3
@@ -88,7 +91,12 @@ full_board() {
     stub pulzr-lora-buffer 'echo "{\"enabled\":true,\"running\":true}"'
     stub mosquitto_sub 'echo 17'
     stub pulzr-modem-detect 'echo "{\"present\":true,\"kind\":\"qmi\",\"index\":0}"'
-    stub mmcli 'printf "modem.generic.state : connected\nmodem.signal.lte.rssi : -73.00\nmodem.signal.lte.rsrp : -101.00\n"'
+    # As mmcli answers: dBm only from --signal-get, and only once netifd has
+    # set a refresh rate (wwan's signalrate); plain -m has a percentage.
+    stub mmcli 'case "$*" in
+        *--signal-get*) printf "modem.signal.refresh.rate : 60\nmodem.signal.lte.rssi : -73.00\nmodem.signal.lte.rsrp : -101.00\n" ;;
+        *) printf "modem.generic.state : connected\nmodem.generic.signal-quality.value : 54\n" ;;
+    esac'
 }
 
 run() { sh "${STATS}" 2>/dev/null; }
@@ -136,9 +144,13 @@ unstub pulzr-uplinks
 stub df 'case "$3" in /overlay) exit 1 ;; esac; printf "Filesystem 1K-blocks Used Available Use%% Mounted on\n/dev/x 1000 700 300 70%% /\n"'
 check "no uplinks, root storage" '{"memoryUsedPercent":75.0,"storageUsedPercent":70}' "$(run)"
 
-# ── an LTE modem with no extended signal API has no cellular dBm ────────────
+# ── no refresh rate set: mmcli has no dBm, and a percentage is not one ──────
+# What Downey answered on 0.4.0-rc3 before wwan had a signalrate.
 full_board
-stub mmcli 'printf "modem.generic.state : connected\nmodem.generic.signal-quality.value : 80\n"'
+stub mmcli 'case "$*" in
+    *--signal-get*) printf "modem.signal.refresh.rate : 0\nmodem.signal.lte.rssi : --\nmodem.signal.lte.rsrp : --\n" ;;
+    *) printf "modem.generic.state : connected\nmodem.generic.signal-quality.value : 80\n" ;;
+esac'
 check "no dBm from a percentage" "" "$(run | grep -o '"cellular":-' || true)"
 # A HiLink dongle has no index to ask.
 stub pulzr-modem-detect 'echo "{\"present\":true,\"kind\":\"hilink\"}"'
