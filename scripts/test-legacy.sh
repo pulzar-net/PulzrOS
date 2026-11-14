@@ -127,7 +127,7 @@ check "the UCI file moved: /etc/config/pulzr is /etc/config/parkeze, byte for by
 for f in ${OLD_FILES}; do
     check "kept byte for byte: ${f}" same "${SANDBOX}/old-snapshot/${f}" "${R}/etc/pulzr/${f}"
 done
-check "the key file keeps its mode" test "$(stat -f %Lp "${R}/etc/pulzr/console/key.pem" 2>/dev/null || stat -c %a "${R}/etc/pulzr/console/key.pem")" = 600
+check "the key file keeps its mode" test "$(stat -c %a "${R}/etc/pulzr/console/key.pem" 2>/dev/null || stat -f %Lp "${R}/etc/pulzr/console/key.pem")" = 600
 check "the claim secret value is intact" grep -qx 'sample-claim-secret-0001' "${R}/etc/pulzr/claim/secret"
 check "the WireGuard private key is intact" grep -qx 'sample-wireguard-private-key=' "${R}/etc/pulzr/wireguard/private"
 check "the broker credentials are intact" grep -q "option password 'sample-broker-password'" "${R}/etc/config/pulzr"
