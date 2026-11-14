@@ -607,6 +607,7 @@ let commands = {
 
     policy: (mac, policy) => {
         mac = normalMac(mac) ?? die('a MAC address, like 00:11:22:33:44:55', 2);
+        // Compat: `parkeze` is the policy value the cloud sends and reads.
         (policy == 'parkeze' || policy == 'internet') || die('policy is parkeze or internet', 2);
         saveClient(mac, (s) => s.policy = policy == 'internet' ? policy : null);
         applyPolicy();

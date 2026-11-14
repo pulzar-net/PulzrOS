@@ -576,6 +576,7 @@ export interface LanClient {
   ip: string | null;
   hostname: string | null;
   reserved: string | null;
+  /** `parkeze` is the cloud's name for the Pulzar-only policy; it stays. */
   policy: 'parkeze' | 'internet';
   online: boolean;
   /** Unix seconds; DHCP contact, kept across reboots. */

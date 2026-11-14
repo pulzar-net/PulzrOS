@@ -57,6 +57,8 @@
 
 . /etc/pulzr/board.conf
 
+# Compat: the topic root is a wire contract with the broker's ACLs and the cloud's
+# subscriptions, and keeps its ParkezeOS spelling.
 TOPIC_ROOT="parkeze/gateway"
 STATE_DIR=/var/run/pulzr/mqtt
 # 60s, not 300s. Every ping is billed and this channel is idle almost always,

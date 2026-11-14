@@ -11,7 +11,7 @@
 # Every advertisement from a beacon it is told to listen for, at most one per
 # beacon per interval (the latest, with the best signal of the interval), as
 #
-#   parkeze/gateway/<eui>/ble/up
+#   parkeze/gateway/<eui>/ble/up   (compat: the topic root is a wire contract with the broker)
 #   {"time": 1791784502, "adverts": [{"mac": "BC5729049964", "rssi": -61,
 #                                     "data": "0201060303aafe..."}]}
 #

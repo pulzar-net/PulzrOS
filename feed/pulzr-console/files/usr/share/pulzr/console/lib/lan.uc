@@ -48,8 +48,9 @@ status = function() {
 setPolicy = function(req) {
     const mac = req.mac ?? '';
     if (!match(mac, MAC)) return { error: 'A MAC address, like 00:11:22:33:44:55.' };
+    // Compat: `parkeze` is the policy value the cloud sends and reads.
     if (req.policy != 'parkeze' && req.policy != 'internet')
-        return { error: 'Policy is pulzr or internet.' };
+        return { error: 'Policy is parkeze or internet.' };
     return lan(['policy', mac, req.policy]);
 };
 

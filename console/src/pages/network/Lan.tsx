@@ -38,8 +38,9 @@ import own from './Lan.module.css';
  */
 
 const POLICIES: { value: LanClient['policy']; label: string }[] = [
-  // `pulzr` is the stored value from before the rename: Pulzar Cloud's own
-  // servers (HTTPS and MQTT), NTP and the gateway's DNS, nothing else.
+  // Compat: `parkeze` is the policy value the cloud sends and reads; it stays.
+  // It means Pulzar Cloud's own servers (HTTPS and MQTT), NTP and the
+  // gateway's DNS, nothing else.
   { value: 'parkeze', label: 'Pulzar Cloud' },
   { value: 'internet', label: 'Internet' },
 ];
