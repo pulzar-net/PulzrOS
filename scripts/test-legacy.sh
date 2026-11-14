@@ -220,8 +220,12 @@ check "fleet adoption key is the same key, byte for byte" \
 
 STAGE="${SANDBOX}/stage"
 bash "${ROOT_DIR}/scripts/build-feed.sh" "${ROOT_DIR}/feed" "${STAGE}" 0.0.1 1 >/dev/null 2>&1
+# Packages ParkezeOS never shipped have no old name to answer for. Listed by
+# hand, so a renamed package cannot drop out of this check by accident.
+NEW_IN_PULZROS="pulzr-edge"
 for dir in "${ROOT_DIR}"/feed/pulzr-*/; do
     n="$(basename "${dir}")"; old="parkeze-${n#pulzr-}"
+    case " ${NEW_IN_PULZROS} " in *" ${n} "*) continue ;; esac
     info="$(tar -xOf "${STAGE}/${n}_noarch.tar" ./info 2>/dev/null)"
     check "${n} provides ${old}"  grep -q "^provides:${old}=" <<<"${info}"
     check "${n} replaces ${old}"  grep -q "^replaces:${old}\$" <<<"${info}"
