@@ -700,7 +700,9 @@ jobs:
   release:
     name: Release
     if: startsWith(github.ref, 'refs/tags/')
-    needs: [image, addons]
+    # Not the add-ons: they publish to their own bucket, and a firmware fix
+    # must never wait on, or be blocked by, an add-on that failed to build.
+    needs: [image]
     runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
     permissions:
       contents: write
