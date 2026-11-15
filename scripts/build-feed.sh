@@ -26,7 +26,9 @@
 # Depends, and its executable `fetch <arch> <root> <cache>` adds the payload.
 #
 # A package with an `addon` file is an add-on: it stays out of the images'
-# package lists and is published by scripts/build-addons.sh instead.
+# package lists (except a board's PULZR_ADDONS_BUILTIN) and is published by
+# scripts/build-addons.sh instead. pulzr-base carries what scripts/addon-index.sh
+# generates from those files.
 
 set -euo pipefail
 
@@ -81,6 +83,12 @@ package_one() {
 
   # The package's rootfs is everything under files/.
   [ -d "${pkgdir}/files" ] && cp -a "${pkgdir}/files/." "${stage}/data/"
+
+  # What this release's add-ons are, for the gateway to decide with, and their
+  # keep.d merged, so their settings outlive them. See addon-index.sh.
+  if [ "${name}" = pulzr-base ]; then
+    "$(dirname "$0")/addon-index.sh" "${FEED_DIR}" "${stage}/data"
+  fi
 
   # A release ships our code without its source commentary: ucode compiled,
   # shell comments dropped. Before fetch, so upstream binaries are left alone.

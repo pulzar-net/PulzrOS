@@ -1,0 +1,16 @@
+#!/bin/sh
+#
+# The add-ons this gateway wants and the capabilities it refuses, in a config
+# of their own (see pulzr-addon). Not in /etc/config/pulzr: pulzr-edge restarts
+# on every change to that one, and an add-on write must not restart a daemon.
+# An upgrade keeps the file, so this only creates it.
+
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+
+[ "$(uci -q get pulzr_addons.main)" = "addons" ] && exit 0
+touch /etc/config/pulzr_addons
+uci -q batch <<UCI
+set pulzr_addons.main=addons
+commit pulzr_addons
+UCI
+exit 0

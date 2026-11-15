@@ -4,7 +4,8 @@
 #
 #   pulzr-firmware status              JSON: state, versions, what is stashed
 #   pulzr-firmware pending <img> [who] record an upgrade about to be applied
-#   pulzr-firmware confirm             this boot is healthy; keep it
+#   pulzr-firmware confirm             this boot is healthy; keep it, and
+#                                      restore the add-ons (pulzr-addon)
 #   pulzr-firmware rollback-target     print the image to flash to go back
 #
 # ── WHY THERE IS A JOURNAL AT ALL ──────────────────────────────────────────
@@ -173,6 +174,11 @@ confirm)
         "confirmed_at=$(now)" \
         "attempts=0"
     log "upgrade to ${PULZR_VERSION:-unknown} confirmed healthy"
+    # The upgrade dropped every installed add-on with the old overlay. They go
+    # back now that this firmware is kept, and not before: an add-on must
+    # never be what a firmware's health gate judges. In the background, since
+    # the gate is waiting on this and a restore downloads. See pulzr-addon.
+    [ -x /usr/sbin/pulzr-addon ] && ( /usr/sbin/pulzr-addon restore --retry >/dev/null 2>&1 & )
     ;;
 
 # ── is this image ours ──────────────────────────────────────────────────────

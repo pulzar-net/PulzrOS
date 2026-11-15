@@ -1,0 +1,860 @@
+#!/usr/bin/ucode
+// Install and remove the add-ons this release offers, and put them back after
+// an upgrade.
+//
+//   pulzr-addon status [--brief]       JSON: wanted, denied, each add-on's state;
+//                                        --brief is the report's and MQTT's
+//   pulzr-addon start install|remove <name> <issuer> [--purge]
+//                                      refuse at once or run it in the
+//                                        background (the console API)
+//   pulzr-addon install <name> <issuer>
+//   pulzr-addon remove <name> <issuer> [--purge]
+//   pulzr-addon restore [--retry]      install whatever is wanted and missing;
+//                                        --retry backs off while it cannot
+//   pulzr-addon deny <issuer> <reason> <cap>...
+//                                      refuse these capabilities from now on
+//   pulzr-addon undeny <cap>...        take a refusal back; a root shell only
+//
+// ── WHAT AN ADD-ON IS ──────────────────────────────────────────────────────
+//
+// A package from feed/ with an `addon` file, built into a signed apk
+// repository per release and architecture (scripts/build-addons.sh) at
+// PULZR_ADDONS_URL/v<version>/<arch>/. The gateway never chooses a version:
+// the URL is built from the firmware it runs, and every add-on depends on
+// exactly this release's pulzr-base, so apk itself refuses one built for any
+// other. What the platform sends is a name.
+//
+// apk checks the index's signature against /etc/apk/keys/pulzr-addons.pem and
+// each package's hash against the index. The catalog beside it (addons.json)
+// is display data and is not signed; the sha256 it gives each file is checked
+// only so a damaged download is thrown away before apk sees it.
+//
+// ── THE DENY LIST ──────────────────────────────────────────────────────────
+//
+// pulzr_addons.main.deny holds capability words (modbus). An add-on that
+// brings one, asked for by name or pulled in as somebody else's dependency, is
+// refused by install and by restore alike, so a `wanted` edited by hand cannot
+// bring it back either. What each add-on brings is read from
+// /usr/share/pulzr/addons.caps, which came with this firmware, never from the
+// downloaded catalog. This is the gateway's half of USC PTS's Osborne never
+// getting Modbus; Pulzar Net holds the other half and writes this list back
+// if a factory reset wipes it. Nothing reachable remotely takes a deny away:
+// `undeny` is for somebody with a root shell.
+//
+// ── IS THE GATEWAY STILL ALL RIGHT ─────────────────────────────────────────
+//
+// An add-on is root code. Before installing one the gateway must pass its own
+// health check (pulzr-health-gate --check: sshd, backhaul, an authenticated
+// report), or there would be nothing to judge the result against. After it,
+// the same check must pass again within five minutes, or the add-on is
+// stopped, removed and recorded as reverted. Whether the add-on itself works
+// (its addon-health script: ok, idle, failing) is reported and never acted on:
+// a wrong baud rate is a setting to fix, not a reason to uninstall.
+//
+// The firmware's own gate never looks at add-ons. A restore runs only after
+// pulzr-firmware confirm, so a broken add-on cannot roll back good firmware.
+//
+// ── COST ───────────────────────────────────────────────────────────────────
+//
+// pulzr-edge is about 1.6 MB of .apk on mipsel, plus a few KB of catalog and
+// index each time. Downloads go to the card when there is one and resume
+// (curl -C -) where a cut-off one stopped, so a cellular link that drops half
+// way does not pay for the first half twice.
+
+let fs = require('fs');
+let uci = require('uci');
+
+// Everything the gateway's files are found under: '' on a gateway, a scratch
+// directory under scripts/test-addon.sh.
+const ROOT = '';
+
+const BOARD_CONF = ROOT + '/etc/pulzr/board.conf';
+const CAPS = ROOT + '/usr/share/pulzr/addons.caps';
+const CONFIG = ROOT + '/etc/config/pulzr_addons';
+const JOURNAL_DIR = ROOT + '/etc/pulzr/addons';
+const JOURNAL = JOURNAL_DIR + '/journal';
+const RUN_DIR = ROOT + '/var/run/pulzr';
+const LOCK = RUN_DIR + '/addon.lock';
+const LOOP = RUN_DIR + '/addon-restore.pid';
+const HEALTH_DIR = ROOT + '/usr/libexec/pulzr/addon-health';
+const PKG = 'pulzr_addons';
+
+const NAME = /^[a-z0-9-]{1,40}$/;
+const CAP = /^[a-z0-9-]{1,40}$/;
+
+// The add-on gate: settle, then check every EVERY seconds for WINDOW.
+const SETTLE = 60, EVERY = 30, WINDOW = 300;
+// A restore that could not finish tries again after 15 minutes, doubling to
+// six hours: a gateway offline for a day should not spend its first minutes
+// back on forty attempts.
+const BACKOFF_FIRST = 900, BACKOFF_MAX = 21600;
+// Room an install leaves on the overlay beyond what the add-on takes.
+const SPARE = 2 * 1024 * 1024;
+const JOURNAL_KEEP = 200;
+// A lock taken by `start` for the job it is about to spawn counts as held for
+// this long, so the job can take it over before anybody else reads it stale.
+const LOCK_GRACE = 15;
+
+// Exit codes: 2 a bad request, 3 refused, 75 a restore that should be tried
+// again, 1 anything else.
+const REFUSED = 3, AGAIN = 75;
+
+let die = (msg, code) => {
+    warn(msg, '\n');
+    exit(code ?? 1);
+};
+
+let log = (msg) => system(['logger', '-t', 'addon', '-p', 'daemon.notice', msg]);
+
+let now = () => {
+    let t = gmtime();
+    return sprintf('%04d-%02d-%02dT%02d:%02d:%02dZ', t.year, t.mon, t.mday, t.hour, t.min, t.sec);
+};
+
+// A command and its arguments, each quoted, so nothing in an argument is
+// read by the shell. Its output with stderr, trimmed, and its exit code.
+let quote = (s) => "'" + replace('' + s, /'/g, "'\\''") + "'";
+let run = (argv) => {
+    let proc = fs.popen(join(' ', map(argv, quote)) + ' 2>&1', 'r');
+    if (!proc) return { code: 127, out: '' };
+    let out = proc.read('all') ?? '';
+    return { code: proc.close(), out: trim(out) };
+};
+
+let readJson = (path, fallback) => {
+    try { return json(fs.readfile(path) ?? 'null') ?? fallback; } catch (e) { return fallback; }
+};
+
+// The pid of this process: the parent of the shell popen starts.
+let self = () => {
+    let proc = fs.popen('echo $PPID', 'r');
+    let pid = trim(proc?.read('all') ?? '');
+    proc?.close();
+    return pid;
+};
+
+let alive = (pid) => !!(pid && match('' + pid, /^[0-9]+$/) && run(['kill', '-0', '' + pid]).code == 0);
+
+// Who asked, as a journal and a log can carry it: a session subject, an
+// address at most.
+let clean = (s) => substr(replace(s ?? '', /[^A-Za-z0-9._@+-]/g, ''), 0, 80) || 'unknown';
+
+let list = (v) => type(v) == 'array' ? v : (v != null && v != '' ? [v] : []);
+
+// ── what this firmware is ──────────────────────────────────────────────────
+
+// /etc/pulzr/board.conf, read the way the console reads it (lib/system.uc):
+// it is shell, and sourcing it is not something a parser does.
+let board = () => {
+    let out = {};
+    for (let line in split(fs.readfile(BOARD_CONF) ?? '', '\n')) {
+        let m = match(trim(line), /^([A-Za-z_][A-Za-z0-9_]*)='?([^']*)'?$/);
+        if (m) out[m[1]] = m[2];
+    }
+    return out;
+};
+
+let builtins = () => filter(split(board().PULZR_ADDONS_BUILTIN ?? '', ' '), (w) => length(w) > 0);
+
+// This release's add-ons, from addons.caps (scripts/addon-index.sh).
+let release = () => {
+    let out = {};
+    for (let line in split(fs.readfile(CAPS) ?? '', '\n')) {
+        if (!length(line) || substr(line, 0, 1) == '#') continue;
+        let f = split(line, '\t');
+        if (length(f) < 5 || !match(f[0], NAME)) continue;
+        out[f[0]] = {
+            feature: f[1] == '-' ? null : f[1],
+            upstream: f[2] == '-' ? null : f[2],
+            caps: filter(split(f[3], ' '), (c) => length(c) > 0),
+            title: f[4],
+            keep: filter(split(f[5] ?? '', ' '), (p) => length(p) > 0),
+        };
+    }
+    return out;
+};
+
+let title = (rel, name) => rel[name]?.title ?? name;
+
+let arch = () => {
+    let r = run(['apk', '--print-arch']);
+    return r.code == 0 && match(r.out, /^[A-Za-z0-9_-]+$/) ? r.out : null;
+};
+
+let tag = (b) => 'v' + (b.PULZR_VERSION ?? 'unknown');
+
+// The repository for this firmware: PULZR_ADDONS_URL, or the url staff set on
+// a bench unit, then the tag. A bench build (-dev) has no published one.
+let repoUrl = (b) => {
+    let base = uci.cursor().get(PKG, 'main', 'url') ?? b.PULZR_ADDONS_URL ?? '';
+    base = replace(base, /\/+$/, '');
+    return match(base, /^https?:\/\/[A-Za-z0-9._~:\/%-]+$/) ? base + '/' + tag(b) : null;
+};
+
+let firmwarePending = () => {
+    let r = run(['pulzr-firmware', 'status']);
+    try { return json(r.out)?.state == 'pending'; } catch (e) { return false; }
+};
+
+// ── what the gateway wants ─────────────────────────────────────────────────
+
+let conf = () => uci.cursor().get_all(PKG, 'main') ?? {};
+let wanted = () => list(conf().wanted);
+let denied = () => list(conf().deny);
+
+let ensureConfig = () => {
+    if (!fs.access(CONFIG)) fs.writefile(CONFIG, '');
+    let c = uci.cursor();
+    if (c.get(PKG, 'main') != 'addons') { c.set(PKG, 'main', 'addons'); c.commit(PKG); }
+};
+
+let setList = (option, values) => {
+    let c = uci.cursor();
+    if (length(values)) c.set(PKG, 'main', option, values);
+    else c.delete(PKG, 'main', option);
+    c.commit(PKG);
+};
+
+let want = (name) => {
+    let w = wanted();
+    if (!(name in w)) { push(w, name); setList('wanted', w); }
+};
+
+let unwant = (name) => {
+    let w = wanted();
+    if (name in w) setList('wanted', filter(w, (n) => n != name));
+};
+
+// One section per add-on with its last state, named for it: a UCI section
+// name has no hyphen, and an add-on name has no underscore.
+let sid = (name) => replace(name, /-/g, '_');
+
+let recorded = (name) => {
+    let s = uci.cursor().get_all(PKG, sid(name));
+    return s?.name == name ? s : null;
+};
+
+let record = (name, state, error) => {
+    let c = uci.cursor();
+    c.set(PKG, sid(name), 'addon');
+    c.set(PKG, sid(name), 'name', name);
+    c.set(PKG, sid(name), 'state', state);
+    c.set(PKG, sid(name), 'since', now());
+    if (error) c.set(PKG, sid(name), 'error', error);
+    else c.delete(PKG, sid(name), 'error');
+    c.commit(PKG);
+};
+
+let forget = (name) => {
+    let c = uci.cursor();
+    if (c.get(PKG, sid(name))) { c.delete(PKG, sid(name)); c.commit(PKG); }
+};
+
+// Kept under /etc/pulzr/addons, which survives upgrades, so who installed
+// what is still known after the firmware that did it is gone.
+let journal = (entry) => {
+    run(['mkdir', '-p', JOURNAL_DIR]);
+    let lines = filter(split(fs.readfile(JOURNAL) ?? '', '\n'), (l) => length(l) > 0);
+    push(lines, sprintf('%J', { at: now(), ...entry }));
+    if (length(lines) > JOURNAL_KEEP) lines = slice(lines, length(lines) - JOURNAL_KEEP);
+    fs.writefile(JOURNAL + '.new', join('\n', lines) + '\n');
+    fs.rename(JOURNAL + '.new', JOURNAL);
+};
+
+let report = () => run(['pulzr-claim', 'report']);
+
+// ── one job at a time ──────────────────────────────────────────────────────
+//
+// A directory, as pulzr-adopt's check lock is, holding who has it. /var/run
+// is RAM, so a reboot frees it; a job that was killed is noticed by its pid.
+
+let held = () => {
+    let job = readJson(LOCK + '/job', null);
+    if (!fs.stat(LOCK)) return null;
+    if (!job) return { action: 'starting' };
+    if (alive(job.pid) || time() - (job.at ?? 0) < LOCK_GRACE) return job;
+    return null;
+};
+
+let writeLock = (what) => {
+    fs.writefile(LOCK + '/job.new', sprintf('%J', { ...what, pid: self(), at: time(), since: now() }));
+    fs.rename(LOCK + '/job.new', LOCK + '/job');
+};
+
+let lock = (what) => {
+    run(['mkdir', '-p', RUN_DIR]);
+    for (let i = 0; i < 2; i++) {
+        if (fs.mkdir(LOCK)) { writeLock(what); return true; }
+        if (held()) return false;
+        fs.unlink(LOCK + '/job');
+        fs.rmdir(LOCK);
+    }
+    return false;
+};
+
+// A job `start` spawned takes over the lock `start` took for it.
+let adopt = (what) => {
+    if (fs.stat(LOCK)?.type == 'directory') { writeLock(what); return true; }
+    return lock(what);
+};
+
+let unlock = () => {
+    fs.unlink(LOCK + '/job');
+    fs.rmdir(LOCK);
+};
+
+// ── apk ────────────────────────────────────────────────────────────────────
+
+// Only the downloaded index: the upstream feeds are neither needed nor wanted,
+// and on a SIM an index refresh nobody asked for is a bill.
+let repo = (index) => ['--no-interactive', '--no-cache', '--repositories-file', '/dev/null',
+                       '--repository', index];
+
+let installed = (name) => {
+    let r = run(['apk', 'list', '--installed', name]);
+    if (r.code != 0) return null;
+    for (let line in split(r.out, '\n')) {
+        let first = split(trim(line), ' ')[0] ?? '';
+        if (substr(first, 0, length(name) + 1) != name + '-') continue;
+        let version = substr(first, length(name) + 1);
+        if (match(version, /^[0-9]/)) return version;
+    }
+    return null;
+};
+
+// What the package put on the gateway, as absolute paths.
+let owned = (name) => {
+    let r = run(['apk', 'info', '-L', name]);
+    if (r.code != 0) return [];
+    let out = [];
+    for (let line in split(r.out, '\n')) {
+        line = trim(line);
+        if (!length(line) || match(line, / contains:$/)) continue;
+        push(out, substr(line, 0, 1) == '/' ? line : '/' + line);
+    }
+    return out;
+};
+
+let services = (files) => {
+    let out = [];
+    for (let f in files) {
+        let m = match(f, /^\/etc\/init\.d\/([A-Za-z0-9._-]+)$/);
+        if (m) push(out, m[1]);
+    }
+    return out;
+};
+
+// apk's own words for why, which say more than any paraphrase: the first
+// ERROR line, or its last line.
+let apkError = (out) => {
+    let lines = split(out, '\n');
+    for (let l in lines) if (match(l, /^ERROR: /)) return substr(l, 7);
+    return lines[length(lines) - 1] ?? 'apk failed';
+};
+
+// ── the gate ───────────────────────────────────────────────────────────────
+
+let healthy = () => run(['pulzr-health-gate', '--check']).code == 0;
+
+let judged = () => {
+    sleep(SETTLE * 1000);
+    let deadline = time() + WINDOW;
+    while (true) {
+        if (healthy()) return true;
+        if (time() >= deadline) return false;
+        sleep(EVERY * 1000);
+    }
+};
+
+let health = (name) => {
+    let path = HEALTH_DIR + '/' + name;
+    if (!fs.access(path, 'x')) return null;
+    let code = run(['pulzr-timeout', '5', path]).code;
+    return code == 0 ? 'ok' : (code == 2 ? 'idle' : 'failing');
+};
+
+// What image assembly does for a package and a runtime `apk add` does not:
+// build-feed packages carry no install scripts. Its uci-defaults run once and
+// go, as at first boot; its services are enabled and started.
+let activate = (name) => {
+    for (let f in owned(name)) {
+        if (!match(f, /^\/etc\/uci-defaults\/[A-Za-z0-9._-]+$/) || !fs.access(ROOT + f)) continue;
+        if (run(['sh', ROOT + f]).code == 0) fs.unlink(ROOT + f);
+        else log(sprintf('%s: %s failed; left for the next boot', name, f));
+    }
+    for (let s in services(owned(name))) {
+        run([ROOT + '/etc/init.d/' + s, 'enable']);
+        run([ROOT + '/etc/init.d/' + s, 'start']);
+    }
+};
+
+let deactivate = (name) => {
+    for (let s in services(owned(name))) {
+        run([ROOT + '/etc/init.d/' + s, 'stop']);
+        run([ROOT + '/etc/init.d/' + s, 'disable']);
+    }
+};
+
+// ── downloads ──────────────────────────────────────────────────────────────
+
+// On the card when there is one, so a 1.6 MB package is not in RAM on a
+// 128 MB gateway, and a cut-off download is still there to resume after a
+// reboot. Per tag and arch: nothing of another release can be picked up.
+let staging = (t, a) => {
+    let c = uci.cursor();
+    let base = ROOT + '/tmp/pulzr-addons';
+    if (c.get('pulzr', 'storage', 'present') == '1' && c.get('pulzr', 'storage', 'writable') == '1') {
+        let mount = c.get('pulzr', 'storage', 'mount');
+        if (mount && fs.stat(mount)?.type == 'directory') base = mount + '/pulzr/addons';
+    }
+    let dir = sprintf('%s/%s/%s', base, t, a);
+    run(['mkdir', '-p', dir]);
+    return dir;
+};
+
+let sha256 = (path) => {
+    let r = run(['sha256sum', path]);
+    return r.code == 0 ? split(r.out, ' ')[0] : null;
+};
+
+// The catalog and the index: a few KB, fetched anew each time, so a damaged
+// copy never outlives the attempt that got it.
+let fetchSmall = (url, path) => {
+    fs.unlink(path + '.part');
+    let r = run(['curl', '-fsS', '--retry', '5', '--max-time', '120', '-o', path + '.part', url]);
+    if (r.code != 0) {
+        fs.unlink(path + '.part');
+        return sprintf('Could not download %s (curl %d).', fs.basename(path), r.code);
+    }
+    fs.rename(path + '.part', path);
+    return null;
+};
+
+// A package: resumed from wherever the last attempt stopped, and checked
+// against the catalog before anything uses it. One that does not match is
+// deleted, so the next attempt starts clean rather than resuming garbage.
+let fetchPackage = (url, path, want) => {
+    if (fs.access(path) && sha256(path) == want) return null;
+    fs.unlink(path);
+    let part = path + '.part';
+    let r = run(['curl', '-fsS', '-C', '-', '--retry', '5', '--max-time', '600', '-o', part, url]);
+    if (r.code != 0)
+        return sprintf('Could not download %s (curl %d).', fs.basename(path), r.code);
+    if (sha256(part) != want) {
+        fs.unlink(part);
+        return sprintf('%s did not match its checksum.', fs.basename(path));
+    }
+    fs.rename(part, path);
+    return null;
+};
+
+let freeBytes = () => {
+    let target = fs.stat(ROOT + '/overlay')?.type == 'directory' ? ROOT + '/overlay' : ROOT + '/';
+    let r = run(['df', '-Pk', target]);
+    let f = split(trim(split(r.out, '\n')[1] ?? ''), /\s+/);
+    return r.code == 0 && length(f) >= 4 && match(f[3], /^[0-9]+$/) ? int(f[3]) * 1024 : null;
+};
+
+// ── refusals that need no download ─────────────────────────────────────────
+//
+// Each is one sentence, because it is what the person who asked reads.
+
+let lockedOff = (rel, name, deny) => {
+    for (let c in rel[name]?.caps ?? [])
+        if (c in deny) return sprintf('%s is locked off on this gateway.', title(rel, name));
+    return null;
+};
+
+let refusal = (action, name, ignoreLock) => {
+    if (!match(name ?? '', NAME)) return { code: 2, error: 'That is not an add-on name.' };
+    let rel = release();
+    if (name in builtins())
+        return { code: REFUSED, error: sprintf('%s is built into this gateway\'s firmware.', title(rel, name)) };
+    if (action == 'install') {
+        if (!rel[name])
+            return { code: REFUSED, error: sprintf('PulzrOS %s has no add-on called %s.', board().PULZR_VERSION ?? '', name) };
+        let locked = lockedOff(rel, name, denied());
+        if (locked) return { code: REFUSED, error: locked };
+        if (installed(name))
+            return { code: REFUSED, error: sprintf('%s is already installed.', title(rel, name)) };
+    } else if (!installed(name) && !(name in wanted()) && !recorded(name)) {
+        return { code: REFUSED, error: sprintf('%s is not installed.', title(rel, name)) };
+    }
+    if (firmwarePending())
+        return { code: REFUSED, error: 'A firmware upgrade is still being judged.' };
+    if (!ignoreLock && held())
+        return { code: REFUSED, error: 'Another add-on job is running.' };
+    return null;
+};
+
+// ── install ────────────────────────────────────────────────────────────────
+//
+// Returns { ok } or { error, transient }. A transient failure is one the same
+// request could get past later (a download, a gateway that cannot reach
+// Pulzar Cloud right now); restore tries those again, and nothing else.
+
+let fail = (name, by, action, error, transient, state) => {
+    record(name, state ?? 'failed', error);
+    journal({ action, name, by, result: state ?? 'failed', error });
+    log(sprintf('%s %s refused: %s', action, name, error));
+    return { error, transient: !!transient };
+};
+
+let install = (name, by, action) => {
+    let rel = release(), b = board(), a = arch();
+    let deny = denied();
+    if (!a) return fail(name, by, action, 'apk cannot say this gateway\'s architecture.');
+    let url = repoUrl(b);
+    if (!url) return fail(name, by, action, 'This gateway has no add-on repository to install from.');
+
+    record(name, 'downloading');
+    let dir = staging(tag(b), a);
+    let err = fetchSmall(url + '/addons.json', dir + '/addons.json');
+    if (err) return fail(name, by, action, err, true);
+    let catalog = readJson(dir + '/addons.json', null);
+    if (catalog?.tag != tag(b))
+        return fail(name, by, action, sprintf('The add-on catalog there is not for %s.', tag(b)));
+    let entry = (n) => {
+        for (let x in catalog.addons ?? []) if (x?.name == n) return x.arches?.[a];
+        return null;
+    };
+    if (!entry(name))
+        return fail(name, by, action, sprintf('PulzrOS %s has no %s for this gateway.', b.PULZR_VERSION, title(rel, name)),
+                    false, 'unavailable');
+
+    let index = dir + '/packages.adb';
+    err = fetchSmall(sprintf('%s/%s/packages.adb', url, a), index);
+    if (err) return fail(name, by, action, err, true);
+
+    // Everything apk would install for it, so a dependency is held to the
+    // same rules as the add-on asked for.
+    let sim = run(['apk', 'add', '--simulate', ...repo(index), name]);
+    if (sim.code != 0) {
+        let why = apkError(sim.out);
+        if (match(why, /UNTRUSTED/)) {
+            fs.unlink(index);
+            return fail(name, by, action, 'The add-on index is not signed by Pulzar.');
+        }
+        if (match(sim.out, /pulzr-base/))
+            return fail(name, by, action, sprintf('%s was not built for the firmware this gateway runs.', title(rel, name)));
+        return fail(name, by, action, why);
+    }
+    let pkgs = [];
+    for (let line in split(sim.out, '\n')) {
+        let m = match(line, /^\([0-9]+\/[0-9]+\) (Installing|Upgrading|Downgrading|Replacing|Reinstalling) ([^ ]+) /);
+        if (m) push(pkgs, m[2]);
+    }
+    // Every check below reads this list, so an answer it cannot read is a
+    // refusal, not an empty list waved through.
+    if (!(name in pkgs))
+        return fail(name, by, action, sprintf('apk did not say what installing %s would add.', title(rel, name)));
+    let need = SPARE;
+    for (let p in pkgs) {
+        if (!rel[p])
+            return fail(name, by, action, sprintf('%s needs %s, which is not an add-on of this release.', title(rel, name), p));
+        let locked = lockedOff(rel, p, deny);
+        if (locked) return fail(name, by, action, locked, false, 'failed');
+        if (!entry(p))
+            return fail(name, by, action, sprintf('%s needs %s, which this release does not build for this gateway.', title(rel, name), p));
+        need += entry(p).installedBytes ?? 0;
+    }
+    let free = freeBytes();
+    if (free != null && free < need)
+        return fail(name, by, action, sprintf('%s needs %d KB and this gateway has %d KB free.',
+                                              title(rel, name), need / 1024, free / 1024));
+
+    if (!healthy())
+        return fail(name, by, action, 'The gateway cannot reach Pulzar Cloud now, so an add-on could not be judged.', true);
+
+    for (let p in pkgs) {
+        let e = entry(p);
+        if (!match(e.file ?? '', /^[A-Za-z0-9._+-]+\.apk$/) || !match(e.sha256 ?? '', /^[0-9a-f]{64}$/))
+            return fail(name, by, action, sprintf('The catalog entry for %s is malformed.', p));
+        err = fetchPackage(sprintf('%s/%s/%s', url, a, e.file), dir + '/' + e.file, e.sha256);
+        if (err) return fail(name, by, action, err, true);
+    }
+
+    record(name, 'installing');
+    let add = run(['apk', 'add', ...repo(index), name]);
+    if (add.code != 0) return fail(name, by, action, apkError(add.out));
+    for (let p in pkgs) activate(p);
+
+    if (!judged()) {
+        for (let p in pkgs) deactivate(p);
+        run(['apk', 'del', '--no-interactive', '--repositories-file', '/dev/null', name]);
+        unwant(name);
+        let why = 'After the install the gateway could not reach Pulzar Cloud.';
+        record(name, 'reverted', why);
+        journal({ action, name, by, result: 'reverted', error: why });
+        log(sprintf('%s %s undone: %s', action, name, why));
+        return { error: why, transient: false, reverted: true };
+    }
+
+    want(name);
+    record(name, 'installed');
+    journal({ action, name, by, result: 'installed', version: installed(name) });
+    log(sprintf('%s %s by %s', action, name, by));
+    return { ok: true };
+};
+
+// ── remove ─────────────────────────────────────────────────────────────────
+//
+// The add-on's settings stay unless --purge, so installing it again picks up
+// where it left off. Only paths its addon keep.d names, and only under /etc.
+
+let purgeable = (path) => match(path, /^\/etc\/[A-Za-z0-9][A-Za-z0-9._-]*(\/[A-Za-z0-9._-]+)*\/?$/)
+    && !match(path, /\.\./) && !match(path, /^\/etc\/(config|pulzr|parkeze|apk|init\.d|uci-defaults)(\/|$)/);
+
+let remove = (name, by, purge) => {
+    let rel = release();
+    if (installed(name)) {
+        record(name, 'removing');
+        deactivate(name);
+        let r = run(['apk', 'del', '--no-interactive', '--repositories-file', '/dev/null', name]);
+        if (r.code != 0) return fail(name, by, 'remove', apkError(r.out));
+    }
+    if (purge)
+        for (let p in rel[name]?.keep ?? [])
+            if (purgeable(p)) run(['rm', '-rf', ROOT + p]);
+    unwant(name);
+    forget(name);
+    journal({ action: 'remove', name, by, result: 'removed', purged: !!purge });
+    log(sprintf('remove %s by %s%s', name, by, purge ? ', settings purged' : ''));
+    return { ok: true };
+};
+
+// ── restore ────────────────────────────────────────────────────────────────
+//
+// Whatever is wanted and missing, from the release now running: after an
+// upgrade, a rollback, or a restore that could not finish. Idempotent, and
+// nothing to do on almost every boot. An add-on this release does not have
+// stays wanted as unavailable, so the platform can say so and a later release
+// that has it again restores it.
+
+let restore = () => {
+    let builtin = builtins();
+    let missing = filter(wanted(), (n) => match(n, NAME) && !(n in builtin) && !installed(n));
+    if (!length(missing)) return { transient: false };
+    if (firmwarePending()) return { transient: true };
+    if (!lock({ action: 'restore', name: join(' ', missing), by: 'restore' })) return { transient: true };
+
+    // An add-on that cannot be restored on this firmware is recorded once,
+    // not at every boot: the init script runs this on each one.
+    let settled = (n, st, why) => {
+        let rec = recorded(n);
+        if (rec?.state == st && rec?.error == why) return false;
+        record(n, st, why);
+        journal({ action: 'restore', name: n, by: 'restore', result: st, error: why });
+        log(sprintf('restore %s: %s', n, why));
+        return true;
+    };
+
+    let rel = release(), deny = denied(), transient = false, changed = false;
+    for (let n in missing) {
+        if (!rel[n]) {
+            changed = settled(n, 'unavailable', sprintf('PulzrOS %s has no add-on called %s.', board().PULZR_VERSION ?? '', n)) || changed;
+            continue;
+        }
+        let locked = lockedOff(rel, n, deny);
+        if (locked) {
+            changed = settled(n, 'failed', locked) || changed;
+            continue;
+        }
+        let r = install(n, 'restore', 'restore');
+        if (r.error && r.transient) transient = true;
+        changed = true;
+    }
+    unlock();
+    if (changed) report();
+    return { transient };
+};
+
+// One loop at a time: pulzr-firmware confirm and the init script can both
+// start one, and a person's install can run between its attempts.
+let restoreLoop = () => {
+    run(['mkdir', '-p', RUN_DIR]);
+    if (alive(trim(fs.readfile(LOOP) ?? ''))) return;
+    fs.writefile(LOOP, self());
+    let wait = BACKOFF_FIRST;
+    while (restore().transient) {
+        log(sprintf('restore incomplete; trying again in %d minutes', wait / 60));
+        sleep(wait * 1000);
+        wait = wait * 2 > BACKOFF_MAX ? BACKOFF_MAX : wait * 2;
+    }
+    fs.unlink(LOOP);
+};
+
+// ── status ─────────────────────────────────────────────────────────────────
+//
+//   installed        the package is on the gateway (built in or not)
+//   downloading, installing, removing
+//                    a job is doing it now
+//   reverted         installed, then undone because the gateway stopped
+//                    reaching Pulzar Cloud
+//   failed           the last attempt did not install it; `error` says why
+//   pending-restore  wanted, missing, and a restore has yet to put it back
+//   unavailable      wanted, and this release does not build it here
+
+let state = (name, rel, w, built, rec, busy) => {
+    let version = installed(name);
+    let s = rec?.state, error = '';
+    let working = busy && (busy.name == name || index(split(busy.name ?? '', ' '), name) >= 0);
+    if (version) {
+        s = (s == 'removing' && working) ? 'removing' : 'installed';
+    } else if (s in ['downloading', 'installing', 'removing'] && working) {
+        // as recorded
+    } else if (s in ['downloading', 'installing', 'removing']) {
+        s = 'failed';
+        error = 'The job stopped before it finished.';
+    } else if (name in w && !rel[name]) {
+        s = 'unavailable';
+    } else if (s in ['failed', 'reverted', 'unavailable']) {
+        // as recorded
+    } else if (name in w) {
+        s = 'pending-restore';
+    } else if (name in built) {
+        s = 'failed';
+        error = 'Built in, but apk does not list it as installed.';
+    } else {
+        return null;
+    }
+    return {
+        state: s,
+        version,
+        upstream: rel[name]?.upstream ?? null,
+        builtIn: name in built,
+        health: version ? health(name) : null,
+        since: rec?.since ?? null,
+        error: error || (s == rec?.state ? (rec?.error ?? '') : ''),
+    };
+};
+
+let status = (brief) => {
+    let rel = release(), cf = conf(), built = builtins(), busy = held();
+    let w = list(cf.wanted);
+    let names = [...w, ...built, ...keys(rel)];
+    uci.cursor().foreach(PKG, 'addon', (s) => { if (s.name && match(s.name, NAME)) push(names, s.name); });
+
+    let items = {};
+    for (let n in uniq(names)) {
+        let it = state(n, rel, w, built, recorded(n), busy);
+        if (it) items[n] = it;
+    }
+    let out = { wanted: w, deny: list(cf.deny), items };
+    if (brief) return out;
+
+    let b = board();
+    out.tag = tag(b);
+    out.arch = arch();
+    out.url = repoUrl(b);
+    out.denyBy = cf.deny_by ?? null;
+    out.denyReason = cf.deny_reason ?? null;
+    out.busy = busy ? { action: busy.action, name: busy.name ?? null, by: busy.by ?? null, since: busy.since ?? null } : null;
+    out.available = map(sort(keys(rel)), (n) => ({
+        name: n, title: rel[n].title, caps: rel[n].caps, feature: rel[n].feature,
+        upstream: rel[n].upstream, builtIn: n in built,
+    }));
+    for (let n in keys(items)) items[n].title = title(rel, n);
+    let lines = filter(split(fs.readfile(JOURNAL) ?? '', '\n'), (l) => length(l) > 0);
+    out.journal = map(slice(lines, length(lines) > 20 ? length(lines) - 20 : 0), (l) => {
+        try { return json(l); } catch (e) { return null; }
+    });
+    return out;
+};
+
+// ── deny ───────────────────────────────────────────────────────────────────
+
+let deny = (by, reason, caps) => {
+    length(caps) || die('usage: pulzr-addon deny <issuer> <reason> <cap>...', 2);
+    for (let c in caps) match(c, CAP) || die(sprintf('%s is not a capability word', c), 2);
+    let d = denied(), added = [];
+    for (let c in caps) if (!(c in d)) { push(d, c); push(added, c); }
+    setList('deny', d);
+    let c = uci.cursor();
+    c.set(PKG, 'main', 'deny_by', clean(by));
+    c.set(PKG, 'main', 'deny_reason', substr(replace(reason ?? '', /[\x00-\x1f]/g, ' '), 0, 200));
+    c.commit(PKG);
+    if (length(added)) {
+        journal({ action: 'deny', by: clean(by), caps: added, reason });
+        log(sprintf('deny %s by %s', join(' ', added), clean(by)));
+        report();
+    }
+    return { deny: d };
+};
+
+let undeny = (caps) => {
+    let d = denied();
+    setList('deny', filter(d, (c) => !(c in caps)));
+    journal({ action: 'undeny', by: 'shell', caps });
+    log(sprintf('undeny %s from a shell', join(' ', caps)));
+    report();
+    return { deny: denied() };
+};
+
+// ── the commands ───────────────────────────────────────────────────────────
+
+let finish = (result) => {
+    if (result.error) die(result.error, result.transient ? AGAIN : 1);
+    exit(0);
+};
+
+// Runs one job under the lock: `install` and `remove` straight from a shell,
+// or the background half of `start`, which took the lock for it (--locked).
+let job = (action, name, by, flags) => {
+    by = clean(by);
+    let locked = 'locked' in flags;
+    let refused = refusal(action, name, locked);
+    if (refused) {
+        // `start` already recorded this job as under way; say how it ended.
+        if (locked) { record(name, 'failed', refused.error); unlock(); }
+        if (match(name ?? '', NAME)) journal({ action, name, by, result: 'refused', error: refused.error });
+        die(refused.error, refused.code);
+    }
+    let what = { action, name, by };
+    if (!(locked ? adopt(what) : lock(what))) die('Another add-on job is running.', REFUSED);
+    let result = action == 'install' ? install(name, by, 'install') : remove(name, by, 'purge' in flags);
+    unlock();
+    report();
+    finish(result);
+};
+
+let flagsOf = (args) => map(filter(args, (a) => substr(a, 0, 2) == '--'), (a) => substr(a, 2));
+
+ensureConfig();
+
+let args = slice(ARGV, 0);
+let cmd = shift(args) ?? 'status';
+
+if (cmd == 'status') {
+    printf('%J\n', status(args[0] == '--brief'));
+} else if (cmd == 'install' || cmd == 'remove') {
+    job(cmd, args[0], args[1], flagsOf(slice(args, 2)));
+} else if (cmd == 'start') {
+    // The console's half: every refusal that needs no download is answered
+    // now, in the request, and the rest is a background job holding the lock
+    // taken here, so a status read straight after already shows it running.
+    let action = args[0], name = args[1], by = clean(args[2]);
+    (action == 'install' || action == 'remove') || die('start install|remove <name> <issuer>', 2);
+    let flags = flagsOf(slice(args, 3));
+    let refused = refusal(action, name, false);
+    if (refused) die(refused.error, refused.code);
+    lock({ action, name, by }) || die('Another add-on job is running.', REFUSED);
+    record(name, action == 'install' ? 'downloading' : 'removing');
+    system(['start-stop-daemon', '-S', '-b', '-x', '/usr/sbin/pulzr-addon', '--',
+            action, name, by, '--locked', ...('purge' in flags ? ['--purge'] : [])]);
+    printf('%J\n', { started: true, name, action });
+} else if (cmd == 'restore') {
+    if (args[0] == '--retry') {
+        restoreLoop();
+    } else {
+        let r = restore();
+        if (r.transient) die('restore incomplete', AGAIN);
+    }
+} else if (cmd == 'deny') {
+    printf('%J\n', deny(args[0], args[1], slice(args, 2)));
+} else if (cmd == 'undeny') {
+    length(args) || die('usage: pulzr-addon undeny <cap>...', 2);
+    printf('%J\n', undeny(args));
+} else {
+    die('usage: pulzr-addon {status [--brief]|start|install|remove|restore [--retry]|deny|undeny}', 2);
+}

@@ -187,6 +187,13 @@ jobs:
       - name: Uplinks and DNS
         run: UCODE=/tmp/ucode/build/ucode scripts/test-router.sh
 
+      # pulzr-addon puts root code on gateways nobody can reach, and is the
+      # gateway's half of Osborne never getting Modbus. Each refusal, a
+      # download cut off half way, the gate's revert and the restore after an
+      # upgrade run against a stub apk, curl and health gate.
+      - name: Add-ons on the gateway
+        run: UCODE=/tmp/ucode/build/ucode scripts/test-addon.sh
+
       # The upstream indexes are ~10MB and a pinned release never changes them.
       - name: Cache the upstream package indexes
         uses: actions/cache@v4

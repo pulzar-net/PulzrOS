@@ -36,6 +36,12 @@
 # every upgrade.
 /etc/pulzr/speedtest/
 /etc/parkeze/speedtest/
+# The add-on journal: who installed or removed what, and why one was undone
+# (pulzr-addon). What the gateway wants installed is UCI, in
+# /etc/config/pulzr_addons, which sysupgrade keeps anyway; the add-ons'
+# own settings are in keep.d/pulzr-addons, generated with the image. Not
+# mirrored under /etc/parkeze: no ParkezeOS image has add-ons.
+/etc/pulzr/addons/
 # SSH host keys. Pulzar Cloud pins the one a gateway reports, so a new key after
 # an upgrade is a gateway nobody can open a shell on until it reports again.
 # dropbear's as well as sshd's: they are the same keys (see pulzr-ssh-setup),

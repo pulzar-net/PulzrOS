@@ -1,0 +1,27 @@
+#!/bin/sh /etc/rc.common
+#
+# Put back the add-ons this gateway wants, after a boot that lost them.
+#
+# A firmware upgrade replaces the overlay's packages with the new image's, so
+# an add-on installed on the old firmware is gone after it, and a rollback
+# loses one installed since. What was wanted survives in UCI, and
+# `pulzr-addon restore` installs it again from the release now running.
+#
+# Never before the firmware is judged. On the first boot after an upgrade the
+# state is pending and the health gate (98) is deciding whether to keep this
+# firmware; an add-on installed then could be what fails it, and is the wrong
+# thing to spend a metered link on before the answer. pulzr-firmware confirm
+# starts the restore itself once the gate passes. Every other boot, including
+# the one after a rollback, starts it here.
+#
+# START=99, after everything an install's own health gate judges. Backgrounded:
+# a restore downloads, and retries with backoff while it cannot (pulzr-addon).
+# Almost every boot finds nothing missing and it exits at once.
+
+START=99
+
+start() {
+    state="$(/usr/sbin/pulzr-firmware status 2>/dev/null | jsonfilter -e '@.state' 2>/dev/null)"
+    [ "${state}" = "pending" ] && return 0
+    ( /usr/sbin/pulzr-addon restore --retry >/dev/null 2>&1 & )
+}

@@ -19,6 +19,14 @@
 #   * The add-on declares the capability it is denied by (Provides:
 #     pulzr-cap-<cap>), which is how a later package that depends on a denied
 #     capability is refused with it.
+#   * Every add-on ships /usr/libexec/pulzr/addon-health/<name>. pulzr-addon
+#     reports its answer, and the console counts the add-on installed (its
+#     feature word on) while that file is there.
+#   * Its feature word is not a board's: a board word means a package group
+#     in the image, and the same word from an add-on would gate the same pages
+#     on two different things.
+#   * Every add-on's keep.d lands in pulzr-base's merged one, so its settings
+#     survive an upgrade that finds it missing (scripts/addon-index.sh).
 #   * The repository's public key is the only key file in the tree, and it is
 #     public.
 
@@ -53,12 +61,20 @@ for pkgdir in "${FEED_DIR}"/*/; do
   [ -f "${pkgdir}/addon" ] || continue
   name="$(basename "${pkgdir}")"; count=$((count + 1))
 
-  title="" caps="" boards_ok=""
-  eval "$(. "${pkgdir}/addon"; printf 'title=%q caps=%q boards_ok=%q' \
-            "${ADDON_TITLE:-}" "${ADDON_CAPS:-}" "${ADDON_BOARDS:-}")"
+  title="" caps="" boards_ok="" feature=""
+  eval "$(. "${pkgdir}/addon"; printf 'title=%q caps=%q boards_ok=%q feature=%q' \
+            "${ADDON_TITLE:-}" "${ADDON_CAPS:-}" "${ADDON_BOARDS:-}" "${ADDON_FEATURE:-}")"
   [ -n "${title}" ] || bad "${name}/addon has no ADDON_TITLE"
   [ -n "${caps}" ] || bad "${name}/addon has no ADDON_CAPS"
   [ -n "${boards_ok}" ] || bad "${name}/addon has no ADDON_BOARDS"
+  [ -x "${pkgdir}/files/usr/libexec/pulzr/addon-health/${name}" ] \
+    || bad "${name} has no executable files/usr/libexec/pulzr/addon-health/${name}"
+  if [ -n "${feature}" ]; then
+    # shellcheck disable=SC1091
+    case " $(. "${BOARDS_DIR}/common/board.conf"; echo "${PULZR_FEATURE_WORDS}") " in *" ${feature} "*)
+      bad "${name}'s ADDON_FEATURE '${feature}' is a board feature word" ;;
+    esac
+  fi
   [ -f "${pkgdir}/arches" ] || { bad "${name} is an add-on with no arches file"; continue; }
 
   for cap in ${caps}; do
@@ -86,6 +102,26 @@ for pkgdir in "${FEED_DIR}"/*/; do
   done < "${facts}"
 done
 [ "${count}" -gt 0 ] || bad "no add-ons found; check feed/*/addon"
+
+# What pulzr-base will carry: one addons.caps line per add-on, and each
+# add-on's keep.d paths in the merged keep.d.
+index="$(mktemp -d)"
+if "${ROOT_DIR}/scripts/addon-index.sh" "${FEED_DIR}" "${index}"; then
+  for pkgdir in "${FEED_DIR}"/*/; do
+    [ -f "${pkgdir}/addon" ] || continue
+    name="$(basename "${pkgdir}")"
+    grep -q "^${name}"$'\t' "${index}/usr/share/pulzr/addons.caps" \
+      || bad "addon-index.sh wrote no addons.caps line for ${name}"
+    # shellcheck disable=SC2013  # keep.d paths have no spaces
+    for path in $(cat "${pkgdir}"/files/lib/upgrade/keep.d/* 2>/dev/null | grep -v '^[[:space:]]*\(#\|$\)'); do
+      grep -qxF "${path}" "${index}/lib/upgrade/keep.d/pulzr-addons" \
+        || bad "${name} keeps ${path}, which the merged keep.d/pulzr-addons does not"
+    done
+  done
+else
+  bad "scripts/addon-index.sh failed"
+fi
+rm -rf "${index}"
 
 # The only key material in the tree is the repository's public key.
 pub="feed/pulzr-base/files/etc/apk/keys/pulzr-addons.pem"
