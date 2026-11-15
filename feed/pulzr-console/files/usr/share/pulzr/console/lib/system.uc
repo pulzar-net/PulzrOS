@@ -43,10 +43,24 @@ boardConf = function() {
 };
 
 // The board's features, from the image it was built as (PULZR_FEATURES, see
-// boards/common/board.conf). Not settable here: a feature is a package in the
-// image, and a page for a package that is not there is a page of errors.
+// boards/common/board.conf), and each installed add-on's word (modbus). Not
+// settable here: a feature is a package on the gateway, and a page for a
+// package that is not there is a page of errors.
+//
+// An add-on counts as installed while its addon-health script is there: that
+// file is the package's own, so apk takes it away with the package, and a
+// file test is cheap enough for every request this is asked on. Which add-on
+// brings which word is addons.caps, from this firmware (pulzr-addon).
 features = function() {
-    return filter(split(boardConf().PULZR_FEATURES ?? '', ' '), (w) => length(w) > 0);
+    const out = filter(split(boardConf().PULZR_FEATURES ?? '', ' '), (w) => length(w) > 0);
+    for (let line in split(readfile('/usr/share/pulzr/addons.caps') ?? '', '\n')) {
+        const f = split(line, '\t');
+        if (length(f) < 2 || substr(line, 0, 1) == '#' || f[1] == '-') continue;
+        if (!match(f[0], /^[a-z0-9-]{1,40}$/) || !match(f[1], /^[a-z0-9-]{1,40}$/)) continue;
+        if (_m_fs.access('/usr/libexec/pulzr/addon-health/' + f[0]) && !(f[1] in out))
+            push(out, f[1]);
+    }
+    return out;
 };
 
 summary = function() {

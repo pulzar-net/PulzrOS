@@ -47,7 +47,8 @@ export interface RecoveryChallenge {
 
 // ── system ──────────────────────────────────────────────────────────────────
 
-/** A board's feature words; boards/common/board.conf lists what each means. */
+/** A board's feature words; boards/common/board.conf lists what each means.
+    `modbus` is an add-on's, present while pulzr-edge is installed. */
 export type Feature =
   | 'lorawan'
   | 'gnss'
@@ -57,7 +58,8 @@ export type Feature =
   | 'lan'
   | 'dns'
   | 'failover'
-  | 'speedtest';
+  | 'speedtest'
+  | 'modbus';
 
 export interface SystemSummary {
   identity: {
@@ -88,6 +90,37 @@ export interface SystemSummary {
     memory: { total?: number; free?: number; available?: number } | null;
     temperature: number | null;
   };
+}
+
+/** pulzr-addon's states; docs/addons.md says what each means. */
+export type AddonState =
+  | 'installed'
+  | 'downloading'
+  | 'installing'
+  | 'removing'
+  | 'reverted'
+  | 'failed'
+  | 'pending-restore'
+  | 'unavailable';
+
+export interface AddonItem {
+  state: AddonState;
+  version: string | null;
+  upstream: string | null;
+  builtIn: boolean;
+  health: 'ok' | 'idle' | 'failing' | null;
+  since: string | null;
+  error: string;
+  title: string;
+}
+
+/** GET /api/system/addons. Read-only here: installs come from Pulzar Net. */
+export interface AddonStatus {
+  wanted: string[];
+  deny: string[];
+  items: Record<string, AddonItem>;
+  tag: string;
+  available: { name: string; title: string; caps: string[]; upstream: string | null; builtIn: boolean }[];
 }
 
 // ── network ─────────────────────────────────────────────────────────────────

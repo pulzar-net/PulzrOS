@@ -133,6 +133,7 @@ op_dns()       { /usr/sbin/pulzr-dns status 2>/dev/null || echo '{}'; }
 op_uplinks()   { /usr/sbin/pulzr-uplinks status 2>/dev/null || echo '{}'; }
 op_ports()     { /usr/sbin/pulzr-ports status 2>/dev/null || echo '{}'; }
 op_speedtest() { /usr/sbin/pulzr-speedtest brief 2>/dev/null || echo '{"error":"this gateway does not run speed tests"}'; }
+op_addons()    { /usr/sbin/pulzr-addon status --brief 2>/dev/null || echo '{"error":"this gateway has no add-ons"}'; }
 
 # A field of the request being answered, for the operations that take more
 # than one argument.
@@ -173,7 +174,7 @@ op_rak_power() { /usr/sbin/pulzr-rak-power status 2>/dev/null || echo '{"error":
 # is gone.
 #
 # A timeout returns a JSON error rather than nothing, so that `all` — which
-# composes six of these into one document — stays valid JSON when one probe
+# composes seven of these into one document — stays valid JSON when one probe
 # is wedged, instead of collapsing into "the gateway produced an unreadable
 # answer" and telling you nothing about which part failed.
 bounded() {
@@ -232,14 +233,20 @@ dispatch() {
         # MAX_RESPONSE, and the latest of each is on every report anyway.
         speedtest) out="$(bounded 10 op_speedtest)" ;;
         rak-power) out="$(bounded 10 op_rak_power)" ;;
+        # What is wanted, refused and installed, as the report carries it. A
+        # read only: an install takes minutes and this loop answers one
+        # request at a time, so installs and removals go through the console
+        # API over gateway-link, where a person's session names who asked.
+        addons)    out="$(bounded 10 op_addons)" ;;
 
         # Everything at once, for the case this exists to serve: somebody
         # wanting to know how a gateway is without opening anything.
         all)
-            out="$(printf '{"system":%s,"lorawan":%s,"backhaul":%s,"storage":%s,"firmware":%s,"cellular":%s}' \
+            out="$(printf '{"system":%s,"lorawan":%s,"backhaul":%s,"storage":%s,"firmware":%s,"cellular":%s,"addons":%s}' \
                    "$(bounded 10 op_status)" "$(bounded 15 op_lorawan)" \
                    "$(bounded 15 op_backhaul)" "$(bounded 15 op_storage)" \
-                   "$(bounded 15 op_firmware)" "$(bounded 20 op_cellular)")" ;;
+                   "$(bounded 15 op_firmware)" "$(bounded 20 op_cellular)" \
+                   "$(bounded 10 op_addons)")" ;;
 
         restart-forwarder)
             /etc/init.d/pulzr-packet-forwarder restart >/dev/null 2>&1

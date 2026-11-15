@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { KeyRound, PackageCheck, Power, Upload } from 'lucide-react';
+import { KeyRound, PackageCheck, Power, Puzzle, Upload } from 'lucide-react';
 import { api, upload } from '@/services/api';
-import type { SystemSummary } from '@/types';
+import type { AddonItem, AddonStatus, SystemSummary } from '@/types';
+import Badge, { type Tone } from '@/components/ui/Badge';
 import Section from '@/components/ui/Section';
 import Fact, { FactList } from '@/components/Fact';
 import Notice from '@/components/ui/Notice';
@@ -44,6 +45,8 @@ export default function Maintenance() {
         </FactList>
         <FirmwareUpload />
       </Section>
+
+      <AddonsCard />
 
       <RebootCard />
     </div>
@@ -181,6 +184,66 @@ function FirmwareUpload() {
       )}
       {send.isError && <Notice tone="error">{(send.error as Error).message}</Notice>}
     </>
+  );
+}
+
+const ADDON_STATE: Record<AddonItem['state'], [string, Tone]> = {
+  installed: ['Installed', 'success'],
+  downloading: ['Downloading', 'info'],
+  installing: ['Installing', 'info'],
+  removing: ['Removing', 'info'],
+  reverted: ['Reverted', 'error'],
+  failed: ['Failed', 'error'],
+  'pending-restore': ['Restoring', 'warning'],
+  unavailable: ['Not in this release', 'warning'],
+};
+
+/**
+ * The add-ons this release offers and what each is doing, read-only.
+ *
+ * Installs and removals come from Pulzar Net, where who may install and
+ * whether a metered link can take it are decided (lib/addons.uc). A gateway
+ * whose firmware has no add-ons has nothing to list, and the card is left out.
+ */
+function AddonsCard() {
+  const addons = useQuery({
+    queryKey: ['system-addons'],
+    queryFn: () => api.get<AddonStatus>('/system/addons'),
+    refetchInterval: (query) =>
+      Object.values(query.state.data?.items ?? {}).some((i) =>
+        ['downloading', 'installing', 'removing'].includes(i.state))
+        ? 5000
+        : false,
+  });
+
+  const data = addons.data;
+  if (!data?.available?.length) return null;
+
+  return (
+    <Section title="Add-ons" icon={Puzzle}>
+      <FactList>
+        {data.available.map((a) => {
+          const item = data.items[a.name];
+          const locked = a.caps.some((c) => data.deny.includes(c));
+          const [label, tone]: [string, Tone] = item
+            ? ADDON_STATE[item.state]
+            : locked ? ['Locked', 'neutral'] : ['Not installed', 'neutral'];
+          return (
+            <Fact
+              key={a.name}
+              label={a.title}
+              value={
+                <>
+                  <Badge tone={tone}>{a.builtIn ? 'Built in' : label}</Badge>
+                  {item?.version ? ` ${item.version}` : ''}
+                  {item?.error ? ` ${item.error}` : ''}
+                </>
+              }
+            />
+          );
+        })}
+      </FactList>
+    </Section>
   );
 }
 

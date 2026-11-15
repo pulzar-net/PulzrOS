@@ -53,6 +53,7 @@ let uplinks = loadfile('/usr/share/pulzr/console/lib/uplinks.uc', { raw_mode: tr
 let ports = loadfile('/usr/share/pulzr/console/lib/ports.uc', { raw_mode: true })();
 let apply = loadfile('/usr/share/pulzr/console/lib/apply.uc', { raw_mode: true })();
 let speedtest = loadfile('/usr/share/pulzr/console/lib/speedtest.uc', { raw_mode: true })();
+let addons = loadfile('/usr/share/pulzr/console/lib/addons.uc', { raw_mode: true })();
 // What changes the gateway, shared with the terminal UI; see actions.uc.
 let actions = loadfile('/usr/share/pulzr/console/lib/actions.uc', { raw_mode: true })();
 
@@ -317,6 +318,24 @@ const ROUTES = {
         if (result.error) return error(result.status, result.error);
         auth.audit('system.firmware.apply', { by: s.subject, bytes: result.bytes });
         return respond(202, result);
+    },
+
+    // ── add-ons, see lib/addons.uc ──────────────────────────────────────────
+    //
+    // Read by anybody signed in; changed only by Pulzar Net (an sso session).
+    // Like every POST here, these need the CSRF header.
+    'GET  /api/system/addons':    () => respond(200, addons.status()),
+    'POST /api/system/addons':    (env, req, s) => {
+        const result = addons.request(req, s);
+        if (result.error) return error(result.status, result.error);
+        auth.audit(sprintf('system.addon.%s', result.action), { by: s.subject, name: result.name });
+        return respond(202, { ok: true, name: result.name, action: result.action, purge: result.purge });
+    },
+    'POST /api/system/addons/deny': (env, req, s) => {
+        const result = addons.deny(req, s);
+        if (result.error) return error(result.status, result.error);
+        auth.audit('system.addon.deny', { by: s.subject, deny: req.deny, reason: req.reason ?? '' });
+        return respond(200, { deny: result.deny });
     },
 
     // ── network ─────────────────────────────────────────────────────────────

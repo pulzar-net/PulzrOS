@@ -581,10 +581,10 @@ facts() {
     apply_support=0
     command -v pulzr-apply >/dev/null 2>&1 && apply_support=1
 
-    printf '{"board":"%s","osVersion":"%s","modemPresent":%s,"modemModel":"%s","modemKind":"%s","simIccid":"%s","sshHostKey":"%s","wiredUsable":%s,"tunnelVia":"%s","tunnelState":"%s","wifiUplink":"%s","consolePort":443,"consoleScheme":"https","tunnelConsolePort":8080,"sshPort":22,"apply":%s,"sshCa":%s,"system":%s,"rakPower":%s,"setupAp":%s,"speedtest":%s,"wiredRouters":%s,"activeUplink":"%s","stats":%s,"consoleCertificate":%s%s}' \
+    printf '{"board":"%s","osVersion":"%s","modemPresent":%s,"modemModel":"%s","modemKind":"%s","simIccid":"%s","sshHostKey":"%s","wiredUsable":%s,"tunnelVia":"%s","tunnelState":"%s","wifiUplink":"%s","consolePort":443,"consoleScheme":"https","tunnelConsolePort":8080,"sshPort":22,"apply":%s,"sshCa":%s,"system":%s,"rakPower":%s,"setupAp":%s,"speedtest":%s,"wiredRouters":%s,"activeUplink":"%s","stats":%s,"addons":%s,"consoleCertificate":%s%s}' \
         "${board_id}" "${version}" "${modem_present}" "${modem_model:-}" "${modem_kind:-}" "${iccid:-}" \
         "${host_key:-}" "${wired_usable}" "${tunnel_via:-none}" "${tunnel:-none}" "${wifi_uplink:-unchecked}" "${apply_support}" "${ssh_ca}" "$(system_facts)" "$(rak_power_facts)" "$(setup_ap_facts)" "$(speedtest_facts)" "$(router_facts)" "$(active_uplink)" "$(stats_facts)" \
-        "$(console_cert_facts)" "$(console_csr_field)"
+        "$(addon_facts)" "$(console_cert_facts)" "$(console_csr_field)"
 }
 
 # CPU, memory, temperature, storage, buffer depth, signal and bytes per uplink
@@ -598,6 +598,23 @@ stats_facts() {
         echo "${out}"
     else
         echo '{}'
+    fi
+}
+
+# What add-ons this gateway wants, refuses and has, each with its state and
+# health (pulzr-addon status --brief), so Pulzar Net settles an install or a
+# removal against what the gateway says rather than against its own request.
+# null when it cannot say. A report without the key at all is firmware older
+# than add-ons, which the platform reads as "needs a newer PulzrOS": a field,
+# not a version compare.
+addon_facts() {
+    local out
+    command -v pulzr-addon >/dev/null 2>&1 || { echo null; return; }
+    out="$(pulzr-timeout 20 pulzr-addon status --brief 2>/dev/null)"
+    if [ -n "${out}" ] && echo "${out}" | jsonfilter -e '@' >/dev/null 2>&1; then
+        echo "${out}"
+    else
+        echo null
     fi
 }
 
