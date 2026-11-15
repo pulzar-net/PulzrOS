@@ -5,6 +5,7 @@
 #   check     lint and typecheck. Fast, and gates everything else.
 #   console   build the React app ONCE.
 #   feed      stage the packages ONCE.
+#   addons    pack the add-ons into a signed apk repository; on a tag, publish it.
 #   image     per-board matrix, consuming both of the above.
 #   release   on a tag, collect every board's image.
 #
@@ -137,6 +138,11 @@ jobs:
 
       - name: Check no script calls a command the image lacks
         run: ./scripts/check-commands.sh
+
+      # The add-on repository's inputs: that no image but the RAK7289CV2's
+      # carries Modbus, and that every board's architecture has an add-on build.
+      - name: Check add-ons
+        run: ./scripts/check-addons.sh
 
       # The claim's revocation path and sshd's trust: shell that otherwise
       # only runs on a gateway, against stubs for everything it calls.
@@ -386,6 +392,156 @@ jobs:
           cp -a --parents .build/feed boards/common/files "$h/"
 
   # ───────────────────────────────────────────────────────────────────────
+  # The add-ons are the packages with a feed/*/addon file. Images do not carry
+  # them; a gateway installs one from a repository per release and architecture
+  # (docs/addons.md). Runs on every push, so a broken add-on, or an apk that no
+  # longer reads what we sign, fails here and not on the first tag.
+  #
+  # Secrets, all optional: a fork or a PR has none, and then the repository is
+  # built against a throwaway key and nothing is uploaded.
+  #   PULZR_ADDONS_APK_KEY          the repository's private key (ECDSA P-256 PEM,
+  #                                 the whole file); public half is committed at
+  #                                 feed/pulzr-base/files/etc/apk/keys/
+  #   R2_ACCOUNT_ID                 Cloudflare account that holds curb-public
+  #   R2_ADDONS_ACCESS_KEY_ID       R2 token with write access to curb-public
+  #   R2_ADDONS_SECRET_ACCESS_KEY
+  addons:
+    name: Add-ons
+    needs: feed
+    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
+    env:
+      R2_BUCKET: curb-public
+      ADDONS_PREFIX: pulzros/addons
+      ADDONS_URL: https://assets.pkze.us/pulzros/addons
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        if: runner.environment == 'github-hosted'
+        with:
+          name: feed
+
+      - name: Take the feed
+        if: runner.environment == 'self-hosted'
+        run: cp -a "$HANDOFF/$GITHUB_RUN_ID/feed/." .
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zstd jq
+
+      # Only the apk inside it is used, and it is the same in every
+      # ImageBuilder, so rpi4's, which that board's image job already caches.
+      # The key is that job's: 25.12.6-bcm27xx-bcm2711 is its imagebuilder_id.
+      - name: Cache the ImageBuilder
+        uses: actions/cache@v4
+        with:
+          path: .build/imagebuilder
+          key: imagebuilder-25.12.6-bcm27xx-bcm2711
+
+      - name: Build and sign the repository
+        env:
+          APK_KEY: ${{ secrets.PULZR_ADDONS_APK_KEY }}
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = tag ]; then
+            export PULZR_ADDONS_TAG="${GITHUB_REF_NAME}"
+          fi
+          if [ -n "${APK_KEY}" ]; then
+            umask 077
+            key="${RUNNER_TEMP}/addons-apk-key.pem"
+            printf '%s\n' "${APK_KEY}" > "${key}"
+            trap 'rm -f "${key}"' EXIT
+            export PULZR_ADDONS_APK_KEY_FILE="${key}"
+          else
+            echo "::warning::No PULZR_ADDONS_APK_KEY secret: signed with a throwaway key, so this repository cannot be published."
+          fi
+          ./build.sh --stage addons
+
+      - name: Summarize
+        run: |
+          {
+            echo "### Add-ons"
+            echo
+            echo '```'
+            jq -r '.addons[] | .name as $n | .arches | to_entries[]
+                   | "\($n) \(.key) \(.value.file) \(.value.bytes) bytes"' out/addons/addons.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Immutable paths: a tag that already has a repository is refused rather
+      # than overwritten, because a gateway that rolled back restores its
+      # add-ons from the old release's path and must find what it left.
+      - name: Publish to R2
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ADDONS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_ADDONS_SECRET_ACCESS_KEY }}
+        run: |
+          if [ -z "${R2_ACCOUNT_ID}" ] || [ -z "${AWS_ACCESS_KEY_ID}" ] || [ -z "${AWS_SECRET_ACCESS_KEY}" ]; then
+            echo "::warning::R2 secrets are not set: the add-on repository for ${GITHUB_REF_NAME} was built but NOT uploaded."
+            exit 0
+          fi
+          if [ ! -f out/addons/PUBLISHABLE ]; then
+            echo "::warning::The repository was not signed with PULZR_ADDONS_APK_KEY: built but NOT uploaded."
+            exit 0
+          fi
+
+          # A pinned AWS CLI when the runner has none, checked against the
+          # sha256 recorded here, as every other download in this repo is.
+          if ! command -v aws >/dev/null 2>&1; then
+            v=2.31.0 want=f5fbb3304307ce008756356fadf7855d377b4342da9911728669265ec1ec36dc
+            curl -fsSL --retry 3 -o "${RUNNER_TEMP}/awscli.zip" \
+              "https://awscli.amazonaws.com/awscli-exe-linux-x86_64-${v}.zip"
+            [ "$(sha256sum "${RUNNER_TEMP}/awscli.zip" | cut -d' ' -f1)" = "${want}" ] \
+              || { echo "::error::checksum mismatch for the AWS CLI"; exit 1; }
+            unzip -q "${RUNNER_TEMP}/awscli.zip" -d "${RUNNER_TEMP}/awscli"
+            "${RUNNER_TEMP}/awscli/aws/install" --install-dir "${RUNNER_TEMP}/aws-cli" --bin-dir "${RUNNER_TEMP}/aws-bin"
+            export PATH="${RUNNER_TEMP}/aws-bin:${PATH}"
+          fi
+
+          export AWS_DEFAULT_REGION=auto
+          # R2 does not take the CRC headers newer AWS CLIs add by default.
+          export AWS_REQUEST_CHECKSUM_CALCULATION=when_required
+          export AWS_RESPONSE_CHECKSUM_VALIDATION=when_required
+          ep="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          base="${ADDONS_PREFIX}/${GITHUB_REF_NAME}"
+          cc="public, max-age=31536000, immutable"
+
+          # An error here must not read as "does not exist".
+          existing="$(aws s3api list-objects-v2 --endpoint-url "${ep}" --bucket "${R2_BUCKET}" \
+                        --prefix "${base}/addons.json" --max-keys 1 --query 'Contents[0].Key' --output text)" \
+            || { echo "::error::could not list ${R2_BUCKET}/${base}/"; exit 1; }
+          if [ "${existing}" != None ]; then
+            echo "::error::${base}/addons.json already exists in ${R2_BUCKET}. Published repositories are immutable; cut a new tag."
+            exit 1
+          fi
+
+          # The index and packages first, the catalog last: the catalog is what
+          # says a release is complete, so a half-sent one is not offered.
+          for dir in out/addons/*/; do
+            arch="$(basename "${dir}")"
+            for f in "${dir}"*.apk; do
+              aws s3 cp --endpoint-url "${ep}" --cache-control "${cc}" \
+                --content-type application/octet-stream "${f}" "s3://${R2_BUCKET}/${base}/${arch}/$(basename "${f}")"
+            done
+            aws s3 cp --endpoint-url "${ep}" --cache-control "${cc}" \
+              --content-type application/octet-stream "${dir}packages.adb" "s3://${R2_BUCKET}/${base}/${arch}/packages.adb"
+          done
+          aws s3 cp --endpoint-url "${ep}" --cache-control "${cc}" \
+            --content-type application/json out/addons/addons.json "s3://${R2_BUCKET}/${base}/addons.json"
+
+          # Fetched back from the public URL, which is what a gateway uses.
+          want="$(sha256sum out/addons/addons.json | cut -d' ' -f1)"
+          for _ in 1 2 3 4 5; do
+            got="$(curl -fsS "${ADDONS_URL}/${GITHUB_REF_NAME}/addons.json" | sha256sum | cut -d' ' -f1)" || got=
+            [ "${got}" = "${want}" ] && { echo "published ${ADDONS_URL}/${GITHUB_REF_NAME}/"; exit 0; }
+            sleep 5
+          done
+          echo "::error::${ADDONS_URL}/${GITHUB_REF_NAME}/addons.json is not served as uploaded"
+          exit 1
+
+  # ───────────────────────────────────────────────────────────────────────
   boards:
     name: Discover boards
     needs: check
@@ -544,7 +700,7 @@ jobs:
   release:
     name: Release
     if: startsWith(github.ref, 'refs/tags/')
-    needs: image
+    needs: [image, addons]
     runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
     permissions:
       contents: write

@@ -24,6 +24,9 @@
 # A package with an `arches` file is built once per line of it, for binaries:
 # its control file says `Architecture: @ARCH@`, the second column becomes its
 # Depends, and its executable `fetch <arch> <root> <cache>` adds the payload.
+#
+# A package with an `addon` file is an add-on: it stays out of the images'
+# package lists and is published by scripts/build-addons.sh instead.
 
 set -euo pipefail
 
@@ -115,7 +118,15 @@ package_one() {
   # lines fold into one, and Depends loses its commas, which is apk's spelling.
   local control="${WORK}/${name}-${want_arch}.control"
   sed -e "s/@ARCH@/${want_arch}/g" "${pkgdir}/control" > "${control}"
-  if [ -n "${depends}" ] && [ "${depends}" != "-" ]; then
+  [ "${depends}" = "-" ] && depends=""
+  # An add-on is installed later, from a repository, by a gateway that is
+  # already running a release. Pinning it to that release's pulzr-base, to the
+  # revision, is what lets apk itself refuse one built for another release,
+  # even one served from the wrong path: the package version drops the -rcN
+  # suffix, so the revision (the build stamp) is the only thing that tells two
+  # candidates of one release apart.
+  [ -f "${pkgdir}/addon" ] && depends="${depends:+${depends} }pulzr-base=${PKG_VERSION}"
+  if [ -n "${depends}" ]; then
     echo "Depends: ${depends}" >> "${control}"
   fi
   local arch

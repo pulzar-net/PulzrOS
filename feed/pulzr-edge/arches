@@ -4,6 +4,10 @@
 # rustls, built in). apk matches the architecture name exactly, so the three
 # Pi architectures are three packages of the same aarch64 binary.
 mipsel_24kc          -
+# The GL-SFT1200's architecture: apk matches the name exactly, and a repository
+# for mipsel_24kc is not one for it. The same soft-float binary; interAptiv's FPU
+# is simply unused. Run it on an Opal before the first release that offers it.
+mipsel_24kc_24kf     -
 aarch64_cortex-a53   -
 aarch64_cortex-a72   -
 aarch64_cortex-a76   -

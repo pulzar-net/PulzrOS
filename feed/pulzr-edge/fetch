@@ -23,7 +23,7 @@ sha256() {
 
 case "${ARCH}" in
   aarch64_*)   asset=pulzr-edge-aarch64-linux-musl want=a88e7d4e1a8029d656ae568ed31285dd285c5384bcbe5847bbc7e15020213a9f ;;
-  mipsel_24kc) asset=pulzr-edge-mipsel-linux-musl  want=fb997b82791b9f8c800cdc647b21d9997b11d7fc131985ca6b487fa9a6a12159 ;;
+  mipsel_24kc*) asset=pulzr-edge-mipsel-linux-musl  want=fb997b82791b9f8c800cdc647b21d9997b11d7fc131985ca6b487fa9a6a12159 ;;
   *) echo "no pulzr-edge binary for ${ARCH}" >&2; exit 1 ;;
 esac
 

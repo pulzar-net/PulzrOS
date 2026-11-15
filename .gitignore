@@ -47,6 +47,10 @@ ucode/
 .env
 .env.local
 *.pem
+# Except the add-ons repository's public key. Public, and committing it means a
+# change to what gateways trust goes through review; its private half is the
+# secret PULZR_ADDONS_APK_KEY and is never in the tree.
+!feed/pulzr-base/files/etc/apk/keys/pulzr-addons.pem
 # A developer's own SSH material dropped into the image overlay by hand.
 # build.sh composes root's authorized_keys itself; nothing belongs here.
 boards/common/files/etc/dropbear/

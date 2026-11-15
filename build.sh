@@ -11,6 +11,7 @@
 #   ./build.sh --stage console      # just the web console
 #   ./build.sh --stage feed         # just the packages
 #   ./build.sh --stage image rpi4   # just the image, using what is on disk
+#   ./build.sh --stage addons       # the signed add-on repository, from the staged feed
 #
 #   PULZR_DEV=1 ./build.sh rpi4   # a development image, for the bench
 #
@@ -702,6 +703,23 @@ build_feed() {
     "${PULZR_VERSION}" "${PULZR_BUILD}"
 }
 
+# The add-on repository for this release. It needs an ImageBuilder only for the
+# apk inside it, which is the same binary in every one of them, so rpi4's is
+# used: the cache for it is already warm from that board's image job.
+# PULZR_ADDONS_TAG names the release the repository is for; a push that is not
+# a tag builds under the version, which the workflow never uploads.
+build_addons() {
+  local out="${OUT_DIR}/addons"
+  (
+    # shellcheck disable=SC1091
+    . "${BOARDS_DIR}/rpi4/board.conf"
+    fetch_imagebuilder
+    "${ROOT_DIR}/scripts/build-addons.sh" "$(imagebuilder_dir)" "${BUILD_DIR}/feed" \
+      "${out}" "${PULZR_ADDONS_TAG:-v${PULZR_VERSION}}"
+  )
+  log "Done. Add-on repository: out/addons/"
+}
+
 # ── Per-board image ─────────────────────────────────────────────────────────
 
 render_board_files() {
@@ -896,10 +914,10 @@ main() {
   local stage=all
 
   if [ "${1:-}" = "--stage" ]; then
-    stage="${2:?--stage needs a name: console, feed or image}"
+    stage="${2:?--stage needs a name: console, feed, image or addons}"
     case "${stage}" in
-      console|feed|image) ;;
-      *) die "unknown stage '${stage}' (console, feed, image)" ;;
+      console|feed|image|addons) ;;
+      *) die "unknown stage '${stage}' (console, feed, image, addons)" ;;
     esac
     shift 2
   elif [ "${1:-}" = "--assemble-only" ]; then
@@ -921,7 +939,7 @@ main() {
     '')
       # No board is fine for the stages that do not need one.
       case "${stage}" in
-        console|feed) ;;
+        console|feed|addons) ;;
         *) sed -n '2,24p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
       esac ;;
     *) boards=("$@") ;;
@@ -950,6 +968,9 @@ main() {
       install_ssh_ca
       build_feed
       log "Done. Feed only."
+      return 0 ;;
+    addons)
+      build_addons
       return 0 ;;
     image)
       # Re-run in a fresh CI job, so the overlay has to be reconstructed even
