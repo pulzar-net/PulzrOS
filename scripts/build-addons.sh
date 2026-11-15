@@ -166,9 +166,14 @@ for arch in $(sort -u "${ARCHES_SEEN}"); do
   [ -s "${OUT}/${arch}/packages.adb" ] || die "apk mkndx wrote no index for ${arch}"
 
   # Read the index back as a gateway does: a local packages.adb as the only
-  # repository, signature checking on. apk is given an empty root of its own.
+  # repository, signature checking on. apk is given an empty root of its own,
+  # with the empty database an initialised root has: apk-tools 3 will not
+  # open a root without one ("Unable to read database").
   readback() {
     local keys="$1" root; root="$(mktemp -d "${WORK}/root.XXXXXX")"
+    mkdir -p "${root}/lib/apk/db" "${root}/etc/apk"
+    : > "${root}/lib/apk/db/installed"
+    : > "${root}/etc/apk/world"
     "${APK}" --root "${root}" --keys-dir "${keys}" --no-cache --no-interactive \
       --repositories-file /dev/null --repository "${OUT}/${arch}/packages.adb" \
       --arch "${arch}" list 2>&1
