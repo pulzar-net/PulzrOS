@@ -184,7 +184,9 @@ ${listing}"
   grep -q '^pulzr-' <<<"${listing}" \
     || die "the index for ${arch} lists no add-on:
 ${listing}"
-  if readback "${WORK}/nokeys" >/dev/null 2>&1; then
+  # Without the key apk-tools 3 does not fail: it skips the untrusted index
+  # and lists nothing from it. So the proof is that no add-on is listed.
+  if readback "${WORK}/nokeys" 2>/dev/null | grep -q '^pulzr-'; then
     die "apk read the index for ${arch} with no trusted key: the signature is not being checked"
   fi
   echo "  indexed and verified ${arch}"
