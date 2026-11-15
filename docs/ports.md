@@ -45,7 +45,7 @@ becomes an uplink, or the tunnel on the uplink that becomes a LAN port when
 the change came through Pulzar Cloud. So:
 
 1. `set` keeps the configuration it replaces on flash
-   (`/etc/pulzr/ports/rollback`), applies the new one, and starts a timer.
+   (`/etc/pulzr/apply/rollback`, by `pulzr-apply`, which the console's other network setters arm the same way), applies the new one, and starts a timer.
 2. The page confirms by reaching the gateway again, no sooner than 15 seconds
    after the reload finished (`confirm` refuses earlier: the network is still
    moving).

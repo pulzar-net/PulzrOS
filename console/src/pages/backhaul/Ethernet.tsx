@@ -12,8 +12,8 @@ import Segmented from '@/components/ui/Segmented';
 import { TextField } from '@/components/ui/Field';
 import Spinner from '@/components/ui/Spinner';
 import ErrorState from '@/components/ErrorState';
-import PortsChangeNotice from '@/components/PortsChangeNotice';
-import { usePortsChange } from '@/hooks/usePortsChange';
+import ApplyChangeNotice from '@/components/ApplyChangeNotice';
+import { useApplyChange } from '@/hooks/useApplyChange';
 import styles from '../Pages.module.css';
 
 /**
@@ -49,7 +49,7 @@ export default function Ethernet() {
     queryKey: ['network-status'],
     queryFn: () => api.get<NetworkStatus>('/network/status'),
   });
-  const change = usePortsChange();
+  const change = useApplyChange();
 
   if (ports.isLoading) return <Spinner label="Reading the uplinks" />;
   if (ports.isError) return <ErrorState error={ports.error} onRetry={ports.refetch} />;
@@ -67,7 +67,7 @@ export default function Ethernet() {
 
   return (
     <div className="fade-in">
-      <PortsChangeNotice change={change} />
+      <ApplyChangeNotice change={change} />
       {!wired.length && <Notice tone="info">No port is an uplink.</Notice>}
       {wired.map((w) => (
         <Uplink

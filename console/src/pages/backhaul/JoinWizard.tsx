@@ -10,6 +10,7 @@ import Spinner from '@/components/ui/Spinner';
 import Badge from '@/components/ui/Badge';
 import Fact, { FactList } from '@/components/Fact';
 import { CheckboxField, SelectField, TextField } from '@/components/ui/Field';
+import type { Pending } from '@/hooks/useApplyChange';
 import { explain, type WifiFailureInfo } from './WifiFailure';
 import { SECURITY_NAMES, UPLINK_WARNING, commonName, fingerprint, signalBars } from './wifiFormat';
 import styles from './Wifi.module.css';
@@ -55,7 +56,7 @@ export default function JoinWizard({
   wifi: AccessStatus['wifi'];
   failure: WifiFailureInfo | null | undefined;
   onClose: () => void;
-  onJoined: () => void;
+  onJoined: (pending?: Pending) => void;
   /** This failure has been shown here, so the page need not announce it. */
   onFailureShown: () => void;
 }) {
@@ -148,7 +149,7 @@ export default function JoinWizard({
     // new one from the one that may have prompted it.
     onMutate: () => setFailureBefore(failure?.at ?? null),
     mutationFn: () =>
-      api.post<{ message: string }>('/access/wifi', {
+      api.post<{ message: string; pending?: Pending }>('/access/wifi', {
         ssid: ssid.trim(),
         ...(isEap
           ? {
@@ -164,11 +165,11 @@ export default function JoinWizard({
             }
           : { key: passphrase || undefined, allowOpen }),
       }),
-    onSuccess: () => {
+    onSuccess: (answer) => {
       setProbing(false);
       setJoinedAt(Date.now());
       setStep('joining');
-      onJoined();
+      onJoined(answer.pending);
     },
   });
 

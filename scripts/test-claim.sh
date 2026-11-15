@@ -194,6 +194,12 @@ check "an unreadable power board record is null, and the report still parses" \
     python3 -c 'import json,sys; assert json.loads(sys.argv[1])["facts"]["rakPower"] is None' "$(last_body report)"
 rm -f "${STUBS}/pulzr-rak-power"
 
+check "a gateway without pulzr-apply reports apply as 0" [ "$(field "$(last_body report)" facts.apply)" = 0 ]
+printf '#!/bin/sh\nexit 0\n' > "${STUBS}/pulzr-apply"; chmod +x "${STUBS}/pulzr-apply"
+claim report
+check "a gateway with pulzr-apply reports apply as 1" [ "$(field "$(last_body report)" facts.apply)" = 1 ]
+rm -f "${STUBS}/pulzr-apply"
+
 # ── a 404 that is not the revoked answer ────────────────────────────────────
 
 answer report 404 '{"error":"Not found"}'

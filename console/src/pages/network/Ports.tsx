@@ -15,8 +15,8 @@ import DataTable from '@/components/DataTable';
 import Fact, { FactList } from '@/components/Fact';
 import Spinner from '@/components/ui/Spinner';
 import ErrorState from '@/components/ErrorState';
-import PortsChangeNotice from '@/components/PortsChangeNotice';
-import { usePortsChange } from '@/hooks/usePortsChange';
+import ApplyChangeNotice from '@/components/ApplyChangeNotice';
+import { useApplyChange } from '@/hooks/useApplyChange';
 import { useFeatures } from '@/hooks/useFeatures';
 import { countdown } from '@/lib/format';
 import styles from './Ports.module.css';
@@ -29,7 +29,7 @@ import styles from './Ports.module.css';
  *
  * Edits are a draft until Apply, and the whole layout is applied at once and
  * kept only once this page reaches the gateway again afterwards; see
- * usePortsChange. A layout that cuts off whoever made it comes back on its own.
+ * useApplyChange. A layout that cuts off whoever made it comes back on its own.
  */
 
 type Draft = PortsLayout['ports'];
@@ -79,7 +79,7 @@ export default function Ports() {
     queryFn: () => api.get<PortsStatus>('/ports/status'),
     refetchInterval: 10_000,
   });
-  const change = usePortsChange();
+  const change = useApplyChange();
   const features = useFeatures();
   // Who is behind each LAN port: pulzr-lan reads it off the bridge's
   // forwarding table, the same answer as the LAN page's Port column.
@@ -231,7 +231,7 @@ export default function Ports() {
 
   return (
     <div className="fade-in">
-      <PortsChangeNotice change={change} />
+      <ApplyChangeNotice change={change} />
       {foreign && (
         <Notice tone="warning">
           A port change{foreign.by ? ` by ${foreign.by}` : ''} is undone in {countdown(foreign.in)} unless it is kept.{' '}

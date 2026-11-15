@@ -51,11 +51,17 @@ let lan = loadfile('/usr/share/pulzr/console/lib/lan.uc', { raw_mode: true })();
 let dns = loadfile('/usr/share/pulzr/console/lib/dns.uc', { raw_mode: true })();
 let uplinks = loadfile('/usr/share/pulzr/console/lib/uplinks.uc', { raw_mode: true })();
 let ports = loadfile('/usr/share/pulzr/console/lib/ports.uc', { raw_mode: true })();
+let apply = loadfile('/usr/share/pulzr/console/lib/apply.uc', { raw_mode: true })();
 let speedtest = loadfile('/usr/share/pulzr/console/lib/speedtest.uc', { raw_mode: true })();
 // What changes the gateway, shared with the terminal UI; see actions.uc.
 let actions = loadfile('/usr/share/pulzr/console/lib/actions.uc', { raw_mode: true })();
 
 const SESSION_COOKIE = 'pulzr_session';
+
+// Seconds a change waits to be confirmed before the gateway puts the old
+// configuration back (pulzr-apply).
+const APPLY_WINDOW = 90;
+const CELLULAR_WINDOW = 240;
 
 // Routes reachable without a session. Everything needed to *get* a session,
 // and nothing else.
@@ -322,7 +328,26 @@ const ROUTES = {
     },
     'GET  /api/network/status':   () => respond(200, network.status()),
     'GET  /api/network/backhaul': () => respond(200, network.backhaul()),
-    'POST /api/network/cellular': (env, req, s) => respond(200, actions.setCellular(req, s)),
+    // Every network setter below that can cut off whoever makes it is armed
+    // with a rollback window (apply.guard) and answers with `pending`; the
+    // caller confirms through /api/apply/confirm once it reaches the gateway
+    // again. Re-attaching with a new APN can take a minute, so cellular
+    // gets longer than the rest.
+    'POST /api/network/cellular': (env, req, s) => {
+        const result = apply.guard(CELLULAR_WINDOW, s, () => actions.setCellular(req, s));
+        return result.error ? error(409, result.error) : respond(200, result);
+    },
+
+    // ── apply: the rollback window, see lib/apply.uc ────────────────────────
+    'GET  /api/apply/status':     () => respond(200, apply.status()),
+    'POST /api/apply/confirm':    (env, req, s) => {
+        const result = apply.confirm();
+        return result.error ? error(409, result.error) : respond(200, result);
+    },
+    'POST /api/apply/revert':     (env, req, s) => {
+        const result = apply.revert();
+        return result.error ? error(409, result.error) : respond(200, result);
+    },
 
     // ── ports: roles, VLANs and each uplink's addressing, see lib/ports.uc ──
     //
@@ -372,9 +397,12 @@ const ROUTES = {
     },
     'POST /api/access/ap/up':     (env, req, s) => respond(200, actions.raiseAp(req, s)),
     'POST /api/access/ap/down':   (env, req, s) => respond(200, actions.lowerAp(req, s)),
-    'POST /api/access/wifi/forget': (env, req, s) => respond(200, actions.forgetWifi(req, s)),
+    'POST /api/access/wifi/forget': (env, req, s) => {
+        const result = apply.guard(APPLY_WINDOW, s, () => actions.forgetWifi(req, s));
+        return result.error ? error(409, result.error) : respond(200, result);
+    },
     'POST /api/access/wifi':      (env, req, s) => {
-        const result = actions.joinWifi(req, s);
+        const result = apply.guard(APPLY_WINDOW, s, () => actions.joinWifi(req, s));
         if (result.error) return error(400, result.error);
         return respond(200, result);
     },
@@ -413,7 +441,7 @@ const ROUTES = {
     // ── dns: the resolver, see lib/dns.uc ───────────────────────────────────
     'GET  /api/dns/status':    () => respond(200, dns.status()),
     'POST /api/dns/upstream':  (env, req, s) => {
-        const result = actions.setDnsUpstream(req, s);
+        const result = apply.guard(APPLY_WINDOW, s, () => actions.setDnsUpstream(req, s));
         return result.error ? error(400, result.error) : respond(200, result);
     },
     'POST /api/dns/host':      (env, req, s) => {
@@ -432,15 +460,15 @@ const ROUTES = {
     // ── uplinks: order and failover, see lib/uplinks.uc ─────────────────────
     'GET  /api/uplinks/status':   () => respond(200, uplinks.status()),
     'POST /api/uplinks/order':    (env, req, s) => {
-        const result = actions.setUplinkOrder(req, s);
+        const result = apply.guard(APPLY_WINDOW, s, () => actions.setUplinkOrder(req, s));
         return result.error ? error(400, result.error) : respond(200, result);
     },
     'POST /api/uplinks/track':    (env, req, s) => {
-        const result = actions.setUplinkTrack(req, s);
+        const result = apply.guard(APPLY_WINDOW, s, () => actions.setUplinkTrack(req, s));
         return result.error ? error(400, result.error) : respond(200, result);
     },
     'POST /api/uplinks/tracking': (env, req, s) => {
-        const result = actions.setUplinkTracking(req, s);
+        const result = apply.guard(APPLY_WINDOW, s, () => actions.setUplinkTracking(req, s));
         return result.error ? error(400, result.error) : respond(200, result);
     },
 

@@ -13,6 +13,8 @@ import { TextField } from '@/components/ui/Field';
 import DataTable from '@/components/DataTable';
 import Spinner from '@/components/ui/Spinner';
 import ErrorState from '@/components/ErrorState';
+import ApplyChangeNotice from '@/components/ApplyChangeNotice';
+import { useApplyChange, type Pending } from '@/hooks/useApplyChange';
 import { duration, isWiredIface, uplinkName } from '@/lib/format';
 import styles from '../Pages.module.css';
 
@@ -36,6 +38,7 @@ const column = createColumnHelper<Uplink>();
 
 export default function Uplinks() {
   const queryClient = useQueryClient();
+  const change = useApplyChange();
   const status = useQuery({
     queryKey: ['uplinks'],
     queryFn: () => api.get<UplinksStatus>('/uplinks/status'),
@@ -47,18 +50,24 @@ export default function Uplinks() {
     queryClient.invalidateQueries({ queryKey: ['backhaul'] });
   };
   const order = useMutation({
-    mutationFn: (next: UplinkIface[]) => api.post('/uplinks/order', { order: next }),
-    onSuccess: refresh,
+    mutationFn: (next: UplinkIface[]) => api.post<{ pending?: Pending }>('/uplinks/order', { order: next }),
+    onSuccess: (answer) => {
+      change.watch(answer.pending);
+      refresh();
+    },
   });
   const track = useMutation({
-    mutationFn: (body: { iface: UplinkIface; on: boolean }) => api.post('/uplinks/track', body),
-    onSuccess: refresh,
+    mutationFn: (body: { iface: UplinkIface; on: boolean }) => api.post<{ pending?: Pending }>('/uplinks/track', body),
+    onSuccess: (answer) => {
+      change.watch(answer.pending);
+      refresh();
+    },
   });
 
   // Stable across renders, so the table keeps its cells; see Lan.tsx.
   const setOrder = order.mutate;
   const setTrack = track.mutate;
-  const pending = order.isPending || track.isPending;
+  const pending = order.isPending || track.isPending || change.phase === 'confirming';
   const current = status.data?.order;
   const active = status.data?.active ?? null;
 
@@ -156,6 +165,7 @@ export default function Uplinks() {
 
   return (
     <div className="fade-in">
+      <ApplyChangeNotice change={change} />
       {!state.active && <Notice tone="error">No uplink is up.</Notice>}
 
       <Section title="Order" icon={ListOrdered} wide>
@@ -163,7 +173,13 @@ export default function Uplinks() {
         <DataTable table={table} fill="state" />
       </Section>
 
-      <Tracking state={state} onApplied={refresh} />
+      <Tracking
+        state={state}
+        onApplied={(pending) => {
+          change.watch(pending);
+          refresh();
+        }}
+      />
     </div>
   );
 }
@@ -184,7 +200,7 @@ function State({ uplink, active }: { uplink: Uplink; active: UplinkIface | null 
   return <Badge tone="neutral">Standby</Badge>;
 }
 
-function Tracking({ state, onApplied }: { state: UplinksStatus; onApplied: () => void }) {
+function Tracking({ state, onApplied }: { state: UplinksStatus; onApplied: (pending?: Pending) => void }) {
   const t = state.tracking;
   const [ips, setIps] = useState(t.ips.join(', '));
   const [every, setEvery] = useState(String(t.interval));
@@ -193,13 +209,13 @@ function Tracking({ state, onApplied }: { state: UplinksStatus; onApplied: () =>
 
   const apply = useMutation({
     mutationFn: () =>
-      api.post('/uplinks/tracking', {
+      api.post<{ pending?: Pending }>('/uplinks/tracking', {
         ips: ips.split(',').map((ip) => ip.trim()).filter(Boolean),
         interval: Number(every),
         down: Number(down),
         up: Number(up),
       }),
-    onSuccess: onApplied,
+    onSuccess: (answer) => onApplied(answer.pending),
   });
 
   return (
@@ -216,7 +232,6 @@ function Tracking({ state, onApplied }: { state: UplinksStatus; onApplied: () =>
       </div>
 
       {apply.isError && <Notice tone="error">{(apply.error as Error).message}</Notice>}
-      {apply.isSuccess && <Notice tone="success">Applied.</Notice>}
 
       <div className={styles.actions}>
         <Button variant="primary" loading={apply.isPending} onClick={() => apply.mutate()}>

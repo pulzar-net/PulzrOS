@@ -10,12 +10,10 @@
 //   pulzr-ports identify <file>    keep what Pulzar Cloud answered about them
 //   pulzr-ports set <file>|-       a whole layout, as JSON; applied at once
 //                                    and undone unless confirmed in time
-//   pulzr-ports confirm            keep the layout `set` applied
-//   pulzr-ports revert             undo it now
+//   pulzr-ports confirm            keep the layout `set` applied (pulzr-apply)
+//   pulzr-ports revert             undo it now (pulzr-apply)
 //   pulzr-ports seed               the board's layout, unless one is kept
 //   pulzr-ports render             write network, firewall and dhcp from it
-//   pulzr-ports boot               undo a change a reboot interrupted
-//   pulzr-ports expire <seconds>   the timer `set` starts
 //
 // ── ROLES, NOT VLANS ───────────────────────────────────────────────────────
 //
@@ -59,28 +57,23 @@
 // replaces, on flash, and starts a timer; the console confirms by reaching
 // the gateway again after the change, and if nothing does within the window
 // the old configuration comes back. A reboot inside the window undoes it at
-// boot, before the network starts. This is LuCI's apply-and-rollback, for the
-// one kind of change here that needs it.
+// boot, before the network starts. This is LuCI's apply-and-rollback; the
+// snapshot, timer, confirm and boot hook are pulzr-apply's, which the console's
+// other network setters arm the same way.
 //
 // A second `set` inside the window keeps the first snapshot: the one known to
-// work is the one before any of them.
+// work is the one before any of them (`pulzr-apply arm -e`).
 
 let fs = require('fs');
 let uci = require('uci');
 
-const STATE = '/etc/pulzr/ports';
 // Pulzar Cloud's answer to the report about the routers and the public side:
 // tmpfs, because it is asked again on every boot's report.
 const IDENTITY = '/var/run/pulzr/network.json';
 const MAC = /^[0-9a-f]{2}(:[0-9a-f]{2}){5}$/;
-const PENDING = STATE + '/pending.json';
-const SNAPSHOT = STATE + '/rollback';
+const APPLY = '/usr/sbin/pulzr-apply';
+// What `set` writes, and so what it commits.
 const SNAPSHOT_CONFIGS = ['network', 'firewall', 'dhcp', 'pulzr'];
-const WINDOW = 90;
-// A confirm sooner than this after `set` is refused: the network, firewall
-// and tunnel are still moving, and a browser that answers before the new
-// layout has taken effect has proved nothing about it.
-const SETTLE = 15;
 const MAX_VLANS = 8;
 const MAX_UPLINKS = 8;
 const ROLES = ['uplink', 'devices', 'none'];
@@ -499,54 +492,14 @@ let commitAll = (cur) => {
     for (let c in SNAPSHOT_CONFIGS) cur.commit(c);
 };
 
-let reload = () => {
-    system('ubus call network reload >/dev/null 2>&1');
-    system('/etc/init.d/firewall reload >/dev/null 2>&1');
-    system('/etc/init.d/dnsmasq reload >/dev/null 2>&1');
-    if (fs.access('/usr/sbin/pulzr-uplinks', 'x')) system('/usr/sbin/pulzr-uplinks apply >/dev/null 2>&1');
-    if (fs.access('/usr/sbin/pulzr-lan', 'x')) system('( sleep 5; /usr/sbin/pulzr-lan isolate ) >/dev/null 2>&1 &');
-    // The tunnel and LoRa routing re-pick their uplink on ifup and ifdown;
-    // an uplink that only changed name gets neither, so ask once.
-    system('( sleep 8; /usr/sbin/pulzr-wireguard-route apply; /usr/sbin/pulzr-lora-route apply ) >/dev/null 2>&1 &');
-};
+let reload = () => system([APPLY, 'reload']);
 
 // ── the pending change ─────────────────────────────────────────────────────
 
+// pulzr-apply's answer, which is where the snapshot, the timer and the
+// settle time live.
 let pending = () => {
-    try { return json(fs.readfile(PENDING) ?? 'null'); } catch (e) { return null; }
-};
-
-let snapshot = () => {
-    system(['mkdir', '-p', SNAPSHOT]);
-    for (let c in SNAPSHOT_CONFIGS) {
-        let from = '/etc/config/' + c;
-        if (fs.access(from)) fs.writefile(SNAPSHOT + '/' + c, fs.readfile(from));
-        else fs.unlink(SNAPSHOT + '/' + c);
-    }
-    system('sync');
-};
-
-let restore = () => {
-    for (let c in SNAPSHOT_CONFIGS) {
-        let from = SNAPSHOT + '/' + c;
-        if (fs.access(from)) fs.writefile('/etc/config/' + c, fs.readfile(from));
-    }
-};
-
-let clearPending = () => {
-    for (let c in SNAPSHOT_CONFIGS) fs.unlink(SNAPSHOT + '/' + c);
-    fs.rmdir(SNAPSHOT);
-    fs.unlink(PENDING);
-    system('sync');
-};
-
-let arm = (by) => {
-    let until = time() + WINDOW;
-    let was = pending();
-    fs.writefile(PENDING, sprintf('%J', { until, by: by ?? was?.by ?? null, since: was?.since ?? time(), applied: time() }));
-    system('sync');
-    system(['start-stop-daemon', '-S', '-b', '-x', '/usr/sbin/pulzr-ports', '--', 'expire', sprintf('%d', WINDOW + 1)]);
-    return until;
+    try { return json(capture([APPLY, 'status']) ?? 'null'); } catch (e) { return null; }
 };
 
 // ── status ─────────────────────────────────────────────────────────────────
@@ -672,10 +625,10 @@ let status = () => {
         console: accessPort(ports, b),
         consoleAddress: cur.get('network', 'console', 'ipaddr') ?? null,
         devices: devlanPresent(cur),
-        pending: p && p.until > time() ? { until: p.until, in: p.until - time(), by: p.by,
-                                           confirmableIn: max(0, (p.applied ?? 0) + SETTLE - time()) } : null,
-        window: WINDOW,
-        settle: SETTLE,
+        pending: p?.pending ? { until: p.pending.until, in: p.pending.in, by: p.pending.by,
+                                confirmableIn: p.pending.confirmableIn } : null,
+        window: p?.window ?? 90,
+        settle: p?.settle ?? 15,
     };
 };
 
@@ -692,71 +645,29 @@ let commands = {
         let checked = check(req, cur, b);
         if (checked.error) die(checked.error, 2);
         let ports = checked.value;
-        if (!pending()) snapshot();
+        // The snapshot is taken before anything is written; a second `set`
+        // inside the window keeps the first.
+        let armed = null;
+        try { armed = json(capture([APPLY, 'arm', '-e', ...(by ? [by] : [])]) ?? 'null'); } catch (e) { armed = null; }
+        if (!armed?.pending) die('the change could not be armed', 1);
         writeLayout(cur, ports);
         render(cur, ports, b);
         commitAll(cur);
-        let until = arm(by);
-        log(sprintf('layout applied%s, kept if confirmed within %ds: %s', by ? ' by ' + by : '', WINDOW,
+        log(sprintf('layout applied%s, kept if confirmed within %ds: %s', by ? ' by ' + by : '', armed.window,
                     join(', ', map(links(ports, b), (l) => sprintf('%s %s', l.device, l.role)))));
         reload();
-        // The settle time and the window count from here: the reload itself
-        // takes seconds on a slow CPU (most of twenty on the Opal, the
-        // firewall alone), a confirm inside it has proved nothing, and the
-        // person confirming should get the whole window. The timer armed
-        // before the reload, so a reload that never returns is still undone.
-        let p = pending();
-        if (p) {
-            p.applied = time();
-            p.until = time() + WINDOW;
-            fs.writefile(PENDING, sprintf('%J', p));
-            system('sync');
-        }
-        printf('%J\n', { pending: { until: p?.until ?? until, in: (p?.until ?? until) - time(), confirmableIn: SETTLE } });
+        // The reload itself takes seconds on a slow CPU (most of twenty on the
+        // Opal, the firewall alone): the settle time and the window count from
+        // the end of it.
+        let settled = null;
+        try { settled = json(capture([APPLY, 'settle']) ?? 'null'); } catch (e) { settled = null; }
+        let p = settled?.pending ?? armed.pending;
+        printf('%J\n', { pending: { until: p.until, in: p.in, confirmableIn: settled?.settle ?? 15 } });
     },
 
-    confirm: () => {
-        let p = pending();
-        if (!p) { printf('%J\n', { confirmed: false }); return; }
-        if (time() < (p.applied ?? 0) + SETTLE) die('too soon: the change is still settling', 3);
-        clearPending();
-        log('layout confirmed');
-        printf('%J\n', { confirmed: true });
-    },
+    confirm: () => exit(system([APPLY, 'confirm'])),
 
-    revert: () => {
-        if (!pending()) die('there is no change to undo', 2);
-        restore();
-        clearPending();
-        log('layout undone');
-        reload();
-        printf('%J\n', { reverted: true });
-    },
-
-    expire: (seconds) => {
-        sleep((int(seconds ?? WINDOW) || WINDOW) * 1000);
-        // Each `set` starts one of these and moves the deadline; only the one
-        // that wakes past it acts.
-        while (true) {
-            let p = pending();
-            if (!p) return;
-            if (p.until <= time()) break;
-            sleep((p.until - time() + 1) * 1000);
-        }
-        restore();
-        clearPending();
-        log('layout undone: nothing reached the gateway to confirm it');
-        reload();
-    },
-
-    // Before the network starts: a change still pending after a reboot was
-    // never confirmed.
-    boot: () => {
-        if (!pending()) return;
-        restore();
-        clearPending();
-        log('layout undone at boot: it was never confirmed');
-    },
+    revert: () => exit(system([APPLY, 'revert'])),
 
     // Each wired uplink's router, for the report: Pulzar Cloud names the maker.
     routers: () => {
@@ -813,5 +724,5 @@ let commands = {
 };
 
 let cmd = commands[ARGV[0] ?? 'status'];
-cmd ?? die('usage: pulzr-ports {status|routers|identify|set|confirm|revert|seed|render|boot}', 2);
+cmd ?? die('usage: pulzr-ports {status|routers|identify|set|confirm|revert|seed|render}', 2);
 call(cmd, null, null, ...slice(ARGV, 1));

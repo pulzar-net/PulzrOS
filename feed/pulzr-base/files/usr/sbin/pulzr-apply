@@ -1,0 +1,231 @@
+#!/bin/sh
+#
+# A change that is undone unless somebody confirms it in time.
+#
+#   pulzr-apply status                JSON: the pending change, the default window
+#   pulzr-apply arm [-e] [-w seconds] [by]
+#                                     keep what is on flash now and start the timer;
+#                                     the caller changes the configuration after it
+#   pulzr-apply settle                count the window from now (after a reload)
+#   pulzr-apply confirm               keep the change (exit 3 while it settles)
+#   pulzr-apply revert                undo it now
+#   pulzr-apply discard               forget it without undoing (the change failed)
+#   pulzr-apply expire <seconds>      the timer `arm` starts
+#   pulzr-apply boot                  undo a change a reboot interrupted
+#   pulzr-apply reload                make the network, firewall and DHCP re-read
+#
+# A change to the network, the radios, the firewall or DHCP can cut off
+# whoever makes it: the APN that does not attach, the Wi-Fi that was carrying
+# the tunnel, an uplink order that strands the gateway. LuCI answers that with
+# apply-and-rollback, and this is the same for the console: `arm` keeps the
+# configuration being replaced, on flash, and a timer undoes the change unless
+# `confirm` arrives first. The console confirms by reaching the gateway again
+# over a new connection, which proves the new configuration still carries the
+# way in. A reboot inside the window undoes it at boot, before the network
+# starts (/etc/init.d/pulzr-ports), so a power cut or a pulled plug does not
+# leave the unconfirmed configuration in force.
+#
+# One copy, here: pulzr-ports used to carry it for the port layout alone.
+#
+# `arm` refuses while a change is waiting, because the snapshot it kept is the
+# one known to work and a second unrelated change would otherwise inherit a
+# window that is already running down. `-e` is for a caller that is one change
+# in several steps (pulzr-ports set, twice inside the window): it keeps the
+# first snapshot and moves the deadline.
+
+STATE="${PULZR_APPLY_STATE:-/etc/pulzr/apply}"
+CONFIG="${PULZR_APPLY_CONFIG:-/etc/config}"
+PENDING="${STATE}/pending"
+SNAPSHOT="${STATE}/rollback"
+CONFIGS="network wireless firewall dhcp pulzr"
+WINDOW=90
+MAX_WINDOW=600
+# A confirm sooner than this after the change is refused: the network,
+# firewall and tunnel are still moving, and a browser that answers before the
+# new configuration has taken effect has proved nothing about it.
+SETTLE=15
+
+die() { echo "$1" >&2; exit "${2:-1}"; }
+log() { logger -t apply -p daemon.notice "$1"; }
+now() { date +%s; }
+
+# One field of the pending change, or nothing.
+field() { sed -n "s/^$1=//p" "${PENDING}" 2>/dev/null | head -n 1; }
+
+# 0 while a change waits, whether or not its window has run out: the timer
+# acts on that, and a second `arm` must not slip in beside it.
+is_pending() { [ -f "${PENDING}" ]; }
+
+# Names only what a person could have typed as an address, so it is safe in
+# the file and in the answer.
+clean_by() { printf '%s' "$1" | tr -cd 'A-Za-z0-9@._+-' | cut -c 1-80; }
+
+write_pending() {
+    # until window applied since by
+    printf 'until=%s\nwindow=%s\napplied=%s\nsince=%s\nby=%s\n' "$1" "$2" "$3" "$4" "$5" > "${PENDING}.new" \
+        && mv "${PENDING}.new" "${PENDING}"
+    sync
+}
+
+snapshot() {
+    mkdir -p "${SNAPSHOT}"
+    for c in ${CONFIGS}; do
+        if [ -f "${CONFIG}/${c}" ]; then cp "${CONFIG}/${c}" "${SNAPSHOT}/${c}"; else rm -f "${SNAPSHOT}/${c}"; fi
+    done
+    sync
+}
+
+# Puts the snapshot back. CHANGED names what differed, so a reload touches the
+# radios only when the radios were part of what is undone.
+restore() {
+    CHANGED=""
+    for c in ${CONFIGS}; do
+        [ -f "${SNAPSHOT}/${c}" ] || continue
+        if [ ! -f "${CONFIG}/${c}" ] || [ "$(cat "${SNAPSHOT}/${c}")" != "$(cat "${CONFIG}/${c}")" ]; then
+            CHANGED="${CHANGED} ${c}"
+        fi
+        cp "${SNAPSHOT}/${c}" "${CONFIG}/${c}.apply" && mv "${CONFIG}/${c}.apply" "${CONFIG}/${c}"
+    done
+}
+
+discard() {
+    for c in ${CONFIGS}; do rm -f "${SNAPSHOT}/${c}"; done
+    rmdir "${SNAPSHOT}" 2>/dev/null
+    rm -f "${PENDING}" "${PENDING}.new"
+    sync
+}
+
+reload() {
+    ubus call network reload >/dev/null 2>&1
+    case " ${CHANGED:-} " in
+        *" wireless "*) [ -x /sbin/wifi ] && /sbin/wifi reload >/dev/null 2>&1 ;;
+    esac
+    /etc/init.d/firewall reload >/dev/null 2>&1
+    /etc/init.d/dnsmasq reload >/dev/null 2>&1
+    [ -x /usr/sbin/pulzr-uplinks ] && /usr/sbin/pulzr-uplinks apply >/dev/null 2>&1
+    [ -x /usr/sbin/pulzr-lan ] && ( sleep 5; /usr/sbin/pulzr-lan isolate ) >/dev/null 2>&1 &
+    # The tunnel and LoRa routing re-pick their uplink on ifup and ifdown; an
+    # uplink that only changed name gets neither, so ask once.
+    ( sleep 8; /usr/sbin/pulzr-wireguard-route apply; /usr/sbin/pulzr-lora-route apply ) >/dev/null 2>&1 &
+}
+
+status() {
+    local until applied window by n
+    n="$(now)"
+    until="$(field until)"
+    if [ -n "${until}" ] && [ "${until}" -gt "${n}" ]; then
+        applied="$(field applied)"; window="$(field window)"; by="$(field by)"
+        [ -n "${by}" ] && by="\"${by}\"" || by=null
+        printf '{"pending":{"until":%d,"in":%d,"by":%s,"confirmableIn":%d,"window":%d},"window":%d,"settle":%d}\n' \
+            "${until}" "$((until - n))" "${by}" "$(max0 $((${applied:-0} + SETTLE - n)))" "${window:-${WINDOW}}" "${WINDOW}" "${SETTLE}"
+    else
+        printf '{"pending":null,"window":%d,"settle":%d}\n' "${WINDOW}" "${SETTLE}"
+    fi
+}
+
+max0() { [ "$1" -gt 0 ] && echo "$1" || echo 0; }
+
+start_timer() {
+    start-stop-daemon -S -b -x /usr/sbin/pulzr-apply -- expire "$(($1 + 1))"
+}
+
+arm() {
+    local extend="" window="${WINDOW}" by was_since n
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            -e) extend=1 ;;
+            -w) shift; window="${1:-}" ;;
+            *) by="$(clean_by "$1")" ;;
+        esac
+        shift
+    done
+    case "${window}" in ''|*[!0-9]*) die "a window is whole seconds" 2 ;; esac
+    { [ "${window}" -ge "${SETTLE}" ] && [ "${window}" -le "${MAX_WINDOW}" ]; } \
+        || die "a window is ${SETTLE} to ${MAX_WINDOW} seconds" 2
+    mkdir -p "${STATE}"
+    n="$(now)"
+    if is_pending; then
+        [ -n "${extend}" ] || die "a change is waiting to be confirmed" 4
+        was_since="$(field since)"
+        [ -n "${by}" ] || by="$(field by)"
+    else
+        snapshot
+    fi
+    write_pending "$((n + window))" "${window}" "${n}" "${was_since:-${n}}" "${by:-}"
+    start_timer "${window}"
+    status
+}
+
+# The reload that followed the change took seconds, and a confirm inside it
+# proves nothing, so the settle time and the window count from the end of it.
+# The timer armed before the reload, so a reload that never returns is still
+# undone.
+settle() {
+    local n window
+    is_pending || die "there is no change to settle" 2
+    n="$(now)"
+    window="$(field window)"
+    write_pending "$((n + ${window:-${WINDOW}}))" "${window:-${WINDOW}}" "${n}" "$(field since)" "$(field by)"
+    status
+}
+
+confirm() {
+    local applied
+    if ! is_pending; then printf '{"confirmed":false}\n'; return 0; fi
+    applied="$(field applied)"
+    [ "$(now)" -ge "$((${applied:-0} + SETTLE))" ] || die "too soon: the change is still settling" 3
+    discard
+    log "change confirmed"
+    printf '{"confirmed":true}\n'
+}
+
+revert() {
+    is_pending || die "there is no change to undo" 2
+    restore
+    discard
+    log "change undone"
+    reload
+    printf '{"reverted":true}\n'
+}
+
+expire() {
+    local until n
+    sleep "${1:-${WINDOW}}"
+    # Each `arm` starts one of these and moves the deadline; only the one that
+    # wakes past it acts.
+    while :; do
+        is_pending || return 0
+        until="$(field until)"
+        n="$(now)"
+        [ "${until}" -le "${n}" ] && break
+        sleep "$((until - n + 1))"
+    done
+    restore
+    discard
+    log "change undone: nothing reached the gateway to confirm it"
+    reload
+}
+
+# Before the network starts: a change still pending after a reboot was never
+# confirmed. No reload, nothing is running yet.
+boot() {
+    is_pending || return 0
+    restore
+    discard
+    log "change undone at boot: it was never confirmed"
+}
+
+cmd="${1:-status}"
+[ "$#" -gt 0 ] && shift
+case "${cmd}" in
+    status) status ;;
+    arm) arm "$@" ;;
+    settle) settle ;;
+    confirm) confirm ;;
+    revert) revert ;;
+    discard) discard ;;
+    expire) expire "$@" ;;
+    boot) boot ;;
+    reload) reload ;;
+    *) die "usage: pulzr-apply {status|arm|settle|confirm|revert|discard|boot|reload}" 2 ;;
+esac

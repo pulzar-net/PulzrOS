@@ -11,6 +11,8 @@ import Button from '@/components/ui/Button';
 import { CheckboxField, TextField } from '@/components/ui/Field';
 import Spinner from '@/components/ui/Spinner';
 import ErrorState from '@/components/ErrorState';
+import ApplyChangeNotice from '@/components/ApplyChangeNotice';
+import { useApplyChange, type Pending } from '@/hooks/useApplyChange';
 import { modemKind } from '@/lib/format';
 import styles from '../Pages.module.css';
 
@@ -23,6 +25,7 @@ import styles from '../Pages.module.css';
  */
 export default function Cellular() {
   const queryClient = useQueryClient();
+  const change = useApplyChange();
   const network = useQuery({
     queryKey: ['network-status'],
     queryFn: () => api.get<NetworkStatus>('/network/status'),
@@ -43,8 +46,10 @@ export default function Cellular() {
   }, [cellular?.apn, cellular?.enabled]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const apply = useMutation({
-    mutationFn: () => api.post('/network/cellular', { apn: usbEthernet ? undefined : apn.trim(), enabled }),
-    onSuccess: () => {
+    mutationFn: () =>
+      api.post<{ pending?: Pending }>('/network/cellular', { apn: usbEthernet ? undefined : apn.trim(), enabled }),
+    onSuccess: (answer) => {
+      change.watch(answer.pending);
       queryClient.invalidateQueries({ queryKey: ['network-status'] });
       queryClient.invalidateQueries({ queryKey: ['backhaul'] });
     },
@@ -57,6 +62,7 @@ export default function Cellular() {
 
   return (
     <div className="fade-in">
+      <ApplyChangeNotice change={change} />
       <Section>
         <FactList>
           <Fact label="State" value={<StatusBadge ok={cellular!.up === true} />} />
@@ -86,11 +92,6 @@ export default function Cellular() {
         </div>
 
         {apply.isError && <Notice tone="error">{(apply.error as Error).message}</Notice>}
-        {apply.isSuccess && (
-          <Notice tone="success">
-            {usbEthernet ? 'Applied.' : 'Applied. The modem is re-attaching.'}
-          </Notice>
-        )}
 
         <div className={styles.actions}>
           <Button variant="primary" loading={apply.isPending} onClick={() => apply.mutate()}>

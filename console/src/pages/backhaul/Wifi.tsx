@@ -11,6 +11,8 @@ import Notice from '@/components/ui/Notice';
 import Button from '@/components/ui/Button';
 import Spinner from '@/components/ui/Spinner';
 import ErrorState from '@/components/ErrorState';
+import ApplyChangeNotice from '@/components/ApplyChangeNotice';
+import { useApplyChange, type Pending } from '@/hooks/useApplyChange';
 import WifiFailure, { explain, useFailurePopup, type WifiFailureInfo } from './WifiFailure';
 import JoinWizard from './JoinWizard';
 import { SECURITY_NAMES, commonName, signalBars } from './wifiFormat';
@@ -48,6 +50,7 @@ interface WifiDetail {
 
 export default function Wifi() {
   const queryClient = useQueryClient();
+  const change = useApplyChange();
   // For a minute after a join or a rejoin, ask every two seconds: whether it
   // worked, and why not, should land while somebody is still looking.
   const [watchUntil, setWatchUntil] = useState(0);
@@ -77,14 +80,18 @@ export default function Wifi() {
   };
 
   const forget = useMutation({
-    mutationFn: (ssid: string) => api.post<{ message: string }>('/access/wifi/forget', { ssid }),
-    onSuccess: () => refresh(3000),
+    mutationFn: (ssid: string) => api.post<{ message: string; pending?: Pending }>('/access/wifi/forget', { ssid }),
+    onSuccess: (answer) => {
+      change.watch(answer.pending);
+      refresh(3000);
+    },
   });
 
   const rejoin = useMutation({
     mutationFn: (ssid: string) =>
-      api.post<{ message: string }>('/access/wifi', { ssid, saved: true }),
-    onSuccess: (_, ssid) => {
+      api.post<{ message: string; pending?: Pending }>('/access/wifi', { ssid, saved: true }),
+    onSuccess: (answer, ssid) => {
+      change.watch(answer.pending);
       refresh(4000);
       setWizard({ rejoin: ssid });
     },
@@ -131,6 +138,7 @@ export default function Wifi() {
 
   return (
     <div className="fade-in">
+      <ApplyChangeNotice change={change} />
       {wifi.configured ? (
         <Section wide>
           <div className={styles.hero}>
@@ -248,7 +256,10 @@ export default function Wifi() {
         wifi={wifi}
         failure={info?.failure}
         onClose={() => setWizard(null)}
-        onJoined={() => refresh(4000)}
+        onJoined={(pending) => {
+          change.watch(pending);
+          refresh(4000);
+        }}
         onFailureShown={failure.close}
       />
     </div>

@@ -242,11 +242,15 @@ check "ddns off: disabled, the token kept" '"0" true' \
 # a confirm too soon is refused.
 
 sed -e "s#/etc/pulzr/board.conf#${T}/board.conf#" \
-    -e "s#'/etc/pulzr/ports'#'${T}/ports'#" \
+    -e "s#'/usr/sbin/pulzr-apply'#'${T}/apply'#" \
     -e "s#'/etc/config/'#'${T}/config/'#" \
     "${ROOT}/feed/pulzr-base/files/usr/sbin/pulzr-ports" > "${T}/ports.uc"
-grep -q "${T}/ports'" "${T}/ports.uc" || { echo "FAIL pulzr-ports' state path moved; update this script" >&2; exit 1; }
-mkdir -p "${T}/ports" "${T}/config"
+grep -q "${T}/apply'" "${T}/ports.uc" || { echo "FAIL pulzr-ports' apply path moved; update this script" >&2; exit 1; }
+mkdir -p "${T}/ports" "${T}/config" "${T}/applybin"
+printf '#!/bin/sh\nexit 0\n' > "${T}/applybin/start-stop-daemon"; chmod +x "${T}/applybin/start-stop-daemon"
+printf '#!/bin/sh\nPATH="%s:${PATH}" PULZR_APPLY_STATE="%s" PULZR_APPLY_CONFIG="%s" exec sh "%s" "$@"\n' \
+    "${T}/applybin" "${T}/ports" "${T}/config" "${ROOT}/feed/pulzr-base/files/usr/sbin/pulzr-apply" > "${T}/apply"
+chmod +x "${T}/apply"
 ports() { "${UCODE}" -R -L "${ROOT}/scripts/router-fixture/*.uc" -L "${MODULES}" "${T}/ports.uc" "$@"; }
 
 printf 'PULZR_PORT_IFACE="wan"\nPULZR_LAN_PORTS="lan1 lan2"\nPULZR_DEVLAN_IPADDR="192.168.64.1"\n' > "${T}/board.conf"

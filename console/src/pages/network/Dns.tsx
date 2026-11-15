@@ -14,6 +14,8 @@ import Fact, { FactList } from '@/components/Fact';
 import DataTable from '@/components/DataTable';
 import Spinner from '@/components/ui/Spinner';
 import ErrorState from '@/components/ErrorState';
+import ApplyChangeNotice from '@/components/ApplyChangeNotice';
+import { useApplyChange, type Pending } from '@/hooks/useApplyChange';
 import { duration, uplinkName } from '@/lib/format';
 import styles from '../Pages.module.css';
 
@@ -49,6 +51,7 @@ const column = createColumnHelper<Host>();
 
 export default function Dns() {
   const queryClient = useQueryClient();
+  const change = useApplyChange();
   const dns = useQuery({
     queryKey: ['dns'],
     queryFn: () => api.get<DnsStatus>('/dns/status'),
@@ -61,7 +64,14 @@ export default function Dns() {
   const state = dns.data!;
   return (
     <div className="fade-in">
-      <Upstream state={state} onApplied={refresh} />
+      <ApplyChangeNotice change={change} />
+      <Upstream
+        state={state}
+        onApplied={(pending) => {
+          change.watch(pending);
+          refresh();
+        }}
+      />
       <Names hosts={state.hosts} onChanged={refresh} />
       <Rebind state={state} onApplied={refresh} />
       {state.ddns && <Ddns ddns={state.ddns} onApplied={refresh} />}
@@ -69,7 +79,7 @@ export default function Dns() {
   );
 }
 
-function Upstream({ state, onApplied }: { state: DnsStatus; onApplied: () => void }) {
+function Upstream({ state, onApplied }: { state: DnsStatus; onApplied: (pending?: Pending) => void }) {
   const [mode, setMode] = useState<'auto' | 'custom'>(state.upstream.mode);
   const [servers, setServers] = useState(
     state.upstream.mode === 'custom' ? state.upstream.servers.join(', ') : '',
@@ -77,8 +87,8 @@ function Upstream({ state, onApplied }: { state: DnsStatus; onApplied: () => voi
 
   const apply = useMutation({
     mutationFn: () =>
-      api.post('/dns/upstream', { servers: mode === 'auto' ? [] : list(servers) }),
-    onSuccess: onApplied,
+      api.post<{ pending?: Pending }>('/dns/upstream', { servers: mode === 'auto' ? [] : list(servers) }),
+    onSuccess: (answer) => onApplied(answer.pending),
   });
 
   return (
@@ -103,7 +113,6 @@ function Upstream({ state, onApplied }: { state: DnsStatus; onApplied: () => voi
       )}
 
       {apply.isError && <Notice tone="error">{(apply.error as Error).message}</Notice>}
-      {apply.isSuccess && <Notice tone="success">Applied.</Notice>}
 
       <div className={styles.actions}>
         <Button variant="primary" loading={apply.isPending} onClick={() => apply.mutate()}>
