@@ -1,7 +1,7 @@
 # One-touch provisioning
 
-Installing a gateway is: power it on, scan the code, pick the site. Nobody
-types a credential into the device and nobody goes back to it.
+Installing a gateway is: power it on, sign in to its console with the
+password on its label, scan the code, pick the site.
 
 ## The happy path
 
@@ -33,15 +33,22 @@ the phone.
 
 | | Where it lives | What knowing it gets you |
 |---|---|---|
-| `claim_id` | in the QR, on the screen, in the SSH banner | the ability to *claim* the gateway — which needs a Pulzar login and is audited |
+| `claim_id` | in the QR, behind the console's sign-in and on the gateway's own ports | the ability to *claim* the gateway into any organization one runs |
 | `secret` | only on the gateway | the ability to *be* the gateway and collect its credentials |
 
-This split is the whole security argument. A QR on a screen in a rack is
-visible to anyone walking past. Seeing it lets them add the gateway to an
-organization they can already administer — which is not an attack — but not
-fetch its broker credentials or enroll a tunnel key, because both need the
-preimage of the commitment and
-the commitment is all Pulzar Cloud ever stores.
+Whoever holds the claim code can adopt the gateway, which makes it a key, so
+it is shown only to somebody who has shown they hold the gateway: a session
+(the label's password, on an unadopted gateway) or the serial, HDMI and USB
+consoles. It used to be open to anybody on the site's network, and a new
+gateway on a shared network was anybody's to take. The secret is what keeps
+the claim from being enough to *be* the gateway: its broker credentials and
+tunnel key both need the preimage of the commitment, and the commitment is
+all Pulzar Cloud ever stores.
+
+A gateway's EUI is random (`10-pulzr-identity`), not its MAC's: Pulzar Cloud
+takes a claim for any EUI from anyone, and an EUI read off a label or a
+network could have a stranger's claim adopted for it first. One from before
+0.4 keeps the EUI it has.
 
 ## When the gateway has no internet
 
@@ -81,9 +88,8 @@ are answered 404 `No such gateway.`.
 
 The gateway stays adopted. It keeps forwarding and keeps its tunnel, and after
 two such answers a minute apart it mints a second claim beside the first and
-registers it. That code is shown where the first one was — the claim screen
-before sign-in, a banner after it, the SSH login banner, the status LED at
-1Hz — and polled from the report loop: every 30s for fifteen minutes, 5m to an
+registers it. That code is shown where the first one was — a banner after
+sign-in, the physical consoles, the status LED at 1Hz — and polled from the report loop: every 30s for fifteen minutes, 5m to an
 hour, then hourly, counted from when it was minted. Only the organization that
 owns the gateway can adopt it. When it does, the new claim replaces the old
 one, the bundle is installed as at first adoption (a new broker password), and
@@ -99,13 +105,12 @@ shows it, with `state` `reclaiming`.
 
 ## Where the code appears
 
-- **The web console.** An unadopted gateway shows nothing *but* the onboarding
-  screen — no login form, because there is nothing yet to protect and a
-  password prompt in front of a factory-fresh device is the thing that makes
-  provisioning feel like work.
-- **The SSH login banner.** `/etc/profile.d/99-pulzr-claim.sh` renders the QR
-  as ANSI half-blocks, which fits an 80×24 serial console. It prints nothing
-  once the gateway is adopted.
+- **The web console**, after sign-in: on an unadopted gateway, the label's
+  password. The onboarding screen is what opens.
+- **The terminal console**: before sign-in on the serial, HDMI and USB ports,
+  which are physical access; after it over `ssh pulzr@`.
+- **A root shell's login banner.** `/etc/profile.d/99-pulzr-claim.sh` renders
+  the QR as ANSI half-blocks. It prints nothing once the gateway is adopted.
 - **An SPI/I²C OLED**, eventually. `pulzr-claim qr` already emits the payload
   on its own, so a display driver is a consumer of that and needs no changes
   here.
@@ -121,10 +126,11 @@ route:
 | `POST /claim/poll` | the claim secret, whose hash was registered above |
 | `POST /adopt` | a single-use adoption code minted by a net-admin |
 
-On the device side, `/api/claim/*` is open for the same reason — a gateway out
-of the box has a password nobody has read off the serial console yet — and
-**stops answering the moment the gateway is adopted**. That guard is in
-`api/index.uc`, keyed on `PROVISIONING_ONLY`.
+On the device side, only `POST /api/claim/apply` is open: an offline bundle is
+Pulzar Cloud's signature over this gateway's EUI, which nobody gets without
+having adopted it. The rest of `/api/claim/*` needs a session, and every claim
+route **stops answering the moment the gateway is adopted** (`PROVISIONING_ONLY`
+in `api/index.uc`).
 
 ## Claim lifetime
 

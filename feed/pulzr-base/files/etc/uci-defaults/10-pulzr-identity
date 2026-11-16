@@ -2,9 +2,9 @@
 #
 # Give this gateway a stable identity on first boot.
 #
-# Runs once (uci-defaults scripts delete themselves on success). Everything
-# here is derived from hardware, so a reflash produces the same identity and a
-# gateway that comes back from an RMA is still recognisably itself.
+# Runs on first boot, and again after every sysupgrade (uci-defaults come back
+# with the new image). The serial and hostname are derived from hardware; the
+# EUI is random and kept once set (below).
 
 # ── Do not run during image assembly ────────────────────────────────────────
 #
@@ -45,18 +45,37 @@ short="$(echo "${serial}" | tail -c9)"
 hostname="${PULZR_HOSTNAME_PREFIX:-pulzr}-${short}"
 
 # ── LoRaWAN Gateway EUI ─────────────────────────────────────────────────────
-# Sixteen hex characters, which is what ChirpStack and Pulzar Cloud key a
-# gateway on. Derived from the ethernet MAC in the conventional EUI-64 way
-# (insert FFFE in the middle) so that the EUI printed on a label, the EUI the
-# packet forwarder announces, and the EUI in our database are the same string.
-mac="$(cat /sys/class/net/eth0/address 2>/dev/null | tr -d ':' | tr 'a-f' 'A-F')"
-if [ -n "${mac}" ] && [ ${#mac} -eq 12 ]; then
-    eui="$(echo "${mac}" | cut -c1-6)FFFE$(echo "${mac}" | cut -c7-12)"
-else
-    # No usable MAC. Derive from the serial instead of shipping the vendor
-    # placeholder AA555A0000000000, which collides across every unit that
-    # never got this right and is genuinely painful to untangle in ChirpStack.
-    eui="$(echo "${serial}" | md5sum | cut -c1-16 | tr 'a-f' 'A-F')"
+# Sixteen hex characters, which is what the LNS and Pulzar Cloud key a gateway
+# on. Random, in the locally administered range, and NOT derived from the
+# ethernet MAC as it was until 0.4: a MAC is on the label and on the site's
+# network, and claim/register takes any EUI from anyone, so a gateway whose EUI
+# could be read or guessed could have a stranger's claim registered and
+# adopted for it first, and its owner turned away (docs/provisioning.md).
+#
+# Kept once set. uci-defaults run again after every sysupgrade, and a gateway
+# from before 0.4 keeps the MAC-derived EUI it is known by: changing a
+# gateway's EUI is changing which gateway it is. A reflash without its
+# settings is a new gateway.
+valid() { printf '%s' "$1" | grep -qiE '^[0-9a-f]{16}$'; }
+eui="$(uci -q get pulzr.identity.gateway_eui)"
+# A gateway from ParkezeOS has it under the old name. 01-pulzr-migrate moves
+# it first; read here as well, so a migration that failed and will run again
+# cannot leave this to make the gateway a new one.
+valid "${eui}" || eui="$(uci -q get parkeze.identity.gateway_eui)"
+# A ParkezeOS gateway with no EUI recorded was known by its MAC's.
+if ! valid "${eui}" && [ -f /etc/config/parkeze ]; then
+    mac="$(cat /sys/class/net/eth0/address 2>/dev/null | tr -d ':' | tr 'A-F' 'a-f')"
+    [ ${#mac} -eq 12 ] && eui="$(echo "${mac}" | cut -c1-6)fffe$(echo "${mac}" | cut -c7-12)"
+fi
+if ! valid "${eui}"; then
+    while :; do
+        eui="$(head -c8 /dev/urandom | hexdump -ve '1/1 "%02x"')"
+        # First octet: locally administered, unicast. Not 02:5e, which is the
+        # platform's range for the devices it makes itself (shared/eui.py).
+        first=$(( (0x$(echo "${eui}" | cut -c1-2) & 0xfc) | 0x02 ))
+        eui="$(printf '%02x' "${first}")$(echo "${eui}" | cut -c3-16)"
+        [ "$(echo "${eui}" | cut -c1-4)" != 025e ] && break
+    done
 fi
 
 uci -q batch <<EOF

@@ -26,13 +26,10 @@ Rather than stretch one mechanism over all of it:
 
 ### 1. Unadopted
 
-Nobody owns this gateway yet. The console shows the **claim screen** and
-nothing else — no login form, because there is nothing yet to protect and a
-password prompt in front of a factory-fresh device is what makes provisioning
-feel like work. See [`provisioning.md`](provisioning.md).
-
-A local account still exists behind that, for the cases provisioning does not
-cover — a bench unit, a gateway being reconfigured before it is claimed.
+Nobody owns this gateway yet. The console asks for the local password, and
+the **claim screen** is what opens after it. Not before: the claim code is a
+key to the gateway, and the console is on the site's network. See
+[`provisioning.md`](provisioning.md).
 
 The password is **unique per unit**, generated on first boot from
 `/dev/urandom`, and on the label, the boot partition of a Pi
