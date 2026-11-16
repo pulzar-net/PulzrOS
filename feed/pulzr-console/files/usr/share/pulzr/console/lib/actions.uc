@@ -49,7 +49,7 @@ const ACTIONS = {
     installFirmware: (req, s) => {
         auth.audit('system.firmware.file', { by: s.subject, path: req.path });
         return audited('system.firmware.apply', { by: s.subject, path: req.path },
-                       firmware.installFile(req.path, req.manifest, s.subject));
+                       firmware.installFile(req.path, req.manifest, s.subject, !!s.shell));
     },
 
     // A shell from the terminal UI on a port; see shell() in tui/app.uc.

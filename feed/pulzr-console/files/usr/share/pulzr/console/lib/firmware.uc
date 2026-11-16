@@ -39,7 +39,7 @@ let _m_fs = require('fs');
 let _m_uci = require('uci');
 let _m_util = loadfile('/usr/share/pulzr/console/lib/util.uc', { raw_mode: true })();
 
-let upload, installFile, apply, meminfoAvailable, cardRoom, staging, inspect, shellQuote;
+let upload, installFile, apply, olderThan, runningVersion, meminfoAvailable, cardRoom, staging, inspect, shellQuote;
 
 const META = '/tmp/pulzr-firmware.json';
 const MANIFEST = '/tmp/pulzr-firmware.manifest';
@@ -135,7 +135,7 @@ inspect = function(IMAGE) {
     return { board, target: meta?.version?.target, openwrt: meta?.version?.version };
 };
 
-upload = function(env, issuer) {
+upload = function(env, issuer, staff) {
     const len = int(env.CONTENT_LENGTH ?? 0);
     if (len <= 0)
         return { status: 400, error: 'No image in the request.' };
@@ -171,7 +171,7 @@ upload = function(env, issuer) {
     }
 
     const manifest = env.headers ? (env.headers['x-pulzr-manifest'] ?? env.headers['x-parkeze-manifest']) : null;
-    const result = apply(IMAGE, manifest, issuer, true);
+    const result = apply(IMAGE, manifest, issuer, true, staff);
     if (result.error) return result;
     result.bytes = received;
     result.stagedOnCard = stage.onCard;
@@ -182,7 +182,7 @@ upload = function(env, issuer) {
 // SSH — for the terminal UI, which has no HTTP body to stream one in. The
 // same checks and the same journal as an upload; the only difference is that
 // a file somebody pointed at is theirs, and is left in place if it is refused.
-installFile = function(path, manifestPath, issuer) {
+installFile = function(path, manifestPath, issuer, staff) {
     const info = _m_fs.stat(path ?? '');
     if (!info || info.type != 'file')
         return { status: 400, error: sprintf('%s is not a file.', path ?? '') };
@@ -192,14 +192,40 @@ installFile = function(path, manifestPath, issuer) {
         if (!length(manifest))
             return { status: 400, error: sprintf('Could not read %s.', manifestPath) };
     }
-    const result = apply(path, manifest, issuer, false);
+    const result = apply(path, manifest, issuer, false, staff);
     if (!result.error) result.bytes = info.size;
     return result;
 };
 
+// The running release, as board.conf records it.
+runningVersion = function() {
+    const m = match(_m_fs.readfile('/etc/pulzr/board.conf') ?? '', /PULZR_VERSION='([^']*)'/);
+    return m ? m[1] : null;
+};
+
+// Whether release a is older than release b: 0.4.0-rc5 < 0.4.0 < v0.4.1.
+// null when either is not a version, which callers treat as older.
+olderThan = function(a, b) {
+    const parse = (v) => {
+        const m = match(v ?? '', /^v?([0-9]+)\.([0-9]+)\.([0-9]+)(-([A-Za-z]+)?([0-9]*))?/);
+        if (!m) return null;
+        return { n: [int(m[1]), int(m[2]), int(m[3])], pre: m[4] != null,
+                 tag: m[5] ?? '', num: length(m[6] ?? '') ? int(m[6]) : 0 };
+    };
+    const x = parse(a), y = parse(b);
+    if (!x || !y) return null;
+    for (let i = 0; i < 3; i++)
+        if (x.n[i] != y.n[i]) return x.n[i] < y.n[i];
+    if (x.pre != y.pre) return x.pre;          // a pre-release comes before its release
+    if (x.tag != y.tag) return x.tag < y.tag;
+    return x.num < y.num;
+};
+
 // Check a staged image and, if it passes, hand it to sysupgrade. `owned` says
-// whether the file is ours to delete when it is refused.
-apply = function(IMAGE, manifest, issuer, owned) {
+// whether the file is ours to delete when it is refused; `staff`, whether the
+// session asking is Pulzar staff's (a session's `shell`, which only Pulzar
+// Cloud's signature sets).
+apply = function(IMAGE, manifest, issuer, owned, staff) {
     const refuse = (error) => {
         if (owned) _m_fs.unlink(IMAGE);
         return { status: 400, error };
@@ -223,8 +249,8 @@ apply = function(IMAGE, manifest, issuer, owned) {
     //
     // An upload's signature travels in a header because the body is the image
     // itself and there is nowhere else in the request for it; the terminal UI
-    // reads it from a file beside the image. See tools/sign-firmware.sh for
-    // what produces it.
+    // reads it from a file beside the image. The release workflow produces
+    // it.
     //
     // Required. Root on a gateway is Pulzar's alone (docs/auth.md), and an
     // image somebody built themselves is root on it, so an unsigned image
@@ -247,6 +273,24 @@ apply = function(IMAGE, manifest, issuer, owned) {
         if (!ok)
             return refuse(length(why) ? why : 'That image is not signed by Pulzar.');
         signed = true;
+
+        // Forward only, except for staff. Every release Pulzar ever signed
+        // stays signed, and the ones before 0.4 take unsigned images: going
+        // back to one, then flashing an image of one's own, would be root by
+        // two steps. The signed manifest says which release this is.
+        let version = null;
+        try {
+            const p = _m_fs.popen(sprintf("printf %%s %s | openssl base64 -d -A",
+                                          shellQuote(json(manifest).manifest ?? '')), 'r');
+            version = json(p.read('all')).version;
+            p.close();
+        } catch (e) {}
+        const older = olderThan(version, runningVersion());
+        if (older !== false && !staff && !match(runningVersion() ?? '', /-dev$/))
+            return refuse(older == null
+                ? 'That image does not say which release it is.'
+                : sprintf('%s is older than this gateway\'s %s. Going back is for Pulzar staff.',
+                          version, runningVersion()));
     }
 
     // Record what is about to happen while the system that knows it is still
