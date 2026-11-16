@@ -57,6 +57,7 @@ cd "${sdk}"
 # installed and pulls in ChirpStack's.
 ./scripts/feeds install -p pulzr libloragw-sx1302
 ./scripts/feeds install libloragw-sx1301 libloragw-2g4 chirpstack-concentratord chirpstack-mqtt-forwarder
+./scripts/feeds install -p pulzr pulzr-edge-bin
 [ "$(readlink -f package/feeds/pulzr/libloragw-sx1302)" = "$(readlink -f feeds/pulzr/libloragw-sx1302)" ] \
   && [ ! -e package/feeds/chirpstack/libloragw-sx1302 ] \
   || { echo "libloragw-sx1302 is not ours" >&2; exit 1; }
@@ -69,12 +70,15 @@ cd "${sdk}"
   echo '# CONFIG_ALL_KMODS is not set'
   echo '# CONFIG_SIGNED_PACKAGES is not set'
   grep -v '^#' "${HERE}/built" | sed 's/^\(.*\)$/CONFIG_PACKAGE_\1=m/'
+  echo 'CONFIG_PACKAGE_pulzr-edge-bin=m'
 } > .config
 make defconfig
 make -j"$(nproc)" package/feeds/chirpstack/chirpstack-concentratord/compile \
                   package/feeds/chirpstack/chirpstack-mqtt-forwarder/compile \
+                  package/feeds/pulzr/pulzr-edge/compile \
   || make -j1 V=s package/feeds/chirpstack/chirpstack-concentratord/compile \
-                  package/feeds/chirpstack/chirpstack-mqtt-forwarder/compile
+                  package/feeds/chirpstack/chirpstack-mqtt-forwarder/compile \
+                  package/feeds/pulzr/pulzr-edge/compile
 
 # ── Collect ────────────────────────────────────────────────────────────────
 arch="$(ls bin/packages)"
@@ -85,4 +89,8 @@ grep -v '^#' "${HERE}/built" | while IFS= read -r name; do
   [ -n "${apk}" ] || { echo "the SDK built no ${name}" >&2; exit 1; }
   cp "${apk}" "${OUT}/${arch}/"
 done
+# pulzr-edge's binary, for feed/pulzr-edge's fetch.
+edge="$(find build_dir -path '*pulzr-edge-bin/usr/sbin/pulzr-edge' -type f | head -n1)"
+[ -n "${edge}" ] || { echo "the SDK built no pulzr-edge" >&2; exit 1; }
+install -m 0755 "${edge}" "${OUT}/${arch}/pulzr-edge"
 ls -l "${OUT}/${arch}"

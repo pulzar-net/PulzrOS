@@ -59,9 +59,10 @@ for pkgdir in "${FEED_DIR}"/*/; do
   [ -n "${caps}" ] || die "${name}/addon has no ADDON_CAPS"
   case "${title}${caps}${feature}" in *$'\t'*) die "${name}/addon has a tab in a value" ;; esac
   # The upstream release the binary comes from, from the one place it is
-  # pinned; none for an add-on that is only our own files.
-  upstream=""
-  [ -f "${pkgdir}/fetch" ] && upstream="$(sed -n 's/^VERSION=//p' "${pkgdir}/fetch" | head -n1 | tr -d '"')"
+  # pinned (an SDK recipe's PKG_VERSION, else a fetch's VERSION=); none for an
+  # add-on that is only our own files.
+  upstream="$(sed -n 's/^PKG_VERSION:=//p' "$(cd "${FEED_DIR}/.." && pwd)/sdk/packages/$(basename "${pkgdir}")/Makefile" 2>/dev/null | head -n1 || true)"
+  [ -n "${upstream}" ] || upstream="$(sed -n 's/^VERSION=//p' "${pkgdir}/fetch" 2>/dev/null | head -n1 | tr -d '"' || true)"
   keep="$(cat "${pkgdir}"/files/lib/upgrade/keep.d/* 2>/dev/null \
             | grep -v '^[[:space:]]*\(#\|$\)' | tr -s '[:space:]' ' ' | sed 's/ $//' || true)"
   printf '%s\t%s\t%s\t%s\t%s\t%s\n' "${name}" "${feature:--}" "${upstream:--}" \

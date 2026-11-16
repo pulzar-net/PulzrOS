@@ -100,7 +100,9 @@ for pkgdir in "${FEED_DIR}"/*/; do
   title="$(. "${pkgdir}/addon"; echo "${ADDON_TITLE}")"
   caps="$(. "${pkgdir}/addon"; echo "${ADDON_CAPS}")"
   # The upstream release the binary comes from, from the one place it is pinned.
-  upstream="$(sed -n 's/^VERSION=//p' "${pkgdir}/fetch" 2>/dev/null | head -n1)"
+  # Its upstream version: an SDK recipe's PKG_VERSION, else a fetch's VERSION=.
+  upstream="$(sed -n 's/^PKG_VERSION:=//p' "${ROOT_DIR}/sdk/packages/$(basename "${pkgdir}")/Makefile" 2>/dev/null | head -n1 || true)"
+  [ -n "${upstream}" ] || upstream="$(sed -n 's/^VERSION=//p' "${pkgdir}/fetch" 2>/dev/null | head -n1 | tr -d '"' || true)"
   keep="$(cat "${pkgdir}"/files/lib/upgrade/keep.d/* 2>/dev/null | grep -v '^[[:space:]]*\(#\|$\)' || true)"
 
   # Boards that carry it in the image, from their own config.

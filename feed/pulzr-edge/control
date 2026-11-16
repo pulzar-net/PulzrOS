@@ -7,5 +7,5 @@ Description: Pulzar edge daemon: Modbus RTU and TCP devices behind the gateway.
  Speaks the Pulzar protocol for the devices on the gateway's own buses over
  one MQTT session with the gateway's own broker login. Reads its buses from
  /etc/pulzr-edge/buses.toml and starts once the gateway is adopted.
- Static binaries from github.com/pulzar-net/pulzr-edge releases, fetched and checksum-verified at build time; see
- feed/pulzr-edge/fetch.
+ Built from github.com/pulzar-net/pulzr-edge with the OpenWrt SDK; see
+ sdk/packages/pulzr-edge.
