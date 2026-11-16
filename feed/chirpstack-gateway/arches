@@ -7,6 +7,7 @@
 # what libgcc1 and libstdcpp6 provide, and the release's index.json, which
 # check-deps.sh reads, lists them only by that name.
 mipsel_24kc          libgcc,libstdcpp
+mips_24kc            libgcc,libstdcpp
 aarch64_cortex-a53   -
 aarch64_cortex-a72   -
 aarch64_cortex-a76   -

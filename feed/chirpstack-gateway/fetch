@@ -15,6 +15,9 @@
 # the MT7628, which Semtech's HAL needs on that SoC and is the reason not to
 # build our own without it.
 #
+# mips_24kc: the same, from ChirpStack Gateway OS for the Dragino LPS8N (an
+# AR9331, big-endian MIPS32), the image ChirpStack runs on that hardware.
+#
 # Every download is pinned by sha256. Bump versions here and nowhere else.
 
 set -euo pipefail
@@ -48,11 +51,16 @@ case "${ARCH}" in
       tar -xzf "$(get "${ARTIFACTS}/$1" "$2")" -C "${DEST}/usr/bin"
     done
     ;;
-  mipsel_24kc)
+  mipsel_24kc|mips_24kc)
     command -v unsquashfs >/dev/null 2>&1 \
       || { echo "unsquashfs is required (apt install squashfs-tools / brew install squashfs)" >&2; exit 1; }
-    img="$(get "${ARTIFACTS}/chirpstack-gateway-os/4.12.0/rak/ramips/mt76x8/chirpstack-gateway-os-4.12.0-rak7268v2-ramips-mt76x8-rakwireless_rak636-squashfs-sysupgrade.bin" \
-               a7ff5b6858f63a6cf2084fa7ac6c9fc43fa09130e696c373c218232e43831ebd)"
+    if [ "${ARCH}" = mipsel_24kc ]; then
+      img="$(get "${ARTIFACTS}/chirpstack-gateway-os/4.12.0/rak/ramips/mt76x8/chirpstack-gateway-os-4.12.0-rak7268v2-ramips-mt76x8-rakwireless_rak636-squashfs-sysupgrade.bin" \
+                 a7ff5b6858f63a6cf2084fa7ac6c9fc43fa09130e696c373c218232e43831ebd)"
+    else
+      img="$(get "${ARTIFACTS}/chirpstack-gateway-os/4.12.0/dragino/ath79/generic/chirpstack-gateway-os-4.12.0-lps8n-ath79-generic-dragino_lps8n-squashfs-sysupgrade.bin" \
+                 0baad84bfffc0cd33ff5b3aad4b08746f34eb8f4838bb6c9aa1a9177d72d28e5)"
+    fi
     work="$(mktemp -d)"; trap 'rm -rf "${work}"' EXIT
     # A sysupgrade image is a uImage kernel followed by the squashfs root.
     offset="$(grep -abo hsqs "${img}" | head -n1 | cut -d: -f1)"

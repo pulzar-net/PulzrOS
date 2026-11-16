@@ -15,7 +15,7 @@ way the licence says.
 | dnsmasq-full, hostapd/wpad, ModemManager, WireGuard tools, nftables, openssh, dropbear, mosquitto, curl, jq and the other packages named in `boards/*/board.conf` | each package's own licence (GPL-2.0, GPL-2.0-or-later, LGPL-2.1, BSD, EPL-2.0/EDL-1.0, MIT/curl, ...) | OpenWrt feeds |
 | librespeed-cli | LGPL-3.0 | OpenWrt feed |
 | Linux kernel and firmware blobs for the Raspberry Pi and RAK boards | GPL-2.0-only; firmware under its vendors' redistribution licences | OpenWrt and the board targets |
-| ChirpStack Concentratord, ChirpStack MQTT Forwarder (`feed/chirpstack-gateway`) | MIT | `artifacts.chirpstack.io`, and the ChirpStack Gateway OS image for the MIPS build, pinned by sha256 in `feed/chirpstack-gateway/fetch` |
+| ChirpStack Concentratord, ChirpStack MQTT Forwarder (`feed/chirpstack-gateway`) | MIT | `artifacts.chirpstack.io`, and, for the MIPS builds, the ChirpStack Gateway OS images for the RAK7268V2 (mipsel) and the Dragino LPS8N (mips), pinned by sha256 in `feed/chirpstack-gateway/fetch` |
 | pulzr-edge (`feed/pulzr-edge`) and the Rust crates statically linked into it (tokio, rumqttc, rustls, ring, tokio-modbus, serde and their dependencies; the full list is its `Cargo.lock`) | pulzr-edge Apache-2.0; the crates MIT, Apache-2.0, ISC and BSD-3-Clause; ring's C and assembly under its ISC-style licence | `github.com/pulzar-net/pulzr-edge` releases, pinned by sha256 in `feed/pulzr-edge/fetch` |
 | Semtech SX1301/SX1302 HAL (inside Concentratord) | BSD-3-Clause | ChirpStack |
 | ChirpStack region and channel plans (`region.toml`, `channels.toml`) | MIT | ChirpStack Concentratord |
