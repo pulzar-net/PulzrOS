@@ -319,9 +319,53 @@ jobs:
           cp -a feed/pulzr-console/files/www/. "$h/"
 
   # ───────────────────────────────────────────────────────────────────────
+  # ───────────────────────────────────────────────────────────────────────
+  # The LoRa gateway half -- ChirpStack Concentratord and MQTT Forwarder --
+  # built from pinned source for every target (feed/chirpstack-gateway/build).
+  # Slow (std is built from source for the MIPS targets), so built once per
+  # build/key and cached; most runs restore it in seconds.
+  #
+  # Hosted, not the self-hosted runner: a cold build holds a runner for an
+  # hour or more, and the one self-hosted runner also deploys the platform.
+  lora:
+    name: LoRa stack
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    outputs:
+      key: ${{ steps.key.outputs.key }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: key
+        run: echo "key=$(feed/chirpstack-gateway/build/key)" >> "$GITHUB_OUTPUT"
+
+      - id: cache
+        uses: actions/cache@v4
+        with:
+          path: .build/chirpstack
+          key: chirpstack-${{ steps.key.outputs.key }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.cache.outputs.cache-hit != 'true'
+        timeout-minutes: 10
+
+      - uses: taiki-e/install-action@v2
+        if: steps.cache.outputs.cache-hit != 'true'
+        timeout-minutes: 10
+        with:
+          tool: cross@0.2.5
+
+      - name: Build
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          for target in aarch64-unknown-linux-musl mipsel-unknown-linux-musl mips-unknown-linux-musl; do
+            feed/chirpstack-gateway/build/build.sh "${target}" .build/chirpstack
+          done
+
   feed:
     name: Packages
-    needs: console
+    needs: [console, lora]
     runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
@@ -370,13 +414,22 @@ jobs:
             echo "::warning::No PARKEZE_FIRMWARE_PUBKEY secret — gateways from this build cannot check whether an image is ours."
           fi
 
-      # unsquashfs: the MIPS ChirpStack binaries are extracted from
-      # ChirpStack Gateway OS; see feed/chirpstack-gateway/fetch. cmake and
-      # json-c: scripts/host-ucode.sh builds the compiler that ships the
-      # feed's ucode as bytecode.
+      # The LoRa stack the job before built: fetch takes it from here rather
+      # than compiling it again.
+      - name: Take the LoRa stack
+        uses: actions/cache/restore@v4
+        with:
+          path: .build/chirpstack
+          key: chirpstack-${{ needs.lora.outputs.key }}
+          fail-on-cache-miss: true
+
+      # cmake and json-c: scripts/host-ucode.sh builds the compiler that ships
+      # the feed's ucode as bytecode.
       - name: Build the package feed
+        env:
+          CHIRPSTACK_BUILT_DIR: ${{ github.workspace }}/.build/chirpstack
         run: |
-          sudo apt-get install -y squashfs-tools cmake libjson-c-dev
+          sudo apt-get install -y cmake libjson-c-dev
           ./build.sh --stage feed
 
       # Both halves of the overlay travel together: the staged feed, and the

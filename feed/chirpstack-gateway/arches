@@ -1,13 +1,10 @@
 # <package arch> <Depends, comma-separated or ->
 #
-# The MIPS binaries are dynamically linked against musl, libgcc and libstdc++.
-# The aarch64 ones are static. The three Pi architectures are the same binary:
-# apk matches the architecture name exactly, so each needs its own package.
-# libgcc and libstdcpp without their ABI suffixes: apk resolves those through
-# what libgcc1 and libstdcpp6 provide, and the release's index.json, which
-# check-deps.sh reads, lists them only by that name.
-mipsel_24kc          libgcc,libstdcpp
-mips_24kc            libgcc,libstdcpp
+# Static musl binaries built from source (fetch, build/), so nothing to depend
+# on. apk matches the architecture name exactly: the three Pi architectures are
+# three packages of the same aarch64 build.
+mipsel_24kc          -
+mips_24kc            -
 aarch64_cortex-a53   -
 aarch64_cortex-a72   -
 aarch64_cortex-a76   -

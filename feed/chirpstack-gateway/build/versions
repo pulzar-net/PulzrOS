@@ -1,0 +1,23 @@
+# What is built, pinned by sha256 of the source tarball GitHub serves for the
+# tag. Bump a version here and nowhere else; a release tag says which.
+
+CONCENTRATORD_VERSION=4.7.1
+CONCENTRATORD_SHA256=e971ad195312804e9bf5997ee6e37e8c36e655d9ae3d27a385b8379fd472177e
+MQTT_FORWARDER_VERSION=4.6.0
+MQTT_FORWARDER_SHA256=8f6e76f0323b401802b14d08ee400e774d860d28774c564b73d0a9b1e7d2b52c
+
+# Semtech's SX1302/SX1303 HAL, as pulzar-net/sx1302_hal: ChirpStack's fork
+# (brocaar/sx1302_hal V2.1.0r9) with the MT7628's half-duplex SPI as a build
+# option (SPI_HALF_DUPLEX=1).
+SX1302_HAL_REPO=pulzar-net/sx1302_hal
+SX1302_HAL_VERSION=V2.1.0r9-hd1
+SX1302_HAL_SHA256=a790ff805a1dd35ad835ee3a2f359c71d50d1e0b92697876ba454bb3709130f3
+
+# Semtech's SX1301 HAL as ChirpStack builds it (brocaar/lora_gateway).
+SX1301_HAL_VERSION=v5.0.1r4
+SX1301_HAL_SHA256=eaada52118381fb059dfa1d5c3ad1b03c49952961e3ced6322e6d6ae94b1ed2d
+
+# mips and mipsel are tier 3 Rust targets: std is built on a pinned nightly,
+# the ones the two projects' own Makefiles use for these targets.
+CONCENTRATORD_NIGHTLY=nightly-2025-10-22
+MQTT_FORWARDER_NIGHTLY=nightly-2026-01-27

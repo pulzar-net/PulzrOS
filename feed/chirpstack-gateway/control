@@ -5,5 +5,5 @@ Architecture: @ARCH@
 Description: ChirpStack Concentratord and MQTT Forwarder.
  The gateway half of ChirpStack: concentratord drives the SX130x, and
  mqtt-forwarder carries its frames to the cloud network server over MQTT.
- Upstream binaries, fetched and checksum-verified at build time; see
+ Built from pinned upstream source, static; see
  feed/chirpstack-gateway/fetch.
