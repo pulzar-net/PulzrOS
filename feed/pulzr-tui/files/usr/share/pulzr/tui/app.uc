@@ -407,10 +407,8 @@ loop = function() {
 // nothing about it is the TUI's to get wrong.
 //
 // On a port this needs the console's sign-in first, which is the same bar the
-// console sets for everything else it can do. That is not a new door: a
-// signed-in console can already install firmware, which is root by another
-// name, and the local password is root's password too (pulzr-set-root-
-// password). It is journalled like every other action.
+// console sets for everything else it can do, and only a staff session
+// passes mayShell. It is journalled like every other action.
 shell = function() {
     // Checked here as well as at the key, so a second way to this function
     // is not a second way to a shell.
@@ -418,7 +416,9 @@ shell = function() {
     if (app.console) runAction('openShell', { tty: app.tty });
 
     term.close();
-    const sh = getenv('SHELL') ?? (_m_fs.access('/bin/ash') ? '/bin/ash' : '/bin/sh');
+    // The system's own, never $SHELL: what a session's environment names is
+    // not the TUI's to run as root.
+    const sh = _m_fs.access('/bin/ash') ? '/bin/ash' : '/bin/sh';
     // Written and flushed before the shell starts, or it lands after the
     // shell's own banner.
     _m_fs.stdout.write('\nexit returns to the Pulzar console.\n\n');
