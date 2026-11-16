@@ -15,11 +15,11 @@
 # binary is (pack_feed in build.sh). A tar rather than a directory because a
 # CI artifact keeps neither file modes nor owners, and the tar keeps both.
 #
-# We do not use the OpenWrt SDK. Every package here is interpreted code, static
-# files, or upstream binaries fetched by checksum, with no compile step, and
-# the SDK is a multi-gigabyte download whose only contribution would be to run
-# `tar` for us. If a package ever gains a C source file, it moves to the SDK
-# and this script stops being the right tool for it.
+# Staging needs no SDK. Every package here is interpreted code, static files,
+# or a binary something else built: upstream's, fetched by checksum, or
+# pulzr-edge, compiled by sdk/build.sh with the LoRa packages and taken from
+# its output by its fetch. Source that has to be compiled goes into sdk/, not
+# into a fetch.
 #
 # A package with an `arches` file is built once per line of it, for binaries:
 # its control file says `Architecture: @ARCH@`, the second column becomes its
