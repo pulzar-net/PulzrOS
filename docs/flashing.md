@@ -121,7 +121,7 @@ rak7268c does not install from an SD card (BOARD_INSTALL=sysupgrade).
 
 They boot from soldered flash rather than removable media, and OpenWrt has no
 device profile for them, so there is no image to write in the first place. See
-[openwrt-device-template](https://github.com/Pulzr/openwrt-device-template).
+[openwrt-device-template](https://github.com/pulzar-net/openwrt-device-template).
 
 When there is one, it will be installed through the vendor's upgrade path or
 from U-Boot over TFTP — not by writing a whole-disk image, which is why

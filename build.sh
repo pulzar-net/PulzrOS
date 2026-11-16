@@ -110,26 +110,30 @@ list_boards_json() {
 
 # ── ImageBuilder ────────────────────────────────────────────────────────────
 
-# Where the ImageBuilder and its sha256sums come from. downloads.openwrt.org
-# unless the board names a release of a Pulzr/openwrt-<model> repo, which publishes
-# the same files for devices upstream does not support yet.
+# Where the ImageBuilder and its sha256sums come from: downloads.openwrt.org,
+# or for a board OpenWrt does not support yet, the release of its device repo
+# (OPENWRT_DEVICE_REPO, made from pulzar-net/openwrt-device-template) tagged
+# with this OpenWrt version. Those repos build each OpenWrt stable release the
+# day it is published, so OPENWRT_VERSION is the one thing to change.
 imagebuilder_base() {
-  echo "${OPENWRT_IMAGEBUILDER_URL:-https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/targets/${OPENWRT_TARGET}/${OPENWRT_SUBTARGET}}"
+  if [ -n "${OPENWRT_DEVICE_REPO:-}" ]; then
+    echo "https://github.com/${OPENWRT_DEVICE_REPO}/releases/download/${OPENWRT_VERSION}"
+  else
+    echo "https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/targets/${OPENWRT_TARGET}/${OPENWRT_SUBTARGET}"
+  fi
 }
 
 # Distinct per source, so the stock and a device-support ImageBuilder for the
-# same target sit side by side rather than one shadowing the other. The
-# device repo's name is part of it, not only the release: the RAK7268CV2 and
-# RAK7289CV2 repos both publish 25.12.6-1 for ramips/mt76x8, and keyed on the
-# tag alone the second board built with the first one's ImageBuilder. It is
-# also the CI cache key.
+# same target sit side by side rather than one shadowing the other, and the
+# RAK7268CV2 and RAK7289CV2 repos' releases for ramips/mt76x8 do not shadow
+# each other. A device repo replaces its release when its main changes, so its
+# id carries the release's checksum list: a new release is a new ImageBuilder,
+# here and in the CI cache this keys.
 imagebuilder_id() {
-  local source="" url="${OPENWRT_IMAGEBUILDER_URL:-}"
-  url="${url%/}"
-  if [[ "${url}" =~ /([^/]+)/releases/download/([^/]+)$ ]]; then
-    source="${BASH_REMATCH[1]}-${BASH_REMATCH[2]}"
-  elif [ -n "${url}" ]; then
-    source="$(basename "${url}")"
+  local source=""
+  if [ -n "${OPENWRT_DEVICE_REPO:-}" ]; then
+    source="${OPENWRT_DEVICE_REPO#*/}-$(curl -fsSL --retry 3 "$(imagebuilder_base)/sha256sums" 2>/dev/null \
+      | sha256sum | cut -c1-12)"
   fi
   echo "${OPENWRT_VERSION}-${OPENWRT_TARGET}-${OPENWRT_SUBTARGET}${source:+-${source}}"
 }
@@ -148,8 +152,10 @@ fetch_imagebuilder() {
 
   log "Fetching ImageBuilder ${OPENWRT_VERSION} ${OPENWRT_TARGET}/${OPENWRT_SUBTARGET}"
   mkdir -p "${BUILD_DIR}/imagebuilder"
-  curl -fL --retry 3 -o "${tarball}" "${url}" \
-    || die "could not download ${url}"
+  if ! curl -fL --retry 3 -o "${tarball}" "${url}"; then
+    [ -z "${OPENWRT_DEVICE_REPO:-}" ] || die "${OPENWRT_DEVICE_REPO} has no OpenWrt ${OPENWRT_VERSION} release. Its daily build makes one when OpenWrt publishes a stable release; for any other: gh workflow run build -R ${OPENWRT_DEVICE_REPO} -f version=${OPENWRT_VERSION}"
+    die "could not download ${url}"
+  fi
 
   # Verify against the release's signed checksum list. An ImageBuilder is a
   # tree of executables that will run on this machine; taking it unverified

@@ -71,8 +71,8 @@ the PulzrOS branch that points at its build.
 4. `pulzr-led status setup`: one short flash a second. `pulzr-led status alert`:
    fast, around 5 Hz, not a slow 16-second cycle. Time them on a phone.
 5. Run Four presses above; both outcomes must be visible across a room.
-6. Then: correct the names, remove channel 2, merge, tag the release, point
-   `OPENWRT_IMAGEBUILDER_URL` at it, and map the LED in
+6. Then: correct the names, remove channel 2, merge, push to main (which
+   publishes the release), and map the LED in
    `boards/gl-sft1200/board.conf`.
 
 ## What each board shows

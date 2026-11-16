@@ -154,7 +154,7 @@ $(cat "${ROOT_DIR}"/feed/*/arches 2>/dev/null \
     # ImageBuilder to supply, rather than counted as missing.
     from_ib=0
     if [ ! -s "${CACHE}/${OPENWRT_VERSION}-${OPENWRT_TARGET}-${OPENWRT_SUBTARGET}-target.names" ] \
-       && [ -n "${OPENWRT_IMAGEBUILDER_URL:-}" ]; then
+       && [ -n "${OPENWRT_DEVICE_REPO:-}" ]; then
       from_ib=1
     fi
 
@@ -176,7 +176,7 @@ $(cat "${ROOT_DIR}"/feed/*/arches 2>/dev/null \
 
     if [ "${missing}" -eq 0 ]; then
       [ "${supplied}" -gt 0 ] \
-        && echo "  ${supplied} package(s) must come from ${OPENWRT_IMAGEBUILDER_URL}"
+        && echo "  ${supplied} package(s) must come from ${OPENWRT_DEVICE_REPO}'s ImageBuilder"
       echo "  all packages resolve"
       exit 0
     fi
