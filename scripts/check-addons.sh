@@ -15,7 +15,9 @@
 #     reads each board's resolved list, not one file.
 #   * Every architecture a board that may be offered an add-on runs is in that
 #     add-on's arches. apk matches the architecture name exactly, so the
-#     GL-SFT1200's mipsel_24kc_24kf was a gap that no build showed.
+#     GL-SFT1200's mipsel_24kc_24kf was a gap that no build showed. Only for a
+#     board with an image: one that needs device support is offered nothing
+#     yet, and is checked the day its status says it builds.
 #   * The add-on declares the capability it is denied by (Provides:
 #     pulzr-cap-<cap>), which is how a later package that depends on a denied
 #     capability is refused with it.
@@ -49,8 +51,8 @@ done
 # One line per board: its id, its OPENWRT_ARCH, its resolved package list.
 board_facts() {
   ( . "${BOARDS_DIR}/$1/board.conf"
-    printf '%s\t%s\t%s\n' "${BOARD_ID}" "${OPENWRT_ARCH:-}" \
-      "$(pulzr_packages | sed 's/#.*//' | tr -s '[:space:]' ' ')" )
+    printf '%s\t%s\t%s\t%s\n' "${BOARD_ID}" "${OPENWRT_ARCH:-}" \
+      "$(pulzr_packages | sed 's/#.*//' | tr -s '[:space:]' ' ')" "${BOARD_STATUS:-supported}" )
 }
 
 facts="$(mktemp)"; trap 'rm -f "${facts}"' EXIT
@@ -82,12 +84,12 @@ for pkgdir in "${FEED_DIR}"/*/; do
       || bad "${name}/control does not say 'Provides: pulzr-cap-${cap}'"
   done
 
-  while IFS=$'\t' read -r id arch packages; do
+  while IFS=$'\t' read -r id arch packages status; do
     allowed=0
     if [ "${boards_ok}" = "*" ]; then allowed=1
     else case " ${boards_ok} " in *" ${id} "*) allowed=1 ;; esac; fi
 
-    if [ "${allowed}" = 1 ]; then
+    if [ "${allowed}" = 1 ] && [ "${status}" = supported ]; then
       awk -v a="${arch}" '$1 !~ /^#/ && $1 == a { f = 1 } END { exit !f }' "${pkgdir}/arches" \
         || bad "${name}: ${id} runs ${arch}, which ${name}/arches does not build"
     fi
