@@ -123,8 +123,10 @@ sed -i '/^CONFIG_TARGET_DEVICE_/d' .config
   echo "# CONFIG_IB_STANDALONE is not set"
   echo "# CONFIG_SDK is not set"
   echo "# CONFIG_MAKE_TOOLCHAIN is not set"
-  # Not ALL_KMODS or COLLECT_KERNEL_DEBUG: see the vermagic note at the top.
-  echo "# CONFIG_ALL_NONSHARED is not set"
+  # Nothing else of the release's config is changed, ALL_NONSHARED included:
+  # the target's own packages it selects can set kernel symbols, and turning
+  # it off gave the LPS8N (ath79) a kernel no release kmod would load into.
+  # See the vermagic note at the top.
 } >> .config
 make defconfig >/dev/null
 
