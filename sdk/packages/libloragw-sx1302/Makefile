@@ -9,7 +9,9 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=libloragw-sx1302
 PKG_VERSION:=2.1.0
-PKG_RELEASE:=9.1
+# ChirpStack's release number, kept: apk takes only an integer here, and this
+# package never reaches a gateway (only -utils does). The source says which.
+PKG_RELEASE:=9
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION)r9-hd1.tar.gz
 PKG_SOURCE_URL:=https://codeload.github.com/pulzar-net/sx1302_hal/tar.gz/V$(PKG_VERSION)r9-hd1?
