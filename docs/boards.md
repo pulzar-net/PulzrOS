@@ -89,7 +89,21 @@ why detection disagrees.
 | `rak7268c` | ramips/mt76x8 | 1 slot, fixed SPI | **Unverified.** 8 channels. |
 | `rak7268cv2` | ramips/mt76x8 | 1 slot, fixed SPI | Harvested. ImageBuilder from Pulzr/openwrt-rak7268cv2. 8 channels. |
 | `rak7289cv2` | ramips/mt76x8 | 2 slots, fixed USB | **Supported.** Full PulzarOS bench-confirmed on a single-radio unit (concentratord, 8 ch, GPS, adoption); two-slot structure ready, LoRa1/LoRa2 order to be confirmed on a dual-card Pro. 16 channels. Power-board watchdog and battery pack per ChirpStack's RAK support, not yet seen answering ([rak-power.md](rak-power.md)). ImageBuilder from Pulzr/openwrt-rak7289cv2. |
+| `rak7268v2` | ramips/mt76x8 | 1 slot, fixed SPI | **Unverified.** The RAK7268CV2 without LTE: its device support and image, cellular left out. 8 channels. |
+| `rak7289v2` | ramips/mt76x8 | 2 slots, fixed USB | **Unverified.** The RAK7289CV2 without LTE: its device support and image, cellular left out. 16 channels. |
+| `rak7391` | bcm27xx/bcm2711 | 2 slots, `auto` | **Unverified.** WisGate Connect, a CM4 carrier: the Pi 4 image; mPCIe cards are probed as on a kit (resets 17 and 6 for an SPI card). |
+| `rak7266` | ramips/mt76x8 | 1 slot, fixed SPI | **Needs device support.** RAK636; the RAK7268V2's radio in the Pro enclosure. |
+| `rak7267` | ramips/mt76x8 | 1 slot, fixed USB | **Needs device support.** RAK636, one RAK5146 on USB, GNSS. |
+| `sensecap-m2` | ramips/mt76x8 | 1 slot, fixed SPI | **Needs device support.** WM1302, reset 14, power-enable 3. |
+| `dragino-lps8n` | ath79/generic | 1 slot, fixed SPI | **Needs device support.** PG1302 on `/dev/spidev1.0`. |
 | `gl-sft1200` | siflower/sf19a2890 | none: a router | **Booted.** GL.iNet Opal, the router IP devices sit behind on its two LAN ports ([lan.md](lan.md)). ImageBuilder from Pulzr/openwrt-gl-sft1200. |
+
+The RAK V2, RAK7391, RAK7266/7267, SenseCAP M2 and LPS8N rows come from what
+ChirpStack Gateway OS supports. Their radio facts (part, bus, reset and power
+lines) are read from ChirpStack's OpenWrt feed, which is MIT; Gateway OS's own
+repository carries no license, so its device patches are a reference to read
+against when writing a board's device support, never files to copy. Each
+board's header says what is known and what has to come off a unit.
 
 The Pi boards share `boards/common/raspberrypi.conf` and the RAK boards share
 `boards/common/rakwireless.conf`, so each individual board file is a dozen
