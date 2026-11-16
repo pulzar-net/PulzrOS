@@ -304,11 +304,11 @@ offline bundle cannot be verified. Adopt this gateway while it has internet."
 
         # Everything the fleet key signs is a base64 string, an adoption
         # bundle and a console sign-in token alike, so a signature alone does
-        # not say it is a bundle. A bundle always names its gateway (Pulzar
-        # Cloud refuses to sign one that does not); a sign-in token never
-        # does, and without this one applied here as a bundle adopted the
-        # gateway into nothing and shut its local sign-in.
-        [ -n "$(jsonfilter -i "${file}" -e '@.eui')" ] \
+        # not say it is a bundle; recovery-service's `typ` does, and a bundle
+        # always names its gateway. Without this a sign-in token applied here
+        # adopted the gateway into nothing and shut its local sign-in.
+        [ "$(jsonfilter -i "${file}" -e '@.typ')" = bundle ] \
+            && [ -n "$(jsonfilter -i "${file}" -e '@.eui')" ] \
             || { rm -rf "${work}"; die "That is not an adoption bundle."; }
     fi
 

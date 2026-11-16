@@ -637,6 +637,13 @@ loginSso = function(token, addr, expect) {
         return { error: 'Malformed handoff token.', status: 400 };
     }
 
+    // What was signed. The fleet key signs adoption bundles the same way, and
+    // only this says which one arrived (recovery-service sets it).
+    if (payload?.typ != 'sso') {
+        recordFailure(addr);
+        return { error: 'That is not a sign-in token.', status: 400 };
+    }
+
     const cfg = config();
     // A token minted for a different gateway must not open this one. Without
     // this check, one operator's legitimate token for gateway A is a key to
