@@ -470,8 +470,10 @@ jobs:
   # (docs/addons.md). Runs on every push, so a broken add-on, or an apk that no
   # longer reads what we sign, fails here and not on the first tag.
   #
-  # Secrets, all optional: a fork or a PR has none, and then the repository is
-  # built against a throwaway key and nothing is uploaded.
+  # Secrets, all optional, and in the `release` environment, which only a
+  # version tag can use: a push to a branch, a fork or a PR builds against a
+  # throwaway key and uploads nothing, so the real key is in no run but a
+  # release's.
   #   PULZR_ADDONS_APK_KEY          the repository's private key (ECDSA P-256 PEM,
   #                                 the whole file); public half is committed at
   #                                 feed/pulzr-base/files/etc/apk/keys/
@@ -481,6 +483,7 @@ jobs:
   addons:
     name: Add-ons
     needs: feed
+    environment: ${{ startsWith(github.ref, 'refs/tags/') && 'release' || 'build' }}
     runs-on: ${{ (github.event.repository.private && vars.RUNNER) || 'ubuntu-latest' }}
     env:
       R2_BUCKET: curb-public
@@ -525,7 +528,7 @@ jobs:
             printf '%s\n' "${APK_KEY}" > "${key}"
             trap 'rm -f "${key}"' EXIT
             export PULZR_ADDONS_APK_KEY_FILE="${key}"
-          else
+          elif [ "${GITHUB_REF_TYPE}" = tag ]; then
             echo "::warning::No PULZR_ADDONS_APK_KEY secret: signed with a throwaway key, so this repository cannot be published."
           fi
           ./build.sh --stage addons
@@ -772,6 +775,7 @@ jobs:
   # ───────────────────────────────────────────────────────────────────────
   release:
     name: Release
+    environment: release
     if: startsWith(github.ref, 'refs/tags/')
     # Not the add-ons: they publish to their own bucket, and a firmware fix
     # must never wait on, or be blocked by, an add-on that failed to build.
