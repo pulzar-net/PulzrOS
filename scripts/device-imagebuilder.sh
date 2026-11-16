@@ -136,22 +136,48 @@ for d in ${devices}; do
 done
 
 # What can move the vermagic is which kernel options and kmods are on, not
-# whether a kmod is built in or a module. Compared here, against the release's
-# own config settled the same way, so a mismatch names its symbols in minutes
-# rather than surfacing two hours later as a hash.
+# whether a kmod is built in or a module, and building one device rather than
+# the release's every device can turn some off: a kmod that defaults on only
+# with a target feature (rtc, on ath79) is on in the release because other
+# devices' packages select it. So the release's own config is settled the same
+# way, whatever it has on that this build does not is turned on, and anything
+# still different stops the build here, in minutes, rather than as a vermagic
+# two hours on.
 kernel_side() {
   grep -E '^(# )?CONFIG_(KERNEL_|PACKAGE_kmod-)' .config \
     | sed -E 's/^# (CONFIG_[^ ]+) is not set$/\1=n/; s/=[ym]$/=on/' | LC_ALL=C sort
 }
-kernel_side > "${ROOT}/kernel-ours"
 cp .config "${ROOT}/config-ours"
 curl -fsSL -o .config "${RELEASE}/config.buildinfo"
 make defconfig >/dev/null
 kernel_side > "${ROOT}/kernel-release"
 cp "${ROOT}/config-ours" .config
-if ! diff -u "${ROOT}/kernel-release" "${ROOT}/kernel-ours" > "${ROOT}/kernel-diff"; then
-  log "Kernel-side settings that differ from the release's (- release, + this build):"
-  grep -E '^[-+]CONFIG' "${ROOT}/kernel-diff" | head -60
+kernel_side > "${ROOT}/kernel-ours"
+missing="$(LC_ALL=C comm -23 <(grep '=on$' "${ROOT}/kernel-release") <(grep '=on$' "${ROOT}/kernel-ours") \
+  | sed 's/=on$//')"
+if [ -n "${missing}" ]; then
+  log "On in the release and not here, turned on:"
+  for sym in ${missing}; do
+    echo "  ${sym}"
+    case "${sym}" in
+      CONFIG_PACKAGE_kmod-*) echo "${sym}=m" >> .config ;;
+      *) echo "${sym}=y" >> .config ;;
+    esac
+  done
+  make defconfig >/dev/null
+fi
+kernel_side > "${ROOT}/kernel-ours"
+diff -u "${ROOT}/kernel-release" "${ROOT}/kernel-ours" > "${ROOT}/kernel-diff" || true
+# A kmod on here and not in the release is this device's own (package/, built
+# out of tree, so it adds nothing to the kernel config): reported, not fatal.
+# Anything the release has that this lacks, or a kernel option either way, is.
+extra="$(grep -E '^\+CONFIG_PACKAGE_kmod-.*=on$' "${ROOT}/kernel-diff" || true)"
+[ -z "${extra}" ] || { log "Kmods on here and not in the release:"; echo "${extra}"; }
+fatal="$(grep -E '^[-+]CONFIG' "${ROOT}/kernel-diff" | grep -vxF -e "${extra:-^}" \
+  | grep -vE '^-CONFIG_PACKAGE_kmod-.*=n$' || true)"
+if [ -n "${fatal}" ]; then
+  echo "${fatal}" | head -60
+  die "the kernel-side config still differs from the release's (- release, + this build); its vermagic would not match"
 fi
 
 log "Building the toolchain and the kernel"
