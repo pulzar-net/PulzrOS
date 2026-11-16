@@ -1,0 +1,185 @@
+// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
+/*
+ * Seeed SenseCAP M2 (Multi-Platform LoRaWAN gateway): the SenseCAP WM7628N
+ * module, MediaTek MT7628AN, 32MB SPI NOR, an SD card, and a Seeed WM1302
+ * (SX1302 + SX1250) on SPI chip select 1.
+ *
+ * From the device tree ChirpStack Gateway OS carries for the M2
+ * (conf/seeed_sensecap_m2/patches/add_sensecap_wm7628n_device.diff,
+ * GPL-2.0-or-later OR MIT, as this file is), against OpenWrt 25.12. Changed
+ * here:
+ *
+ *   - MAC addresses and the radio's calibration come from nvmem cells in the
+ *     factory partition, as 25.12 reads them (mtd-mac-address is gone);
+ *   - the concentrator is "semtech,sx1301", which spidev binds by name;
+ *   - the compatible stays sensecap,wm7628n, the board name of Seeed's own
+ *     firmware and of Gateway OS's, so an image is accepted from either.
+ *
+ * The concentrator's reset (GPIO 14), power-enable (GPIO 3) and the SX1261's
+ * reset (GPIO 15) are driven by the packet forwarder, not hogged here.
+ */
+
+#include "mt7628an.dtsi"
+
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
+
+/ {
+	compatible = "sensecap,wm7628n", "mediatek,mt7628an-soc";
+	model = "SenseCAP M2";
+
+	keys {
+		compatible = "gpio-keys";
+
+		reset {
+			label = "reset";
+			gpios = <&gpio 40 GPIO_ACTIVE_LOW>;
+			linux,code = <KEY_RESTART>;
+		};
+	};
+
+	leds {
+		compatible = "gpio-leds";
+
+		wlan {
+			label = "green:wlan";
+			gpios = <&gpio 44 GPIO_ACTIVE_LOW>;
+		};
+
+		wan {
+			label = "green:wan";
+			gpios = <&gpio 42 GPIO_ACTIVE_LOW>;
+		};
+
+		lora {
+			label = "green:lora";
+			gpios = <&gpio 36 GPIO_ACTIVE_LOW>;
+		};
+	};
+};
+
+&state_default {
+	gpio {
+		groups = "i2s", "p1led_an", "p2led_an", "spis", "wdt", "pwm0", "pwm1", "perst",
+			 "wled_an", "p4led_an", "refclk";
+		function = "gpio";
+	};
+};
+
+&uart1 {
+	status = "okay";
+};
+
+&uart2 {
+	status = "okay";
+};
+
+&i2c {
+	status = "okay";
+};
+
+&pinctrl {
+	ephy-digital;
+
+	sdxc_iot_mode: sdxc_iot_mode {
+		esd {
+			groups = "esd";
+			function = "iot";
+		};
+
+		sdxc {
+			groups = "sdmode";
+			function = "sdxc";
+		};
+	};
+};
+
+&sdhci {
+	status = "okay";
+
+	pinctrl-0 = <&sdxc_iot_mode>;
+	pinctrl-1 = <&sdxc_iot_mode>;
+};
+
+&spi0 {
+	status = "okay";
+
+	pinctrl-0 = <&spi_pins>, <&spi_cs1_pins>;
+	cs-gpios = <0>, <0>, <&gpio 18 GPIO_ACTIVE_LOW>;
+
+	flash@0 {
+		compatible = "jedec,spi-nor";
+		reg = <0>;
+		spi-max-frequency = <10000000>;
+
+		partitions {
+			compatible = "fixed-partitions";
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			partition@0 {
+				label = "u-boot";
+				reg = <0x0 0x30000>;
+				read-only;
+			};
+
+			partition@30000 {
+				label = "u-boot-env";
+				reg = <0x30000 0x10000>;
+			};
+
+			partition@40000 {
+				label = "factory";
+				reg = <0x40000 0x10000>;
+				read-only;
+
+				nvmem-layout {
+					compatible = "fixed-layout";
+					#address-cells = <1>;
+					#size-cells = <1>;
+
+					eeprom_factory_0: eeprom@0 {
+						reg = <0x0 0x400>;
+					};
+
+					macaddr_factory_2e: macaddr@2e {
+						reg = <0x2e 0x6>;
+					};
+				};
+			};
+
+			partition@50000 {
+				compatible = "denx,uimage";
+				label = "firmware";
+				reg = <0x50000 0x1fb0000>;
+			};
+		};
+	};
+
+	/* The WM1302: /dev/spidev0.1. */
+	lora@1 {
+		compatible = "semtech,sx1301";
+		reg = <1>;
+		spi-max-frequency = <10000000>;
+	};
+
+	/* Chip select 2 on GPIO 18, as Seeed's firmware exposes it. */
+	spidev@2 {
+		compatible = "rohm,dh2228fv";
+		reg = <2>;
+		spi-max-frequency = <10000000>;
+	};
+};
+
+/* Seeed's firmware gives the wired interface the MAC at 0x2e. */
+&ethernet {
+	nvmem-cells = <&macaddr_factory_2e>;
+	nvmem-cell-names = "mac-address";
+};
+
+&wmac {
+	status = "okay";
+
+	nvmem-cells = <&eeprom_factory_0>;
+	nvmem-cell-names = "eeprom";
+};

@@ -1,0 +1,219 @@
+// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
+/*
+ * Dragino LPS8N: Atheros AR9331, 16MB SPI NOR, 64MB RAM, one Dragino PG1302
+ * (SX1302 + SX1250) on bit-banged SPI.
+ *
+ * From the device tree ChirpStack Gateway OS carries for the LPS8N
+ * (conf/dragino_lps8n/patches/add_dragino_lps8n_device.patch, GPL-2.0-or-later
+ * OR MIT, as this file is), against OpenWrt 25.12. Changed here:
+ *
+ *   - the concentrator's SPI device is "semtech,sx1301", which spidev binds
+ *     by name, so no kernel patch is needed to load it from the device tree;
+ *   - formatting, to OpenWrt's.
+ *
+ * The concentrator's reset is GPIO 23, driven by concentratord (its default
+ * for a PG1302, which ChirpStack's LPS8N configuration relies on), so it is
+ * not hogged here.
+ */
+
+#include "ar9331.dtsi"
+
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
+#include <dt-bindings/leds/common.h>
+
+/ {
+	model = "Dragino LPS8N";
+	compatible = "dragino,lps8n", "qca,ar9331";
+
+	aliases {
+		label-mac-device = &wmac;
+		/* The concentrator is /dev/spidev1.0: spi0 is the flash. */
+		spi1 = &spi_lora;
+	};
+
+	leds {
+		compatible = "gpio-leds";
+
+		wlan {
+			function = LED_FUNCTION_WLAN;
+			color = <LED_COLOR_ID_RED>;
+			gpios = <&gpio 0 GPIO_ACTIVE_LOW>;
+			linux,default-trigger = "phy0tpt";
+		};
+
+		wan {
+			label = "dragino2:red:wan";
+			gpios = <&gpio 17 GPIO_ACTIVE_LOW>;
+		};
+
+		lan {
+			label = "dragino2:red:lan";
+			gpios = <&gpio 13 GPIO_ACTIVE_LOW>;
+		};
+
+		system {
+			label = "dragino2:red:system";
+			gpios = <&gpio 28 GPIO_ACTIVE_LOW>;
+		};
+	};
+
+	keys {
+		compatible = "gpio-keys";
+
+		wps {
+			label = "wps";
+			linux,code = <KEY_WPS_BUTTON>;
+			gpios = <&gpio 11 GPIO_ACTIVE_LOW>;
+			debounce-interval = <60>;
+		};
+
+		reset {
+			label = "reset";
+			linux,code = <KEY_RESTART>;
+			gpios = <&gpio 12 GPIO_ACTIVE_LOW>;
+			debounce-interval = <60>;
+		};
+	};
+
+	/* The PG1302: GPIO 18 MOSI, 20 MISO, 24 SCK, 19 chip select. */
+	spi_lora: spi-gpio {
+		compatible = "spi-gpio";
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		sck-gpios = <&gpio 24 GPIO_ACTIVE_HIGH>;
+		mosi-gpios = <&gpio 18 GPIO_ACTIVE_HIGH>;
+		miso-gpios = <&gpio 20 GPIO_ACTIVE_HIGH>;
+		cs-gpios = <&gpio 19 GPIO_ACTIVE_LOW>;
+
+		lora@0 {
+			compatible = "semtech,sx1301";
+			reg = <0>;
+			spi-max-frequency = <2000000>;
+		};
+	};
+
+	/* The PG1302's temperature sensor: GPIO 7 SDA, 8 SCL. */
+	i2c-gpio {
+		compatible = "i2c-gpio";
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		sda-gpios = <&gpio 7 GPIO_ACTIVE_HIGH>;
+		scl-gpios = <&gpio 8 GPIO_ACTIVE_HIGH>;
+		i2c-gpio,delay-us = <5>;
+	};
+
+	reg_usb_vbus: regulator-usb-vbus {
+		compatible = "regulator-fixed";
+		regulator-name = "usb_vbus";
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		regulator-always-on;
+	};
+};
+
+&ref {
+	clock-frequency = <40000000>;
+};
+
+&usb {
+	dr_mode = "host";
+	vbus-supply = <&reg_usb_vbus>;
+	status = "okay";
+};
+
+&usb_phy {
+	reset-names = "phy", "usb-suspend-override";
+	resets = <&rst 4>, <&rst 3>;
+	status = "okay";
+};
+
+&spi {
+	status = "okay";
+
+	flash@0 {
+		compatible = "jedec,spi-nor";
+		spi-max-frequency = <50000000>;
+		reg = <0>;
+
+		partitions {
+			compatible = "fixed-partitions";
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			partition@0 {
+				label = "u-boot";
+				reg = <0x000000 0x040000>;
+				read-only;
+			};
+
+			partition@40000 {
+				compatible = "denx,uimage";
+				label = "firmware";
+				reg = <0x040000 0xfa0000>;
+			};
+
+			partition@fe0000 {
+				label = "config";
+				reg = <0xfe0000 0x010000>;
+			};
+
+			partition@ff0000 {
+				label = "art";
+				reg = <0xff0000 0x010000>;
+				read-only;
+
+				nvmem-layout {
+					compatible = "fixed-layout";
+					#address-cells = <1>;
+					#size-cells = <1>;
+
+					macaddr_art_0: macaddr@0 {
+						reg = <0x0 0x6>;
+					};
+
+					macaddr_art_6: macaddr@6 {
+						reg = <0x6 0x6>;
+					};
+
+					cal_art_1000: calibration@1000 {
+						reg = <0x1000 0x440>;
+					};
+				};
+			};
+		};
+	};
+};
+
+&mdio0 {
+	status = "okay";
+};
+
+&eth0 {
+	status = "okay";
+
+	nvmem-cells = <&macaddr_art_0>;
+	nvmem-cell-names = "mac-address";
+
+	gmac-config {
+		device = <&gmac>;
+		switch-phy-addr-swap = <1>;
+		switch-phy-swap = <1>;
+	};
+};
+
+&eth1 {
+	status = "okay";
+
+	nvmem-cells = <&macaddr_art_6>;
+	nvmem-cell-names = "mac-address";
+};
+
+&wmac {
+	status = "okay";
+
+	nvmem-cells = <&macaddr_art_6>, <&cal_art_1000>;
+	nvmem-cell-names = "mac-address", "calibration";
+};

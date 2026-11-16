@@ -18,6 +18,7 @@ way the licence says.
 | ChirpStack Concentratord, ChirpStack MQTT Forwarder | MIT | Built from their release sources by ChirpStack's OpenWrt feed (MIT), pinned in `sdk/feeds` |
 | pulzr-edge (`feed/pulzr-edge`) and the Rust crates statically linked into it (tokio, rumqttc, rustls, ring, tokio-modbus, serde and their dependencies; the full list is its `Cargo.lock`) | pulzr-edge Apache-2.0; the crates MIT, Apache-2.0, ISC and BSD-3-Clause; ring's C and assembly under its ISC-style licence | `github.com/pulzar-net/pulzr-edge` releases, pinned by sha256 in `feed/pulzr-edge/fetch` |
 | Semtech SX1301/SX1302 HAL (inside Concentratord) | BSD-3-Clause | SX1302: pulzar-net/sx1302_hal (ChirpStack's fork with the MT7628 half-duplex SPI option); SX1301 and SX1280: as ChirpStack's OpenWrt feed pins them; SX1302 in `sdk/packages/libloragw-sx1302` |
+| Device support in `boards/*/openwrt/` (device trees, patches against OpenWrt, `leds-aw2013`) | Patches and the kernel module: GPL-2.0-only, as the OpenWrt and Linux they change. Device trees: their own headers, GPL-2.0-or-later OR MIT where taken from ChirpStack Gateway OS | Written for PulzrOS, and from ChirpStack Gateway OS (`dragino-lps8n`, `sensecap-m2`); the GL-SFT1200's kernel is grafted from the commits in its `graft` |
 | ChirpStack region and channel plans (`region.toml`, `channels.toml`) | MIT | ChirpStack Concentratord |
 
 Corresponding source for the GPL components is the OpenWrt source tree for the

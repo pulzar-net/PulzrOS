@@ -1,0 +1,61 @@
+diff --git a/target/linux/ramips/image/mt76x8.mk b/target/linux/ramips/image/mt76x8.mk
+index a079a21..a28b0d0 100644
+--- a/target/linux/ramips/image/mt76x8.mk
++++ b/target/linux/ramips/image/mt76x8.mk
+@@ -730,6 +730,16 @@ define Device/ravpower_rp-wd009
+ endef
+ TARGET_DEVICES += ravpower_rp-wd009
+ 
++define Device/sensecap_wm7628n
++  IMAGE_SIZE := 32448k
++  DEVICE_VENDOR := Seeed
++  DEVICE_MODEL := SenseCAP M2
++  DEVICE_ALT0_VENDOR := SenseCAP
++  DEVICE_ALT0_MODEL := WM7628N
++  DEVICE_PACKAGES := kmod-sdhci-mt7620 kmod-i2c-mt7628
++endef
++TARGET_DEVICES += sensecap_wm7628n
++
+ define Device/skylab_skw92a
+   IMAGE_SIZE := 16064k
+   DEVICE_VENDOR := Skylab
+diff --git a/target/linux/ramips/mt76x8/base-files/etc/board.d/01_leds b/target/linux/ramips/mt76x8/base-files/etc/board.d/01_leds
+index 8e4c85e..231ffa7 100644
+--- a/target/linux/ramips/mt76x8/base-files/etc/board.d/01_leds
++++ b/target/linux/ramips/mt76x8/base-files/etc/board.d/01_leds
+@@ -81,6 +81,10 @@ oraybox,x1)
+ rakwireless,rak633)
+ 	ucidef_set_led_netdev "wifi_led" "wifi" "blue:wifi" "wlan0"
+ 	;;
++sensecap,wm7628n)
++	ucidef_set_led_netdev "wifi_led" "wifi" "green:wlan" "wlan0"
++	ucidef_set_led_switch "wan" "wan" "green:wan" "switch0" "0x01"
++	;;
+ tama,w06)
+ 	ucidef_set_led_netdev "wan" "WAN" "green:wan" "eth0"
+ 	ucidef_set_led_wlan "wlan" "WLAN" "green:wlan" "phy0tpt"
+diff --git a/target/linux/ramips/mt76x8/base-files/etc/board.d/02_network b/target/linux/ramips/mt76x8/base-files/etc/board.d/02_network
+index c25eb3d..6a77010 100644
+--- a/target/linux/ramips/mt76x8/base-files/etc/board.d/02_network
++++ b/target/linux/ramips/mt76x8/base-files/etc/board.d/02_network
+@@ -192,6 +192,10 @@ ramips_setup_interfaces()
+ 		ucidef_add_switch "switch0" \
+ 			"0:wan" "1:lan" "2:lan" "3:lan" "4:lan" "6t@eth0"
+ 		;;
++	sensecap,wm7628n)
++		ucidef_add_switch "switch0" \
++			"1:lan" "0:wan" "6@eth0"
++		;;
+ 	teltonika,rut976|\
+ 	teltonika,rut9x1|\
+ 	teltonika,rut9x6)
+@@ -357,6 +361,9 @@ ramips_setup_macs()
+ 	wavlink,wl-wn575a3)
+ 		wan_mac=$(macaddr_add "$(mtd_get_mac_binary factory 0x28)" 1)
+ 		;;
++	sensecap,wm7628n)
++		wan_mac=$(mtd_get_mac_binary factory 0x2e)
++		;;
+ 	tplink,archer-c20-v4|\
+ 	tplink,archer-c50-v3|\
+ 	tplink,tl-mr3420-v5|\

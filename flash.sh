@@ -271,7 +271,7 @@ install_method="$(board_field "${BOARD}" BOARD_INSTALL)"
 if [ "${install_method}" != sdcard ]; then
   die "${BOARD} does not install from an SD card (BOARD_INSTALL=${install_method}).
        It boots from soldered flash and is updated through its own upgrade
-       path — see https://github.com/pulzar-net/openwrt-device-template."
+       path — see docs/boards.md."
 fi
 
 [ "${DOWNLOAD}" = 1 ] && download_image "${BOARD}"

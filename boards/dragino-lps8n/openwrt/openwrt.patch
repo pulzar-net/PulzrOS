@@ -1,0 +1,49 @@
+diff --git a/target/linux/ath79/generic/base-files/etc/board.d/01_leds b/target/linux/ath79/generic/base-files/etc/board.d/01_leds
+index 870c2c3..9e0b384 100644
+--- a/target/linux/ath79/generic/base-files/etc/board.d/01_leds
++++ b/target/linux/ath79/generic/base-files/etc/board.d/01_leds
+@@ -252,6 +252,11 @@ dlink,dap-1365-a1)
+ 	ucidef_set_led_rssi "rssimediumhigh" "RSSIMEDIUMHIGH" "green:rssimediumhigh" "wlan0" "51" "100"
+ 	ucidef_set_led_rssi "rssihigh" "RSSIHIGH" "green:rssihigh" "wlan0" "76" "100"
+ 	;;
++dragino,lps8n)
++	ucidef_set_led_wlan "wlan" "WLAN" "red:wlan" "phy0tpt"
++	ucidef_set_led_netdev "lan" "LAN" "dragino2:red:lan" "eth0"
++	ucidef_set_led_netdev "wan" "WAN" "dragino2:red:wan" "eth1"
++	;;
+ engenius,ens202ext-v1|\
+ engenius,enstationac-v1)
+ 	ucidef_set_rssimon "wlan0" "200000" "1"
+diff --git a/target/linux/ath79/generic/base-files/etc/board.d/02_network b/target/linux/ath79/generic/base-files/etc/board.d/02_network
+index 6be9d44..2ea9b7f 100644
+--- a/target/linux/ath79/generic/base-files/etc/board.d/02_network
++++ b/target/linux/ath79/generic/base-files/etc/board.d/02_network
+@@ -40,6 +40,7 @@ ath79_setup_interfaces()
+ 	dlink,dap-2680-a1|\
+ 	dlink,dap-3320-a1|\
+ 	dlink,dir-505|\
++	dragino,lps8n|\
+ 	engenius,eap1200h|\
+ 	engenius,eap1750h|\
+ 	engenius,eap600|\
+diff --git a/target/linux/ath79/image/generic.mk b/target/linux/ath79/image/generic.mk
+index c5eb589..4045a28 100644
+--- a/target/linux/ath79/image/generic.mk
++++ b/target/linux/ath79/image/generic.mk
+@@ -1315,6 +1315,16 @@ define Device/dlink_dir-842-c3
+ endef
+ TARGET_DEVICES += dlink_dir-842-c3
+ 
++define Device/dragino_lps8n
++  SOC := ar9331
++  DEVICE_VENDOR := Dragino
++  DEVICE_MODEL := LPS8N
++  DEVICE_PACKAGES := kmod-usb-chipidea2 kmod-usb-ledtrig-usbport kmod-spi-gpio kmod-i2c-gpio
++  IMAGE_SIZE := 16000k
++  SUPPORTED_DEVICES += dragino2
++endef
++TARGET_DEVICES += dragino_lps8n
++
+ define Device/elecom_wab
+   DEVICE_VENDOR := ELECOM
+   IMAGE_SIZE := 14336k

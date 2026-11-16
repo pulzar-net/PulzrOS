@@ -97,10 +97,11 @@ list_boards_json() {
     (
       # shellcheck disable=SC1090
       . "${BOARDS_DIR}/${board}/board.conf"
-      printf '{"board":"%s","name":"%s","status":"%s","target":"%s","subtarget":"%s","arch":"%s","imagebuilder":"%s"}' \
+      printf '{"board":"%s","name":"%s","status":"%s","target":"%s","subtarget":"%s","arch":"%s","imagebuilder":"%s","device":"%s","deviceKey":"%s"}' \
         "${BOARD_ID}" "${BOARD_NAME}" "${BOARD_STATUS:-supported}" \
         "${OPENWRT_TARGET}" "${OPENWRT_SUBTARGET}" \
-        "${OPENWRT_ARCH}" "$(imagebuilder_id)"
+        "${OPENWRT_ARCH}" "$(imagebuilder_id)" "${OPENWRT_DEVICE_SUPPORT:-}" \
+        "$( [ -n "${OPENWRT_DEVICE_SUPPORT:-}" ] && device_key || true)"
     )
     [ "${first}" = 1 ] && first=0 || true
     [ "${board}" = "$(all_boards | tail -n1)" ] || printf ','
@@ -111,29 +112,39 @@ list_boards_json() {
 # ── ImageBuilder ────────────────────────────────────────────────────────────
 
 # Where the ImageBuilder and its sha256sums come from: downloads.openwrt.org,
-# or for a board OpenWrt does not support yet, the release of its device repo
-# (OPENWRT_DEVICE_REPO, made from pulzar-net/openwrt-device-template) tagged
-# with this OpenWrt version. Those repos build each OpenWrt stable release the
-# day it is published, so OPENWRT_VERSION is the one thing to change.
+# or for a board OpenWrt does not support yet, the one built from its device
+# support in boards/<OPENWRT_DEVICE_SUPPORT>/openwrt/ by
+# scripts/device-imagebuilder.sh, into .build/device-ib/<that board>/. CI
+# builds it once per change to those files (build.yml); a local build of such
+# a board needs it built first, which takes Linux and a couple of hours.
 imagebuilder_base() {
-  if [ -n "${OPENWRT_DEVICE_REPO:-}" ]; then
-    echo "https://github.com/${OPENWRT_DEVICE_REPO}/releases/download/${OPENWRT_VERSION}"
+  if [ -n "${OPENWRT_DEVICE_SUPPORT:-}" ]; then
+    echo "file://${BUILD_DIR}/device-ib/${OPENWRT_DEVICE_SUPPORT}"
   else
     echo "https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/targets/${OPENWRT_TARGET}/${OPENWRT_SUBTARGET}"
   fi
 }
 
+# What a board's device-support ImageBuilder is built from: the release, its
+# boards/<board>/openwrt/ and the scripts that build it. The CI cache key for
+# that build, and part of the id below, so a change to any of them is a new
+# ImageBuilder everywhere.
+device_key() {
+  local dir="${BOARDS_DIR}/${OPENWRT_DEVICE_SUPPORT}/openwrt"
+  { echo "${OPENWRT_VERSION}"
+    ( cd "${ROOT_DIR}" && find "boards/${OPENWRT_DEVICE_SUPPORT}/openwrt" scripts/device-imagebuilder.sh \
+        scripts/device-imagebuilder-graft.sh -type f | LC_ALL=C sort | xargs sha256sum ); } \
+    | sha256sum | cut -c1-12
+  [ -d "${dir}" ] || return 1
+}
+
 # Distinct per source, so the stock and a device-support ImageBuilder for the
 # same target sit side by side rather than one shadowing the other, and the
-# RAK7268CV2 and RAK7289CV2 repos' releases for ramips/mt76x8 do not shadow
-# each other. A device repo replaces its release when its main changes, so its
-# id carries the release's checksum list: a new release is a new ImageBuilder,
-# here and in the CI cache this keys.
+# RAK7268CV2's and RAK7289CV2's, both ramips/mt76x8, do not shadow each other.
 imagebuilder_id() {
   local source=""
-  if [ -n "${OPENWRT_DEVICE_REPO:-}" ]; then
-    source="${OPENWRT_DEVICE_REPO#*/}-$(curl -fsSL --retry 3 "$(imagebuilder_base)/sha256sums" 2>/dev/null \
-      | sha256sum | cut -c1-12)"
+  if [ -n "${OPENWRT_DEVICE_SUPPORT:-}" ]; then
+    source="${OPENWRT_DEVICE_SUPPORT}-$(device_key)"
   fi
   echo "${OPENWRT_VERSION}-${OPENWRT_TARGET}-${OPENWRT_SUBTARGET}${source:+-${source}}"
 }
@@ -153,7 +164,7 @@ fetch_imagebuilder() {
   log "Fetching ImageBuilder ${OPENWRT_VERSION} ${OPENWRT_TARGET}/${OPENWRT_SUBTARGET}"
   mkdir -p "${BUILD_DIR}/imagebuilder"
   if ! curl -fL --retry 3 -o "${tarball}" "${url}"; then
-    [ -z "${OPENWRT_DEVICE_REPO:-}" ] || die "${OPENWRT_DEVICE_REPO} has no OpenWrt ${OPENWRT_VERSION} release. Its daily build makes one when OpenWrt publishes a stable release; for any other: gh workflow run build -R ${OPENWRT_DEVICE_REPO} -f version=${OPENWRT_VERSION}"
+    [ -z "${OPENWRT_DEVICE_SUPPORT:-}" ] || die "no ImageBuilder for ${OPENWRT_DEVICE_SUPPORT}'s device support in ${BUILD_DIR}/device-ib/${OPENWRT_DEVICE_SUPPORT}; build it with scripts/device-imagebuilder.sh ${OPENWRT_DEVICE_SUPPORT} ${BUILD_DIR}/device-ib/${OPENWRT_DEVICE_SUPPORT}"
     die "could not download ${url}"
   fi
 

@@ -87,16 +87,16 @@ why detection disagrees.
 | `rpi4` | bcm27xx/bcm2711 | 1 slot, `auto` | Kit. Any bus. |
 | `rpi5` | bcm27xx/bcm2712 | 1 slot, `auto` | Kit. GPIO is behind the RP1 — see `PULZR_GPIOCHIP`. |
 | `rak7268c` | ramips/mt76x8 | 1 slot, fixed SPI | **Unverified.** 8 channels. |
-| `rak7268cv2` | ramips/mt76x8 | 1 slot, fixed SPI | Harvested. ImageBuilder from pulzar-net/openwrt-rak7268cv2. 8 channels. |
-| `rak7289cv2` | ramips/mt76x8 | 2 slots, fixed USB | **Supported.** Full PulzarOS bench-confirmed on a single-radio unit (concentratord, 8 ch, GPS, adoption); two-slot structure ready, LoRa1/LoRa2 order to be confirmed on a dual-card Pro. 16 channels. Power-board watchdog and battery pack per ChirpStack's RAK support, not yet seen answering ([rak-power.md](rak-power.md)). ImageBuilder from pulzar-net/openwrt-rak7289cv2. |
+| `rak7268cv2` | ramips/mt76x8 | 1 slot, fixed SPI | Harvested. Device support in `boards/rak7268cv2/openwrt/`. 8 channels. |
+| `rak7289cv2` | ramips/mt76x8 | 2 slots, fixed USB | **Supported.** Full PulzarOS bench-confirmed on a single-radio unit (concentratord, 8 ch, GPS, adoption); two-slot structure ready, LoRa1/LoRa2 order to be confirmed on a dual-card Pro. 16 channels. Power-board watchdog and battery pack per ChirpStack's RAK support, not yet seen answering ([rak-power.md](rak-power.md)). Device support in `boards/rak7289cv2/openwrt/`. |
 | `rak7268v2` | ramips/mt76x8 | 1 slot, fixed SPI | **Unverified.** The RAK7268CV2 without LTE: its device support and image, cellular left out. 8 channels. |
 | `rak7289v2` | ramips/mt76x8 | 2 slots, fixed USB | **Unverified.** The RAK7289CV2 without LTE: its device support and image, cellular left out. 16 channels. |
 | `rak7391` | bcm27xx/bcm2711 | 2 slots, `auto` | **Unverified.** WisGate Connect, a CM4 carrier: the Pi 4 image; mPCIe cards are probed as on a kit (resets 17 and 6 for an SPI card). |
 | `rak7266` | ramips/mt76x8 | 1 slot, fixed SPI | **Unverified.** RAK636 with the RAK7268V2's radio: that board's image without the Lite's breathing light. |
 | `rak7267` | ramips/mt76x8 | 1 slot, fixed USB | **Unverified.** RAK636, one RAK5146 on USB, GNSS: the RAK7289CV2's image with one card. |
-| `sensecap-m2` | ramips/mt76x8 | 1 slot, fixed SPI | **Needs device support** until pulzar-net/openwrt-sensecap-m2's first release. WM1302, reset 14, power-enable 3. |
-| `dragino-lps8n` | ath79/generic | 1 slot, fixed SPI | **Needs device support** until pulzar-net/openwrt-dragino-lps8n's first release. PG1302 on `/dev/spidev1.0`, reset 23. |
-| `gl-sft1200` | siflower/sf19a2890 | none: a router | **Booted.** GL.iNet Opal, the router IP devices sit behind on its two LAN ports ([lan.md](lan.md)). ImageBuilder from pulzar-net/openwrt-gl-sft1200. |
+| `sensecap-m2` | ramips/mt76x8 | 1 slot, fixed SPI | **Needs device support** until its device support (`boards/sensecap-m2/openwrt/`) is booted on a unit. |
+| `dragino-lps8n` | ath79/generic | 1 slot, fixed SPI | **Needs device support** until its device support (`boards/dragino-lps8n/openwrt/`) builds and is booted on a unit. |
+| `gl-sft1200` | siflower/sf19a2890 | none: a router | **Booted.** GL.iNet Opal, the router IP devices sit behind on its two LAN ports ([lan.md](lan.md)). Device support in `boards/gl-sft1200/openwrt/`. |
 
 The RAK V2, RAK7391, RAK7266/7267, SenseCAP M2 and LPS8N rows come from what
 ChirpStack Gateway OS supports. Their radio facts (part, bus, reset and power
@@ -110,15 +110,14 @@ The Pi boards share `boards/common/raspberrypi.conf` and the RAK boards share
 lines of genuine difference.
 
 `rak7268cv2` was harvested from a stock unit. Its OpenWrt device support
-lives in the public [pulzar-net/openwrt-rak7268cv2](https://github.com/pulzar-net/openwrt-rak7268cv2)
-repo, whose releases publish an ImageBuilder with it added, one per OpenWrt
-version, tagged with the version. The board names the repo in
-`OPENWRT_DEVICE_REPO`, and `build.sh` downloads the release for
-`OPENWRT_VERSION` and verifies it like a stock one.
+(a DTS and a patch against OpenWrt, the hardware record in its README) is
+`boards/rak7268cv2/openwrt/`; `scripts/device-imagebuilder.sh` builds an
+ImageBuilder from it, which CI does once per change to those files, and the
+board names it in `OPENWRT_DEVICE_SUPPORT`. Every board OpenWrt does not
+support yet works the same way, until OpenWrt carries it and the folder goes.
 
 `rak7289cv2` shares the RAK636 board, so its device support was written from
-that same shipping firmware rather than a fresh harvest — [pulzar-net/openwrt-rak7289cv2](https://github.com/pulzar-net/openwrt-rak7289cv2),
-built from [openwrt-device-template](https://github.com/pulzar-net/openwrt-device-template).
+that same shipping firmware rather than a fresh harvest — `boards/rak7289cv2/openwrt/`.
 Its two radios are RAK5146 (SX1303) cards on **USB** (`/dev/lora0` and
 `/dev/lora1`, linked by hub port to whichever ttyACM each card gets), not SPI — the one hardware difference from the Lite. A bench
 run of the full `24.10.0-1` PulzarOS image confirmed it boots as
@@ -130,7 +129,7 @@ silkscreen LoRa1/LoRa2 order left to confirm on a Pro with both cards.
 `gl-sft1200` is the GL.iNet Opal, the first board that is a router rather
 than a LoRa gateway: one WAN port and two LAN ports on a MaxLinear GSW150
 switch, and Siflower's two radios on their GPLv2 driver (`kmod-siwifi`). Its target is source-only in 25.12 and has no GSW150
-driver on 6.12, so [pulzar-net/openwrt-gl-sft1200](https://github.com/pulzar-net/openwrt-gl-sft1200)
+driver on 6.12, so `boards/gl-sft1200/openwrt/`, with `scripts/device-imagebuilder-graft.sh`,
 builds the 25.12.6 tree with siflower's 6.18 kernel grafted in, and an
 ImageBuilder that carries the kernel, every kmod and the target's own
 packages while installing the release's userland. `check-deps.sh` lists what
@@ -155,14 +154,10 @@ feeds.
    release's `index.json` files and names every package that is gone or
    renamed. Libraries are listed there without their ABI suffix (`libstdcpp`,
    not `libstdcpp6`), and that is the name to depend on.
-2. Nothing per board. Each device repo (`OPENWRT_DEVICE_REPO`) builds
-   OpenWrt's stable release the day it is published, from its main, and
-   releases it under the version. If one has no release for the version, its
-   build failed there: its `devices/<board>/openwrt.patch` needs rebasing onto
-   the new release tag (a few minutes of context fixing; the patch touches
-   four files), and a push to its main publishes it. A version that is not
-   OpenWrt's current stable is built on request:
-   `gh workflow run build -R <repo> -f version=<version>`.
+2. Nothing per board, unless a board's `openwrt/openwrt.patch` no longer
+   applies to the new release tag: CI's device-support job says so, and the
+   fix is rebasing that patch (a patch touches four files, so this is a few
+   minutes of context fixing).
 3. `./build.sh --all`, and boot one image of each target before releasing.
 
 24.10.0 to 25.12.6 took this for the RAK repos: `uboot-envtools` moved from
