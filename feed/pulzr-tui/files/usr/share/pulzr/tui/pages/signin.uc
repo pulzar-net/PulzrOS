@@ -142,7 +142,7 @@ return function(ctx) {
 
     return {
         interval: () => {
-            if (!st.adopted && !ctx.browsing()) return st.claim ? st.claim.interval() : 3;
+            if (!st.adopted && !ctx.browsing() && !api.unprivileged) return st.claim ? st.claim.interval() : 3;
             // While a code is on screen: as often as Pulzar Cloud asked.
             return st.pulzr ? st.pulzr.interval : null;
         },
@@ -151,7 +151,10 @@ return function(ctx) {
             // A revoked claim shows its replacement first, as an unadopted
             // gateway shows its claim.
             st.adopted = api.claim.isAdopted() && !api.claim.reclaiming();
-            if (!st.adopted && !ctx.browsing()) {
+            // The claim screen before sign-in only on the gateway's own ports,
+            // which are physical access. Over SSH (unprivileged) the claim is
+            // for a session: whoever holds the code can adopt the gateway.
+            if (!st.adopted && !ctx.browsing() && !api.unprivileged) {
                 if (!st.claim) st.claim = ctx.page('claim');
                 st.claim.load();
                 return;

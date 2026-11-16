@@ -81,20 +81,17 @@ const PUBLIC = {
     // nothing that names a customer or a credential.
     'GET  /api/access/status': true,
 
-    // ── one-touch provisioning ──────────────────────────────────────────
+    // ── provisioning ────────────────────────────────────────────────────
     //
-    // Reachable without a session, and that is the point rather than an
-    // oversight: a gateway out of the box has a password nobody has read off
-    // the serial console yet, and requiring a login before it can be claimed
-    // would defeat the whole flow. Somebody who can reach this is on the
-    // gateway's LAN, and all they can learn is a claim code that is worthless
-    // without a Pulzar account to bind it to.
+    // Not the claim code. Whoever holds it can adopt the gateway into any
+    // organization they run, so it is shown only to a session (the label's
+    // password signs in on an unadopted gateway) and on the gateway's own
+    // physical consoles. It was open to anybody on the LAN, which made a new
+    // gateway on a shared network anybody's to take.
     //
-    // Everything here stops working the moment the gateway is adopted — see
-    // the guard in handle_request.
-    'GET  /api/claim/status': true,
-    'GET  /api/claim/qr': true,
-    'POST /api/claim/poll': true,
+    // An offline bundle is open: it is Pulzar Cloud's signature over this
+    // gateway's EUI, which nobody gets without having adopted it already.
+    // It stops working the moment the gateway is adopted (PROVISIONING_ONLY).
     'POST /api/claim/apply': true,
 
     // Open for the same reason, and for the opposite state. The recovery
@@ -107,9 +104,8 @@ const PUBLIC = {
     'GET  /api/claim/check-adoption': true,
 };
 
-// The provisioning routes above are open only while there is nothing to
-// protect. Once a gateway belongs to an organisation, its claim state is
-// somebody's business and not the public's.
+// The claim routes answer only while the gateway is unadopted. Once it belongs
+// to an organisation there is no claim to show.
 const PROVISIONING_ONLY = {
     'GET  /api/claim/status': true,
     'GET  /api/claim/qr': true,
@@ -117,10 +113,9 @@ const PROVISIONING_ONLY = {
     'POST /api/claim/apply': true,
 };
 
-// Open again while a claim waits to replace a revoked one, so the new owner
-// can scan it the way the first owner did. What they show is a code Pulzar Cloud
-// lets only the gateway's owner adopt. Not `apply`: an offline bundle carries
-// no claim, and this gateway is adopted.
+// Again while a claim waits to replace a revoked one, for the owner to scan
+// (signed in, as the owner is, by Pulzar). Not `apply`: an offline bundle
+// carries no claim, and this gateway is adopted.
 const RECLAIM_OPEN = {
     'GET  /api/claim/status': true,
     'GET  /api/claim/qr': true,

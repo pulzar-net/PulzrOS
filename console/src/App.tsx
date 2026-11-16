@@ -48,21 +48,21 @@ export default function App() {
   // worse than one that asks again.
   const [browsing, setBrowsing] = useState(false);
 
-  // Adoption state decides the whole shape of the app, so it is asked for
-  // before anything else. Unauthenticated on purpose: a gateway out of the box
-  // has a password nobody has read off the serial console yet, and requiring a
-  // login before it can be claimed would defeat one-touch provisioning
-  // entirely. The endpoint stops answering the moment the gateway is adopted.
+  // Adoption state, signed in only. The claim code is a key to the gateway:
+  // whoever holds it can adopt it into any organization they run, so the API
+  // shows it to a session and nobody else. On an unadopted gateway the label's
+  // password is that session. The endpoint stops answering once adopted.
   const claim = useQuery({
     queryKey: ['claim-status'],
     queryFn: () => api.get<ClaimStatus>('/claim/status'),
+    enabled: !!session,
     retry: false,
     staleTime: 10_000,
   });
 
   // Wait for both probes before deciding. Rendering one screen and replacing
   // it a moment later makes every refresh look like a fault.
-  if (loading || claim.isLoading) {
+  if (loading || (!!session && claim.isLoading)) {
     return <Spinner label="Connecting to the gateway" />;
   }
 
@@ -72,28 +72,20 @@ export default function App() {
   const reclaiming = claim.data?.adoption === 'reclaiming';
   const unadopted = claimable && !reclaiming;
 
-  // Claiming is what an unadopted gateway is usually here to do, so it is what
-  // opens — but it is no longer a wall. The console is reachable before
-  // adoption, because "look at it before committing it to an organization" is
-  // a reasonable thing to want and there was no way to do it: the claim screen
-  // was the only thing an unadopted gateway would render.
-  //
-  // Signing in is still required to get past it. The claim screen itself is
-  // unauthenticated by necessity — a gateway out of the box has a password
-  // nobody has read off the card yet — but nothing behind it is.
-  if (claimable && !session && !browsing) {
-    return <Onboarding onBrowse={() => setBrowsing(true)} />;
-  }
-
-  // No extra banner here: the sign-in screen already carries the gateway's own
-  // note about being unadopted, straight from the API. Two sentences saying the
-  // same thing is the sort of thing this console had too much of.
   if (!session) return <Login />;
 
   // A gateway still on the password it generated at first boot is a gateway
   // anybody holding the label can open. Nothing else is reachable until it is
   // dealt with — a dismissible banner is a banner that gets dismissed.
   if (session.mustChangePassword) return <PasswordPrompt />;
+
+  // Claiming is what an unadopted gateway is usually here to do, so it is what
+  // opens after sign-in — but not a wall: the console is reachable before
+  // adoption, because looking at a gateway before committing it to an
+  // organization is a reasonable thing to want.
+  if (claimable && !browsing) {
+    return <Onboarding onBrowse={() => setBrowsing(true)} />;
+  }
 
   return (
     <Routes>

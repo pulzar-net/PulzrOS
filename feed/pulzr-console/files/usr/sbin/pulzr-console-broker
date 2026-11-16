@@ -13,8 +13,8 @@
 // rules (api/index.uc):
 //
 //   - Before sign-in, only what getting a session takes: signing in, recovery,
-//     the claim screen while nobody has adopted the gateway (or a revoked
-//     claim waits), and asking whether the gateway is still adopted.
+//     and asking whether the gateway is still adopted. Not the claim code:
+//     whoever holds it can adopt the gateway, and this is the site's network.
 //   - After, a session, named by its token, which this looks up itself.
 //     Actions get that session, never one the caller describes.
 //   - Nothing else: a call this does not list is refused, so a function added
@@ -54,13 +54,9 @@ const OPEN = {
     actions: [ 'checkAdoption' ],
 };
 
-// Reachable without a session only while there is nothing to protect: the
-// gateway is unadopted, or (not `claimApply`) a revoked claim waits.
-const PROVISIONING = {
-    claim: [ 'status', 'qr' ],
-    actions: [ 'claimPoll', 'claimApply' ],
-};
-const RECLAIM = { claim: [ 'status', 'qr' ], actions: [ 'claimPoll' ] };
+// Reachable without a session only while the gateway is unadopted: an offline
+// bundle, which is Pulzar Cloud's signature over this gateway's EUI.
+const PROVISIONING = { actions: [ 'claimApply' ] };
 
 // Reachable with a session.
 const SIGNED_IN = {
@@ -88,9 +84,7 @@ function call(req) {
     if (type(target) != 'function') return { error: 'No such call.' };
 
     const adopted = M.claim.isAdopted();
-    const open = listed(OPEN, module, fn)
-        || (listed(PROVISIONING, module, fn) && !adopted)
-        || (listed(RECLAIM, module, fn) && adopted && M.claim.reclaiming());
+    const open = listed(OPEN, module, fn) || (listed(PROVISIONING, module, fn) && !adopted);
 
     let session = null;
     if (!open) {
