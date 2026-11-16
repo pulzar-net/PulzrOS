@@ -299,7 +299,7 @@ password was the console's, so anybody with the label was root.
 | Root's password | none (`*`, `pulzr-root-keys-only`) | none |
 | SSH as root | fleet key, staff certificate | also `boards/common/ssh/dev/*.pub`, site keys |
 | SSH with a password | refused | refused |
-| `ssh pulzr@<gateway>` | the TUI, behind the console's sign-in | the same |
+| `ssh pulzr@<gateway>` | the TUI as uid 1000, behind the console's sign-in; no shell | the same |
 | Serial console | the TUI, behind the console's sign-in | the stock root shell |
 | HDMI, USB serial | the TUI, behind the console's sign-in | the same |
 | The TUI's `!` | a staff session, or a TUI started from a root shell | any signed-in session |
@@ -308,13 +308,21 @@ password was the console's, so anybody with the label was root.
 
 **`ssh pulzr@<gateway>`** is how a technician on the site network reaches
 the console, where the label's password used to open a root shell. `pulzr`
-is uid 0 with no password of its own (`pulzr-ssh-setup` writes it after
-root's line every boot), and sshd's `Match User pulzr` block runs
-`pulzr-tui --console` whatever the client asks for — no command, sftp,
-forwarding or `~/.ssh/rc`. So the account is the console's sign-in and nothing
-else: the local password while it is allowed, Pulzar or recovery once adopted,
-and `!` only for staff. Sign-in failures count against the client's address,
-and Ctrl-C ends the session.
+is uid 1000 with no password of its own (`pulzr-ssh-setup` writes it every
+boot), and sshd's `Match User pulzr` block runs `pulzr-tui --console`
+whatever the client asks for — no command, sftp, forwarding or `~/.ssh/rc`.
+So the account is the console's sign-in and nothing else: the local password
+while it is allowed, Pulzar or recovery once adopted. Sign-in failures count
+against the client's address, and Ctrl-C ends the session.
+
+It is not root, because anybody on the site's network reaches it before
+signing in. Everything the TUI reads or changes there it asks
+`pulzr-console-broker` for, over ubus (`pulzr.console`, which only root and
+`pulzr` may call): before sign-in only what getting a session takes and the
+claim screen of an unadopted gateway, after it the session's own reads and
+actions, each looked up by the broker from the session's token. There is no
+`!` shell on it; staff reach one with `ssh root@` and a certificate, which
+works offline too, and `!` gives everybody else the diagnostic prompt.
 
 **Staff sessions.** Organization admins sign in to a gateway's console with
 Pulzar and with recovery as well as staff do, so the kind of session cannot

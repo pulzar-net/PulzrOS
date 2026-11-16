@@ -7,12 +7,10 @@ return function(ctx) {
     const _m_fs = require('fs');
     const st = { status: null, qr: null, qrFor: null, bundleOpen: false, bundle: '', applyError: null };
 
-    const url = () => {
-        const p = _m_fs.popen('/usr/sbin/pulzr-claim qr 2>/dev/null', 'r');
-        const out = p ? trim(p.read('all') ?? '') : '';
-        if (p) p.close();
-        return out;
-    };
+    // Through the console's claim module, not pulzr-claim itself: as the
+    // unprivileged SSH account this cannot read the claim, and the broker
+    // shows it only while the claim screen is open to anybody.
+    const url = () => trim(api.claim.qr()?.url ?? '');
 
     return {
         // Every three seconds until somebody claims it, as the web page polls.

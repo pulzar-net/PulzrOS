@@ -39,12 +39,14 @@
 #
 # ── THE CONSOLE ACCOUNT ───────────────────────────────────────────────────
 #
-# `pulzr` (and `parkeze`, its ParkezeOS name), uid 0, no password: sshd_config
-# runs the TUI's sign-in as its only command, so `ssh pulzr@<gateway>` is the
-# console and nothing else.
+# `pulzr` (and `parkeze`, its ParkezeOS name), no password: sshd_config runs
+# the TUI's sign-in as its only command, so `ssh pulzr@<gateway>` is the
+# console and nothing else. Not root (it was, until 0.4): anybody on the
+# site's network reaches it before signing in, so it runs as uid 1000 and asks
+# pulzr-console-broker, which is root, for everything it reads or changes.
 # Made here, every boot, because /etc/passwd and /etc/shadow are conffiles a
-# gateway keeps from whatever image it was first flashed with. After root's
-# line, never in place of anything, so uid 0 still names root.
+# gateway keeps from whatever image it was first flashed with, and a gateway
+# upgraded from 0.3 has the account as uid 0 there: rewritten, not added to.
 #
 # Everything is written only when it differs, so a boot that changes nothing
 # writes nothing to flash.
@@ -55,11 +57,13 @@ DROPBEAR="${PULZR_DROPBEAR_DIR:-/etc/dropbear}"
 
 PASSWD="${PULZR_PASSWD:-/etc/passwd}"
 SHADOW="${PULZR_SHADOW:-/etc/shadow}"
-CONSOLE_PASSWD='pulzr:x:0:0:Pulzar console:/root:/bin/ash'
+GROUP="${PULZR_GROUP:-/etc/group}"
+CONSOLE_PASSWD='pulzr:x:1000:1000:Pulzar console:/:/bin/ash'
 CONSOLE_SHADOW='pulzr::0:0:99999:7:::'
+CONSOLE_GROUP='pulzr:x:1000:'
 # ParkezeOS's name for the same account. Technicians and the platform's tools
 # still run `ssh parkeze@<gateway>`; it is the same console under another name.
-LEGACY_PASSWD='parkeze:x:0:0:Pulzar console:/root:/bin/ash'
+LEGACY_PASSWD='parkeze:x:1000:1000:Pulzar console:/:/bin/ash'
 LEGACY_SHADOW='parkeze::0:0:99999:7:::'
 
 CA="${SSH}/pulzr_user_ca.pub"
@@ -150,6 +154,10 @@ setup() {
     account "${PASSWD}" "${CONSOLE_PASSWD}" 0644
     account "${SHADOW}" "${LEGACY_SHADOW}" 0600
     account "${SHADOW}" "${CONSOLE_SHADOW}" 0600
+    account "${GROUP}" "${CONSOLE_GROUP}" 0644
+    # Somebody else's uid 1000 would share the console's ubus rights.
+    awk -F: '$3 == 1000 && $1 != "pulzr" && $1 != "parkeze" { found = 1 } END { exit !found }' \
+        "${PASSWD}" && err "uid 1000 belongs to another account as well as the console"
 
     mkdir -p "${SSH}/sshd_config.d"
     chmod 0755 "${SSH}" "${SSH}/sshd_config.d"

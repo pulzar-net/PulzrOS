@@ -1,0 +1,8 @@
+{
+	"user": "pulzr",
+	"access": {
+		"pulzr.console": {
+			"methods": [ "call", "diag" ]
+		}
+	}
+}

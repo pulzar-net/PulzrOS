@@ -1,0 +1,134 @@
+#!/usr/bin/ucode -S
+//
+// The root half of the terminal console on SSH.
+//
+// `ssh pulzr@<gateway>` reaches the terminal UI before anybody has signed in,
+// from anywhere on the site's network. It used to run as root, so a flaw in
+// it was root on the gateway with no sign-in at all. It now runs as the
+// unprivileged `pulzr` account, and everything it reads or changes it asks
+// for here, over ubus: the `pulzr.console` object, which only root and
+// `pulzr` may call (/usr/share/acl.d/pulzr-console.json).
+//
+// This answers the same questions the web console's API does, under the same
+// rules (api/index.uc):
+//
+//   - Before sign-in, only what getting a session takes: signing in, recovery,
+//     the claim screen while nobody has adopted the gateway (or a revoked
+//     claim waits), and asking whether the gateway is still adopted.
+//   - After, a session, named by its token, which this looks up itself.
+//     Actions get that session, never one the caller describes.
+//   - Nothing else: a call this does not list is refused, so a function added
+//     to a module is not reachable here until somebody decides it should be.
+//
+// The serial, HDMI and USB consoles keep running the TUI as root: they are
+// physical access, which root on the flash already is (docs/auth.md).
+
+'use strict';
+
+let ubus = require('ubus');
+let uloop = require('uloop');
+
+const LIB = '/usr/share/pulzr/console/lib/';
+const load = (name) => loadfile(LIB + name + '.uc', { raw_mode: true })();
+
+const M = {
+    auth: load('auth'),
+    system: load('system'),
+    network: load('network'),
+    ports: load('ports'),
+    lorawan: load('lorawan'),
+    claim: load('claim'),
+    io: load('io'),
+    access: load('access'),
+    bluetooth: load('bluetooth'),
+    actions: load('actions'),
+};
+const diag = load('diag');
+
+// Reachable without a session.
+const OPEN = {
+    auth: [ 'loginLocal', 'loginMethods', 'recoveryChallenge', 'recoveryVerify',
+            'terminalStart', 'terminalCollect', 'readSession', 'destroySession' ],
+    claim: [ 'isAdopted', 'reclaiming', 'adoptionCheckResult' ],
+    access: [ 'status' ],
+    actions: [ 'checkAdoption' ],
+};
+
+// Reachable without a session only while there is nothing to protect: the
+// gateway is unadopted, or (not `claimApply`) a revoked claim waits.
+const PROVISIONING = {
+    claim: [ 'status', 'qr' ],
+    actions: [ 'claimPoll', 'claimApply' ],
+};
+const RECLAIM = { claim: [ 'status', 'qr' ], actions: [ 'claimPoll' ] };
+
+// Reachable with a session.
+const SIGNED_IN = {
+    system: [ 'summary', 'stats', 'processes', 'logs', 'history' ],
+    network: [ 'status', 'backhaul' ],
+    lorawan: [ 'status', 'concentrator', 'gps', 'forwarders' ],
+    ports: [ 'status' ],
+    io: [ 'status' ],
+    bluetooth: [ 'status' ],
+    access: [ 'scan', 'wifiDetail', 'probeResult', 'key' ],
+    claim: [ 'status', 'qr', 'adoptionCheckResult' ],
+};
+
+const listed = (table, module, fn) => index(table[module] ?? [], fn) >= 0;
+
+// The terminal's own address, as it reported it, kept apart from the web
+// console's in the lockout table. It cannot be checked, and does not need to
+// be: what it guards is a 14-character random password and Ed25519.
+const addr = (a) => 'tui:' + replace(type(a) == 'string' ? a : '', /[^A-Za-z0-9.:_-]/g, '');
+
+function call(req) {
+    const module = req.args.module, fn = req.args.fn, token = req.args.token;
+    let args = type(req.args.args) == 'array' ? req.args.args : [];
+    const target = M[module]?.[fn];
+    if (type(target) != 'function') return { error: 'No such call.' };
+
+    const adopted = M.claim.isAdopted();
+    const open = listed(OPEN, module, fn)
+        || (listed(PROVISIONING, module, fn) && !adopted)
+        || (listed(RECLAIM, module, fn) && adopted && M.claim.reclaiming());
+
+    let session = null;
+    if (!open) {
+        session = type(token) == 'string' ? M.auth.readSession(token) : null;
+        if (!session) return { error: 'Not signed in.', signedOut: true };
+        if (module != 'actions' && !listed(SIGNED_IN, module, fn))
+            return { error: 'No such call.' };
+    }
+
+    // The arguments that carry an address or a session are this side's.
+    if (module == 'auth' && fn == 'loginLocal') args = [ args[0], args[1], addr(args[2]) ];
+    else if (module == 'auth' && (fn == 'recoveryVerify' || fn == 'terminalCollect'))
+        args = [ args[0], addr(args[1]) ];
+    else if (module == 'actions') args = [ type(args[0]) == 'object' ? args[0] : {}, session ];
+
+    // An action that would hand a root shell is not for this account.
+    if (module == 'actions' && fn == 'openShell') return { error: 'No shell over SSH.' };
+
+    try {
+        return { result: target(...args) };
+    } catch (e) {
+        warn(sprintf('pulzr-console-broker: %s.%s: %s\n', module, fn, e.message ?? e));
+        return { error: 'Internal error.' };
+    }
+}
+
+function diagnose(req) {
+    const token = req.args.token;
+    if (type(token) != 'string' || !M.auth.readSession(token))
+        return { error: 'Not signed in.', signedOut: true };
+    return diag.output(req.args.command, type(req.args.args) == 'array' ? req.args.args : []);
+}
+
+uloop.init();
+const conn = ubus.connect();
+if (!conn) die('pulzr-console-broker: no ubus\n');
+conn.publish('pulzr.console', {
+    call: { call, args: { module: '', fn: '', args: [], token: '' } },
+    diag: { call: diagnose, args: { command: '', args: [], token: '' } },
+});
+uloop.run();

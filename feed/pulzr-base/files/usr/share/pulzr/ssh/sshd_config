@@ -61,7 +61,6 @@ Subsystem sftp /usr/lib/sftp-server
 # belongs to it.
 # parkeze is the ParkezeOS name for the same account; see pulzr-ssh-setup.
 Match User pulzr,parkeze
-    PermitRootLogin yes
     PasswordAuthentication yes
     PermitEmptyPasswords yes
     PubkeyAuthentication no

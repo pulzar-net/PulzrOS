@@ -66,6 +66,7 @@ return {
             config: { source: 'auto', slot: 0, device: '', baud: 9600 }, options: { modem: true, slots: [ { index: 0, status: 'present' } ] } }),
     },
     claim: {
+        qr: () => ({ url: 'https://app.pulzr.net/c/K7M2-QP4X-9RTB' }),
         isAdopted: () => adopted,
         reclaiming: () => false,
         status: () => ({ claimId: 'K7M2-QP4X-9RTB', adoption: adopted ? 'adopted' : 'unadopted', registered: true, online: true, url: 'https://app.pulzr.net/c/K7M2', org: null }),
@@ -94,4 +95,9 @@ return {
         ioTest: () => ok(), setConcentrator: () => ok(), setSlot: () => ok(), detect: () => ok(), setBackhaul: () => ok(),
         restart: () => ok(), setGpsSource: () => ok(), detectGps: () => ok(), syncGps: () => ({ error: 'No fix yet.' }),
     },
+    unprivileged: false,
+    useToken: () => null,
+    act: function(name, req, session) { return this.actions[name](req, session); },
+    diag: { topics: () => [ 'system', 'lorawan' ], argvs: () => ({ error: 'Not in the fixture.' }),
+            output: () => ({ error: 'Not in the fixture.' }) },
 };

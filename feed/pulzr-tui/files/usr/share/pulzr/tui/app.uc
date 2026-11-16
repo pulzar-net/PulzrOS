@@ -136,7 +136,9 @@ signedIn = function() { return app.session != null; };
 // development build lets any signed-in session through, for the bench.
 mayShell = function() {
     const s = app.session;
-    if (!s || app.remote) return false;
+    // Never as the unprivileged SSH account: there is no root to drop to, and
+    // staff reach a shell with `ssh root@` and a certificate instead.
+    if (!s || app.remote || api.unprivileged) return false;
     return app.dev || s.kind == 'shell' || s.shell === true;
 };
 
@@ -216,6 +218,7 @@ makeCtx = function() {
         signIn: (session) => {
             app.session = session;
             app.token = session.token;
+            api.useToken(app.token);
             app.lastCheck = time();
             app.pages = {};
             openPath(session.mustChangePassword ? '/password' : '/');
@@ -248,7 +251,7 @@ runAction = function(name, req) {
     flash('Working', 'neutral');
     draw();
     let r;
-    try { r = api.actions[name](req ?? {}, app.session); }
+    try { r = api.act(name, req ?? {}, app.session); }
     catch (e) {
         warn(sprintf('pulzr-tui: %s: %s\n%s\n', name, e.message ?? e, e.stacktrace ?? ''));
         r = { error: 'Internal error.' };
@@ -262,6 +265,7 @@ signOut = function(why) {
     if (app.token) { try { api.auth.destroySession(app.token); } catch (e) {} }
     app.session = null;
     app.token = null;
+    api.useToken(null);
     app.pages = {};
     app.browsing = false;
     app.focus = 'page';
@@ -451,7 +455,7 @@ diagnostics = function() {
     term.close();
     const quiet = () => null;
     for (let sig in [ 'SIGINT', 'SIGQUIT', 'SIGTSTP' ]) signal(sig, quiet);
-    try { diag(); } catch (e) {}
+    try { diag(api); } catch (e) {}
     for (let sig in [ 'SIGINT', 'SIGQUIT', 'SIGTSTP' ]) signal(sig, 'default');
     term.open(app.termOpts);
     app.lastKey = time();

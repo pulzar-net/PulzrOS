@@ -105,7 +105,8 @@ DROPBEAR="${SANDBOX}/etc/dropbear"
 export PULZR_SSH_DIR="${SSH}" PULZR_SSH_SHARE="${SHARE}" PULZR_DROPBEAR_DIR="${DROPBEAR}"
 PASSWD="${SANDBOX}/etc/passwd"
 SHADOW_FILE="${SANDBOX}/etc/shadow"
-export PULZR_PASSWD="${PASSWD}" PULZR_SHADOW="${SHADOW_FILE}"
+GROUP_FILE="${SANDBOX}/etc/group"
+export PULZR_PASSWD="${PASSWD}" PULZR_SHADOW="${SHADOW_FILE}" PULZR_GROUP="${GROUP_FILE}"
 
 # ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -129,7 +130,8 @@ fresh() {
     echo "dropbear rsa key" > "${DROPBEAR}/dropbear_rsa_host_key"
     printf '%s\n' 'root:x:0:0:root:/root:/bin/ash' 'daemon:*:1:1:daemon:/var:/bin/false' > "${PASSWD}"
     printf '%s\n' 'root:*:19000:0:99999:7:::' 'daemon:*:0:0:99999:7:::' > "${SHADOW_FILE}"
-    chmod 0644 "${PASSWD}"; chmod 0600 "${SHADOW_FILE}"
+    printf '%s\n' 'root:x:0:' 'daemon:x:1:' > "${GROUP_FILE}"
+    chmod 0644 "${PASSWD}" "${GROUP_FILE}"; chmod 0600 "${SHADOW_FILE}"
 }
 
 # ── a gateway upgraded from a dropbear image ────────────────────────────────
@@ -228,8 +230,9 @@ check "no RSA key is made" [ ! -e "${SSH}/ssh_host_rsa_key" ]
 
 fresh
 setup
-check "pulzr is in passwd, uid 0, after root" [ "$(tail -n1 "${PASSWD}")" = "pulzr:x:0:0:Pulzar console:/root:/bin/ash" ]
-check "root is still the first uid 0" [ "$(awk -F: '$3 == 0 { print $1; exit }' "${PASSWD}")" = root ]
+check "pulzr is in passwd, uid 1000, not root" [ "$(tail -n1 "${PASSWD}")" = "pulzr:x:1000:1000:Pulzar console:/:/bin/ash" ]
+check "root is the only uid 0" [ "$(awk -F: '$3 == 0' "${PASSWD}" | cut -d: -f1)" = root ]
+check "pulzr has its group" grep -qx 'pulzr:x:1000:' "${GROUP_FILE}"
 check "pulzr has an empty password field" grep -qx 'pulzr::0:0:99999:7:::' "${SHADOW_FILE}"
 check "root's shadow entry is untouched" grep -qx 'root:\*:19000:0:99999:7:::' "${SHADOW_FILE}"
 check "shadow stays 0600" [ "$(mode "${SHADOW_FILE}")" = 600 ]
@@ -237,12 +240,12 @@ check "passwd stays 0644" [ "$(mode "${PASSWD}")" = 644 ]
 before="$(mtimes)"
 setup
 check "a second boot rewrites neither" [ "$(mtimes)" = "${before}" ]
-echo 'pulzr:x:1000:1000::/home/pulzr:/bin/ash' >> "${PASSWD}"
+echo 'pulzr:x:0:0:Pulzar console:/root:/bin/ash' >> "${PASSWD}"
 setup
-check "a stray pulzr line is replaced, not doubled" [ "$(grep -c '^pulzr:' "${PASSWD}")" = 1 ]
-check "the ParkezeOS name is the same account" grep -qx 'parkeze:x:0:0:Pulzar console:/root:/bin/ash' "${PASSWD}"
+check "0.3's uid 0 line is replaced, not doubled" [ "$(grep -c '^pulzr:' "${PASSWD}")" = 1 ]
+check "the ParkezeOS name is the same account" grep -qx 'parkeze:x:1000:1000:Pulzar console:/:/bin/ash' "${PASSWD}"
 check "and has no password either" grep -qx 'parkeze::0:0:99999:7:::' "${SHADOW_FILE}"
-check "and it is the console's" grep -qx 'pulzr:x:0:0:Pulzar console:/root:/bin/ash' "${PASSWD}"
+check "and it is the console's" grep -qx 'pulzr:x:1000:1000:Pulzar console:/:/bin/ash' "${PASSWD}"
 check "the shipped config forces the TUI for pulzr" grep -qx '    ForceCommand /usr/sbin/pulzr-tui --console' "${SHIPPED_CONFIG}"
 check "the pulzr block is the last thing in the file" [ "$(awk '/^Match /{m=NR} END{print (m > 0)}' "${SHIPPED_CONFIG}")" = 1 ]
 check "nothing after it but its own indented lines" [ -z "$(awk 'f && !/^    / && NF {print} /^Match User pulzr,parkeze$/{f=1}' "${SHIPPED_CONFIG}")" ]

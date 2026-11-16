@@ -5,101 +5,49 @@
 // shell would give them that and a copy of PulzarOS with it (app.uc's
 // mayShell). This gives them the first and not the second.
 //
-// Every command is a fixed program run without a shell: the words typed are
-// matched against the table below and passed on as separate arguments, never
-// as a command line, so nothing typed can become a command of its own. Nothing
-// here reads a file, edits anything or starts a process that outlives it.
+// What each command runs is the console's lib/diag.uc: fixed programs, the
+// words typed passed on as separate arguments and never as a command line.
+// As root they run here, attached to the terminal; as the unprivileged SSH
+// account, pulzr-console-broker runs them and this prints what they said.
 
 let _m_fs = require('fs');
 
-const LOGS = '/usr/sbin/pulzr-logs';
+const USAGE = [
+    [ 'logs <topic> [lines]', 'recent log lines for a topic (200 unless given)' ],
+    [ 'follow <topic>', 'a topic as it is written; Ctrl-C stops' ],
+    [ 'topics', 'what the logs are divided into' ],
+    [ 'status', 'addresses and routes' ],
+    [ 'wifi', 'the radios and what they are connected to' ],
+    [ 'ping <host>', 'four pings' ],
+    [ 'help', 'this list' ],
+    [ 'exit', 'back to the console' ],
+];
 
-let topics, run, commands, help;
-
-topics = function() {
-    const p = _m_fs.popen(LOGS + ' --topics 2>/dev/null', 'r');
-    if (!p) return [];
-    const out = p.read('all') ?? '';
-    p.close();
-    return filter(split(trim(out), '\n'), (t) => length(t));
-};
-
-run = function(argv) {
-    try { system(argv); } catch (e) { print('could not run ', argv[0], '\n'); }
-};
-
-// A host for ping: a name or an address, nothing a program could take for an
-// option.
-const HOST = /^[A-Za-z0-9][A-Za-z0-9.:-]{0,252}$/;
-
-commands = {
-    help: {
-        usage: 'help',
-        what: 'this list',
-        fn: () => help(),
-    },
-    topics: {
-        usage: 'topics',
-        what: 'what the logs are divided into',
-        fn: () => print(join('  ', topics()), '\n'),
-    },
-    logs: {
-        usage: 'logs <topic> [lines]',
-        what: 'recent log lines for a topic (200 unless given)',
-        fn: function(args) {
-            if (!(args[0] in topics())) return print('logs: name a topic: ', join(' ', topics()), '\n');
-            if (args[1] != null && !match(args[1], /^[0-9]{1,4}$/)) return print('logs: lines is a number\n');
-            run([ LOGS, args[0], args[1] ?? '200' ]);
-        },
-    },
-    follow: {
-        usage: 'follow <topic>',
-        what: 'a topic as it is written; Ctrl-C stops',
-        fn: function(args) {
-            if (!(args[0] in topics())) return print('follow: name a topic: ', join(' ', topics()), '\n');
-            run([ LOGS, args[0], '--follow' ]);
-        },
-    },
-    status: {
-        usage: 'status',
-        what: 'addresses and routes',
-        fn: function() {
-            run([ '/sbin/ip', '-br', 'addr' ]);
-            print('\n');
-            run([ '/sbin/ip', 'route' ]);
-        },
-    },
-    wifi: {
-        usage: 'wifi',
-        what: 'the radios and what they are connected to',
-        fn: () => run([ '/usr/bin/iwinfo' ]),
-    },
-    ping: {
-        usage: 'ping <host>',
-        what: 'four pings',
-        fn: function(args) {
-            if (!match(args[0] ?? '', HOST)) return print('ping: give a host name or an address\n');
-            run([ '/bin/ping', '-c', '4', '-W', '2', args[0] ]);
-        },
-    },
-    exit: {
-        usage: 'exit',
-        what: 'back to the console',
-        fn: () => null,
-    },
-};
+let help, run;
 
 help = function() {
-    for (let name in [ 'logs', 'follow', 'topics', 'status', 'wifi', 'ping', 'help', 'exit' ]) {
-        const c = commands[name];
-        print(sprintf('  %-22s %s\n', c.usage, c.what));
+    for (let u in USAGE) print(sprintf('  %-22s %s\n', u[0], u[1]));
+};
+
+run = function(api, name, args) {
+    if (name == 'help') return help();
+    if (api.unprivileged) {
+        const r = api.diag.output(name, args);
+        return print(r.error ? r.error + '\n' : r.output);
+    }
+    if (name == 'topics') return print(join('  ', api.diag.topics()), '\n');
+    const list = api.diag.argvs(name, args);
+    if (type(list) != 'array') return print(list.error, '\n');
+    for (let i = 0; i < length(list); i++) {
+        if (i) print('\n');
+        try { system(list[i]); } catch (e) { print('could not run ', list[i][0], '\n'); }
     }
 };
 
 // Runs until `exit` or end of input. The caller has given the terminal back
 // to cooked mode and set the signals so Ctrl-C reaches the program running,
 // not the console.
-return function() {
+return function(api) {
     print('\nDiagnostics. `help` lists the commands; `exit` returns to the console.\n\n');
     while (true) {
         print('diag> ');
@@ -113,9 +61,7 @@ return function() {
         }
         const words = filter(split(trim(line), /[ \t]+/), (w) => length(w));
         if (!length(words)) continue;
-        const c = commands[words[0]];
-        if (!c) { print(words[0], ': not a command here. `help` lists them.\n'); continue; }
         if (words[0] == 'exit') return;
-        c.fn(slice(words, 1));
+        run(api, words[0], slice(words, 1));
     }
 };
