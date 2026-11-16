@@ -135,6 +135,25 @@ for d in ${devices}; do
     || die "device ${d} did not survive defconfig; is its recipe in the patch valid?"
 done
 
+# What can move the vermagic is which kernel options and kmods are on, not
+# whether a kmod is built in or a module. Compared here, against the release's
+# own config settled the same way, so a mismatch names its symbols in minutes
+# rather than surfacing two hours later as a hash.
+kernel_side() {
+  grep -E '^(# )?CONFIG_(KERNEL_|PACKAGE_kmod-)' .config \
+    | sed -E 's/^# (CONFIG_[^ ]+) is not set$/\1=n/; s/=[ym]$/=on/' | LC_ALL=C sort
+}
+kernel_side > "${ROOT}/kernel-ours"
+cp .config "${ROOT}/config-ours"
+curl -fsSL -o .config "${RELEASE}/config.buildinfo"
+make defconfig >/dev/null
+kernel_side > "${ROOT}/kernel-release"
+cp "${ROOT}/config-ours" .config
+if ! diff -u "${ROOT}/kernel-release" "${ROOT}/kernel-ours" > "${ROOT}/kernel-diff"; then
+  log "Kernel-side settings that differ from the release's (- release, + this build):"
+  grep -E '^[-+]CONFIG' "${ROOT}/kernel-diff" | head -60
+fi
+
 log "Building the toolchain and the kernel"
 make download -j8 >/dev/null
 make -j"$(nproc)" tools/install toolchain/install
