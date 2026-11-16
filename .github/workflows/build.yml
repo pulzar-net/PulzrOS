@@ -71,8 +71,14 @@ jobs:
   check:
     name: Checks
     runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
+    outputs:
+      lora-targets: ${{ steps.lora.outputs.targets }}
     steps:
       - uses: actions/checkout@v4
+
+      # The targets the LoRa packages are built for, from the boards.
+      - id: lora
+        run: echo "targets=$(sdk/targets | jq -Rsc 'split("\n") | map(select(. != ""))')" >> "$GITHUB_OUTPUT"
 
       # Pulzar Cloud offers a release to a gateway when the release's version
       # is newer than the one the gateway reports, and a gateway reports
@@ -334,7 +340,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [ramips/mt76x8, ath79/generic, bcm27xx/bcm2710, bcm27xx/bcm2711, bcm27xx/bcm2712]
+        target: ${{ fromJSON(needs.check.outputs.lora-targets) }}
     steps:
       - uses: actions/checkout@v4
 

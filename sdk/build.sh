@@ -3,7 +3,7 @@
 # Build the LoRa packages for one target with the OpenWrt SDK of the release
 # the images are built from.
 #
-#   sdk/build.sh <target>/<subtarget> <out-dir>
+#   sdk/build.sh <target>/<subtarget> <out-dir>      (sdk/targets lists them)
 #
 # ChirpStack Concentratord and the MQTT Forwarder are built by ChirpStack's own
 # OpenWrt recipes (their feed, pinned in feeds), with OpenWrt's Rust, so they
@@ -26,16 +26,17 @@ OUT="$(mkdir -p "${2:?usage: sdk/build.sh <target>/<subtarget> <out-dir>}" && cd
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VERSION="$(sed -n 's/^OPENWRT_VERSION="\(.*\)"/\1/p' "${HERE}/../boards/common/board.conf")"
 
-read -r arch sha < <(awk -v t="${TARGET}" '$1 == t { print $2, $3 }' "${HERE}/targets")
-[ -n "${sha:-}" ] || { echo "no SDK for ${TARGET} in sdk/targets" >&2; exit 1; }
-
 WORK="${SDK_WORK:-${HERE}/../.build/sdk-work}/${TARGET//\//-}"
 mkdir -p "${WORK}"
 
 # ── The SDK ────────────────────────────────────────────────────────────────
+# Verified against the release's checksum list, as build.sh verifies the
+# ImageBuilder. The SDK's name carries the release's GCC version, so it is
+# read from that list rather than written down.
 url="https://downloads.openwrt.org/releases/${VERSION}/targets/${TARGET}"
-file="$(curl -fsSL --retry 3 "${url}/sha256sums" | awk -v s="${sha}" '$1 == s { sub(/^\*/, "", $2); print $2 }')"
-[ -n "${file}" ] || { echo "${url}/sha256sums lists no file with the pinned sha256" >&2; exit 1; }
+read -r sha file < <(curl -fsSL --retry 3 "${url}/sha256sums" \
+  | awk '$2 ~ /^\*openwrt-sdk-.*\.Linux-x86_64\.tar\.zst$/ { sub(/^\*/, "", $2); print $1, $2 }')
+[ -n "${file:-}" ] || { echo "${url}/sha256sums lists no SDK" >&2; exit 1; }
 if [ ! -f "${WORK}/${file}" ]; then
   curl -fsSL --retry 3 -o "${WORK}/${file}.part" "${url}/${file}"
   mv "${WORK}/${file}.part" "${WORK}/${file}"
@@ -76,6 +77,7 @@ make -j"$(nproc)" package/feeds/chirpstack/chirpstack-concentratord/compile \
                   package/feeds/chirpstack/chirpstack-mqtt-forwarder/compile
 
 # ── Collect ────────────────────────────────────────────────────────────────
+arch="$(ls bin/packages)"
 mkdir -p "${OUT}/${arch}"
 rm -f "${OUT}/${arch}"/*.apk
 grep -v '^#' "${HERE}/built" | while IFS= read -r name; do
