@@ -13,7 +13,7 @@
 # refused through a dependency.
 #
 # What an add-on install can get wrong is root code on a gateway nobody can
-# reach, or Modbus on USC PTS's Osborne, and neither is found on a bench. So
+# reach, or Modbus on a gateway that denies it, and neither is found on a bench. So
 # each refusal, the resume, the gate's revert and the restore after an
 # upgrade run here.
 #
@@ -332,10 +332,10 @@ jq -c '.addons |= map(if .name == "pulzr-edge" then .arches = {} else . end)' \
 addon install pulzr-edge alice
 check "arch: a release that does not build it here" unavailable "$(item pulzr-edge state)"
 
-# ── Osborne: deny=modbus ────────────────────────────────────────────────────
+# ── a production gateway: deny=modbus ──────────────────────────────────────────────
 
 reset
-addon deny 'staff@pulzr.net' 'USC PTS Osborne never gets Modbus' modbus >/dev/null
+addon deny 'staff@pulzr.net' 'this gateway never gets Modbus' modbus >/dev/null
 check "deny: recorded" '["modbus"]' "$(pulzr-addon status --brief | jq -c .deny)"
 addon start install pulzr-edge alice; rc=$?
 check "deny: pulzr-edge refused by name" "3 Modbus is locked off on this gateway." "${rc} $(err)"

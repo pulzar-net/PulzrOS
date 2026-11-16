@@ -36,8 +36,8 @@
 // refused by install and by restore alike, so a `wanted` edited by hand cannot
 // bring it back either. What each add-on brings is read from
 // /usr/share/pulzr/addons.caps, which came with this firmware, never from the
-// downloaded catalog. This is the gateway's half of USC PTS's Osborne never
-// getting Modbus; Pulzar Net holds the other half and writes this list back
+// downloaded catalog. This is the gateway's half of a denied capability
+// staying off; Pulzar Net holds the other half and writes this list back
 // if a factory reset wipes it. Nothing reachable remotely takes a deny away:
 // `undeny` is for somebody with a root shell.
 //

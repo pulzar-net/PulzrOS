@@ -156,7 +156,7 @@ function FirmwareUpload() {
         {file && (
           <label className={styles.fileButton}>
             <Upload size={14} strokeWidth={2} />
-            {manifest ? manifest.name : 'Signature (optional)'}
+            {manifest ? manifest.name : 'Signature'}
             <input
               type="file"
               accept=".json"

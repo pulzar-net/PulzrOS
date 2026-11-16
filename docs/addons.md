@@ -113,9 +113,9 @@ the running release does not have stays wanted, as `unavailable`.
 An add-on that is neither wanted, installed, built in nor recorded is not
 listed.
 
-## The deny list, and Osborne
+## The deny list
 
-USC PTS's Osborne (RAK7268CV2) never gets Modbus. Three things hold it:
+A gateway with Modbus denied (a production RAK7268CV2, say) never gets it. Three things hold it:
 
 - No image but the RAK7289CV2's carries pulzr-edge (`scripts/check-addons.sh`).
 - `pulzr_addons.main.deny` holds capability words. `install` and `restore`

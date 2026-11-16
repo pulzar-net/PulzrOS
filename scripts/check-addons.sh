@@ -8,7 +8,7 @@
 # is one a wrong edit breaks without any build noticing:
 #
 #   * No board carries pulzr-edge in its image except the RAK7289CV2. The
-#     RAK7268CV2 that runs USC PTS's Osborne gateway must never get Modbus by
+#     RAK7268CV2s in production must never get Modbus by
 #     any automatic path, and a package in a board's list is the most automatic
 #     path there is: the plan and the owner both put this guard on the image
 #     side. The shared RAK lists are what the RAK7268 boards inherit, so this
@@ -94,7 +94,7 @@ for pkgdir in "${FEED_DIR}"/*/; do
         || bad "${name}: ${id} runs ${arch}, which ${name}/arches does not build"
     fi
 
-    # Stands for the Osborne gateway: see the header.
+    # Stands for a production RAK7268CV2: see the header.
     case " ${packages} " in *" ${name} "*)
       if [ "${name}" = pulzr-edge ] && [ "${id}" != rak7289cv2 ]; then
         bad "${id} installs pulzr-edge in its image; only rak7289cv2 may. It is an add-on everywhere else."

@@ -70,7 +70,7 @@ jobs:
   # ───────────────────────────────────────────────────────────────────────
   check:
     name: Checks
-    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ (github.event.repository.private && vars.RUNNER) || 'ubuntu-latest' }}
     outputs:
       lora-targets: ${{ steps.lora.outputs.targets }}
     steps:
@@ -194,7 +194,7 @@ jobs:
         run: UCODE=/tmp/ucode/build/ucode scripts/test-router.sh
 
       # pulzr-addon puts root code on gateways nobody can reach, and is the
-      # gateway's half of Osborne never getting Modbus. Each refusal, a
+      # gateway's half of a denied capability staying off. Each refusal, a
       # download cut off half way, the gate's revert and the restore after an
       # upgrade run against a stub apk, curl and health gate.
       - name: Add-ons on the gateway
@@ -294,7 +294,7 @@ jobs:
   console:
     name: Console
     needs: check
-    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ (github.event.repository.private && vars.RUNNER) || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -354,7 +354,7 @@ jobs:
           key: ${{ steps.key.outputs.key }}
 
       # Rust, LLVM and the SDK want tens of GB; the image starts with about 14.
-      - uses: jlumbroso/free-disk-space@v1.3.1
+      - uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
         if: steps.cache.outputs.cache-hit != 'true'
         with:
           tool-cache: true
@@ -381,7 +381,7 @@ jobs:
   feed:
     name: Packages
     needs: [console, lora]
-    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ (github.event.repository.private && vars.RUNNER) || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -481,7 +481,7 @@ jobs:
   addons:
     name: Add-ons
     needs: feed
-    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ (github.event.repository.private && vars.RUNNER) || 'ubuntu-latest' }}
     env:
       R2_BUCKET: curb-public
       ADDONS_PREFIX: pulzros/addons
@@ -618,7 +618,7 @@ jobs:
   boards:
     name: Discover boards
     needs: check
-    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ (github.event.repository.private && vars.RUNNER) || 'ubuntu-latest' }}
     outputs:
       matrix: ${{ steps.list.outputs.matrix }}
     steps:
@@ -663,7 +663,7 @@ jobs:
   image:
     name: ${{ matrix.board }}
     needs: [feed, boards]
-    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ (github.event.repository.private && vars.RUNNER) || 'ubuntu-latest' }}
     strategy:
       # One board failing should not hide whether the others build — a broken
       # RAK profile must not mask a working Pi image.
@@ -776,7 +776,7 @@ jobs:
     # Not the add-ons: they publish to their own bucket, and a firmware fix
     # must never wait on, or be blocked by, an add-on that failed to build.
     needs: [image]
-    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ (github.event.repository.private && vars.RUNNER) || 'ubuntu-latest' }}
     permissions:
       contents: write
     steps:
@@ -810,18 +810,15 @@ jobs:
       # over itself. Produces <image>.pulzr.json beside each, which travels
       # with the image and is what pulzr-firmware verifies.
       #
-      # Skipped, loudly, when the secret is not set — a fork building a tag has
-      # no access to it, and a release of unsigned images is better than a
-      # release that failed. Gateways accept unsigned images today and record
-      # them as such; see firmware.uc for why that is staged rather than
-      # enforced from the start.
+      # A release without the key fails: gateways refuse an unsigned image
+      # (firmware.uc), so one would be a release nothing can install.
       - name: Sign images
         env:
           FIRMWARE_SIGNING_KEY: ${{ secrets.FIRMWARE_SIGNING_KEY }}
         run: |
           if [ -z "${FIRMWARE_SIGNING_KEY}" ]; then
-            echo "::warning::FIRMWARE_SIGNING_KEY is not set — this release is UNSIGNED"
-            exit 0
+            echo "::error::FIRMWARE_SIGNING_KEY is not set; a release must be signed"
+            exit 1
           fi
 
           umask 077
@@ -870,7 +867,7 @@ jobs:
           done
           ls -la release
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           files: release/*
           generate_release_notes: true

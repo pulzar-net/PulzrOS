@@ -27,18 +27,10 @@
 //
 // WHO BUILT IT
 //
-// An image may carry a signature, sent in the X-Pulzr-Manifest header and
-// produced by tools/sign-firmware.sh. One that is present and does not verify
-// is refused outright. One that is absent is accepted, and recorded as
-// unsigned.
-//
-// That asymmetry is deliberate and temporary. A bad signature means somebody
-// tampered with an image; no signature means the image predates signing, which
-// is true of every image the fleet currently runs — and requiring one now
-// would mean this release could not be installed by the fleet that has to
-// install it to gain the check. Being unable to ship any image is the one
-// failure a rollback cannot undo. So: verify and record now, require once
-// signed images are confirmed flowing.
+// An image must carry a signature, sent in the X-Pulzr-Manifest header and
+// produced by the release workflow (.github/workflows/build.yml) as the
+// .pulzr.json beside each image. One that is absent or does not verify is
+// refused; only a development image takes an unsigned one (see apply).
 //
 // Settings are kept, which includes the gateway's identity: see
 // /lib/upgrade/keep.d/pulzr for the state that has to survive.
@@ -234,15 +226,16 @@ apply = function(IMAGE, manifest, issuer, owned) {
     // reads it from a file beside the image. See tools/sign-firmware.sh for
     // what produces it.
     //
-    // Present-but-invalid is refused; absent is allowed and recorded. Those
-    // are different facts: a signature that does not verify means somebody
-    // tampered with an image or handed over the wrong one, and no upgrade
-    // should proceed through that. No signature at all is what every image
-    // built before signing existed looks like, and refusing those outright
-    // would mean this release could not be installed by the very fleet that
-    // has to install it to gain the check. That is the one failure a rollback
-    // cannot save you from, so it is deliberately staged: verify and record
-    // now, require it once signed images are confirmed flowing.
+    // Required. Root on a gateway is Pulzar's alone (docs/auth.md), and an
+    // image somebody built themselves is root on it, so an unsigned image
+    // installed from the console would hand root to anybody who can sign in
+    // to it. Every release since 0.3.x carries a .pulzr.json beside each
+    // image and Pulzar Cloud sends it with every upgrade. A development image
+    // (its version ends in -dev, and CI never builds one) takes any image: it
+    // is open on the bench by design.
+    if (!manifest && !match(_m_fs.readfile('/etc/pulzr/board.conf') ?? '',
+                            /PULZR_VERSION='[^']*-dev'/))
+        return refuse('That image has no signature. Upload the .pulzr.json released beside it.');
     let signed = false;
     if (manifest) {
         const mf = _m_fs.open(MANIFEST, 'w');

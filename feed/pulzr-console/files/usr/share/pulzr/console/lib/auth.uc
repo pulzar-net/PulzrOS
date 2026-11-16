@@ -189,7 +189,7 @@ crypt = function(password, spec) {
     // process table. The hash comes back via a file on /tmp, which is RAM on
     // OpenWrt, and is unlinked immediately — it is not secret the way the
     // password is, but there is no reason to leave it lying around.
-    const out = '/tmp/.pwhash';
+    const out = '/tmp/.pwhash-' + randomHex(8);
     unlink(out);
     const proc = popen(sprintf('openssl passwd -6 -salt %s -stdin > %s 2>/dev/null',
                                shellQuote(salt), out), 'w');
@@ -568,8 +568,14 @@ recoveryVerify = function(signature, addr) {
 verifySignature = function(message, signatureB64) {
     if (!match(signatureB64 ?? '', /^[A-Za-z0-9+\/=]{80,120}$/)) return false;
 
-    const msgFile = '/tmp/.recovery-msg';
-    const sigFile = '/tmp/.recovery-sig';
+    // Named per call. The web console and every terminal session (ssh
+    // pulzr@, the serial console) run this in their own processes, and with
+    // one shared pair of files a verification in one could read the message
+    // another had just written: a spent token's valid signature, checked
+    // against its own payload, passing as a recovery for this challenge.
+    const tag = randomHex(8);
+    const msgFile = '/tmp/.recovery-msg-' + tag;
+    const sigFile = '/tmp/.recovery-sig-' + tag;
 
     writefile(msgFile, message);
     // base64 -d rather than passing the signature to openssl on the command
@@ -652,10 +658,12 @@ loginSso = function(token, addr, expect) {
     // server but does stay in the browser's history — so without this, the
     // back button on a shared laptop reopened a staff session for the rest of
     // the token's five minutes. Spent tokens are remembered by the hash of
-    // their signature until they would have expired anyway, in tmpfs, so a
-    // reboot forgets them only once they are useless.
+    // their payload until they would have expired anyway, in tmpfs, so a
+    // reboot forgets them only once they are useless. The payload, not the
+    // signature: one signature has more than one base64 spelling that decodes
+    // to the same bytes, and the payload is the exact signed string.
     const spent = readJson(SSO_SPENT_FILE) ?? {};
-    const id = digest.sha256(parts[1]);
+    const id = digest.sha256(parts[0]);
     const t = now();
     for (let k in keys(spent)) if (spent[k] <= t) delete spent[k];
     if (spent[id]) {

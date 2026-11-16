@@ -262,7 +262,7 @@ apply_bundle() {
     # transport. Offline it came through a human with a phone, so it has to
     # carry its own proof — an Ed25519 signature over the bundle body, checked
     # against the fleet public key baked into the image at build time.
-    local file="${1:?bundle file}" verify=0
+    local file="${1:?bundle file}" verify=0 work=""
     [ "${2:-}" = "--verify-signature" ] && verify=1
 
     [ -s "${file}" ] || die "empty adoption bundle"
@@ -277,42 +277,53 @@ offline bundle cannot be verified. Adopt this gateway while it has internet."
         [ -n "${body}" ] && [ -n "${signature}" ] \
             || die "That bundle is not signed."
 
-        printf '%s' "${body}" > /tmp/.bundle-body
+        # A directory of its own, not fixed names in /tmp: the console and a
+        # terminal can both be applying one.
+        work="$(mktemp -d /tmp/.bundle.XXXXXX)" || die "Could not stage the bundle."
+        printf '%s' "${body}" > "${work}/body"
         # openssl, not base64: the image's BusyBox has no base64 applet, so the
         # previous `base64 -d` exited 127 and every offline bundle was refused
         # here as "Malformed signature" — offline adoption never worked. -A
         # because the signature is one unwrapped line.
-        printf '%s' "${signature}" | openssl base64 -d -A > /tmp/.bundle-sig 2>/dev/null \
-            || { rm -f /tmp/.bundle-body; die "Malformed signature."; }
-        [ -s /tmp/.bundle-sig ] \
-            || { rm -f /tmp/.bundle-body /tmp/.bundle-sig; die "Malformed signature."; }
+        printf '%s' "${signature}" | openssl base64 -d -A > "${work}/sig" 2>/dev/null \
+            || { rm -rf "${work}"; die "Malformed signature."; }
+        [ -s "${work}/sig" ] || { rm -rf "${work}"; die "Malformed signature."; }
 
         if ! openssl pkeyutl -verify -pubin -inkey "${pubkey}" -rawin \
-                 -in /tmp/.bundle-body -sigfile /tmp/.bundle-sig >/dev/null 2>&1; then
-            rm -f /tmp/.bundle-body /tmp/.bundle-sig
+                 -in "${work}/body" -sigfile "${work}/sig" >/dev/null 2>&1; then
+            rm -rf "${work}"
             die "That bundle's signature is not valid for this fleet."
         fi
-        rm -f /tmp/.bundle-sig
 
         # The verified body is a base64 JSON document; from here it is read
         # exactly like the online one.
-        printf '%s' "${body}" | openssl base64 -d -A > /tmp/.bundle.json 2>/dev/null \
-            || die "Malformed bundle."
-        [ -s /tmp/.bundle.json ] || die "Malformed bundle."
-        rm -f /tmp/.bundle-body
-        file=/tmp/.bundle.json
+        printf '%s' "${body}" | openssl base64 -d -A > "${work}/bundle.json" 2>/dev/null \
+            || { rm -rf "${work}"; die "Malformed bundle."; }
+        [ -s "${work}/bundle.json" ] || { rm -rf "${work}"; die "Malformed bundle."; }
+        file="${work}/bundle.json"
+
+        # Everything the fleet key signs is a base64 string, an adoption
+        # bundle and a console sign-in token alike, so a signature alone does
+        # not say it is a bundle. A bundle always names its gateway (Pulzar
+        # Cloud refuses to sign one that does not); a sign-in token never
+        # does, and without this one applied here as a bundle adopted the
+        # gateway into nothing and shut its local sign-in.
+        [ -n "$(jsonfilter -i "${file}" -e '@.eui')" ] \
+            || { rm -rf "${work}"; die "That is not an adoption bundle."; }
     fi
 
     local eui_in_bundle
     eui_in_bundle="$(jsonfilter -i "${file}" -e '@.eui')"
     if [ -n "${eui_in_bundle}" ] && \
        [ "${eui_in_bundle}" != "$(uci -q get pulzr.identity.gateway_eui)" ]; then
-        rm -f /tmp/.bundle.json
+        [ -z "${work}" ] || rm -rf "${work}"
         die "That bundle was issued for a different gateway (${eui_in_bundle})."
     fi
 
-    install_bundle "$(cat "${file}")"
-    rm -f /tmp/.bundle.json
+    local bundle
+    bundle="$(cat "${file}")"
+    [ -z "${work}" ] || rm -rf "${work}"
+    install_bundle "${bundle}"
 }
 
 case "${1:-}" in

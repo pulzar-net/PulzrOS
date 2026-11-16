@@ -10,7 +10,7 @@
 // the gateway's audit log and add-on journal. A local password or recovery
 // session reads the list and is told where installs come from.
 //
-// A deny (a capability locked off, USC PTS's Osborne's Modbus) can be added
+// A deny (a capability locked off, Modbus on a production gateway) can be added
 // here and never taken away: Pulzar Net writes its lock back after a factory
 // reset wiped the gateway's copy, and nothing that reaches this API should be
 // able to undo that. Unlocking is `pulzr-addon undeny` from a root shell.

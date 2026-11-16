@@ -211,21 +211,21 @@ cannot check whether an image is ours." >&2; exit 1; }
     [ -n "${body}" ] && [ -n "${signature}" ] \
         || { echo "That signature file is not one of ours." >&2; exit 1; }
 
-    tmp_body=/tmp/.fw-body
-    tmp_sig=/tmp/.fw-sig
-    printf '%s' "${body}" > "${tmp_body}"
-    printf '%s' "${signature}" | openssl base64 -d -A > "${tmp_sig}" 2>/dev/null \
-        || { rm -f "${tmp_body}" "${tmp_sig}"; echo "Malformed signature." >&2; exit 1; }
-    [ -s "${tmp_sig}" ] \
-        || { rm -f "${tmp_body}" "${tmp_sig}"; echo "Malformed signature." >&2; exit 1; }
+    # Its own directory: the console and a terminal can both be verifying.
+    work="$(mktemp -d /tmp/.fw.XXXXXX)" || { echo "Could not stage the signature." >&2; exit 1; }
+    printf '%s' "${body}" > "${work}/body"
+    printf '%s' "${signature}" | openssl base64 -d -A > "${work}/sig" 2>/dev/null \
+        || { rm -rf "${work}"; echo "Malformed signature." >&2; exit 1; }
+    [ -s "${work}/sig" ] \
+        || { rm -rf "${work}"; echo "Malformed signature." >&2; exit 1; }
 
     if ! openssl pkeyutl -verify -pubin -inkey "${pubkey}" -rawin \
-             -in "${tmp_body}" -sigfile "${tmp_sig}" >/dev/null 2>&1; then
-        rm -f "${tmp_body}" "${tmp_sig}"
+             -in "${work}/body" -sigfile "${work}/sig" >/dev/null 2>&1; then
+        rm -rf "${work}"
         echo "That image is not signed by Pulzar." >&2
         exit 1
     fi
-    rm -f "${tmp_body}" "${tmp_sig}"
+    rm -rf "${work}"
 
     # Signed, so the manifest can be trusted — but it describes *an* image,
     # and this has to be that image. Without this the signature proves only
