@@ -1,4 +1,0 @@
-#!/bin/sh
-# The build's identity: a hash of everything that decides what build.sh
-# produces. CI caches the binaries under it, and fetch looks for them there.
-cd "$(dirname "$0")" && cat versions build.sh Dockerfile.concentratord | sha256sum | cut -c1-16

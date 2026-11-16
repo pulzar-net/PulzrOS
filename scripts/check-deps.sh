@@ -24,7 +24,8 @@
 # index — kmods are published per target and kernel version, not in the shared
 # feeds, so checking them against `packages` would report every kmod as missing.
 #
-# Our own pulzr-* packages are skipped: they are what this repo builds.
+# Our own packages are skipped: they are what this repo builds (feed/, and
+# the LoRa packages sdk/ builds).
 
 set -uo pipefail
 
@@ -94,6 +95,7 @@ index_for() {
 # Package names this repo builds itself.
 our_packages() {
   find "${ROOT_DIR}/feed" -mindepth 1 -maxdepth 1 -type d -exec basename {} \;
+  grep -v '^#' "${ROOT_DIR}/sdk/built"
 }
 
 # `mapfile` is bash 4; macOS ships bash 3.2, and this script has to run on a

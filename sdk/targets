@@ -1,0 +1,9 @@
+# The OpenWrt SDKs the LoRa packages are built with, one per target a LoRaWAN
+# board is on, for the OpenWrt release in boards/common/board.conf.
+#
+# <target>/<subtarget>  <package arch>      <SDK sha256>
+ramips/mt76x8           mipsel_24kc         739cc7cdf28661e3e3a9c65a36ef40de2e66e2900e593c71888074ef6bf40eef
+ath79/generic           mips_24kc           941c19d4787944e569bc0ca7fb4b6d0f4387ba24d188900bf0ffb6787fee31c6
+bcm27xx/bcm2710         aarch64_cortex-a53  9b10b56e766edc47d1cca5ebd44918777516b67a0878dbc43950ecc445217462
+bcm27xx/bcm2711         aarch64_cortex-a72  d5faf36e92bc7311f138607606e8dd9fc4a6bda3fcf5277b0a5647515758df8e
+bcm27xx/bcm2712         aarch64_cortex-a76  9edc70b7bd3714ec31512af91c0152be40f029e7ea3ef626eef26d42433bd1ce

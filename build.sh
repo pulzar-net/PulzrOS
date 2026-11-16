@@ -680,6 +680,14 @@ pack_feed() {
       || die "apk could not pack ${name}"
     rm -rf "${tmp}"
   done
+
+  # The LoRa packages, built already with the OpenWrt SDK (sdk/build.sh).
+  local sdk="${BUILD_DIR}/sdk/${OPENWRT_ARCH}" apk
+  rm -f "${ib}/packages"/chirpstack-*.apk "${ib}/packages"/libloragw-*.apk
+  has_feature lorawan || return 0
+  ls "${sdk}"/*.apk >/dev/null 2>&1 \
+    || die "no LoRa packages for ${OPENWRT_ARCH} in ${sdk}; build them with sdk/build.sh ${OPENWRT_TARGET}/${OPENWRT_SUBTARGET} ${BUILD_DIR}/sdk"
+  for apk in "${sdk}"/*.apk; do cp "${apk}" "${ib}/packages/"; done
 }
 
 

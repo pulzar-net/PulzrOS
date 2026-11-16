@@ -1,9 +1,0 @@
-Package: chirpstack-gateway
-Maintainer: Joseph Telaak <joseph@pulzr.net>
-License: MIT AND BSD-3-Clause
-Architecture: @ARCH@
-Description: ChirpStack Concentratord and MQTT Forwarder.
- The gateway half of ChirpStack: concentratord drives the SX130x, and
- mqtt-forwarder carries its frames to the cloud network server over MQTT.
- Built from pinned upstream source, static; see
- feed/chirpstack-gateway/fetch.

@@ -77,10 +77,14 @@ which has to match the `topic_prefix` of the region enabled in ChirpStack.
 Until a gateway is adopted it has no credentials: the radio still runs, and
 the uplinks go nowhere.
 
-The binaries are ChirpStack's own builds, pinned by checksum in
-`feed/chirpstack-gateway/fetch`. The MIPS ones come from ChirpStack Gateway OS,
-because they carry the half-duplex SPI patch the MT7628 needs and ChirpStack
-publishes no standalone MIPS build.
+Both are OpenWrt packages built by ChirpStack's own recipes (their OpenWrt
+feed, pinned in `sdk/feeds`) in the OpenWrt SDK of the image's release, so
+they link against the image's libc, libstdc++ and OpenSSL. `sdk/build.sh`
+builds them per target. The one recipe of ours is the SX1302 HAL
+(`sdk/packages/libloragw-sx1302`): pulzar-net/sx1302_hal, ChirpStack's fork
+with its MT7628 patch made a build option, set for `ramips`, whose SPI
+controller is half-duplex. Pi images also carry
+`chirpstack-concentratord-sx1301`.
 
 ## Two concentrators
 

@@ -110,7 +110,8 @@ protocol and the two secrets it rests on.
 ```
 boards/           one directory per board; common/ holds everything shared
 console/          the React console, built to static files by build.sh
-feed/             the OpenWrt package feed (pulzr-*, plus chirpstack-gateway)
+feed/             the OpenWrt package feed (pulzr-*)
+sdk/              the LoRa packages, built with the OpenWrt SDK
 scripts/          build-feed.sh, the checks and the tests
 docs/             design decisions worth writing down
 ```

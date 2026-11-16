@@ -1,0 +1,7 @@
+# What sdk/build.sh builds and boards install, one name per line.
+# scripts/check-deps.sh counts these as ours.
+chirpstack-concentratord
+chirpstack-concentratord-sx1302
+chirpstack-concentratord-sx1301
+chirpstack-mqtt-forwarder
+libloragw-sx1302-utils

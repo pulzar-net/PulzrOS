@@ -16,7 +16,7 @@ that could only fail.
 
 | Word | Packages | Console | API | Needs |
 |---|---|---|---|---|
-| `lorawan` | `PACKAGES_LORAWAN`: pulzr-concentrator, chirpstack-gateway, spi-tools, gpiod-tools, mosquitto-ssl | LoRaWAN | `/api/lorawan/` | |
+| `lorawan` | `PACKAGES_LORAWAN`: pulzr-concentrator, chirpstack-concentratord-sx1302, chirpstack-mqtt-forwarder, spi-tools, gpiod-tools, mosquitto-ssl | LoRaWAN | `/api/lorawan/` | |
 | `gnss` | none (pulzr-gps is in pulzr-concentrator) | GNSS | `/api/gnss` | `PULZR_GPS` not `none` |
 | `bluetooth` | `PACKAGES_BLUETOOTH`: pulzr-ble | Bluetooth | `/api/bluetooth` | |
 | `cellular` | `PACKAGES_CELLULAR`: pulzr-cellular, ModemManager, qmi-wwan; `PACKAGES_USB_CELLULAR` on a board with a USB host port | Backhaul > Cellular, Overview's Cellular card | `/api/network/cellular` | |
@@ -60,8 +60,8 @@ in the image and a missing binary otherwise surfaces as a 500.
 The Pi and RAK images were package-for-package what they were before the
 feature list existed; the list only named what they already carried. The Pis
 have since gained `PACKAGES_USB_CELLULAR` (below). The Opal
-loses pulzr-concentrator, chirpstack-gateway, spi-tools, gpiod-tools,
-mosquitto-ssl and pulzr-ap. It keeps `cellular` because a USB modem is its
+loses pulzr-concentrator, chirpstack-concentratord-sx1302,
+chirpstack-mqtt-forwarder, spi-tools, gpiod-tools, mosquitto-ssl and pulzr-ap. It keeps `cellular` because a USB modem is its
 second uplink, and has no `wifi` because its radios have only Siflower's
 vendor driver.
 

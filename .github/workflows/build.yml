@@ -319,49 +319,58 @@ jobs:
           cp -a feed/pulzr-console/files/www/. "$h/"
 
   # ───────────────────────────────────────────────────────────────────────
-  # ───────────────────────────────────────────────────────────────────────
   # The LoRa gateway half -- ChirpStack Concentratord and MQTT Forwarder --
-  # built from pinned source for every target (feed/chirpstack-gateway/build).
-  # Slow (std is built from source for the MIPS targets), so built once per
-  # build/key and cached; most runs restore it in seconds.
+  # built by ChirpStack's OpenWrt recipes in the OpenWrt SDK, one target each
+  # (sdk/). A cold build is hours: the SDK compiles Rust and LLVM first. So
+  # each target's packages are cached by sdk/key, and most runs restore them.
   #
-  # Hosted, not the self-hosted runner: a cold build holds a runner for an
-  # hour or more, and the one self-hosted runner also deploys the platform.
+  # Hosted, not the self-hosted runner: it has neither the disk nor the hours,
+  # and it also deploys the platform.
   lora:
-    name: LoRa stack
+    name: LoRa packages (${{ matrix.target }})
     needs: check
     runs-on: ubuntu-latest
-    timeout-minutes: 300
-    outputs:
-      key: ${{ steps.key.outputs.key }}
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [ramips/mt76x8, ath79/generic, bcm27xx/bcm2710, bcm27xx/bcm2711, bcm27xx/bcm2712]
     steps:
       - uses: actions/checkout@v4
 
       - id: key
-        run: echo "key=$(feed/chirpstack-gateway/build/key)" >> "$GITHUB_OUTPUT"
+        run: echo "key=$(sdk/key '${{ matrix.target }}')" >> "$GITHUB_OUTPUT"
 
       - id: cache
         uses: actions/cache@v4
         with:
-          path: .build/chirpstack
-          key: chirpstack-${{ steps.key.outputs.key }}
+          path: .build/sdk
+          key: ${{ steps.key.outputs.key }}
 
-      - uses: dtolnay/rust-toolchain@stable
+      # Rust, LLVM and the SDK want tens of GB; the image starts with about 14.
+      - uses: jlumbroso/free-disk-space@v1.3.1
         if: steps.cache.outputs.cache-hit != 'true'
-        timeout-minutes: 10
-
-      - uses: taiki-e/install-action@v2
-        if: steps.cache.outputs.cache-hit != 'true'
-        timeout-minutes: 10
         with:
-          tool: cross@0.2.5
+          tool-cache: true
+
+      # OpenWrt's build prerequisites for Ubuntu, and clang for bindgen.
+      - name: Install the SDK's prerequisites
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang libclang-dev flex bison g++ gawk gettext git \
+            libncurses-dev libssl-dev python3-setuptools rsync swig unzip zlib1g-dev file wget zstd
 
       - name: Build
         if: steps.cache.outputs.cache-hit != 'true'
-        run: |
-          for target in aarch64-unknown-linux-musl mipsel-unknown-linux-musl mips-unknown-linux-musl; do
-            feed/chirpstack-gateway/build/build.sh "${target}" .build/chirpstack
-          done
+        run: sdk/build.sh '${{ matrix.target }}' .build/sdk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lora-${{ strategy.job-index }}
+          path: .build/sdk
+          retention-days: 1
+          if-no-files-found: error
 
   feed:
     name: Packages
@@ -414,20 +423,17 @@ jobs:
             echo "::warning::No PARKEZE_FIRMWARE_PUBKEY secret — gateways from this build cannot check whether an image is ours."
           fi
 
-      # The LoRa stack the job before built: fetch takes it from here rather
-      # than compiling it again.
-      - name: Take the LoRa stack
-        uses: actions/cache/restore@v4
+      # The LoRa packages, for the images: they travel with the feed.
+      - name: Take the LoRa packages
+        uses: actions/download-artifact@v4
         with:
-          path: .build/chirpstack
-          key: chirpstack-${{ needs.lora.outputs.key }}
-          fail-on-cache-miss: true
+          pattern: lora-*
+          path: .build/sdk
+          merge-multiple: true
 
       # cmake and json-c: scripts/host-ucode.sh builds the compiler that ships
       # the feed's ucode as bytecode.
       - name: Build the package feed
-        env:
-          CHIRPSTACK_BUILT_DIR: ${{ github.workspace }}/.build/chirpstack
         run: |
           sudo apt-get install -y cmake libjson-c-dev
           ./build.sh --stage feed
@@ -440,6 +446,7 @@ jobs:
           name: feed
           path: |
             .build/feed
+            .build/sdk
             boards/common/files
           retention-days: 1
           if-no-files-found: error
@@ -449,7 +456,7 @@ jobs:
         run: |
           h="$HANDOFF/$GITHUB_RUN_ID/feed"
           rm -rf "$h"; mkdir -p "$h"
-          cp -a --parents .build/feed boards/common/files "$h/"
+          cp -a --parents .build/feed .build/sdk boards/common/files "$h/"
 
   # ───────────────────────────────────────────────────────────────────────
   # The add-ons are the packages with a feed/*/addon file. Images do not carry

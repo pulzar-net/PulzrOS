@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# The cache key for one target's packages: the target, and everything in sdk/
+# and the OpenWrt release that decides what they are.
+#
+#   sdk/key <target>/<subtarget>
+set -euo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+target="${1:?usage: sdk/key <target>/<subtarget>}"
+sum="$(cd "${HERE}" && { grep '^OPENWRT_VERSION=' ../boards/common/board.conf; \
+  find . -type f ! -name '*.md' | LC_ALL=C sort | xargs sha256sum; } | sha256sum | cut -c1-16)"
+echo "lora-${target//\//-}-${sum}"

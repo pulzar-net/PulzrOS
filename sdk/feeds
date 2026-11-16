@@ -1,0 +1,4 @@
+# Added to the SDK's own feeds.conf.default, which pins OpenWrt's feeds to the
+# release. Ours first: a package name in both is taken from ours.
+src-link pulzr @SDK_PACKAGES@
+src-git chirpstack https://github.com/chirpstack/chirpstack-openwrt-feed.git^afac14d5419d97021000ad4e616f047842bbb0d3

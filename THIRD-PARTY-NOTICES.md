@@ -15,9 +15,9 @@ way the licence says.
 | dnsmasq-full, hostapd/wpad, ModemManager, WireGuard tools, nftables, openssh, dropbear, mosquitto, curl, jq and the other packages named in `boards/*/board.conf` | each package's own licence (GPL-2.0, GPL-2.0-or-later, LGPL-2.1, BSD, EPL-2.0/EDL-1.0, MIT/curl, ...) | OpenWrt feeds |
 | librespeed-cli | LGPL-3.0 | OpenWrt feed |
 | Linux kernel and firmware blobs for the Raspberry Pi and RAK boards | GPL-2.0-only; firmware under its vendors' redistribution licences | OpenWrt and the board targets |
-| ChirpStack Concentratord, ChirpStack MQTT Forwarder (`feed/chirpstack-gateway`) | MIT | Built from their release sources, pinned by sha256 in `feed/chirpstack-gateway/build/versions` |
+| ChirpStack Concentratord, ChirpStack MQTT Forwarder | MIT | Built from their release sources by ChirpStack's OpenWrt feed (MIT), pinned in `sdk/feeds` |
 | pulzr-edge (`feed/pulzr-edge`) and the Rust crates statically linked into it (tokio, rumqttc, rustls, ring, tokio-modbus, serde and their dependencies; the full list is its `Cargo.lock`) | pulzr-edge Apache-2.0; the crates MIT, Apache-2.0, ISC and BSD-3-Clause; ring's C and assembly under its ISC-style licence | `github.com/pulzar-net/pulzr-edge` releases, pinned by sha256 in `feed/pulzr-edge/fetch` |
-| Semtech SX1301/SX1302 HAL (inside Concentratord) | BSD-3-Clause | SX1302: pulzar-net/sx1302_hal (ChirpStack's fork with the MT7628 half-duplex SPI option); SX1301: brocaar/lora_gateway; pinned in `feed/chirpstack-gateway/build/versions` |
+| Semtech SX1301/SX1302 HAL (inside Concentratord) | BSD-3-Clause | SX1302: pulzar-net/sx1302_hal (ChirpStack's fork with the MT7628 half-duplex SPI option); SX1301 and SX1280: as ChirpStack's OpenWrt feed pins them; SX1302 in `sdk/packages/libloragw-sx1302` |
 | ChirpStack region and channel plans (`region.toml`, `channels.toml`) | MIT | ChirpStack Concentratord |
 
 Corresponding source for the GPL components is the OpenWrt source tree for the
