@@ -9,7 +9,8 @@ import {
   type SortingState,
 } from '@tanstack/react-table';
 import { api } from '@/services/api';
-import type { LanClient, LanExposed, LanForward, LanStatus, LanTraffic } from '@/types';
+import { useVendor } from '@/lib/oui';
+import type { LanClient, LanExposed, LanForward, LanStatus, LanTraffic, UplinksStatus } from '@/types';
 import Section from '@/components/ui/Section';
 import Badge from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
@@ -51,6 +52,21 @@ const total = (traffic: LanTraffic, only?: string) =>
     .reduce((sum, [, t]) => sum + t.txBytes + t.rxBytes, 0);
 
 const column = createColumnHelper<LanClient>();
+
+/** The MAC's registered organization, looked up only while the uplink in use
+ * is not metered (lib/oui.ts). */
+function VendorCell({ mac }: { mac: string }) {
+  const uplinks = useQuery({
+    queryKey: ['uplinks'],
+    queryFn: () => api.get<UplinksStatus>('/uplinks/status'),
+    staleTime: 30_000,
+  });
+  const active = uplinks.data?.uplinks.find((u) => u.iface === uplinks.data?.active);
+  const vendor = useVendor(mac, active !== undefined && !active.metered);
+  if (vendor === undefined || vendor === null) return <span className={styles.dim}>—</span>;
+  if ('private' in vendor) return <span className={styles.dim}>Private</span>;
+  return <span className={own.name} title={vendor.name}>{vendor.name}</span>;
+}
 
 export default function Lan() {
   const queryClient = useQueryClient();
@@ -97,6 +113,12 @@ export default function Lan() {
         header: 'MAC',
         size: 140,
         cell: (info) => <span className="mono">{info.getValue()}</span>,
+      }),
+      column.display({
+        id: 'vendor',
+        header: 'Vendor',
+        size: 170,
+        cell: (info) => <VendorCell mac={info.row.original.mac} />,
       }),
       column.accessor((c) => c.port ?? '', {
         id: 'port',
