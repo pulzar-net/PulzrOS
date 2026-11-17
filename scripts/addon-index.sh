@@ -29,6 +29,8 @@ set -euo pipefail
 
 FEED_DIR="${1:?feed dir}"
 DATA="${2:?payload dir}"
+# The repository's SDK recipes, wherever the feed being indexed lives.
+SDK_PACKAGES="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/sdk/packages"
 
 die() { echo "error: $*" >&2; exit 1; }
 
@@ -61,7 +63,7 @@ for pkgdir in "${FEED_DIR}"/*/; do
   # The upstream release the binary comes from, from the one place it is
   # pinned (an SDK recipe's PKG_VERSION, else a fetch's VERSION=); none for an
   # add-on that is only our own files.
-  upstream="$(sed -n 's/^PKG_VERSION:=//p' "$(cd "${FEED_DIR}/.." && pwd)/sdk/packages/$(basename "${pkgdir}")/Makefile" 2>/dev/null | head -n1 || true)"
+  upstream="$(sed -n 's/^PKG_VERSION:=//p' "${SDK_PACKAGES}/$(basename "${pkgdir}")/Makefile" 2>/dev/null | head -n1 || true)"
   [ -n "${upstream}" ] || upstream="$(sed -n 's/^VERSION=//p' "${pkgdir}/fetch" 2>/dev/null | head -n1 | tr -d '"' || true)"
   keep="$(cat "${pkgdir}"/files/lib/upgrade/keep.d/* 2>/dev/null \
             | grep -v '^[[:space:]]*\(#\|$\)' | tr -s '[:space:]' ' ' | sed 's/ $//' || true)"
