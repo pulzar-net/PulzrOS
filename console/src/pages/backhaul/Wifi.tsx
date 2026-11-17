@@ -36,10 +36,29 @@ interface SavedNetwork {
   active: boolean;
 }
 
+/** pulzr-wifi-uplink's answer. `reason` ends the sentence that starts with
+    the network's name; null when open or when the badge says it all. */
+interface UplinkCheck {
+  state: 'open' | 'portal' | 'offline' | 'unchecked';
+  step?: string | null;
+  reason?: string | null;
+  checkedAt?: number | null;
+}
+
+/** The last switch roam() made. `at` is Unix seconds. */
+interface Roam {
+  at: number;
+  from: string;
+  to: string;
+  reason: string;
+}
+
 interface WifiDetail {
   configured: boolean;
   /** The network's sign-in page, while it has one. */
   portal?: string | null;
+  uplink?: UplinkCheck;
+  roam?: Roam | null;
   identity?: string;
   method?: string;
   certSubject?: string;
@@ -118,12 +137,26 @@ export default function Wifi() {
     },
   });
 
+  // A check now rather than at the next minute; the answer arrives with the
+  // two-second polling refresh() starts.
+  const recheck = useMutation({
+    mutationFn: () => api.post<{ ok: boolean }>('/access/wifi/check'),
+    onSuccess: () => {
+      refresh(5000);
+    },
+  });
+
   if (access.isLoading) return <Spinner label="Reading WiFi state" />;
   if (access.isError) return <ErrorState error={access.error} onRetry={access.refetch} />;
 
   const wifi = access.data!.wifi;
   const info = detail.data;
+  // A portal that drops the probe rather than redirecting it reads as offline,
+  // so Sign In is offered for both: the proxy finds the page (lib/signin.uc).
   const blocked = wifi.configured && wifi.up && (wifi.uplink === 'portal' || wifi.uplink === 'offline');
+  const reason = blocked && info?.uplink?.state === wifi.uplink ? info.uplink.reason : null;
+  // Only while the gateway is still on the network it moved to.
+  const roamed = wifi.configured && info?.roam && info.roam.to === wifi.ssid ? info.roam : null;
   const others = (info?.saved ?? []).filter((network) => !network.active);
   const problem = wifi.configured && !wifi.up ? info?.failure : null;
 
@@ -164,13 +197,18 @@ export default function Wifi() {
               )}
             </div>
             <div className={styles.heroActions}>
-              {blocked && wifi.uplink === 'portal' && (
+              {blocked && (
                 <Button
                   variant="primary"
                   loading={signIn.isPending}
                   onClick={() => signIn.mutate(window.open('about:blank', '_blank'))}
                 >
                   Sign In
+                </Button>
+              )}
+              {blocked && (
+                <Button loading={recheck.isPending} onClick={() => recheck.mutate()}>
+                  Check Again
                 </Button>
               )}
               <Button onClick={() => setWizard({})}>Change Network</Button>
@@ -193,7 +231,14 @@ export default function Wifi() {
             </div>
           )}
 
+          {reason && <Notice tone="warning">{`${wifi.ssid}: ${reason}`}</Notice>}
+          {roamed && (
+            <Notice tone="info">
+              {`Left ${roamed.from} at ${clock(roamed.at)}: ${roamed.reason}. Joined ${roamed.to}.`}
+            </Notice>
+          )}
           {forget.isError && <Notice tone="error">{(forget.error as Error).message}</Notice>}
+          {recheck.isError && <Notice tone="error">{(recheck.error as Error).message}</Notice>}
           {signIn.isError && <Notice tone="error">{(signIn.error as Error).message}</Notice>}
           <WifiFailure
             failure={problem}
@@ -264,6 +309,10 @@ export default function Wifi() {
       />
     </div>
   );
+}
+
+function clock(seconds: number) {
+  return new Date(seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
 interface SigninTicket {

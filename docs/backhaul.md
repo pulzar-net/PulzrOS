@@ -149,10 +149,27 @@ a minute after (free: the WiFi is not billed), and its answer is one of:
 
 | Answer | Meaning | Metric | Tunnel and LoRa may use it |
 |---|---|---|---|
-| `open` | 204 | 15 | yes |
-| `portal` | a redirect or a page | 30 | no |
+| `open` | 204 (or an empty 200) | 15 | yes |
+| `portal` | a redirect or a page, a DNS answer with a private address, or an intercepted certificate | 30 | no |
 | `offline` | no answer | 30 | no |
-| `unchecked` | not asked yet | 30 (as joined) | no |
+| `unchecked` | not asked yet, or the answer is about another network | 30 (as joined) | no |
+
+Two such URLs, Google's and Cloudflare's, and the WiFi is judged only when both
+fail: one blocked host, or a DNS filter refusing one name, used to cost the
+uplink and set `roam()` looking elsewhere. When neither answers over HTTP, an
+HTTPS request to Cloudflare's settles the rest: a certificate that verifies is
+the internet with port 80 shut (open); one that does not is somebody in the
+middle (portal). A portal that drops the probe instead of redirecting it still
+answers the probe's name with its own private address, which also makes it a
+portal; the address is kept as `hijack` for the sign-in proxy.
+
+For anything not open the answer keeps the step that failed (`step`, `host`,
+`detail`; the list is in `pulzr-wifi-uplink`'s header): no gateway or no DNS
+server in the lease, the WiFi's DNS servers not answering (which ones), the
+connection refused or timing out, no HTTP answer, an unexpected status. Each
+change is logged once, and the console's WiFi page says it in one sentence.
+The answer names the SSID it is about: a join or a roam no longer inherits the
+last network's verdict.
 
 Metric 30 rather than no route: the check needs one to send its own request out
 of the radio, and behind both other uplinks nothing picks it.
@@ -167,7 +184,13 @@ And not a host route to those servers, which would move every lookup the
 gateway makes onto a captive WiFi and send MQTT and reports to the portal. A change of
 answer re-applies the tunnel and LoRa routing and sends a report, so
 Pulzar Cloud shows `wifiUplink` beside the gateway. `roam()` treats `portal` and
-`offline` as down, except while somebody is signing in (see access.md).
+`offline` as down, except while somebody is signing in (see access.md). A join
+from the console restarts its clock and holds it off for five minutes, as a
+switch does: the clock used to carry on from the network before, so a gateway
+that had sat behind a guest portal was moved back to it within a minute of
+being joined to eduroam. Each switch (from, to, the failing step, how long it
+waited) is kept in `/var/run/pulzr/wifi-roams.json`, the last ten, which the
+console shows while the gateway is still on the network it moved to.
 
 ### Cellular comes back on its own
 

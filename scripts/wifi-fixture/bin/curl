@@ -1,0 +1,16 @@
+#!/bin/sh
+# pulzr-wifi-uplink's curl. $CURL_<scheme>_<host, dots as underscores> is
+# "<exit> <status> <time_connect> <size> [redirect]"; unset is a refused
+# connection. The URL is the last argument; -o names the body file.
+body=''; url=''
+while [ $# -gt 0 ]; do
+    case "$1" in -o) body="$2"; shift ;; esac
+    url="$1"; shift
+done
+var="CURL_$(printf '%s' "${url}" | sed 's#^\(https*\)://\([^/:]*\).*#\1_\2#' | tr '.-' '__')"
+eval "v=\${${var}:-7 000 0 0}"
+echo "${url}" >> "${T}/curls"
+set -- ${v}
+[ -n "${body}" ] && [ "$4" != 0 ] && echo '<html><meta http-equiv="refresh" content="0;url=http://portal.example/login"></html>' > "${body}"
+printf '%s %s %s %s' "$2" "$3" "$4" "${5:-}"
+exit "$1"

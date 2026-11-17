@@ -12,6 +12,7 @@ return function(ctx) {
                 anonymous: '', allowOpen: false },
         probing: false, probe: null, probeError: null,
         forgetError: null, rejoin: null, join: null,
+        signin: null, signinError: null,
     };
 
     const commonName = (subject) => {
@@ -58,6 +59,46 @@ return function(ctx) {
         st.rejoin = r.error ? { tone: 'error', text: r.error } : { tone: 'success', text: r.message };
         if (!r.error) refreshSoon(4);
     };
+    // A ticket into the sign-in proxy (lib/signin.uc), as a URL and a QR for a
+    // phone: a terminal has no browser to open it in. The address is the
+    // setup AP's while it is up, which is where a phone is; otherwise the
+    // gateway's local name.
+    const startSignin = () => {
+        const r = ctx.act('startSignin', {});
+        if (r.error) { st.signinError = r.error; st.signin = null; return; }
+        st.signinError = null;
+        const a = st.access ?? {};
+        const host = (a.ap?.up && a.ap?.address) ? a.ap.address : sprintf('%s.local', a.port?.hostname ?? 'pulzr');
+        const url = sprintf('https://%s:%d%s', host, r.port, r.path);
+        st.signin = { url, until: time() + 60, qr: ctx.qr(url) };
+    };
+    const checkAgain = () => {
+        const r = ctx.act('checkWifi', {});
+        if (r.error) { st.signinError = r.error; return; }
+        refreshSoon(5);
+    };
+    const clock = (t) => {
+        const lt = localtime(t);
+        return sprintf('%02d:%02d', lt.hour, lt.min);
+    };
+
+    // lib/wififail.uc's codes, as the web console's WifiFailure.tsx titles
+    // them, and the server's own words where it gave some.
+    const FAILURES = {
+        password_expired: 'Password expired', bad_credentials: 'Username or password rejected',
+        account_disabled: 'Account disabled', restricted_hours: 'Not allowed at this hour',
+        no_permission: 'Account not allowed on this network', mschap_failed: 'Sign-in refused',
+        cert_mismatch: 'Server certificate changed', method_mismatch: 'Wrong sign-in method',
+        wrong_passphrase: 'Wrong passphrase', assoc_rejected: 'Access point refused the gateway',
+        eap_rejected: 'Network refused the sign-in', auth_timeout: "No answer from the network's server",
+        not_found: 'Network not found',
+    };
+    const failureText = (f) => {
+        const title = FAILURES[f.code] ?? 'Could not connect';
+        const said = (f.detail && lc(f.detail) != lc(title)) ? sprintf(': %s', f.detail) : '';
+        return sprintf('%s%s (%s).', title, said, f.at);
+    };
+
     const checkCertificate = () => {
         const f = st.form;
         const req = { ssid: trim(f.ssid), method: eapMethod(), identity: trim(f.identity) };
@@ -88,7 +129,7 @@ return function(ctx) {
     return {
         // Every two seconds while a certificate probe runs, as the web page
         // polls it; every fifteen otherwise.
-        interval: () => st.probing ? 2 : 15,
+        interval: () => (st.probing || st.signin) ? 2 : 15,
         load: function() {
             st.access = api.access.status();
             try { st.detail = api.access.wifiDetail(); } catch (e) { st.detail = null; }
@@ -107,8 +148,26 @@ return function(ctx) {
             const wifi = st.access.wifi ?? {}, detail = st.detail ?? {};
 
             // ── the network it is on ─────────────────────────────────────
+            if (st.signin && time() >= st.signin.until) st.signin = null;
+            if (wifi.configured && st.signin) {
+                // All of it on one screen, as the Pulzar sign-in's code is.
+                const qr = (st.signin.qr && ctx.term.cols(st.signin.qr[0]) <= width) ? st.signin.qr : null;
+                if (qr) push(out, { t: 'pre', lines: qr });
+                push(out, { t: 'fact', label: 'Open', value: { text: sprintf('%s  %s', st.signin.url,
+                            ctx.fmt.countdown(st.signin.until - time())), tone: 'bold' } });
+                push(out, { t: 'buttons', items: [ { label: 'Done', key: 'signin-done', run: () => { st.signin = null; } } ] });
+                return out;
+            }
             if (wifi.configured) {
-                push(out, { t: 'buttons', items: [ { label: 'Forget network', key: 'forget-current', run: () => forget(wifi.ssid) } ] });
+                // A portal that drops the probe reads as offline, so sign-in
+                // is offered for both; the proxy finds the page.
+                const blocked = wifi.up && (wifi.uplink == 'portal' || wifi.uplink == 'offline');
+                const actions = [ { label: 'Forget network', key: 'forget-current', run: () => forget(wifi.ssid) } ];
+                if (blocked) {
+                    unshift(actions, { label: 'Check again', key: 'wifi-check', run: checkAgain });
+                    unshift(actions, { label: 'Sign in', key: 'wifi-signin', primary: true, run: startSignin });
+                }
+                push(out, { t: 'buttons', items: actions });
                 push(out, { t: 'fact', label: 'Network', value: wifi.ssid });
                 // Signing in to a portal takes a browser: the console's Sign in,
                 // locally or through Pulzar Cloud. Here it is a state and a MAC.
@@ -121,7 +180,17 @@ return function(ctx) {
                 if (detail.identity) push(out, { t: 'fact', label: 'Username', value: detail.identity });
                 if (detail.certSubject) push(out, { t: 'fact', label: 'Certificate', value: commonName(detail.certSubject) });
                 if (detail.certHash) push(out, { t: 'fact', label: 'SHA-256', value: fingerprint(detail.certHash) });
+                const check = detail.uplink;
+                if (blocked && check?.reason && check.state == wifi.uplink)
+                    push(out, { t: 'notice', tone: 'warning', text: sprintf('%s: %s', wifi.ssid, check.reason) });
+                const roamed = detail.roam;
+                if (roamed && roamed.to == wifi.ssid)
+                    push(out, { t: 'notice', tone: 'info', text: sprintf('Left %s at %s: %s. Joined %s.',
+                                roamed.from, clock(roamed.at), roamed.reason, roamed.to) });
+                if (detail.failure && !wifi.up)
+                    push(out, { t: 'notice', tone: 'error', text: failureText(detail.failure) });
                 if (st.forgetError) push(out, { t: 'notice', tone: 'error', text: st.forgetError });
+                if (st.signinError) push(out, { t: 'notice', tone: 'error', text: st.signinError });
             }
 
             // ── remembered networks ──────────────────────────────────────

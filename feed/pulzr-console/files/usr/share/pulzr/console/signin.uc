@@ -15,19 +15,43 @@
 //   /signin/<http|https>/<host[:port]>/...  that URL, fetched over WiFi
 //
 // A portal's links are rewritten into the last form: absolute and
-// root-relative URLs in HTML attributes and CSS, Location headers, and
-// fetch/XHR/window.open through a small script put at the top of each page.
-// Relative links need nothing — the browser resolves them against a URL that
-// already has the right shape. What this cannot follow is a script that
-// builds an absolute URL and assigns it to location; such a portal does not
-// load here.
+// root-relative URLs in HTML attributes and CSS, Location and Refresh
+// headers, and fetch/XHR/window.open, forms a script points elsewhere and
+// navigations a script starts, through a small script put at the top of each
+// page. Relative links need nothing — the browser resolves them against a URL
+// that already has the right shape. A script that assigns an absolute URL to
+// location is followed only where the browser has the Navigation API
+// (Chromium, recent Safari); elsewhere such a portal does not load here.
+//
+// ── WHERE /signin/ LANDS ───────────────────────────────────────────────────
+//
+// On the address the portal redirected the probe to, when it did. A portal
+// that drops the probe instead (pulzr-wifi-uplink then says offline, or
+// dns_hijack) has given no address, so these are asked in turn, out of the
+// WiFi, and the first that answers with anything but the internet's 204 is
+// where the browser goes:
+//
+//   1. the probe URL                       a portal that answers it from a browser
+//   2. http://neverssl.com/                a plain-HTTP site, for one that only
+//                                          intercepts hosts it does not know
+//   3. http://<the DNS-hijack address>/    a portal that answers its own address
+//
+// Which one, and why, goes to the log as "wifi-signin: landing on ...".
 //
 // ── WHAT IS NEVER PASSED ON ────────────────────────────────────────────────
 //
-// The browser's cookies — on a local address it holds the console's session —
-// its Authorization, and every header not in FORWARDED. The portal's cookies
-// stay on the gateway, in one jar: it is the gateway being signed in, not the
-// browser.
+// The console's session cookie (on a local address the browser holds it for
+// this host, whatever the port), this proxy's own, its Authorization, and
+// every header not in FORWARDED. The portal's cookies stay on the gateway, in
+// one jar: it is the gateway being signed in, not the browser.
+//
+// Except what a portal's own script needs to see. A cookie it can read
+// (not HttpOnly) is also handed to the browser, under this origin's path for
+// that host, and cookies the browser sends back are passed on unless the jar
+// already holds one of that name for the host. Without that, a portal whose
+// script copies a CSRF cookie into its form, or sets a cookie of its own when
+// the terms are ticked, had its sign-in refused with nothing on screen to say
+// why.
 
 let _m_fs = require('fs');
 let readfile = _m_fs.readfile;
@@ -40,15 +64,24 @@ let _m_util = loadfile('/usr/share/pulzr/console/lib/util.uc', { raw_mode: true 
 // ucode does not hoist function declarations; see util.uc.
 let send, page, cookieOf, urlencode, urldecode, proxify, rewriteCss, rewriteHtml;
 let resolveHost, forbidden, tmpName, quoted, upstreamReferer, fetch, route;
+let jarNames, browserCookies, mirrorCookie, answers, landing;
 
 const DIR = '/tmp/pulzr-signin';
 const JAR = DIR + '/jar';
 const MAX_BODY = 256 * 1024;
 const COOKIE = 'pulzr_signin';
+// Never passed on to a portal: this proxy's and the console's sessions.
+const PRIVATE_COOKIES = { pulzr_signin: true, pulzr_session: true, parkeze_session: true };
+// Where /signin/ tries after the probe URL; see the header.
+const PLAIN_HTTP = 'http://neverssl.com/';
 
-// Request headers a portal sees. Content-Type only with a body.
+// Request headers a portal sees. Content-Type only with a body. The X- ones
+// are how a portal's script says an XHR is its own and hands back its CSRF
+// token; without them such a portal answers its own sign-in with 403.
 const FORWARDED = { 'user-agent': 'User-Agent', 'accept': 'Accept',
-                    'accept-language': 'Accept-Language' };
+                    'accept-language': 'Accept-Language',
+                    'x-requested-with': 'X-Requested-With', 'x-csrf-token': 'X-CSRF-Token',
+                    'x-xsrf-token': 'X-XSRF-TOKEN', 'x-csrftoken': 'X-CSRFToken' };
 
 const STATUS_TEXT = {
     '200': 'OK', '201': 'Created', '204': 'No Content', '301': 'Moved Permanently',
@@ -82,11 +115,22 @@ const SHIM = '<script>(function(){'
     + 'var f=window.fetch;if(f)window.fetch=function(i,o){return f.call(this,m(i),o)};'
     + 'var X=XMLHttpRequest.prototype,o=X.open;X.open=function(){var a=[].slice.call(arguments);a[1]=m(String(a[1]));return o.apply(this,a)};'
     + 'var w=window.open;window.open=function(){var a=[].slice.call(arguments);a[0]=m(a[0]);return w.apply(this,a)};'
+    + 'function fa(f){var v=f.getAttribute("action");if(v)f.setAttribute("action",m(v))}'
+    + 'document.addEventListener("submit",function(e){if(e.target&&e.target.getAttribute)fa(e.target)},true);'
+    + 'var F=HTMLFormElement.prototype,fs=F.submit;F.submit=function(){fa(this);return fs.call(this)};'
+    + 'var N=window.navigation;if(N&&N.addEventListener)N.addEventListener("navigate",function(e){'
+    + 'if(!e.cancelable||e.hashChange||e.formData||e.downloadRequest)return;var u=new URL(e.destination.url),t;'
+    + 'if(u.origin===location.origin){if(u.pathname.indexOf("/signin/")===0)return;t="/signin/"+S+"/"+A+u.pathname+u.search+u.hash}'
+    + 'else if(u.protocol==="http:"||u.protocol==="https:")t=m(u.href);else return;'
+    + 'e.preventDefault();location.href=t});'
     + '})();</script>';
 
+// A header whose value is an array is sent once per element: Set-Cookie.
 send = function(status, headers, body) {
     let out = sprintf('Status: %d %s\r\n', status, STATUS_TEXT[sprintf('%d', status)] ?? 'Status');
-    for (let k in headers) out += sprintf('%s: %s\r\n', k, headers[k]);
+    for (let k in headers)
+        for (let v in (type(headers[k]) == 'array' ? headers[k] : [ headers[k] ]))
+            out += sprintf('%s: %s\r\n', k, v);
     out += sprintf('Content-Length: %d\r\n\r\n', length(body ?? ''));
     // Binary-safe only because the body never goes through sprintf's %s.
     if (body) out += body;
@@ -214,6 +258,104 @@ upstreamReferer = function(env) {
     return { origin: m[1] + '://' + m[2], url: m[1] + '://' + m[2] + (m[4] ?? '/') };
 };
 
+// The names the jar holds a cookie of for `host`.
+jarNames = function(host) {
+    const names = {};
+    for (let line in split(readfile(JAR) || '', '\n')) {
+        const f = split(replace(line, /^#HttpOnly_/, ''), '\t');
+        if (length(f) < 7 || substr(f[0], 0, 1) == '#') continue;
+        const domain = lc(replace(f[0], /^\./, ''));
+        if (host == domain || substr(host, -(length(domain) + 1)) == '.' + domain) names[f[5]] = true;
+    }
+    return names;
+};
+
+// The browser's cookies a portal may see: its own script's, as one Cookie
+// value. Null when there are none.
+browserCookies = function(env, host) {
+    const held = jarNames(host), out = [];
+    for (let pair in split(env.headers?.cookie ?? '', ';')) {
+        const eq = index(pair, '=');
+        if (eq <= 0) continue;
+        const name = trim(substr(pair, 0, eq));
+        if (PRIVATE_COOKIES[name] || held[name] || !match(name, /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/)) continue;
+        push(out, name + '=' + trim(substr(pair, eq + 1)));
+    }
+    return length(out) ? join('; ', out) : null;
+};
+
+// A portal's Set-Cookie as the browser should keep it, or null when its
+// script cannot read it anyway. Its Domain goes, and its Path is moved under
+// this origin's path for the host, so it comes back only to that host.
+mirrorCookie = function(line, base) {
+    const parts = split(line, ';');
+    const eq = index(parts[0], '=');
+    if (eq <= 0 || PRIVATE_COOKIES[trim(substr(parts[0], 0, eq))]) return null;
+    let path = '/';
+    const keep = [ trim(parts[0]) ];
+    for (let i = 1; i < length(parts); i++) {
+        const a = trim(parts[i]), name = lc(split(a, '=')[0]);
+        if (name == 'httponly') return null;
+        if (name == 'path') path = trim(substr(a, index(a, '=') + 1)) || '/';
+        else if (name != 'domain' && length(a)) push(keep, a);
+    }
+    if (substr(path, 0, 1) != '/') path = '/';
+    push(keep, 'Path=/signin/' + base.scheme + '/' + base.authority + path);
+    return join('; ', keep);
+};
+
+// The HTTP status `url` answers with out of the WiFi, or null for none.
+answers = function(dev, url) {
+    const m = match(url, /^(https?):\/\/([A-Za-z0-9.-]+)(:([0-9]+))?(\/.*)?$/);
+    if (!m) return null;
+    const host = lc(m[2]);
+    const port = m[4] ? int(m[4]) : (m[1] == 'https' ? 443 : 80);
+    const ip = resolveHost(host);
+    if (!ip || forbidden(ip)) return null;
+    const conf = tmpName('conf');
+    writefile(conf, join('\n', [
+        'silent', 'ipv4', 'globoff', 'insecure',
+        'url = ' + quoted(url),
+        'resolve = ' + quoted(sprintf('%s:%d:%s', host, port, ip)),
+        'interface = ' + quoted(dev),
+        'output = "/dev/null"',
+        'max-filesize = 1048576',
+        'connect-timeout = 5',
+        'max-time = 8',
+        'write-out = "%{http_code} %{size_download}"',
+    ]) + '\n');
+    const proc = popen(sprintf("curl -K '%s' 2>/dev/null", conf), 'r');
+    const out = proc ? trim(proc.read('all') ?? '') : '';
+    if (proc) proc.close();
+    unlink(conf);
+    const code = int(split(out, ' ')[0] ?? '0'), size = int(split(out, ' ')[1] ?? '0');
+    // The internet's answer is no page to sign in on.
+    if (!code || code == 204 || (code == 200 && size == 0)) return null;
+    return code;
+};
+
+// Where /signin/ sends the browser; see the header. { url, why } or { error }.
+landing = function(u) {
+    // Where the portal itself pointed — anywhere but the probe host — needs
+    // no asking.
+    const probeHost = match(u.url ?? '', /^https?:\/\/([^\/:?#]+)/)?.[1];
+    if (u.step == 'portal' && probeHost && lc(probeHost) != lc(u.host ?? ''))
+        return { url: u.url, why: 'the portal pointed the probe there' };
+    const wifi = _m_util.runJson('ubus call network.interface.wwifi status') || {};
+    const dev = wifi.l3_device;
+    if (!wifi.up || !dev || !match(dev, /^[A-Za-z0-9._-]+$/)) return { error: 'The WiFi network is not connected.' };
+    const tried = [];
+    for (let c in [ { url: u.url, why: 'the probe URL' },
+                    { url: PLAIN_HTTP, why: 'a plain-HTTP site' },
+                    { url: u.hijack ? 'http://' + u.hijack + '/' : null, why: 'the DNS-hijack address' } ]) {
+        if (!c.url || index(tried, c.url) >= 0) continue;
+        push(tried, c.url);
+        const code = answers(dev, c.url);
+        if (code) return { url: c.url, why: sprintf('%s answered %d', c.why, code) };
+    }
+    return { error: 'Nothing on the WiFi network answered: ' + join(', ', tried) + '.' };
+};
+
 fetch = function(env, s, scheme, authority, rest) {
     const method = env.REQUEST_METHOD;
     if (method != 'GET' && method != 'POST' && method != 'HEAD')
@@ -254,6 +396,9 @@ fetch = function(env, s, scheme, authority, rest) {
         if (env.headers?.[k]) push(lines, 'header = ' + quoted(FORWARDED[k] + ': ' + env.headers[k]));
     const ref = upstreamReferer(env);
     if (ref) push(lines, 'header = ' + quoted('Referer: ' + ref.url));
+    // A string, not a file, to curl: it contains '='. Sent with the jar's.
+    const mine = browserCookies(env, host);
+    if (mine) push(lines, 'cookie = ' + quoted(mine));
 
     if (method == 'POST') {
         const len = int(env.CONTENT_LENGTH ?? 0);
@@ -294,15 +439,25 @@ fetch = function(env, s, scheme, authority, rest) {
     const blocks = split(trim(head), /\r?\n\r?\n/);
     const hlines = split(blocks[length(blocks) - 1], /\r?\n/);
     const status = int(match(hlines[0] ?? '', /^HTTP\/[0-9.]+ ([0-9]{3})/)?.[1] ?? code);
-    const h = {};
+    const base = { scheme: scheme, authority: authority };
+    const h = {}, cookies = [];
     for (let i = 1; i < length(hlines); i++) {
         const c = index(hlines[i], ':');
-        if (c > 0) h[lc(trim(substr(hlines[i], 0, c)))] = trim(substr(hlines[i], c + 1));
+        if (c <= 0) continue;
+        const name = lc(trim(substr(hlines[i], 0, c))), value = trim(substr(hlines[i], c + 1));
+        h[name] = value;
+        if (name == 'set-cookie') {
+            const mirrored = mirrorCookie(value, base);
+            if (mirrored) push(cookies, mirrored);
+        }
     }
 
-    const base = { scheme: scheme, authority: authority };
     const headers = { ...BASE_HEADERS, 'Content-Type': h['content-type'] ?? 'application/octet-stream' };
     if (h['location']) headers['Location'] = proxify(h['location'], base);
+    if (length(cookies)) headers['Set-Cookie'] = cookies;
+    // "Refresh: 5; url=..." sends a browser on as a meta refresh does.
+    const refresh = match(h['refresh'] ?? '', /^\s*([0-9]+)\s*[;,]\s*url\s*=\s*(.+)$/i);
+    if (refresh) headers['Refresh'] = refresh[1] + '; url=' + proxify(replace(refresh[2], /^["']|["']$/g, ''), base);
     if (h['content-disposition']) headers['Content-Disposition'] = h['content-disposition'];
 
     const type = lc(headers['Content-Type']);
@@ -356,9 +511,14 @@ route = function(env) {
     if (can.error) return page(409, can.error);
 
     if (path == '/signin' || path == '/signin/') {
-        if (!can.uplink.url) return page(409, 'The WiFi network has not asked for a sign-in.');
+        const where = landing(can.uplink);
+        if (where.error) {
+            warn(sprintf('wifi-signin: no landing: %s\n', where.error));
+            return page(502, where.error);
+        }
+        warn(sprintf('wifi-signin: landing on %s (%s)\n', where.url, where.why));
         return send(302, { ...BASE_HEADERS,
-                           'Location': proxify(can.uplink.url, { scheme: 'http', authority: '' }) }, '');
+                           'Location': proxify(where.url, { scheme: 'http', authority: '' }) }, '');
     }
 
     if (path == '/signin/trust') {

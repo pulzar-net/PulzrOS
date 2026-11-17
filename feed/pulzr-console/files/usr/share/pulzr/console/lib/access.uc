@@ -34,12 +34,13 @@ let wififail = loadfile('/usr/share/pulzr/console/lib/wififail.uc', { raw_mode: 
 // body is compiled, so closures capture the binding rather than a missing
 // global and definition order stops mattering. auth.uc alone had six of these.
 let status, key, setAp, raiseAp, lowerAp, scan, joinWifi, forgetWifi;
-let security, probeWifi, probeResult, wifiDetail, roam;
+let security, probeWifi, probeResult, wifiDetail, roam, roams, recordRoam, checkWifi;
+let uplinkReason, roamReason;
 let savedNetworks, findSaved, networkFromRequest, saveNetwork, applyNetwork,
     radioName, commitAndReload;
 
 let run = _m_util.run;; let runJson = _m_util.runJson;
-let writefile = _m_fs.writefile;; let unlink = _m_fs.unlink;
+let writefile = _m_fs.writefile;; let unlink = _m_fs.unlink;; let mkdir = _m_fs.mkdir;
 
 const PROBE_REQ = '/tmp/pulzr-wifi-probe.req';
 const PROBE_OUT = '/tmp/pulzr-wifi-probe.json';
@@ -301,6 +302,11 @@ const SAVED = 'wifi_network';
 const ROAM_AFTER = 180;     // seconds of a dead uplink before looking elsewhere
 const ROAM_BACKOFF = 300;   // and not again for this long after a switch
 const ROAM_STATE = '/var/run/pulzr-wifi-roam.json';
+// The last few switches roam() made, for the console to say why the gateway
+// is on the network it is on. In /var/run: a restart of pulzr-wifi-roam keeps
+// it, a reboot does not, and it is never a write to flash.
+const ROAM_LOG = '/var/run/pulzr/wifi-roams.json';
+const ROAM_LOG_KEEP = 10;
 
 savedNetworks = function(uci) {
     const found = [];
@@ -449,6 +455,10 @@ commitAndReload = function(uci) {
     uci.commit('pulzr');
     run('(sleep 2; wifi reload; /sbin/ifup wwifi; /etc/init.d/firewall reload; '
         + '/usr/sbin/pulzr-wireguard-route apply) >/dev/null 2>&1 &');
+    // pulzr-wifi-uplink's answer is about the network being left. Kept, it
+    // was this one's until the next check, and roam() read a guest network's
+    // portal as the verdict on the eduroam just joined in its place.
+    unlink('/var/run/pulzr/wifi-uplink.json');
 };
 
 joinWifi = function(req) {
@@ -473,6 +483,12 @@ joinWifi = function(req) {
     applyNetwork(uci, radio, net);
     saveNetwork(uci, net);
     commitAndReload(uci);
+    // A join starts roam()'s clock again and holds it off as a switch does.
+    // The clock used to carry on from the network before: a gateway that had
+    // sat behind a guest portal for an hour was joined to eduroam, and the
+    // next minute, before eduroam had finished coming up, roam() found three
+    // minutes long gone and put it back on the guest network.
+    writefile(ROAM_STATE, sprintf('%J', { roamedAt: time() }));
 
     return { ok: true,
              message: 'Joining ' + net.ssid + '. If you are connected to the setup '
@@ -536,7 +552,8 @@ roam = function() {
     try { state = json(readfile(ROAM_STATE) || '{}') || {}; } catch (e) { state = {}; }
     const now = time();
     const link = runJson('ubus call network.interface.wwifi status') || {};
-    const reached = signin.uplink().state;
+    const uplink = signin.uplink();
+    const reached = uplink.state;
     if (link.up && reached != 'portal' && reached != 'offline') {
         writefile(ROAM_STATE, sprintf('%J', { roamedAt: state.roamedAt }));
         return { action: 'none', reason: 'up' };
@@ -567,11 +584,82 @@ roam = function() {
         if (substr(k, 0, 1) != '.' && k != 'last_joined') net[k] = saved[k];
     const radio = radioName();
     if (!radio) return { action: 'none', reason: 'no radio' };
+    // Why, as it stood when the decision was made: the check's failing step
+    // while associated, wpa_supplicant's reason while not.
+    let why;
+    if (link.up) why = { state: reached, step: uplink.step, host: uplink.host, detail: uplink.detail };
+    else {
+        const failure = wififail.last();
+        why = { state: 'down', step: failure?.code, detail: failure?.detail };
+    }
+    why.downFor = now - state.downSince;
+    recordRoam({ at: now, from: active, to: best.ssid, why });
+
     applyNetwork(uci, radio, net);
     saveNetwork(uci, net);
     commitAndReload(uci);
     writefile(ROAM_STATE, sprintf('%J', { roamedAt: now }));
-    return { action: 'switched', from: active, to: best.ssid };
+    return { action: 'switched', from: active, to: best.ssid, why };
+};
+
+// Why the uplink is not open, as the end of one sentence the console starts
+// with the network's name: "eduroam: DNS 10.0.0.1 did not answer." Null when
+// it is open, or when the badge already says it all (a portal's redirect).
+// The steps are pulzr-wifi-uplink's.
+uplinkReason = function(u) {
+    const servers = join(', ', split(u.detail ?? '', ' '));
+    switch (u.step) {
+    case 'no_gateway':      return 'the lease has no gateway.';
+    case 'no_dns':          return 'the lease has no DNS server.';
+    case 'dns':             return sprintf('DNS %s did not answer.', servers);
+    case 'dns_noaddress':   return sprintf('DNS %s has no address for %s.', servers, u.host);
+    case 'connect':         return sprintf('%s at %s refused the connection.', u.host, u.detail);
+    case 'connect_timeout': return sprintf('%s at %s did not answer.', u.host, u.detail);
+    case 'http_timeout':    return sprintf('%s accepted the connection and sent nothing.', u.host);
+    case 'http':            return sprintf('the request to %s failed (curl %s).', u.host, u.detail);
+    case 'code':            return sprintf('%s answered %s.', u.host, u.detail);
+    case 'dns_hijack':      return sprintf('DNS sends %s to %s.', u.host, u.detail);
+    case 'tls':             return sprintf('%s has a certificate this gateway does not trust.', u.host);
+    }
+    return u.state == 'offline' ? 'no internet.' : null;
+};
+
+// Why roam() left a network, short, with how long it waited: "DNS did not
+// answer for 3 min".
+roamReason = function(why) {
+    const short = {
+        no_gateway: 'no gateway', no_dns: 'no DNS server', dns: 'DNS did not answer',
+        dns_noaddress: 'DNS had no address', connect: 'connections refused',
+        connect_timeout: 'no answer', http_timeout: 'no answer', http: 'no answer',
+        code: 'unexpected answers', dns_hijack: 'a sign-in page', tls: 'a sign-in page',
+        portal: 'a sign-in page',
+    };
+    const what = why?.state == 'down' ? 'not connected'
+               : (short[why?.step] ?? (why?.state == 'portal' ? 'a sign-in page' : 'no internet'));
+    const minutes = int(((why?.downFor ?? 0) + 30) / 60);
+    return minutes > 0 ? sprintf('%s for %d min', what, minutes) : what;
+};
+
+roams = function() {
+    try { return json(readfile(ROAM_LOG) || '[]') || []; } catch (e) { return []; }
+};
+
+recordRoam = function(entry) {
+    const all = roams();
+    push(all, entry);
+    mkdir('/var/run/pulzr');
+    writefile(ROAM_LOG + '.tmp', sprintf('%J', slice(all, -ROAM_LOG_KEEP)));
+    _m_fs.rename(ROAM_LOG + '.tmp', ROAM_LOG);
+};
+
+// Ask pulzr-wifi-uplink again now rather than at the next minute: after
+// signing in to a portal, somebody wants to see it open. In the background,
+// because the check can take most of a minute on a network that answers
+// nothing; the console polls for the answer.
+checkWifi = function() {
+    if (!cursor().get('wireless', 'parkeze_sta', 'ssid')) return { error: 'No WiFi network is joined.' };
+    run('/usr/sbin/pulzr-wifi-uplink check >/dev/null 2>&1 &');
+    return { ok: true };
 };
 
 // Which certificate an enterprise network's RADIUS server presents.
@@ -619,11 +707,19 @@ wifiDetail = function() {
     if (!ssid) return { configured: false, saved };
     const current = findSaved(uci, ssid) || {};
     const reached = signin.uplink();
+    const last = roams();
     return {
         configured: true,
         ssid: ssid,
         // Where the network's sign-in page is, while it has one.
         portal: reached.state == 'portal' ? reached.url : null,
+        // pulzr-wifi-uplink's answer: the state, and for anything but open
+        // the step that failed (see its header).
+        uplink: { state: reached.state, step: reached.step, host: reached.host, detail: reached.detail,
+                  reason: reached.state == 'open' ? null : uplinkReason(reached),
+                  since: reached.since, checkedAt: reached.checkedAt },
+        // The last switch roam() made, newest last in the log.
+        roam: length(last) ? { ...last[length(last) - 1], reason: roamReason(last[length(last) - 1].why) } : null,
         // Why it is not connected, when wpa_supplicant said. The RADIUS
         // server's own words are in it, so it is here and not in status().
         failure: wififail.last(),
@@ -644,5 +740,5 @@ wifiDetail = function() {
 // its handler in TEMPLATE mode and loads anything else through loadfile(),
 // neither of which is module mode — `export` is a syntax error there. See the
 // header of api/index.uc for the full contract.
-return { forgetWifi, joinWifi, key, lowerAp, probeResult, probeWifi, raiseAp, roam,
-         scan, setAp, status, wifiDetail };
+return { checkWifi, forgetWifi, joinWifi, key, lowerAp, probeResult, probeWifi, raiseAp, roam,
+         roams, scan, setAp, status, wifiDetail };

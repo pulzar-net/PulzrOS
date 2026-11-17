@@ -97,6 +97,8 @@ const ACTIONS = {
     // caller's address, which says which URL opens the proxy.
     startSignin: (req, s, addr) => audited('wifi.signin', { by: s.subject },
                                            signin.mintTicket(s.subject, addr)),
+    // pulzr-wifi-uplink's check, now; see access.checkWifi.
+    checkWifi: (req, s) => access.checkWifi(),
 
     // ── lan ─────────────────────────────────────────────────────────────────
     setLanPolicy: (req, s) => audited('lan.policy', { by: s.subject, mac: req.mac, policy: req.policy },

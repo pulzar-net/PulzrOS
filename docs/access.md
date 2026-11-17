@@ -189,7 +189,8 @@ the only sign that it did not. A driver is built on branch `et6326-leds` of
 ## Signing the gateway in to a WiFi portal
 
 The other direction: a WiFi network the gateway joined wants somebody to click
-through its sign-in page (`pulzr-wifi-uplink` says `portal`, backhaul.md).
+through its sign-in page (`pulzr-wifi-uplink` says `portal`, or `offline` for
+a portal that drops the probe instead of redirecting it; backhaul.md).
 That somebody has to be the gateway, since a portal admits the device that
 loaded it, by MAC and address. So the console's **Sign in** on the WiFi page
 opens the network's page *as the gateway*: a proxy on the gateway fetches it out
@@ -205,19 +206,35 @@ cable, on the setup AP, or on Pulzar Cloud with the gateway on cellular.
 - **Getting in.** The console, signed in, mints a one-use ticket good for a
   minute; the proxy trades it for a cookie on its own origin, good for half an
   hour.
+- **Where it starts.** Where the portal redirected the probe, when it did.
+  Otherwise the first of the probe URL, `http://neverssl.com/` and the address
+  the WiFi's DNS hijacked the probe's name to that answers with anything but
+  204, out of the WiFi; the log says which (`wifi-signin: landing on`).
+- **Always reachable.** **Sign In** and **Check Again** are on the WiFi page
+  whenever the network is up and `portal` or `offline`, in the console and in
+  the terminal UI, where Sign in shows the ticket's URL and a QR for a phone.
+  Roaming is held for as long as a sign-in session lasts.
 - **When it answers.** While the network is `portal` or `offline`, and for ten
   minutes after it opens. Not otherwise: on an open network it would be a way
   into whatever is behind the customer's WiFi.
 - **Names.** A portal's hostnames are resolved by the WiFi network's own DNS
   servers, out of the WiFi device (`pulzr-wifi-resolve`), so a portal that
   answers every name with its own address is followed to its page.
-- **What it passes on.** Never the browser's cookies (on a local address those
-  include the console's session) or its Authorization. The portal's cookies
-  stay in one jar on the gateway. A certificate the gateway does not trust
-  gets a page that says so and a link to continue, as a browser asks.
-- **What it cannot follow.** Links in HTML and CSS, redirects, and fetch/XHR
-  are rewritten. A script that builds an absolute URL and assigns it to
-  `location` is not; such a portal does not load through it.
+- **What it passes on.** Never the console's session cookie, the proxy's own,
+  or the browser's Authorization. The portal's cookies stay in one jar on the
+  gateway; those its script can read (not HttpOnly) are also handed to the
+  browser under the proxy's path for that host, and cookies the browser sends
+  back are passed on unless the jar holds one of that name, so a CSRF token a
+  script copies into the form arrives. The X-Requested-With and CSRF-token
+  headers go through. A certificate the gateway does not trust gets a page
+  that says so and a link to continue, as a browser asks.
+- **What it cannot follow.** Links in HTML and CSS, redirects (Location and
+  Refresh), fetch/XHR, a form's action a script sets, and navigations a script
+  starts are rewritten; the last only where the browser has the Navigation API
+  (Chromium, recent Safari). Elsewhere a script that assigns an absolute URL to
+  `location` leaves the proxy, and such a portal does not load. Nor does one
+  that checks in script that it is on its own hostname, or that needs a
+  client certificate: those need a real browser on the gateway's MAC.
 
 The better answer at a site that has one is the network's own device
 registration: the WiFi page shows the station's MAC for exactly that.

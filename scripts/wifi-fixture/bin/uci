@@ -1,0 +1,10 @@
+#!/bin/sh
+# The few uci calls pulzr-wifi-uplink and access.uc make from a shell.
+[ "$1" = -q ] && shift
+case "$1 $2" in
+    "get wireless.parkeze_sta.ssid") [ -n "${WIFI_SSID}" ] && echo "${WIFI_SSID}" ;;
+    "get network.wwifi.metric") cat "${T}/metric" 2>/dev/null ;;
+    "set network.wwifi.metric="*) echo "${2#*=}" > "${T}/metric" ;;
+    "show wireless") echo "wireless.radio0=wifi-device" ;;
+esac
+exit 0

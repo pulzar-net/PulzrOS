@@ -1,0 +1,3 @@
+#!/bin/sh
+while [ $# -gt 1 ]; do case "$1" in -t|-p) shift 2 ;; *) break ;; esac; done
+echo "$*" >> "${T}/log"

@@ -2,7 +2,7 @@ Package: pulzr-base
 Provides: parkeze-base
 Replaces: parkeze-base
 Conflicts: parkeze-base
-Depends: ucode, ucode-mod-uci, ucode-mod-fs, ucode-mod-ubus, uci, ip-full, curl, jshn, jsonfilter, ucode-mod-socket, openssh-server, openssh-keygen, dropbearconvert
+Depends: ucode, ucode-mod-uci, ucode-mod-fs, ucode-mod-ubus, uci, ip-full, curl, ca-bundle, jshn, jsonfilter, ucode-mod-socket, openssh-server, openssh-keygen, dropbearconvert
 Maintainer: Joseph Telaak <joseph@pulzr.net>
 License: Apache-2.0 AND LicenseRef-FIGlet-font
 Architecture: all

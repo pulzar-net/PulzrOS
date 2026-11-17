@@ -1,6 +1,7 @@
 // A stand-in for ucode's uci module that keeps the config in one JSON file
-// ($UCI_JSON), for scripts/test-router.sh. Only what pulzr-dns and
-// pulzr-uplinks call: get, get_all, set, delete, foreach, commit.
+// ($UCI_JSON), for scripts/test-router.sh and scripts/test-wifi-uplink.sh.
+// Only what pulzr-dns, pulzr-uplinks and the console's access.uc call: get,
+// get_all, set, add, delete, foreach, commit.
 let fs = require('fs');
 let path = getenv('UCI_JSON');
 
@@ -21,7 +22,16 @@ function cursor() {
             db[p][s][o] = v;
             return true;
         },
+        add: function(p, t) {
+            db[p] ??= {};
+            let n = 0;
+            while (db[p][sprintf('cfg%02x', n)]) n++;
+            let name = sprintf('cfg%02x', n);
+            db[p][name] = { '.type': t, '.name': name };
+            return name;
+        },
         delete: function(p, s, o) {
+            if (!db[p]) return true;
             if (o == null) delete db[p][s];
             else if (db[p]?.[s]) delete db[p][s][o];
             return true;

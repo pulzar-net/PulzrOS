@@ -193,6 +193,13 @@ jobs:
       - name: Uplinks and DNS
         run: UCODE=/tmp/ucode/build/ucode scripts/test-router.sh
 
+      # The WiFi uplink's verdict, its resolver and roam(): one blocked host or
+      # one lost DNS datagram used to read as offline, and a join used to be
+      # undone by roam() within the minute. Against a fake netifd, curl, DNS
+      # and iwinfo.
+      - name: WiFi uplink and roaming
+        run: UCODE=/tmp/ucode/build/ucode scripts/test-wifi-uplink.sh
+
       # pulzr-addon puts root code on gateways nobody can reach, and is the
       # gateway's half of a denied capability staying off. Each refusal, a
       # download cut off half way, the gate's revert and the restore after an

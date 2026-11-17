@@ -1,0 +1,8 @@
+#!/bin/sh
+# netifd's wwifi from $T/wwifi.json, iwinfo's scan from $T/scan.json.
+case "$1 $2 $3" in
+    "call network.interface.wwifi status") cat "${T}/wwifi.json" ;;
+    "call iwinfo scan") cat "${T}/scan.json" ;;
+    "call network reload") echo reload >> "${T}/events" ;;
+    *) exit 4 ;;
+esac

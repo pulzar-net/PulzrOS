@@ -1,0 +1,2 @@
+#!/bin/sh
+cat "${T}/logread" 2>/dev/null

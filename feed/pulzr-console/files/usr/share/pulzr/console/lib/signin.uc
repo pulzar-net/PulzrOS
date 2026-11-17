@@ -69,9 +69,15 @@ randomId = function() {
     return length(id) == 64 ? id : null;
 };
 
-// pulzr-wifi-uplink's last answer: { state, url, since, checkedAt }.
+// pulzr-wifi-uplink's last answer: { state, ssid, step, host, detail, url,
+// hijack, since, checkedAt }. Only about the network the radio is on now: the
+// file outlives a join until the next check, and an answer about the network
+// before is no answer about this one.
 uplink = function() {
-    return readJson(UPLINK) || { state: 'unchecked' };
+    const u = readJson(UPLINK);
+    const ssid = cursor().get('wireless', 'parkeze_sta', 'ssid');
+    if (!u || !ssid || u.ssid != ssid) return { state: 'unchecked' };
+    return u;
 };
 
 // Whether the proxy may fetch anything right now. { ok } or { error }.

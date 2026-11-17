@@ -1,0 +1,10 @@
+#!/bin/sh
+# $RESOLVE_<host, dots and dashes as underscores>: an address, or
+# "<exit code>:<stderr line>".
+var="RESOLVE_$(printf '%s' "$1" | tr '.-' '__')"
+eval "v=\${${var}:-}"
+case "${v}" in
+    '') echo "noanswer 10.0.0.1" >&2; exit 4 ;;
+    [0-9]:*) echo "${v#*:}" >&2; exit "${v%%:*}" ;;
+    *) echo "${v}" ;;
+esac
