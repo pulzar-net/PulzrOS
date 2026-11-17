@@ -47,8 +47,9 @@ const fileQuery = (key: string | null, enabled = true) => ({
   queryKey: ['oui', key],
   queryFn: () => shard(key as string),
   enabled: key !== null && enabled,
+  // Not refetched for a day; the cache itself is the app's own, so an
+  // unused file is dropped like any other query.
   staleTime: DAY,
-  gcTime: DAY,
   retry: 1,
 });
 
