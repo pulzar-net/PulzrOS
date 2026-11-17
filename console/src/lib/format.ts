@@ -102,3 +102,16 @@ export function uplinkName(iface: string, device?: string | null): string {
   // wan_wan_20 back to wan.20, wan_lan1 to lan1.
   return portLabel(iface.replace(/^wan_/, '').replace(/_(\d+)$/, '.$1'));
 }
+
+/** Bytes a second as the bit rate a link is sold in: "4.2 Mb/s". */
+export function bitrate(bytesPerSecond: number | null | undefined): { value: string; unit: string } | null {
+  if (bytesPerSecond == null) return null;
+  const units = ['b/s', 'kb/s', 'Mb/s', 'Gb/s'];
+  let n = bytesPerSecond * 8;
+  let i = 0;
+  while (n >= 1000 && i < units.length - 1) {
+    n /= 1000;
+    i += 1;
+  }
+  return { value: n >= 100 || i === 0 ? n.toFixed(0) : n.toFixed(1), unit: units[i] };
+}

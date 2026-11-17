@@ -1,0 +1,61 @@
+/* One strip, ruled between its cells: the 1px gap shows the strip's own
+   background through, so the rules meet exactly however the row wraps. */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* A strip followed by facts, or facts followed by a strip. */
+.grid + *, * + .grid { margin-top: var(--space-3); }
+
+.stat {
+  min-width: 0;
+  padding: 9px 12px 10px;
+  background: var(--card-bg);
+}
+
+.label {
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.value {
+  margin-top: 3px;
+  font-size: var(--fs-stat);
+  font-weight: 600;
+  line-height: 26px;
+  letter-spacing: -0.015em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.unit {
+  margin-left: 3px;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--text-secondary);
+}
+
+.detail {
+  margin-top: 1px;
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

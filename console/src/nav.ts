@@ -14,7 +14,7 @@ import type { LucideIcon } from 'lucide-react';
 import type { Feature } from '@/types';
 
 /**
- * The console's pages, in sidebar order.
+ * The console's pages, in sidebar order, under the sidebar's headings.
  *
  * One list rather than routes in one file and nav items in another: they got
  * out of step twice while this was being built, producing a nav entry that
@@ -49,52 +49,79 @@ export interface NavEntry {
   wide?: boolean;
 }
 
-export const NAV: NavEntry[] = [
-  { path: '/', label: 'Overview', icon: Gauge, tone: 'green' },
+/** A run of the sidebar under one heading. The first has none: Overview
+    stands above the rest. */
+export interface NavGroup {
+  label?: string;
+  entries: NavEntry[];
+}
+
+export const NAV_GROUPS: NavGroup[] = [
   {
-    path: '/backhaul',
-    label: 'Backhaul',
-    icon: Network, tone: 'blue',
-    children: [
-      { path: '/backhaul/ethernet', label: 'Ethernet' },
-      { path: '/backhaul/cellular', label: 'Cellular', feature: 'cellular' },
-      { path: '/backhaul/wifi', label: 'WiFi', feature: 'wifi' },
+    entries: [{ path: '/', label: 'Overview', icon: Gauge, tone: 'green' }],
+  },
+  {
+    label: 'Connectivity',
+    entries: [
+      {
+        path: '/backhaul',
+        label: 'Backhaul',
+        icon: Network, tone: 'blue',
+        children: [
+          { path: '/backhaul/ethernet', label: 'Ethernet' },
+          { path: '/backhaul/cellular', label: 'Cellular', feature: 'cellular' },
+          { path: '/backhaul/wifi', label: 'WiFi', feature: 'wifi' },
+        ],
+      },
+      {
+        path: '/network',
+        label: 'Network',
+        icon: Router, tone: 'violet',
+        children: [
+          { path: '/network/ports', label: 'Ports', wide: true },
+          { path: '/network/lan', label: 'LAN', feature: 'lan', wide: true },
+          { path: '/network/uplinks', label: 'Uplinks', feature: 'failover' },
+          { path: '/network/dns', label: 'DNS', feature: 'dns' },
+          { path: '/network/speed', label: 'Speed Test', feature: 'speedtest' },
+        ],
+      },
+      { path: '/access', label: 'Access', icon: KeyRound, tone: 'amber' },
     ],
   },
   {
-    path: '/lorawan',
-    label: 'LoRaWAN',
-    icon: Radio, tone: 'teal',
-    feature: 'lorawan',
-    children: [
-      { path: '/lorawan/forwarders', label: 'Forwarders' },
-      { path: '/lorawan/settings', label: 'Settings' },
+    label: 'Radios',
+    entries: [
+      {
+        path: '/lorawan',
+        label: 'LoRaWAN',
+        icon: Radio, tone: 'teal',
+        feature: 'lorawan',
+        children: [
+          { path: '/lorawan/forwarders', label: 'Forwarders' },
+          { path: '/lorawan/settings', label: 'Settings' },
+        ],
+      },
+      { path: '/bluetooth', label: 'Bluetooth', icon: Bluetooth, tone: 'indigo', feature: 'bluetooth' },
+      { path: '/gnss', label: 'GNSS', icon: Satellite, tone: 'sky', feature: 'gnss' },
     ],
   },
   {
-    path: '/network',
-    label: 'Network',
-    icon: Router, tone: 'violet',
-    children: [
-      { path: '/network/ports', label: 'Ports', wide: true },
-      { path: '/network/lan', label: 'LAN', feature: 'lan', wide: true },
-      { path: '/network/uplinks', label: 'Uplinks', feature: 'failover' },
-      { path: '/network/dns', label: 'DNS', feature: 'dns' },
-      { path: '/network/speed', label: 'Speed Test', feature: 'speedtest' },
-    ],
-  },
-  { path: '/gnss', label: 'GNSS', icon: Satellite, tone: 'sky', feature: 'gnss' },
-  { path: '/bluetooth', label: 'Bluetooth', icon: Bluetooth, tone: 'indigo', feature: 'bluetooth' },
-  { path: '/access', label: 'Access', icon: KeyRound, tone: 'amber' },
-  { path: '/io', label: 'Panel', icon: Lightbulb, tone: 'rose' },
-  { path: '/logs', label: 'Logs', icon: ScrollText, tone: 'slate', wide: true },
-  {
-    path: '/system',
-    label: 'System',
-    icon: Settings2, tone: 'sky',
-    children: [
-      { path: '/system/resources', label: 'Resources', wide: true },
-      { path: '/system/maintenance', label: 'Maintenance' },
+    label: 'Gateway',
+    entries: [
+      { path: '/io', label: 'Panel', icon: Lightbulb, tone: 'rose' },
+      { path: '/logs', label: 'Logs', icon: ScrollText, tone: 'slate', wide: true },
+      {
+        path: '/system',
+        label: 'System',
+        icon: Settings2, tone: 'sky',
+        children: [
+          { path: '/system/resources', label: 'Resources', wide: true },
+          { path: '/system/maintenance', label: 'Maintenance' },
+        ],
+      },
     ],
   },
 ];
+
+/** Every entry, in sidebar order, for what does not care about the groups. */
+export const NAV: NavEntry[] = NAV_GROUPS.flatMap((group) => group.entries);

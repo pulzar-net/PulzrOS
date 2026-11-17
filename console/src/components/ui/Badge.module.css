@@ -1,10 +1,12 @@
+/* A status word on a tint, with a dot in the same colour ahead of it: the
+   dot is what the eye finds down a column, the word is what it reads. */
 .badge {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   padding: 2px 8px;
   border-radius: 999px;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-weight: 600;
   /* Its own, so a badge is the same size wherever it sits rather than growing
      with the line height of the row around it. */
@@ -13,8 +15,18 @@
   white-space: nowrap;
 }
 
-.success { background: color-mix(in srgb, var(--status-success) 14%, transparent); color: var(--status-success); }
-.warning { background: color-mix(in srgb, var(--status-warning) 16%, transparent); color: var(--status-warning); }
-.error   { background: color-mix(in srgb, var(--status-error) 14%, transparent);   color: var(--status-error); }
-.info    { background: color-mix(in srgb, var(--status-info) 14%, transparent);    color: var(--status-info); }
+.badge::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: 0 0 auto;
+}
+
+.success { background: color-mix(in srgb, var(--status-success) 13%, transparent); color: color-mix(in srgb, var(--status-success) 82%, var(--text-primary)); }
+.warning { background: color-mix(in srgb, var(--status-warning) 15%, transparent); color: color-mix(in srgb, var(--status-warning) 78%, var(--text-primary)); }
+.error   { background: color-mix(in srgb, var(--status-error) 13%, transparent);   color: color-mix(in srgb, var(--status-error) 85%, var(--text-primary)); }
+.info    { background: color-mix(in srgb, var(--status-info) 13%, transparent);    color: color-mix(in srgb, var(--status-info) 85%, var(--text-primary)); }
 .neutral { background: var(--bg-tertiary); color: var(--text-secondary); }
+.neutral::before { background: var(--text-tertiary); }

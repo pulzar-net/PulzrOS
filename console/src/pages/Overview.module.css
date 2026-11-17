@@ -1,0 +1,113 @@
+/* A card's list of things with a state each — uplinks, add-ons: an icon, the
+   name over a quieter detail line, live figures, and the state at the end.
+   Each row is the way into the page that changes it. */
+.rows {
+  display: flex;
+  flex-direction: column;
+  margin: -6px calc(-1 * var(--card-pad)) -10px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 52px;
+  padding: 8px var(--card-pad);
+  border-top: 1px solid var(--rule);
+  color: inherit;
+  text-decoration: none;
+}
+
+.row:first-child { border-top: none; }
+a.row:hover { background: var(--bg-secondary); }
+
+/* The uplink carrying traffic, marked at its edge in the accent. */
+.inUse { box-shadow: inset 3px 0 0 var(--accent); }
+
+.rowIcon {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+}
+
+.inUse .rowIcon { color: var(--accent); }
+
+.rowMain {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.rowName {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.rowDetail {
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tag {
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: var(--fs-2xs);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  line-height: 16px;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: var(--accent-subtle);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+/* Down over up, right-aligned in fixed figures so a column of rows reads
+   down. */
+.rates {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 16px;
+  color: var(--text-primary);
+}
+
+.rates span { display: inline-flex; align-items: center; gap: 3px; }
+.rates svg { color: var(--text-tertiary); }
+.rates small { font-size: 10.5px; font-weight: 500; color: var(--text-secondary); }
+
+.chart {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  margin-top: var(--space-3);
+}
+
+/* Into the page a card summarises. */
+.go {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  margin-right: -6px;
+  border-radius: 6px;
+  color: var(--text-tertiary);
+}
+
+.go:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+
+@media (max-width: 420px) {
+  .rates { display: none; }
+}

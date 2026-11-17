@@ -5,6 +5,7 @@
 #   -v min_rssi  weaker reports are dropped
 #   -v interval  seconds per line
 #   -v stats     a file rewritten each interval with how many beacons it held
+#                and how many advertisements they sent
 #
 # hcidump prints one HCI packet per `>` (from the controller) or `<` (to it)
 # line, continued on lines that start with spaces.
@@ -35,6 +36,7 @@ function report(   mac, i, len, data, rssi) {
     if (rssi < min_rssi) return
     seen[mac] = data
     if (!(mac in best) || rssi > best[mac]) best[mac] = rssi
+    adverts++
 }
 function flush(now,   mac, out, n) {
     out = ""; n = 0
@@ -43,7 +45,8 @@ function flush(now,   mac, out, n) {
         delete seen[mac]; delete best[mac]
     }
     if (n) { printf "{\"time\":%d,\"adverts\":[%s]}\n", now, out; fflush() }
-    printf "{\"at\":%d,\"beacons\":%d}\n", now, n > stats; close(stats)
+    printf "{\"at\":%d,\"beacons\":%d,\"adverts\":%d}\n", now, n, adverts > stats; close(stats)
+    adverts = 0
     started = now
 }
 BEGIN { started = systime() }

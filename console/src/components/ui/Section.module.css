@@ -1,35 +1,21 @@
-/* A card. These were cards once, then rules and whitespace, which read as a
-   page of loose text with nothing holding it together; on a full-width page a
-   section needs an edge to say where it ends. Flat, a hairline and the
-   lightest shadow, so a configuration screen still does not read like a
-   dashboard of tiles. */
+/* A card: a titled panel with a hairline under its heading, so a page of them
+   reads as a rack of instruments rather than loose text. Flat, a hairline and
+   the lightest shadow; the page behind is a shade off it (tokens.css). */
 .section {
   min-width: 0;
+  display: flex;
+  flex-direction: column;
   background: var(--card-bg);
   border: 1px solid var(--card-border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--card-radius);
   box-shadow: var(--card-shadow);
-  padding: 14px 16px 16px;
 }
 
 /* Spacing between stacked cards. A page that lays its cards out in a grid
    sets --section-gap to 0, because the grid's gap does this job there and a
    margin on one item would push it out of line with its row. */
 .section + .section {
-  margin-top: var(--section-gap, 16px);
-}
-
-/* A chart's card: the body takes whatever height the row gives the card,
-   and the chart in it grows to match (TimeChart.module.css). */
-.fill {
-  display: flex;
-  flex-direction: column;
-}
-
-.fill > .body {
-  flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
+  margin-top: var(--section-gap, var(--space-4));
 }
 
 /* The width of the page, for a table or a chart. */
@@ -40,33 +26,32 @@
 .header {
   display: flex;
   align-items: center;
-  gap: 9px;
-  min-height: 26px;
+  gap: 10px;
+  min-height: var(--card-head);
+  padding: 6px var(--card-pad);
+  border-bottom: 1px solid var(--rule);
+  flex-wrap: wrap;
 }
 
+/* The area's hue (Layout sets --tone), on the glyph only: a chip behind every
+   card's icon was a page of coloured tiles competing with the status. */
 .icon {
   display: flex;
-  align-items: center;
-  justify-content: center;
   flex: 0 0 auto;
-  width: 26px;
-  height: 26px;
-  border-radius: var(--radius-sm);
-  /* The area's hue (Layout sets --tone): a Network card is violet, a
-     Backhaul one blue. */
-  background: color-mix(in srgb, var(--tone, var(--accent)) 14%, transparent);
   color: var(--tone, var(--accent));
 }
 
 .title {
   margin: 0;
-  font-size: 13.5px;
+  font-family: inherit;
+  font-size: var(--fs-lg);
   font-weight: 600;
+  letter-spacing: -0.005em;
   color: var(--text-primary);
 }
 
 .note {
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   color: var(--text-tertiary);
 }
 
@@ -78,10 +63,28 @@
 }
 
 .body {
-  padding-top: 12px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--space-3) var(--card-pad) var(--space-4);
+}
+
+/* A chart's card: the body takes whatever height the row gives the card,
+   and the chart in it grows to match (TimeChart.module.css). */
+.fill > .body {
+  display: flex;
+  flex-direction: column;
 }
 
 /* A card with no heading starts with its content. */
 .section > .body:first-child {
-  padding-top: 0;
+  padding-top: var(--space-4);
+}
+
+/* A heading and nothing under it: the state is the whole card. */
+.section > .header:last-child {
+  border-bottom: none;
+}
+
+@media (max-width: 760px) {
+  .section { --card-pad: 14px; }
 }

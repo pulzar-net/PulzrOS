@@ -2,19 +2,6 @@
    moves out of here; this is for one-line grid and row utilities that would be
    silly as components. */
 
-/* Two cards that belong side by side. On an ordinary page it gives up its
-   box and the cards take their place in the page's own columns (see
-   Layout.module.css); anywhere else it is a grid of its own. */
-.grid2 {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
-  gap: 16px;
-}
-
-:global(.fade-in) > .grid2 {
-  display: contents;
-}
-
 .row {
   display: flex;
   align-items: center;
@@ -36,9 +23,6 @@
   background: var(--border-primary);
   margin: 14px 0;
 }
-
-
-
 
 /* An inline control that reads as text — "Show", "Hide". A full button here
    would out-weigh the fact it sits beside. */
@@ -159,8 +143,7 @@
   color: var(--text-secondary);
 }
 
-/* A status row's value: its badge, the value, a quieter detail, and the page
-   that fixes it at the far end. */
+/* A status row's value: its badge, the value and a quieter detail. */
 .status {
   display: flex;
   align-items: center;
@@ -170,12 +153,3 @@
 }
 
 .dim { color: var(--text-secondary); }
-
-.go {
-  margin-left: auto;
-  font-size: 12.5px;
-  text-decoration: none;
-}
-
-.go:hover { text-decoration: underline; }
-

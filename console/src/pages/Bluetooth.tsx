@@ -1,22 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Power, RotateCw } from 'lucide-react';
 import { api } from '@/services/api';
+import type { BluetoothStatus } from '@/types';
 import Section from '@/components/ui/Section';
 import Fact, { FactList } from '@/components/Fact';
 import Notice from '@/components/ui/Notice';
 import Button from '@/components/ui/Button';
 import Spinner from '@/components/ui/Spinner';
 import ErrorState from '@/components/ErrorState';
-
-interface BluetoothStatus {
-  state: 'on' | 'off' | 'absent';
-  enabled: boolean;
-  running: boolean;
-  rebootRequired: boolean;
-  oui: string;
-  minRssi: number;
-  heard: { at: number; beacons: number } | null;
-}
 
 /**
  * Scanning for parking beacons beside the LoRaWAN radio (pulzr-ble), and the

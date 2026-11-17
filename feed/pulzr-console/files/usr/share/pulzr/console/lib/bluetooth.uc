@@ -36,6 +36,8 @@ status = function() {
         oui: uci.get('pulzr', 'ble', 'oui') ?? '',
         minRssi: +(uci.get('pulzr', 'ble', 'min_rssi') ?? -100),
         heard,
+        // Seconds each `heard` covers: pulzr-ble's batching interval.
+        interval: +(uci.get('pulzr', 'ble', 'interval') ?? 10),
     };
 };
 

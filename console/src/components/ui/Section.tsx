@@ -26,7 +26,8 @@ export default function Section({
   wide?: boolean;
   /** Its content takes the card's whole height: a chart, in a row of taller cards. */
   fill?: boolean;
-  children: ReactNode;
+  /** Absent for a card whose heading says it all: a radio that is off. */
+  children?: ReactNode;
 }) {
   return (
     <section className={`${styles.section} ${wide ? styles.wide : ''} ${fill ? styles.fill : ''}`}>
@@ -34,7 +35,7 @@ export default function Section({
         <header className={styles.header}>
           {Icon && (
             <span className={styles.icon}>
-              <Icon size={15} strokeWidth={2} />
+              <Icon size={16} strokeWidth={1.9} />
             </span>
           )}
           {title && <h2 className={styles.title}>{title}</h2>}
@@ -42,7 +43,7 @@ export default function Section({
           {actions && <div className={styles.actions}>{actions}</div>}
         </header>
       )}
-      <div className={styles.body}>{children}</div>
+      {children != null && children !== false && <div className={styles.body}>{children}</div>}
     </section>
   );
 }

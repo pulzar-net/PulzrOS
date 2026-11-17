@@ -1,16 +1,16 @@
 .shell {
   /* The logo block and the top bar are one height, so the rule under each
      reads as a single line across the window. */
-  --bar-height: 48px;
+  --bar-height: 52px;
   display: flex;
   min-height: 100vh;
 }
 
 .sidebar {
-  width: 210px;
-  flex: 0 0 210px;
-  background: var(--bg-secondary);
-  border-right: 1px solid var(--border-primary);
+  width: 220px;
+  flex: 0 0 220px;
+  background: var(--sidebar-bg);
+  border-right: 1px solid var(--rule);
   display: flex;
   flex-direction: column;
   position: sticky;
@@ -24,31 +24,67 @@
   gap: 9px;
   height: var(--bar-height);
   flex: 0 0 auto;
-  padding: 0 15px;
-  border-bottom: 1px solid var(--border-primary);
+  padding: 0 18px;
+  border-bottom: 1px solid var(--rule);
 }
 
-.nav { padding: 9px 8px; display: flex; flex-direction: column; gap: 2px; }
+.nav {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-2) 10px var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.group { display: flex; flex-direction: column; gap: 1px; }
+
+/* A heading over a run of the sidebar: small capitals in the quietest grey,
+   so it orders the list without competing with it. */
+.groupLabel {
+  padding: 10px 10px 5px;
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
 
 .navItem {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 7px 10px;
-  border-radius: var(--radius-md);
-  font-size: 13px;
+  gap: 10px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 7px;
+  font-size: var(--fs-md);
   font-weight: 500;
   color: var(--text-secondary);
   text-decoration: none;
+  transition: background-color 0.12s ease, color 0.12s ease;
 }
 
 .navItem:hover { background: var(--bg-tertiary); color: var(--text-primary); }
 /* Each area's icon in its hue, always: the sidebar reads as places, not a
-   list. The open one is washed in it. */
-.navItem svg { color: var(--tone, var(--accent)); }
+   list. The open one is washed in it and marked at its edge. */
+.navItem svg { flex: 0 0 auto; color: var(--tone, var(--accent)); }
 .active, .active:hover {
-  background: color-mix(in srgb, var(--tone, var(--accent)) 12%, transparent);
+  background: color-mix(in srgb, var(--tone, var(--accent)) 11%, transparent);
   color: var(--text-primary);
+  font-weight: 600;
+}
+
+.active::before {
+  content: '';
+  position: absolute;
+  left: -10px;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--tone, var(--accent));
 }
 
 /* A section's pages, under it while you are inside it. A rule down the left
@@ -57,15 +93,18 @@
   display: flex;
   flex-direction: column;
   gap: 1px;
-  margin: 2px 0 6px 17px;
+  margin: 2px 0 4px 18px;
   padding-left: 10px;
-  border-left: 1px solid var(--border-primary);
+  border-left: 1px solid var(--rule);
 }
 
 .subItem {
-  padding: 5px 10px;
-  border-radius: var(--radius-sm);
-  font-size: 12.5px;
+  display: flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 6px;
+  font-size: var(--fs-sm);
   color: var(--text-secondary);
   text-decoration: none;
 }
@@ -74,15 +113,15 @@
 .subActive, .subActive:hover { color: var(--text-primary); font-weight: 600; background: var(--bg-tertiary); }
 
 .foot {
-  margin-top: auto;
-  padding: 11px 14px;
-  border-top: 1px solid var(--border-primary);
-  font-size: 11.5px;
+  flex: 0 0 auto;
+  padding: 12px 18px;
+  border-top: 1px solid var(--rule);
+  font-size: var(--fs-xs);
   color: var(--text-secondary);
   overflow-wrap: anywhere;
 }
 
-.footMeta { color: var(--text-tertiary); font-size: 11px; }
+.footMeta { margin-top: 1px; color: var(--text-tertiary); font-size: 11px; }
 
 .lan {
   display: flex;
@@ -90,16 +129,16 @@
   gap: 6px;
   margin-bottom: 9px;
   padding: 4px 8px;
-  border-radius: var(--radius-md);
+  border-radius: 6px;
   background: var(--accent-subtle);
   color: var(--accent);
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   font-weight: 600;
 }
 
 .lanClock {
   margin-left: auto;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-weight: 500;
 }
 
@@ -111,26 +150,23 @@
   z-index: 10;
   /* The banners in here are tinted with transparency; without a ground under
      them the page scrolls through visibly. */
-  background: var(--bg-primary);
+  background: var(--page-bg);
 }
 
+/* Only the session's own controls, at the right. Which gateway this is and
+   where you are in it are the Overview's and the sidebar's to say. */
 .topbar {
   height: var(--bar-height);
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 12px;
-  padding: 0 20px;
-  border-bottom: 1px solid var(--border-primary);
-  background: var(--bg-primary);
+  padding: 0 var(--space-5);
+  border-bottom: 1px solid var(--rule);
+  background: var(--sidebar-bg);
 }
 
-.topbarTitle {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-.topbarActions { display: flex; gap: 8px; }
+.topbarActions { display: flex; gap: 4px; }
 
 /* The whole window, not a column down the middle of it. A 920px column on a
    1440px screen left a third of the window blank on each side and stacked
@@ -143,22 +179,23 @@
   flex: 1;
   width: 100%;
   min-width: 0;
-  padding: 20px 24px 40px;
+  padding: var(--space-6) var(--space-6) 48px;
 }
 
+/* A page may narrow its columns (--card-min) when its cards are small: the
+   Overview fits three across where a settings page fits two. */
 .content:not(.wide) > :global(.fade-in) {
   --section-gap: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--card-min, 420px)), 1fr));
+  gap: var(--space-4);
   /* Cards in a row are one height, so their edges line up across the page;
      a chart card turns the extra height into plot. */
   align-items: stretch;
 }
 
 /* Anything that is not a card (a notice, tabs, a toolbar) is a row of its
-   own. Pages.module.css's grid2 gives up its own box, so the cards in it
-   join the page's columns instead of forming a second grid inside one. */
+   own. */
 .content:not(.wide) > :global(.fade-in) > :not(section) {
   grid-column: 1 / -1;
   margin-top: 0;
@@ -166,7 +203,7 @@
 }
 
 .wide {
-  --section-gap: 16px;
+  --section-gap: var(--space-4);
 }
 
 /* Phone: the sidebar becomes a scrolling tab strip across the top. A 210px
@@ -182,13 +219,19 @@
     align-items: center;
     gap: 4px;
     overflow-x: auto;
+    border-right: none;
+    border-bottom: 1px solid var(--rule);
+    scrollbar-width: none;
   }
-  .brand { border-bottom: none; border-right: 1px solid var(--border-primary); flex: 0 0 auto; }
-  .nav { flex-direction: row; padding: 8px; }
-  .navItem { white-space: nowrap; }
+  .brand { height: 48px; padding: 0 14px; border-bottom: none; border-right: 1px solid var(--rule); flex: 0 0 auto; }
+  .nav { flex-direction: row; align-items: center; overflow: visible; padding: 0 8px; gap: 2px; }
+  .group { display: contents; }
+  .groupLabel { display: none; }
+  .navItem { height: 32px; white-space: nowrap; }
+  .active::before { left: 10px; right: 10px; top: auto; bottom: -8px; width: auto; height: 2px; border-radius: 2px; }
   .foot { display: none; }
-  .topbarTitle { display: none; }
-  .content { padding: 12px; }
+  .topbar { height: 44px; padding: 0 var(--space-2); }
+  .content { padding: var(--space-3) var(--space-3) 32px; }
 }
 
 /* Same shape as the recovery banner: a strip under the topbar rather than a
@@ -198,8 +241,8 @@
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 8px 18px;
-  font-size: 12.5px;
+  padding: 8px var(--space-5);
+  font-size: var(--fs-sm);
   line-height: 1.4;
   color: var(--text);
   background: color-mix(in srgb, var(--status-warning) 12%, transparent);
@@ -223,7 +266,7 @@
 /* Phone: the section's pages join the scrolling strip beside their parent
    rather than stacking under it, which the strip has no room for. */
 @media (max-width: 760px) {
-  .nav > div { display: contents; }
-  .subnav { flex-direction: row; margin: 0; padding-left: 6px; }
-  .subItem { white-space: nowrap; }
+  .entry { display: contents; }
+  .subnav { flex-direction: row; align-items: center; margin: 0 4px 0 0; padding-left: 6px; }
+  .subItem { height: 30px; white-space: nowrap; }
 }

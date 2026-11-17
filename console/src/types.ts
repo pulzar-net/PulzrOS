@@ -275,6 +275,8 @@ export interface LorawanStatus {
     transmitted: number | null;
     crcOkPercent: number | null;
     lastUplink: string | null;
+    /** Received, added up since boot. Absent on firmware from before it. */
+    totalReceived?: number | null;
   };
   bridge: { connected: boolean; broker: string | null };
   /** Whether uplinks may use the metered link, and whether they are leaving
@@ -397,12 +399,45 @@ export interface LedMapping {
   present: boolean;
 }
 
+/** A physical light: one line of the board's PULZR_LEDS, or, on a board
+    without that list, one entry of /sys/class/leds. */
+export interface PanelLight {
+  /** Its /sys/class/leds name, or rgb:<function> for one RGB light. */
+  name: string;
+  colour: 'green' | 'red' | 'orange' | 'amber' | 'yellow' | 'blue' | 'white' | 'rgb' | null;
+  role: 'power' | 'status' | 'cloud' | 'lora' | 'ethernet' | 'wifi' | 'cellular' | 'bluetooth' | null;
+  /** What the panel prints beside it; null from the kernel's list. */
+  label: string | null;
+  /** The kernel has it. False is a board file naming a light it does not. */
+  present: boolean;
+  /** Its trigger (heartbeat, netdev...), or on or off; null when missing. */
+  state: string | null;
+}
+
 export interface IoStatus {
   leds: LedMapping[];
   /** Every LED the kernel exposes, so a wrong board mapping is fixable by
       looking rather than by guessing. */
   available: string[];
+  /** The lights to show. `board` when the board lists its own, `kernel` when
+      it does not. Absent on firmware from before the list. */
+  panel?: { source: 'board' | 'kernel'; lights: PanelLight[] };
   button: { reset: string | null; holdSeconds: number };
+}
+
+/** GET /api/bluetooth/status. */
+export interface BluetoothStatus {
+  state: 'on' | 'off' | 'absent';
+  enabled: boolean;
+  running: boolean;
+  rebootRequired: boolean;
+  oui: string;
+  minRssi: number;
+  /** The scanner's last batch: beacons heard in it and the advertisements
+      they sent (adverts is absent from firmware before it was counted). */
+  heard: { at: number; beacons: number; adverts?: number } | null;
+  /** Seconds a batch covers. */
+  interval?: number;
 }
 
 // ── provisioning ────────────────────────────────────────────────────────────

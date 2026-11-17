@@ -5,11 +5,11 @@
   /* A button's label is never improved by being wrapped. */
   white-space: nowrap;
   padding: 7px 13px;
-  border-radius: var(--radius-md);
+  border-radius: 8px;
   border: 1px solid var(--border-primary);
   background: var(--bg-elevated);
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: var(--fs-md);
   font-weight: 500;
   font-family: inherit;
   cursor: pointer;

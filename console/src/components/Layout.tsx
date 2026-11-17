@@ -1,11 +1,9 @@
 import { Suspense, type CSSProperties } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { LogOut, Network, RefreshCw, ShieldAlert } from 'lucide-react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { api } from '@/services/api';
-import type { SystemSummary } from '@/types';
+import { useQueryClient } from '@tanstack/react-query';
 import { useSession } from '@/contexts/SessionContext';
-import { NAV, type Tone } from '@/nav';
+import { NAV, NAV_GROUPS, type NavEntry, type Tone } from '@/nav';
 import RecoveryBanner from './RecoveryBanner';
 import { useSessionCountdown } from '@/hooks/useSessionCountdown';
 import { useFeatures } from '@/hooks/useFeatures';
@@ -24,19 +22,17 @@ export default function Layout({
   const location = useLocation();
   const queryClient = useQueryClient();
   const features = useFeatures();
-  const nav = NAV.filter((entry) => features.has(entry.feature))
-    .map((entry) => ({
-      ...entry,
-      children: entry.children?.filter((child) => features.has(child.feature)),
-    }))
-    .filter((entry) => !entry.children || entry.children.length > 0);
-
-  // Which gateway this is, on every page. The page's own name is already its
-  // heading; repeating it up here said the same thing twice per screen.
-  const summary = useQuery({
-    queryKey: ['system-summary'],
-    queryFn: () => api.get<SystemSummary>('/system/summary'),
-  });
+  const available = (entries: NavEntry[]) =>
+    entries
+      .filter((entry) => features.has(entry.feature))
+      .map((entry) => ({
+        ...entry,
+        children: entry.children?.filter((child) => features.has(child.feature)),
+      }))
+      .filter((entry) => !entry.children || entry.children.length > 0);
+  // A heading whose entries this board has none of goes with them.
+  const groups = NAV_GROUPS.map((group) => ({ ...group, entries: available(group.entries) }))
+    .filter((group) => group.entries.length > 0);
 
   return (
     <div className={styles.shell}>
@@ -46,39 +42,44 @@ export default function Layout({
         </div>
 
         <nav className={styles.nav}>
-          {nav.map(({ path, label, icon: Icon, tone, children }) => {
-            const inside = path !== '/' && location.pathname.startsWith(path);
-            return (
-              <div key={path}>
-                <NavLink
-                  to={children ? children[0].path : path}
-                  end={path === '/'}
-                  className={({ isActive }) =>
-                    `${styles.navItem} ${isActive || inside ? styles.active : ''}`
-                  }
-                  style={{ '--tone': `var(--hue-${tone})` } as CSSProperties}
-                >
-                  <Icon size={15} strokeWidth={2} />
-                  {label}
-                </NavLink>
-                {children && inside && (
-                  <div className={styles.subnav}>
-                    {children.map((child) => (
-                      <NavLink
-                        key={child.path}
-                        to={child.path}
-                        className={({ isActive }) =>
-                          `${styles.subItem} ${isActive ? styles.subActive : ''}`
-                        }
-                      >
-                        {child.label}
-                      </NavLink>
-                    ))}
+          {groups.map((group) => (
+            <div key={group.label ?? ''} className={styles.group}>
+              {group.label && <div className={styles.groupLabel}>{group.label}</div>}
+              {group.entries.map(({ path, label, icon: Icon, tone, children }) => {
+                const inside = path !== '/' && location.pathname.startsWith(path);
+                return (
+                  <div key={path} className={styles.entry}>
+                    <NavLink
+                      to={children ? children[0].path : path}
+                      end={path === '/'}
+                      className={({ isActive }) =>
+                        `${styles.navItem} ${isActive || inside ? styles.active : ''}`
+                      }
+                      style={{ '--tone': `var(--hue-${tone})` } as CSSProperties}
+                    >
+                      <Icon size={16} strokeWidth={1.9} />
+                      {label}
+                    </NavLink>
+                    {children && inside && (
+                      <div className={styles.subnav}>
+                        {children.map((child) => (
+                          <NavLink
+                            key={child.path}
+                            to={child.path}
+                            className={({ isActive }) =>
+                              `${styles.subItem} ${isActive ? styles.subActive : ''}`
+                            }
+                          >
+                            {child.label}
+                          </NavLink>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            );
-          })}
+                );
+              })}
+            </div>
+          ))}
         </nav>
 
         <div className={styles.foot}>
@@ -99,16 +100,16 @@ export default function Layout({
       <div className={styles.main}>
         <div className={styles.top}>
           <header className={styles.topbar}>
-            <span className={styles.topbarTitle}>{summary.data?.identity.hostname ?? ''}</span>
             <div className={styles.topbarActions}>
               <Button
+                variant="quiet"
                 onClick={() => queryClient.invalidateQueries()}
                 title="Re-read everything from the gateway"
               >
                 <RefreshCw size={14} strokeWidth={2} />
                 Refresh
               </Button>
-              <Button onClick={signOut}>
+              <Button variant="quiet" onClick={signOut}>
                 <LogOut size={14} strokeWidth={2} />
                 Sign out
               </Button>

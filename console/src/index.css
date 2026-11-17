@@ -18,23 +18,29 @@ html, body, #root {
   font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: var(--bg-primary);
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  background: var(--page-bg);
   color: var(--text-primary);
   font-size: 14px;
 }
 
 h1, h2, h3 {
   font-family: Outfit, Inter, -apple-system, BlinkMacSystemFont, sans-serif;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.01em;
   margin: 0;
 }
 
 a { color: var(--accent); }
 
 code, .mono {
-  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
 }
+
+/* Figures that change in place keep their width, so a counter ticking from
+   9 to 10 does not shove its neighbours. */
+.num { font-variant-numeric: tabular-nums; }
 
 :focus-visible {
   outline: 2px solid var(--border-focus);
@@ -45,4 +51,8 @@ code, .mono {
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(3px); }
   to   { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fade-in { animation: none; }
 }

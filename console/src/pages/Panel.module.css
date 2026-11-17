@@ -1,0 +1,94 @@
+/* The panel's lights as rows: a lamp in the light's own colour, its label
+   over its role and sysfs name, and what it is doing now at the end. */
+.lights {
+  display: flex;
+  flex-direction: column;
+  margin: -6px calc(-1 * var(--card-pad)) -10px;
+}
+
+.light {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 50px;
+  padding: 8px var(--card-pad);
+  border-top: 1px solid var(--rule);
+}
+
+.light:first-child { border-top: none; }
+
+/* Unlit, a ring in the colour; lit, filled and glowing. */
+.lamp {
+  --lamp: var(--text-tertiary);
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--lamp);
+  background: transparent;
+}
+
+.lamp[data-colour='green']  { --lamp: #22c55e; }
+.lamp[data-colour='red']    { --lamp: #ef4444; }
+.lamp[data-colour='orange'] { --lamp: #f97316; }
+.lamp[data-colour='amber']  { --lamp: #f59e0b; }
+.lamp[data-colour='yellow'] { --lamp: #eab308; }
+.lamp[data-colour='blue']   { --lamp: #3b82f6; }
+.lamp[data-colour='white']  { --lamp: #cbd5e1; }
+.lamp[data-colour='rgb'] {
+  border-color: transparent;
+  background: conic-gradient(#ef4444, #22c55e, #3b82f6, #ef4444) border-box;
+  -webkit-mask: radial-gradient(circle, transparent 3px, #000 3.5px);
+  mask: radial-gradient(circle, transparent 3px, #000 3.5px);
+}
+
+.lit {
+  background: var(--lamp);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--lamp) 22%, transparent);
+}
+
+.lamp[data-colour='rgb'].lit {
+  -webkit-mask: none;
+  mask: none;
+  background: conic-gradient(#ef4444, #22c55e, #3b82f6, #ef4444);
+}
+
+.main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.label {
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.meta {
+  display: flex;
+  gap: var(--space-2);
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.meta :global(.mono) { font-size: 11px; color: var(--text-tertiary); }
+
+.state {
+  flex: 0 0 auto;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+
+.empty {
+  padding: var(--space-4) 0;
+  text-align: center;
+  font-size: var(--fs-sm);
+  color: var(--text-tertiary);
+}

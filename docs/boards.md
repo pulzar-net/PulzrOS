@@ -55,6 +55,12 @@ confinement, the LoRa stack — is shared and must not be duplicated.
    unset; `pulzr-io-daemon` folds their state into the ones that exist rather
    than pretending the board has more lights than it does.
 
+   `PULZR_LEDS` lists the panel itself, one `<sysfs name> <colour> <role>
+   <label>` line per light the SoC drives, from the board's device tree
+   (`boards/common/board.conf` has the words each column takes). The
+   console's Panel page shows exactly these, with what each is doing now; a
+   board that leaves it empty gets `/sys/class/leds` listed instead.
+
 5. Optionally add `boards/<id>/files/` for literal files to overlay. These win
    over `boards/common/files/`.
 

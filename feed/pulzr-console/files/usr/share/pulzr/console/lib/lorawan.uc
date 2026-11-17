@@ -398,6 +398,9 @@ status = function() {
             transmitted: stats ? stats.tx_emitted : null,
             crcOkPercent: stats ? stats.crc_ok_percent : null,
             lastUplink: stats ? stats.last_uplink : null,
+            // Every stats interval's count added up since pulzr-io started,
+            // which is boot: the running total its LoRa light flashes on.
+            totalReceived: stats ? stats.total_received : null,
         },
         bridge: {
             // Buffered, the forwarder's own connection is to loopback and is

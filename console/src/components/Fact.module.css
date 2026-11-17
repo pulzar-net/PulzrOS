@@ -3,14 +3,19 @@
   /* The label column sizes to the longest label and then stops, so values
      start at the same x on every card without a hardcoded width that breaks
      the first time somebody adds a longer label. */
-  grid-template-columns: minmax(150px, max-content) 1fr;
+  grid-template-columns: minmax(130px, max-content) 1fr;
   /* Stretch, not baseline: baseline alignment offsets cells of different
      font sizes by fractions of a pixel, so the label's rule and the value's
      rule landed at different heights and blurred into nothing. Both cells now
      fill the row and share a line height, so the text still lines up. */
   align-items: stretch;
-  margin: 0;
+  /* Tucked into the card's padding: the first row's text sits where any
+     other content's first line would, not a row's padding lower. */
+  margin: -6px 0 -8px;
 }
+
+/* Two lists in one card, or a list after something else. */
+* + .list { margin-top: var(--space-2); }
 
 .fact { display: contents; }
 
@@ -20,28 +25,28 @@
 .label,
 .value,
 .mono {
-  padding: 8px 0;
+  padding: 7px 0;
   line-height: 20px;
-  border-bottom: 1px solid var(--border-primary);
+  border-bottom: 1px solid var(--rule);
 }
 
 .fact:last-child > * { border-bottom: none; }
 
 .label {
-  padding-right: 24px;
-  font-size: 12.5px;
+  padding-right: var(--space-5);
+  font-size: var(--fs-sm);
   color: var(--text-secondary);
 }
 
 .value {
-  font-size: 13px;
+  font-size: var(--fs-md);
   color: var(--text-primary);
   min-width: 0;
   overflow-wrap: anywhere;
 }
 
 .mono {
-  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   color: var(--text-primary);
   min-width: 0;

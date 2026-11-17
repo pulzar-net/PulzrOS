@@ -152,3 +152,47 @@
     --hue-slate:  #94a3b8;
   }
 }
+
+/* ================================================================
+   The gateway console's own
+   ================================================================
+
+   One type scale, one spacing step and one card, so every page is set the
+   same way: a value sits at the same size and the same distance from its
+   label wherever it is. The page is a shade off the cards in light, so a card
+   reads as a panel without a heavy shadow; in dark the cards are the lighter
+   surface already. */
+
+:root {
+  --fs-2xs: 10.5px;  /* sidebar group labels, table headers */
+  --fs-xs:  11.5px;  /* badges, notes, a stat's label */
+  --fs-sm:  12.5px;  /* a fact's label, secondary text */
+  --fs-md:  13px;    /* values, body, controls */
+  --fs-lg:  13.5px;  /* a card's title */
+  --fs-stat: 21px;   /* a stat's value */
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+
+  --card-radius: 10px;
+  --card-pad: 16px;
+  --card-head: 46px;
+
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+
+  --page-bg:    #f4f6f9;
+  --sidebar-bg: #ffffff;
+  --rule:       #e6eaf0;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --page-bg:    #0c111d;
+    --sidebar-bg: #0f1522;
+    --rule:       #1c2636;
+  }
+}

@@ -22,7 +22,7 @@ let _m_util = loadfile('/usr/share/pulzr/console/lib/util.uc', { raw_mode: true 
 // Declaring the names first makes every one of them a known local before any
 // body is compiled, so closures capture the binding rather than a missing
 // global and definition order stops mattering. auth.uc alone had six of these.
-let boardLeds, boardValue, status, test;
+let boardLeds, boardValue, boardPanel, ledState, panel, status, test;
 
 let run = _m_util.run;
 
@@ -48,6 +48,81 @@ boardValue = function(key) {
     if (!raw) return null;
     const m = match(raw, sprintf("%s='?([^'\n]*)'?", key));
     return m ? m[1] : null;
+};
+
+// PULZR_LEDS, the board's own list of its lights (boards/common/board.conf):
+// one `<sysfs name> <colour> <role> <label>` per line, in panel order. build.sh
+// writes it with its newlines, so it spans lines between its quotes. Null on a
+// board that has none.
+boardPanel = function() {
+    const raw = readfile('/etc/pulzr/board.conf');
+    if (!raw) return null;
+    const lights = [];
+    let inside = false;
+    for (let line in split(raw, '\n')) {
+        if (!inside) {
+            if (substr(line, 0, 12) != "PULZR_LEDS='") continue;
+            inside = true;
+            line = substr(line, 12);
+        }
+        const end = index(line, "'");
+        const f = match(trim(end >= 0 ? substr(line, 0, end) : line), /^(\S+)\s+(\S+)\s+(\S+)\s+(.+)$/);
+        if (f) push(lights, { name: f[1], colour: f[2], role: f[3], label: f[4] });
+        if (end >= 0) break;
+    }
+    return length(lights) ? lights : null;
+};
+
+// What a light is doing now: its trigger when one drives it, otherwise on or
+// off. An RGB light is whichever of its channels is not off.
+ledState = function(name) {
+    if (substr(name, 0, 4) == 'rgb:') {
+        for (let c in ['red', 'green', 'blue']) {
+            const s = ledState(c + ':' + substr(name, 4));
+            if (s && s != 'off') return s == 'on' ? c : c + ' ' + s;
+        }
+        return 'off';
+    }
+    // The trigger file lists every trigger, the current one in brackets.
+    const triggers = readfile(sprintf('%s/%s/trigger', LEDS, name)) ?? '';
+    const from = index(triggers, '['), to = index(triggers, ']');
+    const trigger = from >= 0 && to > from ? substr(triggers, from + 1, to - from - 1) : 'none';
+    if (trigger != 'none') return trigger;
+    const brightness = readfile(sprintf('%s/%s/brightness', LEDS, name));
+    if (brightness == null) return null;
+    return int(trim(brightness)) > 0 ? 'on' : 'off';
+};
+
+// The lights to show: the board's list where it has one, and every LED the
+// kernel exposes where it does not, each with the role pulzr-io gives it.
+panel = function(map, present) {
+    const has = (name) => substr(name, 0, 4) == 'rgb:'
+        ? length(filter(['red', 'green', 'blue'], (c) => index(present, c + ':' + substr(name, 4)) >= 0)) == 3
+        : index(present, name) >= 0;
+    const declared = boardPanel();
+    if (declared) {
+        for (let l in declared) {
+            l.present = has(l.name);
+            l.state = l.present ? ledState(l.name) : null;
+        }
+        return { source: 'board', lights: declared };
+    }
+    const roles = {};
+    for (let logical in LOGICAL)
+        if (map[logical]) roles[map[logical]] = logical == 'lora2' ? 'lora' : logical;
+    const lights = [];
+    for (let name in sort([...present])) {
+        const colour = match(name, /(^|:)(green|red|orange|amber|yellow|blue|white)(:|$)/);
+        push(lights, {
+            name: name,
+            colour: colour ? colour[2] : null,
+            role: roles[name] ?? null,
+            label: null,
+            present: true,
+            state: ledState(name),
+        });
+    }
+    return { source: 'kernel', lights: lights };
 };
 
 status = function() {
@@ -88,6 +163,7 @@ status = function() {
     return {
         leds: leds,
         available: spare,
+        panel: panel(map, present),
         button: {
             reset: boardValue('PULZR_BUTTON_RESET') || null,
             holdSeconds: int(boardValue('PULZR_BUTTON_RESET_HOLD') || '10'),
