@@ -100,7 +100,7 @@ if [ "${PULZR_WAN_CELL_ENABLED}" = "1" ]; then
 # interface simply does not come up.
 #
 # signalrate: ModemManager reads RSSI and RSRP only when asked to poll them,
-# and without it the report's cellular signal is always empty (Downey on
+# and without it the report's cellular signal is always empty (a bench Pi on
 # 0.4.0-rc3: refresh rate 0, every dBm "--"). Once a minute costs the modem
 # nothing it is not already doing.
 uci -q batch <<EOF

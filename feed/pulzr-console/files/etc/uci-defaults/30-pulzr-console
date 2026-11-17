@@ -99,7 +99,7 @@ set uhttpd.main.max_requests='16'
 set uhttpd.main.max_connections='64'
 set uhttpd.main.script_timeout='600'
 # An image upload over a SIM stalls for longer than 30 s at a time; uhttpd
-# then drops it part way (found on Downey, 14 Nov 2026: 1.5 MB of 34 MB).
+# then drops it part way (found on a bench Pi, 14 Nov 2026: 1.5 MB of 34 MB).
 set uhttpd.main.network_timeout='300'
 # Two minutes, not twenty seconds. Through the cloud every new connection is
 # a TLS handshake on this CPU, about 100ms each and one at a time, and

@@ -145,7 +145,7 @@ stub df 'case "$3" in /overlay) exit 1 ;; esac; printf "Filesystem 1K-blocks Use
 check "no uplinks, root storage" '{"memoryUsedPercent":75.0,"storageUsedPercent":70}' "$(run)"
 
 # ── no refresh rate set: mmcli has no dBm, and a percentage is not one ──────
-# What Downey answered on 0.4.0-rc3 before wwan had a signalrate.
+# What a bench Pi answered on 0.4.0-rc3 before wwan had a signalrate.
 full_board
 stub mmcli 'case "$*" in
     *--signal-get*) printf "modem.signal.refresh.rate : 0\nmodem.signal.lte.rssi : --\nmodem.signal.lte.rsrp : --\n" ;;

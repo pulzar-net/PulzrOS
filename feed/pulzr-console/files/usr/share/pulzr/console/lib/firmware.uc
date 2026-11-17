@@ -51,7 +51,7 @@ const MANIFEST = '/tmp/pulzr-firmware.manifest';
 // 16MB, down from 24MB, because 24MB meant a RAK7268CV2 could not install its
 // own firmware and a gateway that cannot be updated remotely is a site visit.
 //
-// Measured on Osbourne rather than guessed. Freshly booted, with the radio and
+// Measured on a customer's RAK rather than guessed. Freshly booted, with the radio and
 // forwarder running: 120.4MB total, 37.7MB available, 22.1MB genuinely free
 // and 54.6MB cached. Staging a 14.5MB image leaves 23.2MB available — more
 // than the entire working set of a running gateway. 24MB left it 0.8MB short

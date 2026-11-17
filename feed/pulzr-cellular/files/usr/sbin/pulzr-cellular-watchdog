@@ -10,7 +10,7 @@
 #
 # A link that carries nothing. The 1NCE session on the RAKs is torn down and
 # re-created every 24 hours, within a second, on the same address. Nearly
-# always the gateway carries on. On 2026-10-23 the Osbourne gateway did not:
+# always the gateway carries on. On 2026-10-23 a customer's gateway did not:
 # the SIM was attached, held a fresh session and its IP, and the gateway sent
 # zero bytes over it for a day. netifd and ModemManager both believed the link
 # was fine, so for this case the watchdog does not ask them. It asks the link.

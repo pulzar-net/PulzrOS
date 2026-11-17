@@ -179,7 +179,7 @@ the WiFi device (`pulzr-wifi-resolve`), and the sign-in proxy resolves the
 same way. Not the gateway's resolver: it may ask over cellular and get the real
 address, where a portal that hijacks DNS answers with its own. Not `nslookup`
 against the WiFi's servers either: with the WiFi at metric 30 the route to them
-is the SIM's, which is how USCGuest's OpenDNS was first asked over cellular.
+is the SIM's, which is how a campus guest network's OpenDNS was first asked over cellular.
 And not a host route to those servers, which would move every lookup the
 gateway makes onto a captive WiFi and send MQTT and reports to the portal. A change of
 answer re-applies the tunnel and LoRa routing and sends a report, so
@@ -199,7 +199,7 @@ written for two 1NCE outages, each of which left a gateway offline with
 nothing on it that would ever try again.
 
 **A link that carries nothing.** 1NCE re-creates the session every 24 hours.
-On 2026-10-23 the Osbourne gateway sent zero bytes over the new one for a day
+On 2026-10-23 a customer's gateway sent zero bytes over the new one for a day
 while netifd and ModemManager both called the link fine.
 
 **A link nobody brings back.** A connectivity reset made while the network is
