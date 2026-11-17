@@ -23,6 +23,7 @@ case "${ARCH}" in
 esac
 
 bin="${SDK_OUT}/${from}/pulzr-edge"
-[ -x "${bin}" ] || { echo "no pulzr-edge for ${ARCH} in ${SDK_OUT}/${from}; build it with sdk/build.sh" >&2; exit 1; }
+# -f, not -x: a CI artifact keeps no file modes, and install sets the mode.
+[ -f "${bin}" ] || { echo "no pulzr-edge for ${ARCH} in ${SDK_OUT}/${from}; build it with sdk/build.sh" >&2; exit 1; }
 mkdir -p "${DEST}/usr/sbin"
 install -m 0755 "${bin}" "${DEST}/usr/sbin/pulzr-edge"
