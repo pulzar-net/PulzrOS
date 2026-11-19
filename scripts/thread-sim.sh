@@ -47,6 +47,9 @@ if [ ! -d "${src}/.git" ]; then
 fi
 
 jobs="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)"
+# CMake 4 refuses projects that declare a minimum below 3.5, and the cJSON
+# that ot-br-posix carries still does; OpenWrt's own host CMake is older.
+export CMAKE_POLICY_VERSION_MINIMUM=3.5
 
 if [ ! -x "${OUT}/otbr-agent" ]; then
   cmake -GNinja -S "${src}" -B "${WORK}/otbr" -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF \
