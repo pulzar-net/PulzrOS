@@ -143,31 +143,13 @@ op_radios()    { cat /var/run/pulzr-probe/radios.json 2>/dev/null || echo '{"det
 # than one argument.
 field() { jsonfilter -i "${STATE_DIR}/request.json" -e "@.$1" 2>/dev/null; }
 
-# pulzr-thread prints JSON, or an error on stderr, which becomes the error
-# object. The requests that carry a secret (a dataset with its network key, a
-# joiner's PSKd) are read from the request file on stdin, never put on a
-# command line, where every process listing would show them.
-thread() {
-    [ -x /usr/sbin/pulzr-thread ] || { echo '{"error":"Thread is not installed on this gateway"}'; return 1; }
-    local out
-    if out="$(/usr/sbin/pulzr-thread "$@" < "${STATE_DIR}/request.json" 2>&1)"; then
-        echo "${out}"
-    else
-        printf '{"error":"%s"}' "$(echo "${out}" | tail -n1 | tr -d '"\\')"
-        return 1
-    fi
-}
+# The Thread border router (pulzr-thread add-on), read only: the platform
+# sets Thread up through the console API over gateway-link, as a person's
+# session, because a dataset carries the network key and this channel's
+# far side is a broker that is not the place for one.
 op_thread() {
     [ -x /usr/sbin/pulzr-thread ] || { echo null; return 0; }
     /usr/sbin/pulzr-thread status --brief 2>/dev/null || echo null
-}
-# The active dataset, network key and all, for the platform to seal: only ever
-# in this answer, which goes to the platform over this gateway's own topic.
-op_thread_dataset() {
-    [ -x /usr/sbin/pulzr-thread ] || { echo '{"error":"Thread is not installed on this gateway"}'; return 1; }
-    local hex
-    hex="$(/usr/sbin/pulzr-thread dataset 2>/dev/null)" || { echo '{"error":"This gateway has no Thread network."}'; return 1; }
-    printf '{"dataset":"%s"}' "${hex}"
 }
 
 # pulzr-radios prints the radios as JSON, or an error on stderr, which
@@ -293,21 +275,7 @@ dispatch() {
         radio-assign)
             out="$(bounded 15 radio assign "$(field radio)" "$(field use)")" || { echo "${out}"; return 1; } ;;
 
-        # The Thread border router (pulzr-thread add-on), set up from the
-        # gateway page by a person. form and join take {"dataset", "network"},
-        # permit {"eui64", "pskd", "seconds"}; pulzr-thread validates them.
-        # Not bounded by `bounded`: it drops stderr, which is where the reason
-        # for a refusal is, and pulzr-thread bounds its own waits.
-        thread)             out="$(bounded 15 op_thread)" ;;
-        thread-use)         out="$(thread use "$(field radio)")" || { echo "${out}"; return 1; } ;;
-        thread-release)     out="$(thread release)" || { echo "${out}"; return 1; } ;;
-        thread-scan)        out="$(thread scan)" || { echo "${out}"; return 1; } ;;
-        thread-form)        out="$(thread form)" || { echo "${out}"; return 1; } ;;
-        thread-join)        out="$(thread join)" || { echo "${out}"; return 1; } ;;
-        thread-leave)       out="$(thread leave)" || { echo "${out}"; return 1; } ;;
-        thread-permit)      out="$(thread permit)" || { echo "${out}"; return 1; } ;;
-        thread-permit-stop) out="$(thread permit-stop)" || { echo "${out}"; return 1; } ;;
-        thread-dataset)     out="$(op_thread_dataset)" || { echo "${out}"; return 1; } ;;
+        thread)    out="$(bounded 15 op_thread)" ;;
 
         # Everything at once, for the case this exists to serve: somebody
         # wanting to know how a gateway is without opening anything.
@@ -402,7 +370,6 @@ fi
     exit 1
 }
 
-umask 077
 mkdir -p "${STATE_DIR}"
 
 # A radio plugged in or pulled out (pulzr-radios): the retained state again,
@@ -510,9 +477,6 @@ while IFS= read -r line; do
     printf '{"id":"%s","ok":%s,"result":%s}' "${id}" "${ok}" "${result}" \
         > "${STATE_DIR}/response.json"
     publish "${RESPONSE}" "${STATE_DIR}/response.json"
-    # A request may carry a Thread dataset and an answer may be one: neither
-    # stays on the gateway after it is sent.
-    rm -f "${STATE_DIR}/request.json" "${STATE_DIR}/response.json"
     log "${op:-?} -> ${ok}"
 done &
 

@@ -234,7 +234,7 @@ PULZR_SDK_OUT="${SDK_STUB}" bash "${ROOT_DIR}/scripts/build-feed.sh" "${ROOT_DIR
     || { fail=$((fail + 1)); echo "FAIL build-feed.sh stages the feed"; }
 # Packages ParkezeOS never shipped have no old name to answer for. Listed by
 # hand, so a renamed package cannot drop out of this check by accident.
-NEW_IN_PULZROS="pulzr-edge pulzr-probe"
+NEW_IN_PULZROS="pulzr-edge pulzr-probe pulzr-thread"
 for dir in "${ROOT_DIR}"/feed/pulzr-*/; do
     n="$(basename "${dir}")"; old="parkeze-${n#pulzr-}"
     case " ${NEW_IN_PULZROS} " in *" ${n} "*) continue ;; esac

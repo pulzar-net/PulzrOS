@@ -55,6 +55,7 @@ let apply = loadfile('/usr/share/pulzr/console/lib/apply.uc', { raw_mode: true }
 let speedtest = loadfile('/usr/share/pulzr/console/lib/speedtest.uc', { raw_mode: true })();
 let addons = loadfile('/usr/share/pulzr/console/lib/addons.uc', { raw_mode: true })();
 let radios = loadfile('/usr/share/pulzr/console/lib/radios.uc', { raw_mode: true })();
+let thread = loadfile('/usr/share/pulzr/console/lib/thread.uc', { raw_mode: true })();
 // What changes the gateway, shared with the terminal UI; see actions.uc.
 let actions = loadfile('/usr/share/pulzr/console/lib/actions.uc', { raw_mode: true })();
 
@@ -212,6 +213,17 @@ function clientAddr(env) {
     return env.REMOTE_ADDR ? env.REMOTE_ADDR : 'unknown';
 }
 
+// A Thread change (lib/thread.uc), audited by what was done, never with the
+// request: a form, a join or a permit carries a secret.
+function threadPost(op) {
+    return (env, req, s) => {
+        const result = thread.change(op, req, s);
+        if (result.error) return error(result.status, result.error);
+        auth.audit(sprintf('system.thread.%s', op), { by: s.subject });
+        return respond(200, result.result);
+    };
+}
+
 // ── routing ─────────────────────────────────────────────────────────────────
 
 const ROUTES = {
@@ -333,6 +345,23 @@ const ROUTES = {
         auth.audit('system.addon.deny', { by: s.subject, deny: req.deny, reason: req.reason ?? '' });
         return respond(200, { deny: result.deny });
     },
+
+    // ── Thread, see lib/thread.uc ───────────────────────────────────────────
+    //
+    // Read by anybody signed in; changed only by Pulzar Net (an sso session).
+    'GET  /api/system/thread': () => {
+        const result = thread.status();
+        return result.error ? error(result.status ?? 409, result.error) : respond(200, result);
+    },
+    'POST /api/system/thread/use':         threadPost('use'),
+    'POST /api/system/thread/release':     threadPost('release'),
+    'POST /api/system/thread/scan':        threadPost('scan'),
+    'POST /api/system/thread/form':        threadPost('form'),
+    'POST /api/system/thread/join':        threadPost('join'),
+    'POST /api/system/thread/leave':       threadPost('leave'),
+    'POST /api/system/thread/permit':      threadPost('permit'),
+    'POST /api/system/thread/permit-stop': threadPost('permit-stop'),
+    'POST /api/system/thread/dataset':     threadPost('dataset'),
 
     // ── network ─────────────────────────────────────────────────────────────
     'GET  /api/bluetooth/status': () => respond(200, bluetooth.status()),
