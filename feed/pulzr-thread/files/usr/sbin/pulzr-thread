@@ -514,7 +514,9 @@ let topology = (eui) => {
     if (eui) push(edges, { from: self, to: 'gw:' + eui, kind: 'bus' });
     let brs = borderRouters();
     let reporter = length(brs) && brs[0] == s.rloc16;
-    let msg = { v: 1, ts: time(), protocol: 'thread', source: 'scan', complete: true, edges };
+    // Only the reporter's view is the whole network; the others add their own
+    // link and must not prune the reporter's (adapter-ingest topology.py).
+    let msg = { v: 1, ts: time(), protocol: 'thread', source: 'scan', complete: !!reporter, edges };
     if (!reporter) return msg;
 
     let diag = restJson('/diagnostics');

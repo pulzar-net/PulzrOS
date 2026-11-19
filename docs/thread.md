@@ -101,7 +101,7 @@ each router's route table and child table.
 - each child to its parent router, `route`; a child's extended address, which
   child tables do not carry, is asked of the child once and kept by RLOC16
 
-The other border routers send only their own `bus` edge.
+The other border routers send only their own `bus` edge, with `complete` false, so they never prune the reporter's view.
 
 ## Testing
 
