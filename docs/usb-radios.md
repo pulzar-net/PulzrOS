@@ -53,6 +53,7 @@ probed either.
 | SONOFF ZBDongle-E | `1a86:55d4` + product | Zigbee (EZSP) |
 | SONOFF ZBDongle-P | `10c4:ea60` + product | Zigbee (ZNP) |
 | SMLIGHT SLZB-07 | `10c4:ea60` + product | Zigbee (EZSP), Thread |
+| Nordic nRF52840 Dongle with OpenThread's RCP | `1915:cafe` + product | Thread |
 | ConBee II | `1cf1:0030` | Zigbee (deCONZ) |
 | ConBee III | `0403:6015` + product | Zigbee (deCONZ) |
 | Nortek HUSBZB-1 | `10c4:8a2a` | Z-Wave (interface 0), Zigbee (interface 1) |
@@ -84,13 +85,16 @@ upgrades.
 
 Each radio's `id` stays the same when it is unplugged and plugged back: the USB
 serial number when the adapter has one, otherwise the port it is in. `state` is
-`free`, `unidentified`, `in-use`, `missing` or `unsupported` (a Thread radio,
-reported but not run yet).
+`free`, `unidentified`, `in-use`, `missing` or `unsupported`. A Thread radio
+is `free` until the pulzr-thread add-on runs a border router on it
+([thread.md](thread.md)), then `in-use`.
 
 ## Not yet
 
-The probe frames come from the Zigbee and Z-Wave host stacks, which are not
-built in yet. Until they are, a known adapter is reported as its table entry
-says it ships, with `probe: unavailable`, and Identify answers that this
-PulzrOS cannot probe radios. Running a Zigbee or Z-Wave network on a detected
+A Thread radio co-processor is asked by pulzr-probe itself (Spinel
+`NCP_VERSION` and `CAPS`, reads only), so it reports its OpenThread firmware and
+answers Identify. The Zigbee and Z-Wave probe frames come from their host
+stacks, which are not built in yet. Until they are, a known Zigbee or Z-Wave
+adapter is reported as its table entry says it ships, with
+`probe: unavailable`, and Identify tries only Thread. Running a Zigbee or Z-Wave network on a detected
 radio comes with those stacks, as add-ons.
