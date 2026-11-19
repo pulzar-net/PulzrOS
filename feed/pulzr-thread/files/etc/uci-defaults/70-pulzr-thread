@@ -50,4 +50,11 @@ set firewall.thread_icmp.target='ACCEPT'
 commit network
 commit firewall
 UCI
+
+# Installed on a running gateway (pulzr-addon runs this then), the zone and the
+# interface take effect now; at first boot nothing is running yet to reload.
+if pidof netifd >/dev/null 2>&1; then
+	/etc/init.d/network reload >/dev/null 2>&1
+	/etc/init.d/firewall reload >/dev/null 2>&1
+fi
 exit 0
