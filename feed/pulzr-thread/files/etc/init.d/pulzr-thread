@@ -1,0 +1,111 @@
+#!/bin/sh /etc/rc.common
+#
+# OpenThread's border router on the radio set up for Thread, and the watcher
+# that reports it (pulzr-thread watch).
+#
+# otbr-agent is started here, not by OpenWrt's netifd protocol handler
+# (openthread-br's /lib/netifd/proto/openthread.sh), for two reasons that are
+# both upstream bugs, listed with their fixes in docs/thread.md:
+#
+# - The handler starts otbr-agent without --rest-listen-address, and the
+#   agent's default is every address. Its REST API has no authentication and
+#   GET /node/dataset/active answers with the network key, so any host on a
+#   reachable network could read the key or erase the network. Here it listens
+#   on loopback only.
+# - otbr-agent keeps its settings (the active dataset, frame counters, the
+#   prefixes it published) in /var/lib/thread, which on OpenWrt is tmpfs. The
+#   handler copes by keeping the dataset in /etc/config/network, readable by
+#   every user, and setting it again at each start; frame counters and
+#   prefixes are lost at every reboot. Here /var/lib/thread is a link to a
+#   root-only directory on flash, so the agent keeps its own settings and the
+#   key is in no world-readable file. OpenThread writes it when the frame
+#   counters pass the 1000 ahead it stores, not per frame.
+#
+# START=96: after mdnsd (mDNSResponder, which otbr-agent publishes through)
+# and the network.
+
+START=96
+STOP=10
+
+USE_PROCD=1
+
+STATE=/etc/pulzr-thread/otbr
+# The backbone when there is none on purpose: a link of the gateway's own.
+# PulzrOS answers nothing on a customer network it was not asked to (see
+# 20-pulzr-network), and a border router on one would send router
+# advertisements there and give its hosts addresses. Border routing still
+# needs an infrastructure link to run, and with it the OMR prefix and the SRP
+# server Matter devices register with, so it gets this one. Devices on the
+# mesh reach the gateway's own services either way.
+DUMMY=thread-bb
+
+backbone_ifname() {
+    local net ifname
+    net="$(uci -q get pulzr_thread.main.backbone || echo isolated)"
+    if [ "${net}" = isolated ]; then
+        ip link show "${DUMMY}" >/dev/null 2>&1 || ip link add "${DUMMY}" type dummy || return 1
+        ip link set "${DUMMY}" multicast on up || return 1
+        echo "${DUMMY}"
+        return 0
+    fi
+    . /lib/functions/network.sh
+    network_get_device ifname "${net}" || return 1
+    echo "${ifname}"
+}
+
+start_service() {
+    local url backbone
+
+    [ "$(uci -q get pulzr_thread.main.enabled)" = 1 ] || return 0
+    url="$(/usr/sbin/pulzr-thread radio-url 2>&1)" || {
+        logger -t pulzr-thread -p daemon.warn "not started: ${url}"
+        return 0
+    }
+    backbone="$(backbone_ifname)" || {
+        logger -t pulzr-thread -p daemon.warn "not started: no backbone interface"
+        return 0
+    }
+
+    umask 077
+    mkdir -p "${STATE}" /var/lib
+    chmod 0700 /etc/pulzr-thread "${STATE}"
+    if [ ! -L /var/lib/thread ]; then
+        rm -rf /var/lib/thread
+        ln -s "${STATE}" /var/lib/thread
+    fi
+
+    procd_open_instance otbr
+    # TREL over the backbone only when the backbone is a real link: over the
+    # isolated one it would carry nothing.
+    if [ "${backbone}" = "${DUMMY}" ]; then
+        procd_set_param command /usr/sbin/otbr-agent -I wpan0 -B "${backbone}" \
+            --rest-listen-address 127.0.0.1 "${url}"
+    else
+        procd_set_param command /usr/sbin/otbr-agent -I wpan0 -B "${backbone}" \
+            --rest-listen-address 127.0.0.1 "${url}" "trel://${backbone}"
+    fi
+    # A dongle pulled out ends the agent; it comes back when the dongle does.
+    procd_set_param respawn 3600 10 0
+    procd_set_param stderr 1
+    procd_close_instance
+
+    procd_open_instance watch
+    procd_set_param command /usr/sbin/pulzr-thread watch
+    procd_set_param respawn 3600 30 0
+    procd_set_param stderr 1
+    procd_close_instance
+}
+
+stop_service() {
+    ip link del "${DUMMY}" 2>/dev/null
+    return 0
+}
+
+service_triggers() {
+    procd_add_reload_trigger pulzr_thread
+}
+
+reload_service() {
+    stop
+    start
+}

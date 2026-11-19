@@ -1,0 +1,7 @@
+# OpenWrt packages this add-on brings, fetched with their dependencies from the
+# release's own signed feeds and published unchanged beside it
+# (scripts/addon-upstream.sh). The border router is OpenThread's, as OpenWrt
+# builds it: no Thread stack of our own.
+openthread-br
+# `ip link add ... type dummy`, for the isolated backbone (init.d/pulzr-thread).
+ip-tiny

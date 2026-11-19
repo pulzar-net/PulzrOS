@@ -516,7 +516,16 @@ let install = (name, by, action) => {
         return fail(name, by, action, sprintf('The add-on catalog there is not for %s.', tag(b)));
     let entry = (n) => {
         for (let x in catalog.addons ?? []) if (x?.name == n) return x.arches?.[a];
+        for (let x in catalog.upstream ?? []) if (x?.name == n) return x.arches?.[a];
         return null;
+    };
+    // An OpenWrt package this add-on brings unchanged (scripts/addon-upstream.sh):
+    // in the signed index only because the build put it there for this add-on,
+    // and never one of ours, which would have to be an add-on in its own right.
+    let brought = (n) => {
+        if (match(n, /^(pulzr-|kmod-)/)) return false;
+        for (let x in catalog.upstream ?? []) if (x?.name == n) return name in (x.by ?? []);
+        return false;
     };
     if (!entry(name))
         return fail(name, by, action, sprintf('PulzrOS %s has no %s for this gateway.', b.PULZR_VERSION, title(rel, name)),
@@ -550,7 +559,7 @@ let install = (name, by, action) => {
         return fail(name, by, action, sprintf('apk did not say what installing %s would add.', title(rel, name)));
     let need = SPARE;
     for (let p in pkgs) {
-        if (!rel[p])
+        if (!rel[p] && !brought(p))
             return fail(name, by, action, sprintf('%s needs %s, which is not an add-on of this release.', title(rel, name), p));
         let locked = lockedOff(rel, p, deny);
         if (locked) return fail(name, by, action, locked, false, 'failed');

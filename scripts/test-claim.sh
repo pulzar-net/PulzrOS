@@ -213,6 +213,16 @@ printf '#!/bin/sh\necho "{\\"detected\\":[{"\n' > "${STUBS}/pulzr-radios"
 claim report
 check "an unreadable radio list is null, and the report still parses" \
     python3 -c 'import json,sys; assert json.loads(sys.argv[1])["facts"]["radios"] is None' "$(last_body report)"
+
+# The Thread border router (pulzr-thread): its brief status, null without it.
+check "a gateway without pulzr-thread reports thread as null" \
+    python3 -c 'import json,sys; assert json.loads(sys.argv[1])["facts"]["thread"] is None' "$(last_body report)"
+printf '#!/bin/sh\necho "{\\"enabled\\":true,\\"agent\\":\\"running\\",\\"role\\":\\"leader\\"}"\n' > "${STUBS}/pulzr-thread"
+chmod +x "${STUBS}/pulzr-thread"
+claim report
+check "the border router's status rides the report" \
+    python3 -c 'import json,sys; assert json.loads(sys.argv[1])["facts"]["thread"]["role"] == "leader"' "$(last_body report)"
+rm -f "${STUBS}/pulzr-thread"
 rm -f "${STUBS}/pulzr-radios" "${STUBS}/pulzr-timeout"
 
 # The list alone, from hotplug: what pulzr-probe wrote, under the claim's proof.

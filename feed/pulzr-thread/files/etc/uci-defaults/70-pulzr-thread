@@ -1,0 +1,53 @@
+#!/bin/sh
+#
+# The border router's config, in its own file so that writing it restarts only
+# the border router. Created once; an upgrade keeps it (keep.d/pulzr-thread).
+#
+#   radio     the detected radio id it runs on; set when a person sets up Thread
+#   enabled   1 once a radio is set
+#   backbone  isolated (default), or a network: devlan, wan
+#
+# And the firewall zone for wpan0. OpenThread's own UDP (MLE, the TMF, SRP,
+# DNS) runs on host sockets bound to wpan0, and Matter is UDP, so UDP and
+# ICMPv6 from the mesh are let in; nothing else is, so a Thread device cannot
+# reach the console or SSH. Forwarding to a backbone is the backbone
+# setting's to open.
+
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+
+if [ "$(uci -q get pulzr_thread.main)" != "thread" ]; then
+	touch /etc/config/pulzr_thread
+	uci -q batch <<UCI
+set pulzr_thread.main=thread
+set pulzr_thread.main.enabled='0'
+set pulzr_thread.main.backbone='isolated'
+commit pulzr_thread
+UCI
+fi
+
+uci -q batch <<UCI
+set network.thread=interface
+set network.thread.proto='none'
+set network.thread.device='wpan0'
+set firewall.thread=zone
+set firewall.thread.name='thread'
+set firewall.thread.network='thread'
+set firewall.thread.input='DROP'
+set firewall.thread.output='ACCEPT'
+set firewall.thread.forward='DROP'
+set firewall.thread_udp=rule
+set firewall.thread_udp.name='Allow-Thread-UDP'
+set firewall.thread_udp.src='thread'
+set firewall.thread_udp.proto='udp'
+set firewall.thread_udp.family='ipv6'
+set firewall.thread_udp.target='ACCEPT'
+set firewall.thread_icmp=rule
+set firewall.thread_icmp.name='Allow-Thread-ICMPv6'
+set firewall.thread_icmp.src='thread'
+set firewall.thread_icmp.proto='icmp'
+set firewall.thread_icmp.family='ipv6'
+set firewall.thread_icmp.target='ACCEPT'
+commit network
+commit firewall
+UCI
+exit 0

@@ -1,0 +1,10 @@
+# <package arch> <Depends, comma-separated or ->
+#
+# Scripts only; built per architecture because the add-on repository is, and
+# because openthread-br is a binary for each.
+mipsel_24kc          openthread-br, ip-tiny, curl
+mipsel_24kc_24kf     openthread-br, ip-tiny, curl
+mips_24kc            openthread-br, ip-tiny, curl
+aarch64_cortex-a53   openthread-br, ip-tiny, curl
+aarch64_cortex-a72   openthread-br, ip-tiny, curl
+aarch64_cortex-a76   openthread-br, ip-tiny, curl

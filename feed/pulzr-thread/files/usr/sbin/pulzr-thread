@@ -1,0 +1,695 @@
+#!/usr/bin/ucode
+// The Thread border router on this gateway: OpenThread's otbr-agent (OpenWrt's
+// openthread-br), driven through its REST API on loopback and ot-ctl.
+//
+//   pulzr-thread status [--brief]    JSON: the radio, the agent, this border
+//                                      router's role and the network, no keys
+//   pulzr-thread use <radio>         run the border router on this radio
+//   pulzr-thread release             stop it and free the radio (the network
+//                                      stays on flash until leave)
+//   pulzr-thread radio-url           the agent's radio URL, from the radio set
+//                                      up for Thread and what pulzr-probe found
+//   pulzr-thread scan                energy per channel and the quietest of
+//                                      the channels Wi-Fi leaves alone
+//   pulzr-thread form   < request    start a new network from a dataset
+//   pulzr-thread join   < request    join an existing one: the same dataset
+//   pulzr-thread leave               stop and erase the network from this
+//                                      gateway (its key with it)
+//   pulzr-thread permit < request    let a device join with its PSKd
+//   pulzr-thread permit-stop         stop letting devices join
+//   pulzr-thread dataset             the active dataset as hex TLVs (secret)
+//   pulzr-thread topology            a protocol v1 topology message
+//   pulzr-thread watch               publish state and topology until killed
+//
+// A request on stdin is JSON. form and join take {"dataset": hex, "network":
+// uuid}; permit takes {"eui64": hex or "*", "pskd": string, "seconds": n}.
+// They come on stdin, never as arguments, because arguments are in every
+// process listing and the dataset carries the network key.
+//
+// form and join do the same thing to this gateway: set the active dataset and
+// start Thread. A border router with a dataset that hears no partition forms
+// one and leads it; one that hears the network attaches to it. They are two
+// names because the platform means two different things by them (a network
+// that does not exist yet, a gateway added to one that does), and a refusal
+// should say which was asked for.
+
+import * as fs from 'fs';
+
+const OTCTL = getenv('PULZR_THREAD_OTCTL') ?? 'ot-ctl';
+const IFACE = getenv('PULZR_THREAD_IFACE') ?? 'wpan0';
+// otbr-agent is started with --rest-listen-address 127.0.0.1 (init.d): its
+// default is every address, which would hand the network key to the LAN.
+const REST = getenv('PULZR_THREAD_REST') ?? 'http://127.0.0.1:8081';
+const RUN_DIR = getenv('PULZR_THREAD_RUN') ?? '/var/run/pulzr-thread';
+const PROBE = getenv('PULZR_PROBE_RUN') ?? '/var/run/pulzr-probe';
+const PKG = 'pulzr_thread';
+
+const ROLES = ['disabled', 'detached', 'child', 'router', 'leader'];
+const ATTACHED = ['child', 'router', 'leader'];
+// The channels between Wi-Fi's 1, 6 and 11, which a gateway's own access
+// point and most neighbors use.
+const QUIET = [15, 20, 25];
+
+let die = (msg, code) => {
+    warn(msg + '\n');
+    exit(code ?? 1);
+};
+
+let quote = (s) => "'" + replace('' + s, /'/g, "'\\''") + "'";
+
+let run = (argv) => {
+    let proc = fs.popen(join(' ', map(argv, quote)) + ' 2>&1', 'r');
+    if (!proc) return { code: 127, out: '' };
+    let out = proc.read('all') ?? '';
+    return { code: proc.close(), out: trim(out) };
+};
+
+let readJson = (path, fallback) => {
+    try { return json(fs.readfile(path) ?? 'null') ?? fallback; } catch (e) { return fallback; }
+};
+
+let uciGet = (opt) => {
+    let r = run(['uci', '-q', 'get', PKG + '.main.' + opt]);
+    return r.code == 0 && length(r.out) ? r.out : null;
+};
+
+// The platform's id for the network this gateway is in. A file, not UCI: a
+// change to pulzr_thread restarts the border router (init.d), and form and
+// join write this while it runs.
+const NETWORK = getenv('PULZR_THREAD_NETWORK') ?? '/etc/pulzr-thread/network';
+
+let networkId = () => {
+    let v = trim(fs.readfile(NETWORK) ?? '');
+    return length(v) ? v : null;
+};
+
+let setNetworkId = (v) => {
+    if (v == null) { fs.unlink(NETWORK); return; }
+    fs.writefile(NETWORK + '.new', v + '\n');
+    fs.rename(NETWORK + '.new', NETWORK);
+};
+
+// A secret goes to curl through a file only root can read, on tmpfs, and is
+// gone before this returns.
+let secrets = 0;
+let secretFile = (data) => {
+    fs.mkdir(RUN_DIR, 0o700);
+    let path = sprintf('%s/secret.%d.%d', RUN_DIR, time(), ++secrets);
+    let f = fs.open(path, 'w', 0o600);
+    if (!f) die('cannot write ' + path);
+    f.write(data);
+    f.close();
+    return path;
+};
+
+// ── otbr-agent ───────────────────────────────────────────────────────────────
+
+// { code, body }: the HTTP status, and the body as text.
+let rest = (method, path, body, type) => {
+    let argv = ['curl', '-sS', '--max-time', path == '/diagnostics' ? '40' : '15', '-X', method,
+                '-o', '-', '-w', '\n%{http_code}', '-H', 'Accept: ' + (type ?? 'application/json')];
+    let secret = null;
+    if (body != null) {
+        secret = secretFile(body);
+        push(argv, '-H', 'Content-Type: ' + (type ?? 'application/json'), '--data-binary', '@' + secret);
+    }
+    push(argv, REST + path);
+    let r = run(argv);
+    if (secret) fs.unlink(secret);
+    let at = rindex(r.out, '\n');
+    let code = int(at >= 0 ? substr(r.out, at + 1) : r.out);
+    return { code: code || 0, body: at >= 0 ? substr(r.out, 0, at) : '' };
+};
+
+let restJson = (path) => {
+    let r = rest('GET', path);
+    if (r.code != 200) return null;
+    try { return json(r.body); } catch (e) { return null; }
+};
+
+// ot-ctl's lines, without its "Done", or null when it said Error.
+let otctl = (...args) => {
+    let r = run([OTCTL, '-I', IFACE, ...args]);
+    if (r.code != 0 || match(r.out, /(^|\n)Error [0-9]+/)) return null;
+    return filter(split(r.out, '\n'), (l) => length(trim(l)) && trim(l) != 'Done');
+};
+
+let agentUp = () => rest('GET', '/node/state').code == 200;
+
+let role = () => {
+    let s = restJson('/node/state');
+    if (type(s) == 'int') return ROLES[s] ?? null;
+    return s in ROLES ? s : null;
+};
+
+let waitFor = (seconds, ok) => {
+    for (let i = 0; i < seconds; i++) {
+        if (ok()) return true;
+        sleep(1000);
+    }
+    return ok();
+};
+
+// ── datasets ─────────────────────────────────────────────────────────────────
+
+const TLV = { CHANNEL: 0, PANID: 1, EXTPANID: 2, NAME: 3, PSKC: 4, KEY: 5, MLPREFIX: 7, ACTIVE_TS: 14 };
+
+let tlvs = (h) => {
+    let out = [];
+    h = lc(h ?? '');
+    if (!match(h, /^([0-9a-f]{2})*$/) || length(h) > 508) return null;
+    for (let i = 0; i < length(h);) {
+        if (i + 4 > length(h)) return null;
+        let t = hex(substr(h, i, 2)), n = hex(substr(h, i + 2, 2));
+        if (i + 4 + n * 2 > length(h)) return null;
+        push(out, { type: t, value: substr(h, i + 4, n * 2), raw: substr(h, i, 4 + n * 2) });
+        i += 4 + n * 2;
+    }
+    return out;
+};
+
+let tlv = (list, t) => {
+    for (let x in list) if (x.type == t) return x.value;
+    return null;
+};
+
+let sha256 = (bytes) => {
+    let path = secretFile(bytes);
+    let r = run(['sha256sum', path]);
+    fs.unlink(path);
+    let m = match(r.out, /^([0-9a-f]{64})/);
+    return m ? m[1] : null;
+};
+
+let meshLocal = (v) => {
+    if (!v || length(v) != 16) return null;
+    let g = [];
+    for (let i = 0; i < 16; i += 4) push(g, sprintf('%x', hex(substr(v, i, 4))));
+    return join(':', g);
+};
+
+// What the dataset says, without its keys. dataset_id is the SHA-256 of
+// every TLV but the network key and the PSKc, sorted by type, so the platform
+// can compute it from the copy it keeps however the border router orders them.
+let describe = (h) => {
+    let list = tlvs(h);
+    if (!list || !length(list)) return null;
+    let open = sort(filter(list, (x) => x.type != TLV.KEY && x.type != TLV.PSKC), (a, b) => a.type - b.type);
+    let digest = sha256(hexdec(join('', map(open, (x) => x.raw))));
+    let ch = tlv(list, TLV.CHANNEL), pan = tlv(list, TLV.PANID), ts = tlv(list, TLV.ACTIVE_TS);
+    let name = tlv(list, TLV.NAME);
+    return {
+        name: name != null ? hexdec(name) : null,
+        ext_pan_id: tlv(list, TLV.EXTPANID),
+        pan_id: pan,
+        channel: ch && length(ch) == 6 ? hex(substr(ch, 2, 4)) : null,
+        mesh_local_prefix: meshLocal(tlv(list, TLV.MLPREFIX)),
+        active_timestamp: ts && length(ts) == 16 ? hex(substr(ts, 0, 12)) : null,
+        dataset_id: digest ? substr(digest, 0, 16) : null,
+    };
+};
+
+let activeHex = () => {
+    let r = rest('GET', '/node/dataset/active', null, 'text/plain');
+    if (r.code != 200) return null;
+    let h = lc(trim(r.body));
+    return match(h, /^[0-9a-f]+$/) ? h : null;
+};
+
+// A dataset good enough to start a network on: the platform makes complete
+// ones, and a partial one would have OpenThread fill in random values the
+// platform would then not hold.
+let checkDataset = (h) => {
+    let list = tlvs(h);
+    if (!list) return 'The dataset is not hex TLVs.';
+    for (let t in [TLV.CHANNEL, TLV.PANID, TLV.EXTPANID, TLV.NAME, TLV.PSKC, TLV.KEY, TLV.MLPREFIX, TLV.ACTIVE_TS])
+        if (tlv(list, t) == null) return sprintf('The dataset has no TLV %d.', t);
+    if (length(tlv(list, TLV.KEY)) != 32) return 'The dataset\'s network key is not 16 bytes.';
+    return null;
+};
+
+// ── the radio ────────────────────────────────────────────────────────────────
+
+let radios = () => readJson(PROBE + '/radios.json', {})?.detected ?? [];
+
+let radioUrl = () => {
+    let id = uciGet('radio');
+    if (!id) return { error: 'No radio is set up for Thread.' };
+    let path = null, baud = null;
+    for (let r in radios())
+        if (r.id == id) { path = r.path; baud = r.baud; }
+    if (!path || !match(path, /^\/dev\/[A-Za-z0-9_-]+$/)) return { error: sprintf('The Thread radio %s is not plugged in.', id) };
+    // 460800 is what OpenThread's RCP images for the nRF52840 and Silicon
+    // Labs' for the MG21 and MG24 run at; pulzr-probe says when it found
+    // another.
+    baud = int(uciGet('baud') ?? baud ?? 460800);
+    return { url: sprintf('spinel+hdlc+uart://%s?uart-baudrate=%d', path, baud) };
+};
+
+// A person set up Thread on this radio (or took it off): the border router
+// starts on it, through the config trigger, and holds the port from then on,
+// which pulzr-probe reports as in-use.
+let use = (id) => {
+    if (id == null) {
+        run(['uci', '-q', 'set', PKG + '.main.enabled=0']);
+        run(['uci', '-q', 'delete', PKG + '.main.radio']);
+        run(['uci', 'commit', PKG]);
+        waitFor(15, () => !agentUp());
+        return status(true);
+    }
+    if (!match(id, /^(usb|uart|lan)-[a-z0-9._-]{1,96}$/)) die('That is not a radio id.', 2);
+    let found = null;
+    for (let r in radios()) if (r.id == id) found = r;
+    if (!found) die(sprintf('No radio %s is plugged in.', id));
+    if (found.protocol != 'thread' && !('thread' in (found.protocols ?? [])))
+        die(sprintf('%s does not run Thread firmware.', found.label ?? id));
+    run(['uci', '-q', 'set', PKG + '.main.radio=' + id]);
+    run(['uci', '-q', 'set', PKG + '.main.enabled=1']);
+    run(['uci', 'commit', PKG]);
+    run(['/etc/init.d/pulzr-thread', 'enable']);
+    run(['/etc/init.d/pulzr-thread', 'restart']);
+    if (!waitFor(30, agentUp)) die('The border router did not start on that radio.');
+    return status(true);
+};
+
+// ── status ───────────────────────────────────────────────────────────────────
+
+// The border routers in the network data: whoever publishes a prefix or a
+// route, by RLOC16.
+let borderRouters = () => {
+    let out = {}, section = null;
+    for (let l in otctl('netdata', 'show') ?? []) {
+        l = trim(l);
+        if (match(l, /:$/)) { section = l; continue; }
+        if (section != 'Prefixes:' && section != 'Routes:') continue;
+        let m = match(l, / ([0-9a-f]{4})$/);
+        if (m) out[m[1]] = true;
+    }
+    return sort(keys(out));
+};
+
+// ot-ctl's tables as objects keyed by their header names.
+let table = (lines) => {
+    let head = null, rows = [];
+    for (let l in lines ?? []) {
+        if (!match(l, /^\|/)) continue;
+        let cells = map(slice(split(l, '|'), 1, -1), trim);
+        if (!head) { head = cells; continue; }
+        if (match(cells[0] ?? '', /^-+$/) || match(cells[0] ?? '', /^\+/)) continue;
+        let row = {};
+        for (let i = 0; i < length(head); i++) row[head[i]] = cells[i];
+        push(rows, row);
+    }
+    return rows;
+};
+
+let status = (brief) => {
+    let out = {
+        enabled: uciGet('enabled') == '1',
+        radio: uciGet('radio'),
+        network: networkId(),
+        agent: 'stopped',
+        role: null,
+    };
+    if (!agentUp()) return out;
+    out.agent = 'running';
+    let node = restJson('/node') ?? {};
+    out.role = role();
+    let version = restJson('/node/coprocessor/version');
+    if (type(version) == 'string') out.rcp = substr(version, 0, 64);
+    let ds = describe(activeHex());
+    out.dataset = ds;
+    if (ds == null) return out;
+    out.ext_address = lc(node.ExtAddress ?? '') || null;
+    out.rloc16 = node.Rloc16 != null ? sprintf('%04x', type(node.Rloc16) == 'int' ? node.Rloc16 : hex(node.Rloc16)) : null;
+    out.leader = out.role == 'leader';
+    out.partition_id = node.LeaderData?.PartitionId ?? null;
+    out.leader_router_id = node.LeaderData?.LeaderRouterId ?? null;
+    out.routers = node.NumOfRouter ?? null;
+    if (out.role in ATTACHED) {
+        out.border_routers = length(borderRouters());
+        out.children = length(table(otctl('child', 'table')));
+    }
+    if (!brief) {
+        out.commissioner = restJson('/node/commissioner/state');
+        out.omr_prefix = null;
+        for (let l in otctl('br', 'omrprefix') ?? [])
+            if (match(l, /^Local:/)) out.omr_prefix = trim(substr(l, 6));
+    }
+    return out;
+};
+
+// The protocol v1 state of this border router as a device (thread:<ext>).
+let deviceState = (s) => {
+    let ds = s.dataset ?? {};
+    let up = s.agent == 'running' && s.role in ATTACHED;
+    let net = {
+        protocol: 'thread',
+        state: up ? 'up' : (s.agent == 'running' && s.role == 'detached' ? 'forming' : 'down'),
+    };
+    if (s.radio) net.radio = s.radio;
+    for (let k in ['name', 'ext_pan_id', 'pan_id', 'channel', 'dataset_id', 'active_timestamp'])
+        if (ds[k] != null) net[k] = ds[k];
+    if (s.role) net.role = s.role;
+    if (s.routers != null) net.routers = s.routers;
+    if (s.border_routers != null) net.border_routers = s.border_routers;
+    let st = { v: 1, online: up, network: net };
+    if (s.rcp) st.fw = s.rcp;
+    return st;
+};
+
+// ── form, join, leave ────────────────────────────────────────────────────────
+
+let request = () => {
+    try { return json(fs.stdin.read('all') ?? '') ?? {}; } catch (e) { die('The request is not JSON.', 2); }
+};
+
+let attach = (how) => {
+    let req = request();
+    let dataset = lc(req.dataset ?? '');
+    let bad = checkDataset(dataset);
+    if (bad) die(bad, 2);
+    if (req.network != null && !match(req.network, /^[0-9a-f-]{36}$/)) die('The network id is not a uuid.', 2);
+    if (!agentUp()) die(uciGet('radio') ? 'The Thread border router is not running.' : 'No radio is set up for Thread.');
+
+    let want = describe(dataset), have = describe(activeHex());
+    // Another network's dataset is only replaced by leave: one gateway carries
+    // one Thread network, and a form or join that quietly dropped the old one
+    // would strand its devices and keep a key it should not.
+    if (have && have.ext_pan_id != want.ext_pan_id)
+        die(sprintf('This gateway is in the Thread network %s. Leave it first.', have.name ?? have.ext_pan_id));
+
+    if (role() != 'disabled' && rest('PUT', '/node/state', '"disable"').code != 200)
+        die('The border router would not stop Thread.');
+    let r = rest('PUT', '/node/dataset/active', dataset, 'text/plain');
+    if (r.code != 200 && r.code != 201) die(sprintf('The border router refused the dataset (%d).', r.code));
+    if (rest('PUT', '/node/state', '"enable"').code != 200) die('The border router would not start Thread.');
+    if (req.network != null) setNetworkId(req.network);
+
+    // A border router that hears no partition forms one after its attach
+    // attempts, about ten seconds; one joining attaches as a child first.
+    let ok = waitFor(how == 'form' ? 60 : 90, () => role() in ATTACHED);
+    let s = status(true);
+    if (!ok) die(sprintf('Thread started but did not attach in time (%s).', s.role ?? 'unknown'));
+    if (s.dataset?.dataset_id != want.dataset_id)
+        die('The border router is running a different dataset from the one sent.');
+    return s;
+};
+
+let leave = () => {
+    if (agentUp()) {
+        rest('PUT', '/node/state', '"disable"');
+        let r = rest('DELETE', '/node');
+        if (r.code != 200) die(sprintf('The border router would not erase its network (%d).', r.code));
+        if (!waitFor(20, () => agentUp() && activeHex() == null))
+            die('The border router still holds a dataset after erasing.');
+    } else {
+        // Not running: erase what it would start with.
+        let dir = uciGet('state') ?? '/etc/pulzr-thread/otbr';
+        run(['sh', '-c', 'rm -rf ' + quote(dir) + '/*']);
+    }
+    setNetworkId(null);
+    return status(true);
+};
+
+// ── scan ─────────────────────────────────────────────────────────────────────
+
+let scan = () => {
+    if (!agentUp()) die('The Thread border router is not running.');
+    let down = !(role() in ATTACHED);
+    if (down) otctl('ifconfig', 'up');
+    let rows = table(otctl('scan', 'energy', '300'));
+    if (down) otctl('ifconfig', 'down');
+    let channels = [];
+    for (let r in rows) {
+        let ch = int(r['Ch'] ?? ''), rssi = int(r['RSSI'] ?? '');
+        if (ch >= 11 && ch <= 26) push(channels, { channel: ch, max_rssi: rssi });
+    }
+    if (!length(channels)) die('The radio reported no energy scan.');
+    let best = null;
+    for (let c in channels)
+        if (c.channel in QUIET && (best == null || c.max_rssi < best.max_rssi)) best = c;
+    return { channels, recommended: best?.channel ?? null };
+};
+
+// ── commissioning ────────────────────────────────────────────────────────────
+
+let permit = () => {
+    let req = request();
+    let id = lc(req.eui64 ?? '*');
+    if (id != '*' && !match(id, /^[0-9a-f]{16}$/)) die('eui64 is not 16 hex digits or *.', 2);
+    // Thread's PSKd: 6 to 32 of 0-9 A-Z, without I, O, Q and Z.
+    if (!match(req.pskd ?? '', /^[0-9A-HJ-NPR-Y]{6,32}$/)) die('The PSKd is not a Thread joining credential.', 2);
+    let seconds = int(req.seconds ?? 180);
+    if (seconds < 30 || seconds > 3600) die('seconds is from 30 to 3600.', 2);
+    if (!(role() in ATTACHED)) die('This border router is not in a Thread network.');
+
+    if (restJson('/node/commissioner/state') != 'active') {
+        let r = rest('PUT', '/node/commissioner/state', '"enable"');
+        if (r.code != 200 && r.code != 204) die(sprintf('The commissioner would not start (%d).', r.code));
+        if (!waitFor(20, () => restJson('/node/commissioner/state') == 'active'))
+            die('Another commissioner is active in this network.');
+    }
+    let body = { Pskd: req.pskd, Timeout: seconds };
+    if (id == '*') body.JoinerId = '*'; else body.Eui64 = id;
+    let r = rest('POST', '/node/commissioner/joiner', sprintf('%J', body));
+    if (r.code != 200) die(sprintf('The commissioner refused the joiner (%d).', r.code));
+    return { permitted: id, until: time() + seconds };
+};
+
+let permitStop = () => {
+    rest('PUT', '/node/commissioner/state', '"disable"');
+    return { commissioner: restJson('/node/commissioner/state') };
+};
+
+// ── topology ─────────────────────────────────────────────────────────────────
+
+// Link cost by link quality, as OpenThread's MLE counts it.
+let lqCost = (lq) => [255, 4, 2, 1][lq] ?? 255;
+
+let rlocNum = (v) => type(v) == 'int' ? v : (v != null ? hex(replace('' + v, /^0x/, '')) : null);
+
+// Children's extended addresses, which the routers' child tables do not
+// carry: asked of each child once and remembered by RLOC16 while it keeps it.
+let childExt = (prefix, wanted) => {
+    let cachePath = RUN_DIR + '/children.json';
+    let cache = readJson(cachePath, {});
+    let ask = filter(wanted, (r) => !cache[r]);
+    if (length(ask) && prefix) {
+        let script = '';
+        for (let r in slice(ask, 0, 16))
+            script += sprintf('printf %s; ', quote(sprintf('networkdiagnostic get %s:0:ff:fe00:%s 0\n', prefix, r)));
+        let out = run(['sh', '-c', sprintf('( %s sleep 6 ) | %s -I %s', script, quote(OTCTL), quote(IFACE))]);
+        let from = null;
+        for (let l in split(out.out, '\n')) {
+            let m = match(l, /from [0-9a-f:]*:ff:fe00:([0-9a-f]{1,4})/);
+            if (m) { from = sprintf('%04x', hex(m[1])); continue; }
+            m = match(l, /Ext Address: '?([0-9a-f]{16})/);
+            if (m && from) { cache[from] = m[1]; from = null; }
+        }
+    }
+    let kept = {};
+    for (let r in wanted) if (cache[r]) kept[r] = cache[r];
+    fs.mkdir(RUN_DIR, 0o700);
+    fs.writefile(cachePath, sprintf('%J', kept));
+    return kept;
+};
+
+// One message for the network, from the border router with the lowest RLOC16
+// among those in the network data, so two gateways never send competing
+// complete views. The others send only their own link to their gateway.
+let topology = (eui) => {
+    let s = status(true);
+    if (!(s.role in ATTACHED) || !s.ext_address) return null;
+    let self = 'thread:' + s.ext_address;
+    let edges = [];
+    if (eui) push(edges, { from: self, to: 'gw:' + eui, kind: 'bus' });
+    let brs = borderRouters();
+    let reporter = length(brs) && brs[0] == s.rloc16;
+    let msg = { v: 1, ts: time(), protocol: 'thread', source: 'scan', complete: true, edges };
+    if (!reporter) return msg;
+
+    let diag = restJson('/diagnostics');
+    if (type(diag) != 'array') return msg;
+
+    let byRid = {}, rssi = {};
+    for (let n in table(otctl('neighbor', 'table')))
+        if (n['Extended MAC']) rssi[n['Extended MAC']] = int(n['Avg RSSI']);
+    for (let d in diag) {
+        let rloc = rlocNum(d.Rloc16);
+        if (rloc == null || (rloc & 0x1ff) || !d.ExtAddress) continue;
+        byRid[rloc >> 10] = { ext: lc(d.ExtAddress), rloc, route: d.Route?.RouteData ?? [], children: d.ChildTable ?? [] };
+    }
+    let selfRid = hex(s.rloc16) >> 10;
+    let link = (a, b) => {
+        for (let r in byRid[a]?.route ?? []) if (r.RouteId == b) return r;
+        return null;
+    };
+    let quality = (r, ext) => {
+        let q = { lq_in: r.LinkQualityIn, lq_out: r.LinkQualityOut };
+        if (rssi[ext] != null) q.rssi = rssi[ext];
+        return q;
+    };
+
+    let used = {};
+    for (let rid in keys(byRid)) {
+        rid = int(rid);
+        if (rid == selfRid) continue;
+        // The next hop toward this border router: the neighbor whose link
+        // cost plus its own cost to here is least.
+        let best = null, bestCost = 256;
+        for (let r in byRid[rid].route) {
+            if (!(r.LinkQualityIn > 0 && r.LinkQualityOut > 0) || !byRid[r.RouteId]) continue;
+            let lq = r.LinkQualityIn < r.LinkQualityOut ? r.LinkQualityIn : r.LinkQualityOut;
+            let onward = r.RouteId == selfRid ? 0 : (link(r.RouteId, selfRid)?.RouteCost ?? 255);
+            let cost = lqCost(lq) + onward;
+            if (cost < bestCost || (cost == bestCost && r.RouteId < best)) { best = r.RouteId; bestCost = cost; }
+        }
+        if (best == null) continue;
+        let q = quality(link(rid, best), byRid[rid].ext);
+        q.cost = bestCost > 255 ? 255 : bestCost;
+        push(edges, { from: 'thread:' + byRid[rid].ext, to: 'thread:' + byRid[best].ext, kind: 'route', quality: q });
+        used[rid + '-' + best] = used[best + '-' + rid] = true;
+    }
+    // Links a router could use and does not, once per pair.
+    for (let a in keys(byRid)) for (let r in byRid[a].route) {
+        let b = r.RouteId;
+        if (int(a) >= b || used[a + '-' + b] || !byRid[b] || !(r.LinkQualityIn > 0 && r.LinkQualityOut > 0)) continue;
+        push(edges, { from: 'thread:' + byRid[a].ext, to: 'thread:' + byRid[b].ext, kind: 'neighbor',
+                      quality: quality(r, byRid[a].ext) });
+    }
+
+    // Children, each under its parent router.
+    let mine = {};
+    for (let c in table(otctl('child', 'table')))
+        if (c['Extended MAC']) mine[lc(sprintf('%04x', hex(replace(c['RLOC16'] ?? '', /^0x/, ''))))] =
+            { ext: lc(c['Extended MAC']), lq: int(c['LQ In']) };
+    let wanted = [];
+    for (let rid in keys(byRid)) for (let c in byRid[rid].children) {
+        let r = sprintf('%04x', byRid[rid].rloc | (c.ChildId & 0x1ff));
+        if (!mine[r]) push(wanted, r);
+    }
+    let known = childExt(s.dataset?.mesh_local_prefix, wanted);
+    for (let rid in keys(byRid)) for (let c in byRid[rid].children) {
+        let r = sprintf('%04x', byRid[rid].rloc | (c.ChildId & 0x1ff));
+        let ext = mine[r]?.ext ?? known[r];
+        if (!ext) continue;
+        let e = { from: 'thread:' + ext, to: 'thread:' + byRid[rid].ext, kind: 'route' };
+        if (mine[r]) {
+            e.quality = { lq_in: mine[r].lq };
+            if (rssi[ext] != null) e.quality.rssi = rssi[ext];
+        }
+        push(edges, e);
+    }
+    return msg;
+};
+
+// ── watch ────────────────────────────────────────────────────────────────────
+
+let gatewayEui = () => {
+    let r = run(['uci', '-q', 'get', 'pulzr.identity.gateway_eui']);
+    return match(r.out, /^[0-9a-f]{16}$/) ? r.out : null;
+};
+
+let publish = (topic, body) => {
+    let host = run(['uci', '-q', 'get', 'pulzr.mqtt.host']).out;
+    let user = run(['uci', '-q', 'get', 'pulzr.mqtt.username']).out;
+    let pass = run(['uci', '-q', 'get', 'pulzr.mqtt.password']).out;
+    if (!length(host) || !length(user)) return false;
+    let file = secretFile(sprintf('%J', body));
+    // The password goes on mosquitto_pub's command line as pulzr-mqtt-agent's
+    // does: it is the gateway's own broker login, already in its UCI.
+    let r = run(['mosquitto_pub', '-h', host, '-p', '8883', '--capath', '/etc/ssl/certs',
+                 '-u', user, '-P', pass, '-t', topic, '-f', file, '-q', '1']);
+    fs.unlink(file);
+    return r.code == 0;
+};
+
+let watch = () => {
+    let last = null, lastSent = 0, lastTopology = 0;
+    while (true) {
+        try {
+            let eui = gatewayEui();
+            let s = status(true);
+            let st = s.ext_address ? deviceState(s) : null;
+            let now = time();
+            let changed = sprintf('%J', [s.role, s.agent, s.dataset?.dataset_id, s.radio]) != last;
+            if (eui && st && (changed || now - lastSent >= 300)) {
+                if (publish(sprintf('pulzr/a/edge-%s/d/thread:%s/state', eui, s.ext_address), st)) lastSent = now;
+            }
+            if (changed) {
+                last = sprintf('%J', [s.role, s.agent, s.dataset?.dataset_id, s.radio]);
+                run(['pulzr-mqtt-agent', '--publish-state']);
+                // Sooner after a change, so the mesh view follows a failover.
+                lastTopology = now - 840;
+            }
+            // Network diagnostics cost airtime: every 15 minutes.
+            if (eui && s.role in ATTACHED && now - lastTopology >= 900) {
+                let t = topology(eui);
+                if (t && publish(sprintf('pulzr/a/edge-%s/d/thread:%s/topology', eui, s.ext_address), t))
+                    lastTopology = now;
+            }
+        } catch (e) {
+            warn(sprintf('pulzr-thread watch: %s\n', e));
+        }
+        sleep(30000);
+    }
+};
+
+// ── main ─────────────────────────────────────────────────────────────────────
+
+let say = (v) => print(sprintf('%J\n', v));
+
+switch (ARGV[0]) {
+case 'status':
+    say(status(ARGV[1] == '--brief'));
+    break;
+case 'radio-url': {
+    let r = radioUrl();
+    if (r.error) die(r.error);
+    print(r.url + '\n');
+    break;
+}
+case 'use':
+    say(use(ARGV[1] ?? die('usage: pulzr-thread use <radio id>', 2)));
+    break;
+case 'release':
+    say(use(null));
+    break;
+case 'scan':
+    say(scan());
+    break;
+case 'form':
+case 'join':
+    say(attach(ARGV[0]));
+    break;
+case 'leave':
+    say(leave());
+    break;
+case 'permit':
+    say(permit());
+    break;
+case 'permit-stop':
+    say(permitStop());
+    break;
+case 'dataset': {
+    let active = activeHex();
+    if (!active) die('This border router has no network.');
+    print(active + '\n');
+    break;
+}
+case 'topology': {
+    let t = topology(ARGV[1] ?? gatewayEui());
+    if (!t) die('This border router is not in a Thread network.');
+    say(t);
+    break;
+}
+case 'state':
+    say(deviceState(status(true)));
+    break;
+case 'watch':
+    watch();
+    break;
+default:
+    die('usage: pulzr-thread status [--brief]|use <radio>|release|radio-url|scan|form|join|leave|permit|permit-stop|dataset|topology [eui]|state|watch', 2);
+}

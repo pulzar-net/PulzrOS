@@ -1,0 +1,6 @@
+# The border router's own settings: the active dataset (the network key with
+# it), frame counters and the prefixes it published. An upgrade that dropped
+# them would take this gateway out of its Thread network until the platform
+# sent the dataset again, and its children would have to find a new parent.
+/etc/pulzr-thread/
+/etc/config/pulzr_thread

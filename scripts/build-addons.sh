@@ -84,6 +84,30 @@ sha256() { sha256sum "$1" | cut -d' ' -f1; }
 
 # One JSON object per (add-on, architecture), joined into the catalog below.
 ENTRIES="${WORK}/entries.jsonl"; : > "${ENTRIES}"
+# One per (upstream package, architecture, add-on that brings it).
+UPSTREAM="${WORK}/upstream.jsonl"; : > "${UPSTREAM}"
+
+# OpenWrt's own package keys, which the ImageBuilder trusts for its feeds:
+# what addon-upstream.sh checks each upstream package against.
+OPENWRT_KEYS="$(find "${IB}" -maxdepth 3 -type d -name keys -exec sh -c 'ls "$1"/*.pem >/dev/null 2>&1' _ {} \; -print | head -n1)"
+[ -n "${OPENWRT_KEYS}" ] || die "this ImageBuilder has no keys directory with OpenWrt's public keys"
+
+# The OpenWrt target a package architecture is built on, from the boards.
+target_of() {
+  local conf
+  for conf in "${BOARDS_DIR}"/*/board.conf; do
+    [ "${conf}" = "${BOARDS_DIR}/common/board.conf" ] && continue
+    ( BOARDS_DIR="${BOARDS_DIR}"; . "${conf}"
+      [ "${OPENWRT_ARCH:-}" = "$1" ] && echo "${OPENWRT_TARGET}/${OPENWRT_SUBTARGET}" ) && return 0
+  done
+  return 1
+}
+
+common_package() {
+  ( . "${BOARDS_DIR}/common/board.conf"
+    printf '%s\n' "${PACKAGES_COMMON}" | sed 's/#.*//' | tr -s '[:space:]' '\n' | grep -qxF "$1" )
+}
+
 ARCHES_SEEN="${WORK}/arches.txt"; : > "${ARCHES_SEEN}"
 found=0
 
@@ -149,6 +173,32 @@ for pkgdir in "${FEED_DIR}"/*/; do
     echo "${arch}" >> "${ARCHES_SEEN}"
     rm -rf "${tmp}"
     echo "  packed ${file} (${arch})"
+
+    # The OpenWrt packages it brings, from the release's feeds as they are
+    # (scripts/addon-upstream.sh). Several add-ons may bring the same one, and
+    # each arch's repository holds it once.
+    if [ -f "${pkgdir}/upstream" ]; then
+      target="$(target_of "${arch}")" || die "no board runs ${arch}, so ${name}'s upstream packages have no target"
+      kmods="${WORK}/kmods-${name}-${arch}"
+      upstream_names="$("${ROOT_DIR}/scripts/addon-upstream.sh" "${APK}" "${OPENWRT_KEYS}" "${arch}" "${target}" \
+          "${OUT}/${arch}" $(grep -v '^[[:space:]]*\(#\|$\)' "${pkgdir}/upstream") 2>"${kmods}")" \
+        || { cat "${kmods}" >&2; die "could not fetch ${name}'s upstream packages for ${arch}"; }
+      # A kernel module comes with the image, never with an add-on.
+      for kmod in $(sed -n 's/^kmod //p' "${kmods}"); do
+        common_package "${kmod}" || die "${name} needs ${kmod}, which is not in PACKAGES_COMMON"
+      done
+      for dep in ${upstream_names}; do
+        f="$(cd "${OUT}/${arch}" && ls "${dep}"-[0-9]*.apk 2>/dev/null | head -n1)"
+        [ -n "${f}" ] || die "addon-upstream.sh named ${dep} for ${arch} and wrote no file for it"
+        jq -nc --arg name "${dep}" --arg by "${name}" --arg arch "${arch}" --arg file "${f}" \
+              --argjson bytes "$(stat -c %s "${OUT}/${arch}/${f}")" \
+              --argjson installed "$("${APK}" adbdump "${OUT}/${arch}/${f}" | sed -n 's/^  installed-size: //p' | head -n1)" \
+              --arg sha "$(sha256 "${OUT}/${arch}/${f}")" \
+          '{name:$name, by:$by, arch:$arch, file:$file, bytes:$bytes, installedBytes:$installed, sha256:$sha}' \
+          >> "${UPSTREAM}"
+        echo "  fetched ${f} (${arch}, for ${name})"
+      done
+    fi
   done 3< "${pkgdir}/arches"
 done
 
@@ -202,7 +252,12 @@ jq -sc --arg tag "${TAG}" '
       { name: .[0].name, title: .[0].title, caps: .[0].caps,
         upstream: .[0].upstream, builtIn: .[0].builtIn, keep: .[0].keep,
         arches: ( map({ key: .arch, value: {file, bytes, installedBytes, sha256} })
-                  | from_entries ) } ) ) }' \
+                  | from_entries ) } ) ),
+    upstream: $up } ' \
+  --argjson up "$(jq -sc 'group_by(.name) | map(
+      { name: .[0].name, by: (map(.by) | unique),
+        arches: ( group_by(.arch) | map({ key: .[0].arch, value: (.[0] | {file, bytes, installedBytes, sha256}) })
+                  | from_entries ) })' "${UPSTREAM}")" \
   "${ENTRIES}" > "${OUT}/addons.json"
 
 if [ "${publishable}" = 1 ]; then : > "${OUT}/PUBLISHABLE"; fi

@@ -582,10 +582,10 @@ facts() {
     apply_support=0
     command -v pulzr-apply >/dev/null 2>&1 && apply_support=1
 
-    printf '{"board":"%s","osVersion":"%s","modemPresent":%s,"modemModel":"%s","modemKind":"%s","simIccid":"%s","sshHostKey":"%s","wiredUsable":%s,"tunnelVia":"%s","tunnelState":"%s","wifiUplink":"%s","consolePort":443,"consoleScheme":"https","tunnelConsolePort":8080,"sshPort":22,"apply":%s,"sshCa":%s,"system":%s,"rakPower":%s,"setupAp":%s,"speedtest":%s,"wiredRouters":%s,"activeUplink":"%s","stats":%s,"addons":%s,"radios":%s,"consoleCertificate":%s%s}' \
+    printf '{"board":"%s","osVersion":"%s","modemPresent":%s,"modemModel":"%s","modemKind":"%s","simIccid":"%s","sshHostKey":"%s","wiredUsable":%s,"tunnelVia":"%s","tunnelState":"%s","wifiUplink":"%s","consolePort":443,"consoleScheme":"https","tunnelConsolePort":8080,"sshPort":22,"apply":%s,"sshCa":%s,"system":%s,"rakPower":%s,"setupAp":%s,"speedtest":%s,"wiredRouters":%s,"activeUplink":"%s","stats":%s,"addons":%s,"radios":%s,"thread":%s,"consoleCertificate":%s%s}' \
         "${board_id}" "${version}" "${modem_present}" "${modem_model:-}" "${modem_kind:-}" "${iccid:-}" \
         "${host_key:-}" "${wired_usable}" "${tunnel_via:-none}" "${tunnel:-none}" "${wifi_uplink:-unchecked}" "${apply_support}" "${ssh_ca}" "$(system_facts)" "$(rak_power_facts)" "$(setup_ap_facts)" "$(speedtest_facts)" "$(router_facts)" "$(active_uplink)" "$(stats_facts)" \
-        "$(addon_facts)" "$(radio_facts)" "$(console_cert_facts)" "$(console_csr_field)"
+        "$(addon_facts)" "$(radio_facts)" "$(thread_facts)" "$(console_cert_facts)" "$(console_csr_field)"
 }
 
 # CPU, memory, temperature, storage, buffer depth, signal and bytes per uplink
@@ -631,6 +631,19 @@ radio_facts() {
     # an empty list is not one to lean on, and an empty list is the report
     # that says the last radio was pulled out.
     if echo "${out}" | jsonfilter -e '@' >/dev/null 2>&1 && case "${out}" in '{"detected":['*) true ;; *) false ;; esac; then
+        echo "${out}"
+    else
+        echo null
+    fi
+}
+
+# The Thread border router (pulzr-thread add-on): its radio, role and the
+# network it is in by dataset id, never a key. null without the add-on.
+thread_facts() {
+    local out
+    command -v pulzr-thread >/dev/null 2>&1 || { echo null; return; }
+    out="$(pulzr-timeout 20 pulzr-thread status --brief 2>/dev/null)"
+    if echo "${out}" | jsonfilter -e '@.agent' >/dev/null 2>&1; then
         echo "${out}"
     else
         echo null

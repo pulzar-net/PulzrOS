@@ -1,0 +1,18 @@
+#!/bin/sh
+#
+# Whether the border router is doing its job, for pulzr-addon's report.
+#
+#   exit 0  ok: in a Thread network (child, router or leader)
+#   exit 2  idle: no radio set up for Thread, or no network formed or joined
+#   exit 1  failing: set up, and the agent is not running or not attached
+#
+# Reported, never acted on: a dongle pulled out is a radio.missing event the
+# platform raises, and removing the add-on over it would erase the network.
+
+[ "$(uci -q get pulzr_thread.main.enabled)" = 1 ] || exit 2
+[ -s /etc/pulzr-thread/network ] || exit 2
+role="$(/usr/sbin/pulzr-thread status --brief 2>/dev/null | jsonfilter -e '@.role' 2>/dev/null)"
+case "${role}" in
+    child|router|leader) exit 0 ;;
+esac
+exit 1
