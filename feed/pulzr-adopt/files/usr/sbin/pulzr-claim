@@ -10,6 +10,7 @@
 #   pulzr-claim apply <blob>  complete an adoption offline, from a signed
 #                               bundle the operator carried back
 #   pulzr-claim report        tell Pulzar Cloud what this gateway is
+#   pulzr-claim radios        tell it what radios are plugged in, alone
 #   pulzr-claim tunnel-test [seconds]
 #                               ask Pulzar Cloud to measure the tunnel's speed
 #   pulzr-claim reclaiming    exit 0 while a new claim waits to replace a
@@ -769,6 +770,27 @@ tunnel_test() {
         || echo '{"error":"Pulzar Cloud did not answer"}'
 }
 
+# The radios plugged in, on their own (pulzr-radios, from hotplug): a dongle
+# is plugged in by somebody standing at the gateway with its page open, and
+# the whole report spends tens of seconds gathering statistics first. This is
+# one small POST with what pulzr-probe wrote. The six-hourly report still
+# carries the list, so one of these lost is put right then.
+radios() {
+    ensure_identity
+    adopted || return 0
+    local list raw status
+    list="$(cat "${PULZR_PROBE_RUN:-/var/run/pulzr-probe}/radios.json" 2>/dev/null)"
+    echo "${list}" | jsonfilter -e '@' >/dev/null 2>&1 || { log "no radio list to send"; return 1; }
+    raw="$(call /api/v1/gateway-ops/radios \
+        "$(printf '{"claimId":"%s","secret":"%s","radios":%s}' \
+              "$(claim_id)" "$(secret_in "${STATE}")" "${list}")")" || {
+        log "radios not sent: ${raw}"
+        return 1
+    }
+    status="$(echo "${raw}" | tail -n1)"
+    [ "${status}" = "200" ] || { log "radios refused (${status})"; return 1; }
+}
+
 # Exits 0 when accepted, 3 when Pulzar Cloud says the claim is revoked, 1 for
 # anything else, including no answer.
 report() {
@@ -889,11 +911,12 @@ case "${1:-status}" in
     register) register ;;
     poll)     poll ;;
     report)   report ;;
+    radios)   radios ;;
     tunnel-test) tunnel_test "$2" ;;
     apply)    apply_offline "$2" ;;
     reset)    reset_claim ;;
     reclaiming)   reclaiming ;;
     backoff)      backoff ;;
     note-revoked) note_revoked ;;
-    *)        die "usage: pulzr-claim {status|qr|register|poll|report|tunnel-test|apply|reset|reclaiming|backoff|note-revoked}" ;;
+    *)        die "usage: pulzr-claim {status|qr|register|poll|report|radios|tunnel-test|apply|reset|reclaiming|backoff|note-revoked}" ;;
 esac

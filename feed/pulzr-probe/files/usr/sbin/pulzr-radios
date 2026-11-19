@@ -15,10 +15,11 @@
 # wraps it with what is the gateway's: the LAN's mDNS answers, settling a burst
 # of hotplug events into one scan, and telling the platform.
 #
-# Telling is the claim report, sent at once, and the MQTT agent's retained
-# state, published again. A report is a few hundred bytes, and a radio is
-# plugged in by a person standing at the gateway, so this is not chatter on a
-# SIM; a scan that finds the same list says nothing.
+# Telling is the list alone, sent at once (`pulzr-claim radios`, a few hundred
+# bytes; the whole report would spend tens of seconds on statistics first),
+# and the MQTT agent's retained state, published again. A radio is plugged in
+# by a person standing at the gateway, often with its page open, so the card
+# has to be there in seconds; and a scan that finds the same list says nothing.
 
 RUN="${PULZR_PROBE_RUN:-/var/run/pulzr-probe}"
 REPORT="${RUN}/radios.json"
@@ -44,7 +45,7 @@ mdns() {
 
 tell() {
     [ "$(uci -q get pulzr.adoption.state)" = "adopted" ] || return 0
-    ( pulzr-claim report >/dev/null 2>&1 & ) 2>/dev/null
+    ( pulzr-claim radios >/dev/null 2>&1 & ) 2>/dev/null
     ( pulzr-mqtt-agent --publish-state >/dev/null 2>&1 & ) 2>/dev/null
 }
 
@@ -74,8 +75,14 @@ hotplug() {
     ) >/dev/null 2>&1 &
 }
 
+# For the six-hourly report: scanned again unless hotplug or Identify just did,
+# which also picks up a coordinator that appeared on the LAN since.
 facts() {
-    pulzr-timeout 30 "$0" scan --quiet >/dev/null 2>&1
+    local made
+    made="$(date -r "${REPORT}" +%s 2>/dev/null || echo 0)"
+    if [ "$(( $(date +%s) - made ))" -ge 60 ]; then
+        pulzr-timeout 30 "$0" scan --quiet >/dev/null 2>&1
+    fi
     if [ -s "${REPORT}" ] && jsonfilter -i "${REPORT}" -e '@' >/dev/null 2>&1 \
         && [ "$(head -c 13 "${REPORT}")" = '{"detected":[' ]; then
         cat "${REPORT}"

@@ -215,6 +215,24 @@ check "an unreadable radio list is null, and the report still parses" \
     python3 -c 'import json,sys; assert json.loads(sys.argv[1])["facts"]["radios"] is None' "$(last_body report)"
 rm -f "${STUBS}/pulzr-radios" "${STUBS}/pulzr-timeout"
 
+# The list alone, from hotplug: what pulzr-probe wrote, under the claim's proof.
+export PULZR_PROBE_RUN="${SANDBOX}/probe"
+mkdir -p "${PULZR_PROBE_RUN}"
+echo '{"detected":[{"id":"usb-10c4_ea60-1","bus":"usb","state":"free"}]}' > "${PULZR_PROBE_RUN}/radios.json"
+answer radios 200 '{"changes":[]}'
+claim radios; rc=$?
+check "radios alone is accepted" [ "${rc}" = 0 ]
+check "and carries the claim's proof and the list" python3 -c '
+import json, sys
+b = json.loads(sys.argv[1])
+assert b["claimId"] == "OLD0-CLAI-M000" and b["secret"] == "oldsecret"
+assert b["radios"]["detected"][0]["id"] == "usb-10c4_ea60-1"' "$(last_body radios)"
+echo '{"detected":[{' > "${PULZR_PROBE_RUN}/radios.json"
+before="$(requests radios)"
+claim radios; rc=$?
+check "an unreadable list is an error" [ "${rc}" != 0 ]
+check "and is not sent" [ "$(requests radios)" = "${before}" ]
+
 check "a gateway without pulzr-apply reports apply as 0" [ "$(field "$(last_body report)" facts.apply)" = 0 ]
 printf '#!/bin/sh\nexit 0\n' > "${STUBS}/pulzr-apply"; chmod +x "${STUBS}/pulzr-apply"
 claim report

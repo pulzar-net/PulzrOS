@@ -98,21 +98,21 @@ echo "${ZBT}" > "${FAKE_LIST}"
 radios scan; settle
 check "a scan writes the report" grep -q ZBT-1 "${PULZR_PROBE_RUN}/radios.json"
 check "the LAN list falls back to {} without umdns" [ "$(cat "${PULZR_PROBE_RUN}/mdns.json")" = '{}' ]
-check "not adopted: no report sent" [ "$(calls claim report)" = 0 ]
+check "not adopted: nothing sent" [ "$(calls claim radios)" = 0 ]
 
 # ── adopted: told on a change only ──────────────────────────────────────────
 echo adopted > "${SANDBOX}/adoption"
 fresh
 radios scan; settle
-check "the same list says nothing" [ "$(calls claim report)" = 0 ]
+check "the same list says nothing" [ "$(calls claim radios)" = 0 ]
 echo "${BOTH}" > "${FAKE_LIST}"
 radios scan; settle
-check "a new radio sends the report" [ "$(calls claim report)" = 1 ]
+check "a new radio sends the list" [ "$(calls claim radios)" = 1 ]
 check "and publishes the MQTT state again" [ "$(calls agent --publish-state)" = 1 ]
 echo "${ZBT}" > "${FAKE_LIST}"
 fresh
 radios scan --quiet; settle
-check "--quiet never tells" [ "$(calls claim report)" = 0 ]
+check "--quiet never tells" [ "$(calls claim radios)" = 0 ]
 
 # ── a burst of hotplug events is one scan ───────────────────────────────────
 echo "${BOTH}" > "${FAKE_LIST}"
@@ -120,13 +120,16 @@ fresh
 for _ in 1 2 3 4 5 6; do radios hotplug; done
 sleep 2.5
 check "six events, one scan" [ "$(calls probe --report)" = 1 ]
-check "and one report" [ "$(calls claim report)" = 1 ]
+check "and one list sent" [ "$(calls claim radios)" = 1 ]
 
 # ── facts, for the claim report ─────────────────────────────────────────────
+age() { touch -t 202001010000 "${PULZR_PROBE_RUN}/radios.json"; }
+fresh
 check "facts prints the list" [ "$(radios facts)" = "${BOTH}" ]
-echo '{"detected":[]}' > "${FAKE_LIST}"
+check "a list scanned this minute is not scanned again" [ "$(calls probe --report)" = 0 ]
+age; echo '{"detected":[]}' > "${FAKE_LIST}"
 check "an empty list is still a list" [ "$(radios facts)" = '{"detected":[]}' ]
-echo '{"detected":[{' > "${FAKE_LIST}"
+age; echo '{"detected":[{' > "${FAKE_LIST}"
 check "an unreadable list is null" [ "$(radios facts)" = null ]
 
 # ── ids from the network ────────────────────────────────────────────────────
