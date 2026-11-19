@@ -194,6 +194,27 @@ check "an unreadable power board record is null, and the report still parses" \
     python3 -c 'import json,sys; assert json.loads(sys.argv[1])["facts"]["rakPower"] is None' "$(last_body report)"
 rm -f "${STUBS}/pulzr-rak-power"
 
+# Radios plugged in (pulzr-radios): the list as it says it, null when it is
+# absent or unreadable, and an empty list kept as one, since that is the
+# report that says the last radio was pulled out.
+check "a gateway without pulzr-radios reports radios as null" \
+    python3 -c 'import json,sys; assert json.loads(sys.argv[1])["facts"]["radios"] is None' "$(last_body report)"
+printf '#!/bin/sh\nshift; exec "$@"\n' > "${STUBS}/pulzr-timeout"
+printf '#!/bin/sh\necho "{\\"detected\\":[{\\"id\\":\\"usb-10c4_ea60-1\\",\\"bus\\":\\"usb\\",\\"state\\":\\"free\\"}]}"\n' > "${STUBS}/pulzr-radios"
+chmod +x "${STUBS}/pulzr-timeout" "${STUBS}/pulzr-radios"
+claim report
+check "the detected radios ride the report" \
+    python3 -c 'import json,sys; assert json.loads(sys.argv[1])["facts"]["radios"]["detected"][0]["id"] == "usb-10c4_ea60-1"' "$(last_body report)"
+printf '#!/bin/sh\necho "{\\"detected\\":[]}"\n' > "${STUBS}/pulzr-radios"
+claim report
+check "no radios is an empty list, not null" \
+    python3 -c 'import json,sys; assert json.loads(sys.argv[1])["facts"]["radios"] == {"detected": []}' "$(last_body report)"
+printf '#!/bin/sh\necho "{\\"detected\\":[{"\n' > "${STUBS}/pulzr-radios"
+claim report
+check "an unreadable radio list is null, and the report still parses" \
+    python3 -c 'import json,sys; assert json.loads(sys.argv[1])["facts"]["radios"] is None' "$(last_body report)"
+rm -f "${STUBS}/pulzr-radios" "${STUBS}/pulzr-timeout"
+
 check "a gateway without pulzr-apply reports apply as 0" [ "$(field "$(last_body report)" facts.apply)" = 0 ]
 printf '#!/bin/sh\nexit 0\n' > "${STUBS}/pulzr-apply"; chmod +x "${STUBS}/pulzr-apply"
 claim report

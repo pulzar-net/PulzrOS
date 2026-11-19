@@ -89,8 +89,14 @@ grep -v '^#' "${HERE}/built" | while IFS= read -r name; do
   [ -n "${apk}" ] || { echo "the SDK built no ${name}" >&2; exit 1; }
   cp "${apk}" "${OUT}/${arch}/"
 done
-# pulzr-edge's binary, for feed/pulzr-edge's fetch.
-edge="$(find build_dir -path '*pulzr-edge-bin/usr/sbin/pulzr-edge' -type f | head -n1)"
-[ -n "${edge}" ] || { echo "the SDK built no pulzr-edge" >&2; exit 1; }
-install -m 0755 "${edge}" "${OUT}/${arch}/pulzr-edge"
+# pulzr-edge's binaries, for feed/pulzr-edge's and feed/pulzr-probe's fetch.
+for bin in pulzr-edge pulzr-probe; do
+  found="$(find build_dir -path "*pulzr-edge-bin/usr/sbin/${bin}" -type f | head -n1)"
+  [ -n "${found}" ] || { echo "the SDK built no ${bin}" >&2; exit 1; }
+  install -m 0755 "${found}" "${OUT}/${arch}/${bin}"
+done
+# pulzr-probe is in every image: held to 500 KB on flash, which is squashfs and
+# so xz, as pulzr-edge's release holds it.
+flash="$(xz -9e -c "${OUT}/${arch}/pulzr-probe" | wc -c)"
+[ "${flash}" -le 512000 ] || { echo "pulzr-probe is ${flash} bytes on flash on ${arch}, over 500 KB" >&2; exit 1; }
 ls -l "${OUT}/${arch}"

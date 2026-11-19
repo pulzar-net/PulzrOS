@@ -1,0 +1,11 @@
+# <package arch> <Depends, comma-separated or ->
+#
+# Every architecture a board runs: pulzr-probe is in every image, not an
+# add-on. Built with the OpenWrt SDK beside pulzr-edge (fetch). No TLS, no
+# network; libgcc for Rust's runtime.
+mipsel_24kc          libgcc
+mipsel_24kc_24kf     libgcc
+mips_24kc            libgcc
+aarch64_cortex-a53   libgcc
+aarch64_cortex-a72   libgcc
+aarch64_cortex-a76   libgcc

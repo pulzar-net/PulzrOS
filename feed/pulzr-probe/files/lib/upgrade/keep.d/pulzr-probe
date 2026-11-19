@@ -1,0 +1,3 @@
+# What a person decided about the radios: which serial adapters are Modbus
+# ones (never probed again) and what Identify found on ports nobody could name.
+/etc/pulzr-probe/

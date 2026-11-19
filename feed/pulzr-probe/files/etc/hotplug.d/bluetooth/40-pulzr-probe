@@ -1,0 +1,5 @@
+#!/bin/sh
+#
+# A USB Bluetooth controller appeared or went (hciN, once btusb has bound it).
+case "${ACTION}" in add|remove) /usr/sbin/pulzr-radios hotplug ;; esac
+exit 0

@@ -1,0 +1,8 @@
+#!/bin/sh
+#
+# A USB serial adapter plugged in or pulled out. Every adapter fires several
+# events (the interface, the usb-serial port, the tty); pulzr-radios waits for
+# them to settle and scans once.
+case "${DEVNAME}" in ttyUSB*|ttyACM*) ;; *) exit 0 ;; esac
+case "${ACTION}" in add|remove) /usr/sbin/pulzr-radios hotplug ;; esac
+exit 0

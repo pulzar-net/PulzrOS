@@ -3,8 +3,9 @@
 # Manage this gateway over MQTT, so that reading its state does not mean
 # loading its web console.
 #
-#   pulzr-mqtt-agent          listen for requests until killed
-#   pulzr-mqtt-agent --once   answer nothing; print what `status` would say
+#   pulzr-mqtt-agent                  listen for requests until killed
+#   pulzr-mqtt-agent --once           answer nothing; print what `status` would say
+#   pulzr-mqtt-agent --publish-state  publish the retained state again and exit
 #
 # ── WHY ────────────────────────────────────────────────────────────────────
 #
@@ -134,10 +135,26 @@ op_uplinks()   { /usr/sbin/pulzr-uplinks status 2>/dev/null || echo '{}'; }
 op_ports()     { /usr/sbin/pulzr-ports status 2>/dev/null || echo '{}'; }
 op_speedtest() { /usr/sbin/pulzr-speedtest brief 2>/dev/null || echo '{"error":"this gateway does not run speed tests"}'; }
 op_addons()    { /usr/sbin/pulzr-addon status --brief 2>/dev/null || echo '{"error":"this gateway has no add-ons"}'; }
+# What pulzr-probe last found, not a new scan: hotplug keeps the file current,
+# and a scan may probe a port, which is not what a read should do.
+op_radios()    { cat /var/run/pulzr-probe/radios.json 2>/dev/null || echo '{"detected":[]}'; }
 
 # A field of the request being answered, for the operations that take more
 # than one argument.
 field() { jsonfilter -i "${STATE_DIR}/request.json" -e "@.$1" 2>/dev/null; }
+
+# pulzr-radios prints the radios as JSON, or an error on stderr, which
+# becomes the error object, as lan's does.
+radio() {
+    [ -x /usr/sbin/pulzr-radios ] || { echo '{"error":"this gateway cannot detect radios"}'; return 1; }
+    local out
+    if out="$(/usr/sbin/pulzr-radios "$@" 2>&1)"; then
+        echo "${out}"
+    else
+        printf '{"error":"%s"}' "$(echo "${out}" | tail -n1 | tr -d '"\\')"
+        return 1
+    fi
+}
 
 # A LAN change: pulzr-lan prints the result as JSON, or an error on stderr,
 # which becomes the error object.
@@ -238,15 +255,25 @@ dispatch() {
         # request at a time, so installs and removals go through the console
         # API over gateway-link, where a person's session names who asked.
         addons)    out="$(bounded 10 op_addons)" ;;
+        radios)    out="$(bounded 5 op_radios)" ;;
+
+        # A person's decisions about a radio, from the gateway page: Identify
+        # probes a serial adapter nobody could name, and "This is a Modbus
+        # adapter" hands one to the Modbus module and stops it ever being
+        # probed. pulzr-radios checks the id again; the answer is the radios.
+        radio-identify)
+            out="$(bounded 70 radio identify "$(field radio)")" || { echo "${out}"; return 1; } ;;
+        radio-assign)
+            out="$(bounded 15 radio assign "$(field radio)" "$(field use)")" || { echo "${out}"; return 1; } ;;
 
         # Everything at once, for the case this exists to serve: somebody
         # wanting to know how a gateway is without opening anything.
         all)
-            out="$(printf '{"system":%s,"lorawan":%s,"backhaul":%s,"storage":%s,"firmware":%s,"cellular":%s,"addons":%s}' \
+            out="$(printf '{"system":%s,"lorawan":%s,"backhaul":%s,"storage":%s,"firmware":%s,"cellular":%s,"addons":%s,"radios":%s}' \
                    "$(bounded 10 op_status)" "$(bounded 15 op_lorawan)" \
                    "$(bounded 15 op_backhaul)" "$(bounded 15 op_storage)" \
                    "$(bounded 15 op_firmware)" "$(bounded 20 op_cellular)" \
-                   "$(bounded 10 op_addons)")" ;;
+                   "$(bounded 10 op_addons)" "$(bounded 5 op_radios)")" ;;
 
         restart-forwarder)
             /etc/init.d/pulzr-packet-forwarder restart >/dev/null 2>&1
@@ -333,6 +360,18 @@ fi
 }
 
 mkdir -p "${STATE_DIR}"
+
+# A radio plugged in or pulled out (pulzr-radios): the retained state again,
+# so whoever reads it later sees what is plugged in now. Not while the broker
+# is refusing this gateway, for the reason the start-up publish below gives.
+if [ "$1" = "--publish-state" ]; then
+    [ -s "${STATE_DIR}/backoff" ] && exit 0
+    dispatch all "" > "${STATE_DIR}/state.json.$$"
+    publish "${TOPIC_ROOT}/$(eui)/mgmt/state" "${STATE_DIR}/state.json.$$" retain
+    rm -f "${STATE_DIR}/state.json.$$"
+    exit 0
+fi
+
 REQUEST="${TOPIC_ROOT}/$(eui)/mgmt/request"
 RESPONSE="${TOPIC_ROOT}/$(eui)/mgmt/response"
 

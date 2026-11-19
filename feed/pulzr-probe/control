@@ -1,0 +1,11 @@
+Package: pulzr-probe
+Maintainer: Joseph Telaak <joseph@pulzr.net>
+License: Apache-2.0
+Architecture: @ARCH@
+Depends: pulzr-base
+Description: Names the radios plugged into the gateway.
+ Reads each USB serial adapter's and Bluetooth controller's identity from
+ sysfs, names it from a table of known adapters, probes only what it can name,
+ and reports radios.detected in the claim report and the MQTT state. Run by
+ hotplug and once at boot. Built from github.com/pulzar-net/pulzr-edge with the
+ OpenWrt SDK; see sdk/packages/pulzr-edge.

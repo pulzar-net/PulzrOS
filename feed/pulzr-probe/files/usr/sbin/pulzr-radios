@@ -1,0 +1,119 @@
+#!/bin/sh
+#
+# The radios plugged into this gateway, around pulzr-probe.
+#
+#   pulzr-radios scan [--quiet]       scan now; unless --quiet, tell Pulzar
+#                                     Cloud when the list changed
+#   pulzr-radios hotplug              scan once hotplug has settled (background)
+#   pulzr-radios facts                {"detected":[...]} for the claim report,
+#                                     or null when there is nothing to say
+#   pulzr-radios identify <id>        a person's Identify, from the console
+#   pulzr-radios assign <id> modbus|none
+#
+# pulzr-probe does the work: names each adapter from sysfs and its table, and
+# probes only what it can name (see its README in pulzar-net/pulzr-edge). This
+# wraps it with what is the gateway's: the LAN's mDNS answers, settling a burst
+# of hotplug events into one scan, and telling the platform.
+#
+# Telling is the claim report, sent at once, and the MQTT agent's retained
+# state, published again. A report is a few hundred bytes, and a radio is
+# plugged in by a person standing at the gateway, so this is not chatter on a
+# SIM; a scan that finds the same list says nothing.
+
+RUN="${PULZR_PROBE_RUN:-/var/run/pulzr-probe}"
+REPORT="${RUN}/radios.json"
+MDNS="${RUN}/mdns.json"
+PENDING="${RUN}/pending"
+# Several events per adapter (interface, usb-serial port, tty), and a hub
+# with three dongles is a dozen. Two seconds after the last is one scan.
+SETTLE="${PULZR_PROBE_SETTLE:-2}"
+
+log() { logger -t radios -p daemon.info "$*"; }
+
+# Coordinators that serve their serial port over TCP announce themselves by
+# mDNS on the LAN (SLZB-06 and the like). umdns is in every image and already
+# answers there; asking it to refresh and then reading what it heard is all
+# the discovery this needs. A gateway with no LAN clients writes {}.
+mdns() {
+    command -v ubus >/dev/null 2>&1 || return 0
+    ubus call umdns update >/dev/null 2>&1 || { echo '{}' > "${MDNS}"; return 0; }
+    sleep 1
+    pulzr-timeout 5 ubus call umdns browse > "${MDNS}.tmp" 2>/dev/null \
+        && mv "${MDNS}.tmp" "${MDNS}" || echo '{}' > "${MDNS}"
+}
+
+tell() {
+    [ "$(uci -q get pulzr.adoption.state)" = "adopted" ] || return 0
+    ( pulzr-claim report >/dev/null 2>&1 & ) 2>/dev/null
+    ( pulzr-mqtt-agent --publish-state >/dev/null 2>&1 & ) 2>/dev/null
+}
+
+scan() {
+    local quiet="$1" before after
+    mkdir -p "${RUN}"
+    mdns
+    before="$(md5sum "${REPORT}" 2>/dev/null | cut -d' ' -f1)"
+    pulzr-timeout 60 pulzr-probe --report "${REPORT}" --lan "${MDNS}" >/dev/null || { log "pulzr-probe failed"; return 1; }
+    after="$(md5sum "${REPORT}" 2>/dev/null | cut -d' ' -f1)"
+    [ "${before}" = "${after}" ] && return 0
+    log "radios: $(jsonfilter -i "${REPORT}" -e '@.detected[*].label' 2>/dev/null | tr '\n' ',' | sed 's/,$//')"
+    [ "${quiet}" = "--quiet" ] || tell
+}
+
+# Each event writes its own token and waits; only the one whose token is still
+# there when the burst is over scans.
+hotplug() {
+    mkdir -p "${RUN}"
+    local token="$$.$(cut -d' ' -f1 /proc/uptime)"
+    echo "${token}" > "${PENDING}"
+    (
+        sleep "${SETTLE}"
+        [ "$(cat "${PENDING}" 2>/dev/null)" = "${token}" ] || exit 0
+        rm -f "${PENDING}"
+        scan
+    ) >/dev/null 2>&1 &
+}
+
+facts() {
+    pulzr-timeout 30 "$0" scan --quiet >/dev/null 2>&1
+    if [ -s "${REPORT}" ] && jsonfilter -i "${REPORT}" -e '@' >/dev/null 2>&1 \
+        && [ "$(head -c 13 "${REPORT}")" = '{"detected":[' ]; then
+        cat "${REPORT}"
+    else
+        echo null
+    fi
+}
+
+# Ids are what pulzr-probe wrote: checked here as well, because these arrive
+# from the network.
+valid_id() {
+    case "$1" in
+        usb-*|uart-*|lan-*) ;;
+        *) return 1 ;;
+    esac
+    [ "${#1}" -le 100 ] && [ -z "$(printf '%s' "$1" | tr -d 'a-z0-9._-')" ]
+}
+
+case "$1" in
+    scan) scan "$2" ;;
+    hotplug) hotplug ;;
+    facts) facts ;;
+    identify)
+        valid_id "$2" || { echo "not a radio id" >&2; exit 1; }
+        log "identify ${2}"
+        out="$(pulzr-timeout 60 pulzr-probe --report "${REPORT}" --lan "${MDNS}" identify "$2" 2>&1)" \
+            || { echo "${out}" | tail -n1 >&2; exit 1; }
+        tell
+        cat "${REPORT}"
+        ;;
+    assign)
+        valid_id "$2" || { echo "not a radio id" >&2; exit 1; }
+        case "$3" in modbus|none) ;; *) echo "assign takes modbus or none" >&2; exit 1 ;; esac
+        log "assign ${2} ${3}"
+        out="$(pulzr-probe --report "${REPORT}" --lan "${MDNS}" assign "$2" "$3" 2>&1)" \
+            || { echo "${out}" | tail -n1 >&2; exit 1; }
+        tell
+        cat "${REPORT}"
+        ;;
+    *) echo "usage: pulzr-radios {scan [--quiet]|hotplug|facts|identify <id>|assign <id> modbus|none}" >&2; exit 1 ;;
+esac

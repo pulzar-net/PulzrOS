@@ -581,10 +581,10 @@ facts() {
     apply_support=0
     command -v pulzr-apply >/dev/null 2>&1 && apply_support=1
 
-    printf '{"board":"%s","osVersion":"%s","modemPresent":%s,"modemModel":"%s","modemKind":"%s","simIccid":"%s","sshHostKey":"%s","wiredUsable":%s,"tunnelVia":"%s","tunnelState":"%s","wifiUplink":"%s","consolePort":443,"consoleScheme":"https","tunnelConsolePort":8080,"sshPort":22,"apply":%s,"sshCa":%s,"system":%s,"rakPower":%s,"setupAp":%s,"speedtest":%s,"wiredRouters":%s,"activeUplink":"%s","stats":%s,"addons":%s,"consoleCertificate":%s%s}' \
+    printf '{"board":"%s","osVersion":"%s","modemPresent":%s,"modemModel":"%s","modemKind":"%s","simIccid":"%s","sshHostKey":"%s","wiredUsable":%s,"tunnelVia":"%s","tunnelState":"%s","wifiUplink":"%s","consolePort":443,"consoleScheme":"https","tunnelConsolePort":8080,"sshPort":22,"apply":%s,"sshCa":%s,"system":%s,"rakPower":%s,"setupAp":%s,"speedtest":%s,"wiredRouters":%s,"activeUplink":"%s","stats":%s,"addons":%s,"radios":%s,"consoleCertificate":%s%s}' \
         "${board_id}" "${version}" "${modem_present}" "${modem_model:-}" "${modem_kind:-}" "${iccid:-}" \
         "${host_key:-}" "${wired_usable}" "${tunnel_via:-none}" "${tunnel:-none}" "${wifi_uplink:-unchecked}" "${apply_support}" "${ssh_ca}" "$(system_facts)" "$(rak_power_facts)" "$(setup_ap_facts)" "$(speedtest_facts)" "$(router_facts)" "$(active_uplink)" "$(stats_facts)" \
-        "$(addon_facts)" "$(console_cert_facts)" "$(console_csr_field)"
+        "$(addon_facts)" "$(radio_facts)" "$(console_cert_facts)" "$(console_csr_field)"
 }
 
 # CPU, memory, temperature, storage, buffer depth, signal and bytes per uplink
@@ -612,6 +612,24 @@ addon_facts() {
     command -v pulzr-addon >/dev/null 2>&1 || { echo null; return; }
     out="$(pulzr-timeout 20 pulzr-addon status --brief 2>/dev/null)"
     if [ -n "${out}" ] && echo "${out}" | jsonfilter -e '@' >/dev/null 2>&1; then
+        echo "${out}"
+    else
+        echo null
+    fi
+}
+
+# The radios plugged in (pulzr-radios, from pulzr-probe): {"detected": [...]},
+# which Pulzar Cloud compares with the last report to say a radio was plugged
+# in, pulled out or came back. null when it cannot say; a report without the
+# key is firmware that cannot detect radios, and nothing is concluded from it.
+radio_facts() {
+    local out
+    command -v pulzr-radios >/dev/null 2>&1 || { echo null; return; }
+    out="$(pulzr-timeout 40 pulzr-radios facts 2>/dev/null)"
+    # Valid JSON with the list, checked as a string: jsonfilter's answer for
+    # an empty list is not one to lean on, and an empty list is the report
+    # that says the last radio was pulled out.
+    if echo "${out}" | jsonfilter -e '@' >/dev/null 2>&1 && case "${out}" in '{"detected":['*) true ;; *) false ;; esac; then
         echo "${out}"
     else
         echo null
