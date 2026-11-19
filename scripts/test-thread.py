@@ -390,8 +390,10 @@ esac
     outputs.pop()
     check('the network key is in no other output', not any(netkey in o for o in outputs))
     listen = survivor.ns('ss', '-ltnH').stdout
-    check('the REST API listens on loopback only', '127.0.0.1:8081' in listen and '*:8081' not in listen
-          and '[::]:8081' not in listen, listen)
+    rest = [line.split()[3].rsplit(':', 1)[0].strip('[]') for line in listen.splitlines()
+            if line.split()[3].endswith(':8081')]
+    check('the REST API listens on loopback only',
+          rest and all(a in ('127.0.0.1', '::1', '::ffff:127.0.0.1') for a in rest), listen)
 
     s = json.loads(survivor.cli('leave'))
     check('leave erases the network', s.get('dataset') is None and not (survivor.dir / 'network').exists(), json.dumps(s))
