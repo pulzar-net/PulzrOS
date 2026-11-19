@@ -37,6 +37,12 @@ console/dist/
 # every typecheck.
 console/tsconfig.tsbuildinfo
 
+# The docs site: its dependencies and what VitePress builds. The Pages
+# workflow builds it from source; nothing built is committed.
+docs/node_modules/
+docs/.vitepress/dist/
+docs/.vitepress/cache/
+
 # A local ucode build for scripts/check-ucode.sh — see the README.
 ucode/
 

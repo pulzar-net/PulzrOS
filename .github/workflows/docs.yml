@@ -1,0 +1,72 @@
+# The docs site: docs/ built with VitePress and published to GitHub Pages.
+#
+# Built on every pull request that touches it, so a dead link or a page that
+# does not compile fails there; published only from main. The Hardware pages
+# read boards/*/board.conf through scripts/board-facts.sh, so a change to a
+# board republishes its page.
+
+name: docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'boards/**'
+      - 'console/public/**'
+      - 'scripts/board-facts.sh'
+      - '.github/workflows/docs.yml'
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'boards/**'
+      - 'console/public/**'
+      - 'scripts/board-facts.sh'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: docs/package-lock.json
+
+      - run: npm ci
+        working-directory: docs
+
+      - run: npm run build
+        working-directory: docs
+
+      - uses: actions/upload-pages-artifact@v3
+        if: github.event_name != 'pull_request'
+        with:
+          path: docs/.vitepress/dist
+
+  deploy:
+    name: Deploy
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -50,12 +50,8 @@ in the image and a missing binary otherwise surfaces as a 500.
 
 ## The boards
 
-| Board | Features |
-|---|---|
-| `rpi3`, `rpi4`, `rpi5` | `lorawan cellular wifi gnss bluetooth speedtest` |
-| `rak7268c`, `rak7289cv2` | `lorawan cellular wifi gnss` |
-| `rak7268cv2` | `lorawan cellular wifi` (no GNSS) |
-| `gl-sft1200` | `cellular wifi lan dns failover speedtest` |
+Each board's words are on its [Hardware](/hardware/) page, read from its
+`board.conf`.
 
 The Pi and RAK images were package-for-package what they were before the
 feature list existed; the list only named what they already carried. The Pis

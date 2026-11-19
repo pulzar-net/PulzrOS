@@ -87,24 +87,12 @@ why detection disagrees.
 
 ## The current boards
 
-| Board | Target | Concentrator | Status |
-|---|---|---|---|
-| `rpi3` | bcm27xx/bcm2710 | 1 slot, `auto` | Kit. Any bus. |
-| `rpi4` | bcm27xx/bcm2711 | 1 slot, `auto` | Kit. Any bus. |
-| `rpi5` | bcm27xx/bcm2712 | 1 slot, `auto` | Kit. GPIO is behind the RP1 — see `PULZR_GPIOCHIP`. |
-| `rak7268c` | ramips/mt76x8 | 1 slot, fixed SPI | **Unverified.** 8 channels. |
-| `rak7268cv2` | ramips/mt76x8 | 1 slot, fixed SPI | Harvested. Device support in `boards/rak7268cv2/openwrt/`. 8 channels. |
-| `rak7289cv2` | ramips/mt76x8 | 2 slots, fixed USB | **Supported.** Full PulzarOS bench-confirmed on a single-radio unit (concentratord, 8 ch, GPS, adoption); two-slot structure ready, LoRa1/LoRa2 order to be confirmed on a dual-card Pro. 16 channels. Power-board watchdog and battery pack per ChirpStack's RAK support, not yet seen answering ([rak-power.md](rak-power.md)). Device support in `boards/rak7289cv2/openwrt/`. |
-| `rak7268v2` | ramips/mt76x8 | 1 slot, fixed SPI | **Unverified.** The RAK7268CV2 without LTE: its device support and image, cellular left out. 8 channels. |
-| `rak7289v2` | ramips/mt76x8 | 2 slots, fixed USB | **Unverified.** The RAK7289CV2 without LTE: its device support and image, cellular left out. 16 channels. |
-| `rak7391` | bcm27xx/bcm2711 | 2 slots, `auto` | **Unverified.** WisGate Connect, a CM4 carrier: the Pi 4 image; mPCIe cards are probed as on a kit (resets 17 and 6 for an SPI card). |
-| `rak7266` | ramips/mt76x8 | 1 slot, fixed SPI | **Unverified.** RAK636 with the RAK7268V2's radio: that board's image without the Lite's breathing light. |
-| `rak7267` | ramips/mt76x8 | 1 slot, fixed USB | **Unverified.** RAK636, one RAK5146 on USB, GNSS: the RAK7289CV2's image with one card. |
-| `sensecap-m2` | ramips/mt76x8 | 1 slot, fixed SPI | **Needs device support** until its device support (`boards/sensecap-m2/openwrt/`) is booted on a unit. |
-| `dragino-lps8n` | ath79/generic | 1 slot, fixed SPI | **Needs device support** until its device support (`boards/dragino-lps8n/openwrt/`) builds and is booted on a unit. |
-| `gl-sft1200` | siflower/sf19a2890 | none: a router | **Booted.** GL.iNet Opal, the router IP devices sit behind on its two LAN ports ([lan.md](lan.md)). Device support in `boards/gl-sft1200/openwrt/`. |
+Every board, its features, radio slots, panel lights and status, is on its
+[Hardware](/hardware/) page, generated from its `board.conf` when the docs
+site is built (`scripts/board-facts.sh`), so there is no table here to fall
+behind.
 
-The RAK V2, RAK7391, RAK7266/7267, SenseCAP M2 and LPS8N rows come from what
+The RAK V2, RAK7391, RAK7266/7267, SenseCAP M2 and LPS8N boards come from what
 ChirpStack Gateway OS supports. Their radio facts (part, bus, reset and power
 lines) are read from ChirpStack's OpenWrt feed, which is MIT; Gateway OS's own
 repository carries no license, so its device patches are a reference to read

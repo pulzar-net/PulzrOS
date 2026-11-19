@@ -1,0 +1,29 @@
+name: Board support
+description: Support for a gateway or router PulzrOS does not run on yet.
+labels: [board]
+body:
+  - type: input
+    id: board
+    attributes:
+      label: Board
+      placeholder: Vendor and model
+    validations:
+      required: true
+  - type: textarea
+    id: hardware
+    attributes:
+      label: Hardware
+      description: SoC, flash, LoRa radio and how it is attached, modem, GNSS, LEDs. Whatever you know, and where it came from.
+    validations:
+      required: true
+  - type: input
+    id: openwrt
+    attributes:
+      label: OpenWrt support
+      description: The OpenWrt target and device profile, if one exists.
+  - type: checkboxes
+    id: unit
+    attributes:
+      label: Hardware on hand
+      options:
+        - label: I have a unit and can test images on it.

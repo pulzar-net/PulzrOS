@@ -1,0 +1,14 @@
+{
+  "name": "pulzros-docs",
+  "private": true,
+  "type": "module",
+  "description": "The PulzrOS documentation site, built with VitePress and published to GitHub Pages.",
+  "scripts": {
+    "dev": "vitepress dev",
+    "build": "vitepress build",
+    "preview": "vitepress preview"
+  },
+  "devDependencies": {
+    "vitepress": "1.6.4"
+  }
+}
