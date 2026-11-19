@@ -238,7 +238,7 @@ let radioUrl = () => {
     let path = null, baud = null;
     for (let r in radios())
         if (r.id == id) { path = r.path; baud = r.baud; }
-    if (!path || !match(path, /^\/dev\/[A-Za-z0-9_-]+$/)) return { error: sprintf('The Thread radio %s is not plugged in.', id) };
+    if (!path || !match(path, /^\/dev\/[A-Za-z0-9_-]+(\/[A-Za-z0-9_-]+)?$/)) return { error: sprintf('The Thread radio %s is not plugged in.', id) };
     // 460800 is what OpenThread's RCP images for the nRF52840 and Silicon
     // Labs' for the MG21 and MG24 run at; pulzr-probe says when it found
     // another.
