@@ -65,6 +65,7 @@ export default defineConfig({
           { text: 'Backhaul and management', link: '/backhaul' },
           { text: 'LAN ports', link: '/lan' },
           { text: 'Ports and VLANs', link: '/ports' },
+          { text: 'WiFi radios and repeaters', link: '/radios' },
           { text: 'Speed tests', link: '/speedtest' },
         ],
       },

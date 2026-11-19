@@ -49,6 +49,8 @@ export default function JoinWizard({
   onClose,
   onJoined,
   onFailureShown,
+  endpoint = '/access/wifi',
+  extra,
 }: {
   open: boolean;
   /** A saved network the page has just rejoined: open on its outcome. */
@@ -59,6 +61,11 @@ export default function JoinWizard({
   onJoined: (pending?: Pending) => void;
   /** This failure has been shown here, so the page need not announce it. */
   onFailureShown: () => void;
+  /** Where the join goes, and what goes with it: the radios page joins on a
+      chosen radio, and a repeater sends its access point in the same
+      change (/radios/uplink). */
+  endpoint?: string;
+  extra?: Record<string, unknown>;
 }) {
   const [step, setStep] = useState<Step>('network');
   const [ssid, setSsid] = useState('');
@@ -149,7 +156,8 @@ export default function JoinWizard({
     // new one from the one that may have prompted it.
     onMutate: () => setFailureBefore(failure?.at ?? null),
     mutationFn: () =>
-      api.post<{ message: string; pending?: Pending }>('/access/wifi', {
+      api.post<{ message: string; pending?: Pending }>(endpoint, {
+        ...extra,
         ssid: ssid.trim(),
         ...(isEap
           ? {

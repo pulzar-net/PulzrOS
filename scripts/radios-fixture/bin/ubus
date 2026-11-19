@@ -1,0 +1,17 @@
+#!/bin/sh
+# netifd, iwinfo and the interface dump, from files under $T. A device
+# iwinfo does not know answers as the real one does: exit 4, nothing printed.
+device() { printf '%s' "$1" | sed -n 's/.*"device" *: *"\([^"]*\)".*/\1/p'; }
+case "$1 $2 $3" in
+    "call network.wireless status") cat "${T}/wireless.json" ;;
+    "call network.interface dump") cat "${T}/dump.json" 2>/dev/null || echo '{"interface":[]}' ;;
+    "call network.interface.wwifi status") cat "${T}/wwifi.json" 2>/dev/null || echo '{"up":false}' ;;
+    "call iwinfo info")
+        f="${T}/iwinfo/$(device "$4").json"
+        [ -f "${f}" ] && cat "${f}" || exit 4 ;;
+    "call iwinfo assoclist")
+        f="${T}/assoc/$(device "$4").json"
+        [ -f "${f}" ] && cat "${f}" || echo '{"results":[]}' ;;
+    "call iwinfo scan") echo '{"results":[]}' ;;
+    *) exit 4 ;;
+esac

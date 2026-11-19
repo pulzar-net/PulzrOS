@@ -27,6 +27,7 @@ let dns = loadfile('/usr/share/pulzr/console/lib/dns.uc', { raw_mode: true })();
 let uplinks = loadfile('/usr/share/pulzr/console/lib/uplinks.uc', { raw_mode: true })();
 let ports = loadfile('/usr/share/pulzr/console/lib/ports.uc', { raw_mode: true })();
 let speedtest = loadfile('/usr/share/pulzr/console/lib/speedtest.uc', { raw_mode: true })();
+let radios = loadfile('/usr/share/pulzr/console/lib/radios.uc', { raw_mode: true })();
 
 // ucode does not hoist function declarations; see util.uc.
 let audited;
@@ -99,6 +100,22 @@ const ACTIONS = {
                                            signin.mintTicket(s.subject, addr)),
     // pulzr-wifi-uplink's check, now; see access.checkWifi.
     checkWifi: (req, s) => access.checkWifi(),
+
+    // ── radios: channels, access points, the uplink's radio; lib/radios.uc ──
+    setRadio: (req, s) => audited('radio.set',
+        { by: s.subject, radio: req.radio, channel: req.channel, width: req.width,
+          txpower: req.txpower, country: req.country, enabled: req.enabled },
+        radios.setRadio(req)),
+    setRadioAp: (req, s) => audited(req.id ? 'radio.ap.edit' : 'radio.ap.add',
+        { by: s.subject, id: req.id, radio: req.radio, ssid: req.ssid, security: req.security,
+          network: req.network, enabled: req.enabled },
+        radios.setAp(req)),
+    removeRadioAp: (req, s) => audited('radio.ap.remove', { by: s.subject, id: req.id }, radios.removeAp(req)),
+    joinRadioUplink: (req, s) => audited(req.ap ? 'radio.repeater' : 'radio.uplink',
+        { by: s.subject, radio: req.radio, ssid: req.ssid, saved: !!req.saved,
+          security: req.eap ? 'eap' : (req.key ? 'psk' : (req.saved ? 'saved' : 'open')),
+          ap: req.ap ? { radio: req.ap.radio, ssid: req.ap.ssid, security: req.ap.security } : null },
+        radios.joinUplink(req)),
 
     // ── lan ─────────────────────────────────────────────────────────────────
     setLanPolicy: (req, s) => audited('lan.policy', { by: s.subject, mac: req.mac, policy: req.policy },

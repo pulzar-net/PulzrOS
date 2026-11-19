@@ -184,6 +184,14 @@
 
   --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
 
+  /* A WiFi band's colour, on the radios page: its radio's dot, its hop in
+     the path and its tag, so the 2.4 GHz radio is the same colour wherever
+     it appears. From the hues, so dark mode follows them. */
+  --band-2g:  var(--hue-amber);
+  --band-5g:  var(--hue-indigo);
+  --band-6g:  var(--hue-violet);
+  --band-60g: var(--hue-slate);
+
   --page-bg:    #f4f6f9;
   --sidebar-bg: #ffffff;
   --rule:       #e6eaf0;

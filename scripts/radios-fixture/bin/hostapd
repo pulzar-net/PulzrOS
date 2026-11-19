@@ -1,0 +1,4 @@
+#!/bin/sh
+# `hostapd -vsae`: 0 when this wpad does SAE, as wpad-openssl does.
+[ "$1" = -vsae ] && exit "${HOSTAPD_SAE:-0}"
+exit 1

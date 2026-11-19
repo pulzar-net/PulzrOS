@@ -110,11 +110,12 @@ EOF
 # radio ships disabled — and the first WiFi join enables the radio. On
 # a Pi 3 that put an open AP onto the console's LAN, and on its
 # single-radio chip it also knocked the WiFi uplink off every second, so the
-# join looked like it had failed. Ours are the parkeze_ sections; anything
+# join looked like it had failed. Ours are the parkeze_ sections and the
+# access points made on the radios page (pulzr_ap_*); anything
 # else on a radio is deleted. Runs again after every sysupgrade, which is
 # what cleans the gateways already carrying it.
 for iface in $(uci -q show wireless | sed -n 's/^wireless\.\([^.=]*\)=wifi-iface$/\1/p'); do
-    case "${iface}" in parkeze_*) ;; *) uci -q delete "wireless.${iface}" ;; esac
+    case "${iface}" in parkeze_*|pulzr_*) ;; *) uci -q delete "wireless.${iface}" ;; esac
 done
 uci -q commit wireless
 

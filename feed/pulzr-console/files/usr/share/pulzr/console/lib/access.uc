@@ -380,9 +380,11 @@ applyNetwork = function(uci, radio, net) {
     // Enabling the radio below also enables anything else on it, and OpenWrt
     // ships an open AP named "OpenWrt" on the LAN there. On a single-radio
     // chip it also drops this station every second. See 60-pulzr-ap.
+    // The access points made on the WiFi page (pulzr_ap_*, lib/radios.uc)
+    // are ours too.
     const foreign = [];
     uci.foreach('wireless', 'wifi-iface', (s) => {
-        if (!match(s['.name'], /^parkeze_/)) push(foreign, s['.name']);
+        if (!match(s['.name'], /^(parkeze|pulzr)_/)) push(foreign, s['.name']);
     });
     for (let name in foreign) uci.delete('wireless', name);
 
@@ -440,7 +442,17 @@ applyNetwork = function(uci, radio, net) {
         uci.set('firewall', 'wan', 'network', trim(zone + ' wwifi'));
 };
 
-radioName = function() {
+// The radio the uplink is on: `wanted` when it is one (the radios page
+// moving it), else the one it is on now, else the first. Not always the
+// first: on a repeater the uplink may be the second radio, and a rejoin from
+// the WiFi page or a roam must not move it back onto the AP's.
+radioName = function(wanted) {
+    const uci = cursor();
+    if (wanted != null)
+        return type(wanted) == 'string' && match(wanted, /^[A-Za-z0-9_]{1,32}$/)
+            && uci.get('wireless', wanted) == 'wifi-device' ? wanted : null;
+    const current = uci.get('wireless', 'parkeze_sta', 'device');
+    if (current && uci.get('wireless', current) == 'wifi-device') return current;
     return run("uci -q show wireless | sed -n 's/^wireless\\.\\([^.]*\\)=wifi-device$/\\1/p' | head -n1");
 };
 
@@ -477,8 +489,8 @@ joinWifi = function(req) {
         if (net.error) return net;
     }
 
-    const radio = radioName();
-    if (!radio) return { error: 'This board has no WiFi radio.' };
+    const radio = radioName(req.radio);
+    if (!radio) return { error: req.radio != null ? 'No such radio.' : 'This board has no WiFi radio.' };
 
     applyNetwork(uci, radio, net);
     saveNetwork(uci, net);

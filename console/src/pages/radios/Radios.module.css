@@ -1,0 +1,277 @@
+/* ── a radio's card ─────────────────────────────────────────────────────── */
+
+/* What the radio is set to, as four readings across the top of its card. */
+.specs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-3);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--rule);
+}
+
+.spec {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.specLabel {
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+}
+
+.specValue {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+
+.specNote {
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--text-secondary);
+}
+
+.bandPill {
+  justify-self: start;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--band);
+  background: color-mix(in srgb, var(--band) 13%, transparent);
+}
+
+/* What runs on it, one row each. */
+.ifaces {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.iface + .iface { border-top: 1px solid var(--rule); }
+
+.ifaceRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 8px 0;
+}
+
+.ifaceGlyph {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+}
+
+.ifaceLive {
+  background: color-mix(in srgb, var(--band, var(--accent)) 13%, transparent);
+  color: var(--band, var(--accent));
+}
+
+.ifaceText {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.ifaceName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.ifaceSub {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+}
+
+.ifaceState { flex: none; }
+
+.reading {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+.reading.good svg { color: var(--status-success); }
+.reading.fair svg { color: var(--status-warning); }
+.reading.weak svg { color: var(--status-error); }
+
+.clientCount {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border: 1px solid var(--border-primary);
+  border-radius: 999px;
+  background: var(--bg-primary);
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.clientCount:hover:not(:disabled) { border-color: var(--border-secondary); }
+.clientCount:disabled { cursor: default; color: var(--text-secondary); }
+.flipped { transform: rotate(180deg); }
+
+.ifaceActions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 60px;
+  justify-content: flex-end;
+}
+
+.iconButton {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.iconButton:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+
+.rowLink {
+  font-size: var(--fs-sm);
+  text-decoration: none;
+}
+.rowLink:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+/* An AP's clients, under its row. */
+.clients {
+  list-style: none;
+  margin: 0 0 10px 42px;
+  padding: 0;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+}
+
+.client {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr) 90px 70px;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  font-size: var(--fs-sm);
+}
+.client + .client { border-top: 1px solid var(--rule); }
+
+.vendor {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+
+.rate { text-align: right; color: var(--text-secondary); }
+
+.unused {
+  padding: 18px 0 6px;
+  font-size: var(--fs-md);
+  color: var(--text-tertiary);
+}
+
+.cardActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: var(--space-3);
+}
+
+.empty {
+  padding: 24px 0;
+  text-align: center;
+  font-size: var(--fs-md);
+  color: var(--text-secondary);
+}
+
+/* ── dialogs ────────────────────────────────────────────────────────────── */
+.form { display: grid; }
+
+.pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 20px;
+}
+.checks > * { margin-bottom: 0; }
+
+/* The repeater it will make, as the path will draw it. */
+.preview {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 16px;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  font-size: var(--fs-xs);
+}
+
+.previewNode {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 4px 8px;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.previewGateway { border-color: var(--border-secondary); }
+
+.previewHop {
+  display: inline-grid;
+  justify-items: center;
+  color: var(--band, var(--text-tertiary));
+  line-height: 1.2;
+}
+
+.previewBand { font-weight: 600; }
+.previewRadio { color: var(--text-tertiary); }
+
+@media (max-width: 760px) {
+  /* A thumb's worth, on a phone. */
+  .iconButton { width: 40px; height: 40px; }
+  .clientCount { padding: 8px 10px; }
+  .specs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .client { grid-template-columns: minmax(0, 1fr) auto; }
+  .vendor, .rate { display: none; }
+  .clients { margin-left: 0; }
+  .pair { grid-template-columns: 1fr; gap: 0; }
+}

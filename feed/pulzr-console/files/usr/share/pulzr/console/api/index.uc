@@ -54,6 +54,7 @@ let ports = loadfile('/usr/share/pulzr/console/lib/ports.uc', { raw_mode: true }
 let apply = loadfile('/usr/share/pulzr/console/lib/apply.uc', { raw_mode: true })();
 let speedtest = loadfile('/usr/share/pulzr/console/lib/speedtest.uc', { raw_mode: true })();
 let addons = loadfile('/usr/share/pulzr/console/lib/addons.uc', { raw_mode: true })();
+let radios = loadfile('/usr/share/pulzr/console/lib/radios.uc', { raw_mode: true })();
 // What changes the gateway, shared with the terminal UI; see actions.uc.
 let actions = loadfile('/usr/share/pulzr/console/lib/actions.uc', { raw_mode: true })();
 
@@ -438,6 +439,30 @@ const ROUTES = {
         return respond(200, result);
     },
 
+    // ── radios: what each WiFi radio runs, see lib/radios.uc ───────────────
+    //
+    // Every change goes through the rollback window: a channel change drops
+    // the clients of that radio, and the uplink on the wrong radio is the
+    // tunnel gone. The uplink's join is access.joinWifi's, with its radio
+    // chosen and, for a repeater, an access point written with it.
+    'GET  /api/radios':           () => respond(200, radios.status()),
+    'POST /api/radios/radio':     (env, req, s) => {
+        const result = apply.guard(APPLY_WINDOW, s, () => actions.setRadio(req, s));
+        return result.error ? error(400, result.error) : respond(200, result);
+    },
+    'POST /api/radios/ap':        (env, req, s) => {
+        const result = apply.guard(APPLY_WINDOW, s, () => actions.setRadioAp(req, s));
+        return result.error ? error(400, result.error) : respond(200, result);
+    },
+    'POST /api/radios/ap/remove': (env, req, s) => {
+        const result = apply.guard(APPLY_WINDOW, s, () => actions.removeRadioAp(req, s));
+        return result.error ? error(400, result.error) : respond(200, result);
+    },
+    'POST /api/radios/uplink':    (env, req, s) => {
+        const result = apply.guard(APPLY_WINDOW, s, () => actions.joinRadioUplink(req, s));
+        return result.error ? error(400, result.error) : respond(200, result);
+    },
+
     // ── lan: the devlan zone; no tunnel forwards, see lib/lan.uc ───────────
     'GET  /api/lan/status':  () => respond(200, lan.status()),
     'POST /api/lan/cellular': (env, req, s) => {
@@ -550,6 +575,7 @@ const FEATURE_PREFIXES = [
     ['/api/access/scan',       'wifi'],
     ['/api/access/ap',         'wifi'],
     ['/api/access/key',        'wifi'],
+    ['/api/radios',            'wifi'],
     ['/api/lan/',              'lan'],
     ['/api/dns/',              'dns'],
     ['/api/uplinks/',          'failover'],

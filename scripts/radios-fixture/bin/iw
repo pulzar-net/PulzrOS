@@ -1,0 +1,5 @@
+#!/bin/sh
+# `iw phy <phy> info` from $T/phy/<phy>.txt.
+[ "$1 $3" = "phy info" ] && [ -f "${T}/phy/$2.txt" ] && exec cat "${T}/phy/$2.txt"
+echo "command failed: No such device (-19)" >&2
+exit 237

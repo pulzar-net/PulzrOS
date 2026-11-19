@@ -200,6 +200,14 @@ jobs:
       - name: WiFi uplink and roaming
         run: UCODE=/tmp/ucode/build/ucode scripts/test-wifi-uplink.sh
 
+      # The radios page: what each radio runs and what the hardware lets it
+      # run. A repeater the radio cannot hold, a channel the regulatory domain
+      # closes or an open AP onto the LAN are refused before anything is
+      # written, and a WiFi join keeps the APs made there. Against `iw phy
+      # info` from three kinds of radio, a fake netifd and iwinfo.
+      - name: WiFi radios
+        run: UCODE=/tmp/ucode/build/ucode scripts/test-radios.sh
+
       # pulzr-addon puts root code on gateways nobody can reach, and is the
       # gateway's half of a denied capability staying off. Each refusal, a
       # download cut off half way, the gate's revert and the restore after an

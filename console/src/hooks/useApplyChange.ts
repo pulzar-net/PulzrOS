@@ -41,7 +41,7 @@ export function useApplyChange() {
   useEffect(() => () => { run.current++; }, []);
 
   const refresh = useCallback(() => {
-    for (const key of ['ports', 'network-status', 'backhaul', 'uplinks', 'lan', 'access', 'wifi-detail', 'dns']) {
+    for (const key of ['ports', 'network-status', 'backhaul', 'uplinks', 'lan', 'access', 'wifi-detail', 'dns', 'radios']) {
       queryClient.invalidateQueries({ queryKey: [key] });
     }
   }, [queryClient]);

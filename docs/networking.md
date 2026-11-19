@@ -27,6 +27,8 @@ Join a network from **Backhaul > WiFi**. The gateway does not trust a lease: it 
 
 The WiFi page says why a network is not `open`, and keeps a roam history.
 
+Which radio the uplink runs on, access points on the others, and a one-step repeater are on **Radios > WiFi**: [WiFi radios and repeaters](/radios).
+
 ## Captive portals
 
 A guest network that wants somebody to click through a sign-in page has to see the *gateway* click, since a portal admits a device by its MAC. So **Sign in** on the WiFi page opens the portal's page as the gateway: a proxy on the gateway fetches it out of the WiFi radio and hands it to your browser, wherever that browser is (cable, setup AP, or the cloud with the gateway on cellular). The terminal UI shows the same sign-in as a URL and a QR code.

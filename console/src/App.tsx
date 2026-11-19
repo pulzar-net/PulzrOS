@@ -29,6 +29,7 @@ const Dns = lazy(() => import('@/pages/network/Dns'));
 const SpeedTest = lazy(() => import('@/pages/network/SpeedTest'));
 const Gnss = lazy(() => import('@/pages/Gnss'));
 const Bluetooth = lazy(() => import('@/pages/Bluetooth'));
+const Radios = lazy(() => import('@/pages/radios/Radios'));
 const Panel = lazy(() => import('@/pages/Panel'));
 const Access = lazy(() => import('@/pages/Access'));
 const Logs = lazy(() => import('@/pages/Logs'));
@@ -107,6 +108,7 @@ export default function App() {
         <Route path="network/dns" element={<Gated feature="dns"><Dns /></Gated>} />
         <Route path="network/speed" element={<Gated feature="speedtest"><SpeedTest /></Gated>} />
         <Route path="gnss" element={<Gated feature="gnss"><Gnss /></Gated>} />
+        <Route path="wifi" element={<Gated feature="wifi"><Radios /></Gated>} />
         <Route path="bluetooth" element={<Gated feature="bluetooth"><Bluetooth /></Gated>} />
         {/* Where concentrator hardware used to be; it is a forwarder's tab now. */}
         <Route path="hardware" element={<Navigate to="/lorawan/forwarders/1/concentrator" replace />} />
