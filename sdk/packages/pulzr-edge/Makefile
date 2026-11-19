@@ -9,12 +9,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=pulzr-edge
-PKG_VERSION:=0.4.2
+PKG_VERSION:=0.4.3
 PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://codeload.github.com/pulzar-net/pulzr-edge/tar.gz/v$(PKG_VERSION)?
-PKG_HASH:=2ad0d9121d798fb4496f255abdebc5843ad487253ce529c103992f6c46647971
+PKG_HASH:=5de096e96f75a7846a8015d18da2a45c075853d8b1b2e1184b126a19304a4a72
 
 PKG_MAINTAINER:=Joseph Telaak <joseph@pulzr.net>
 PKG_LICENSE:=Apache-2.0
