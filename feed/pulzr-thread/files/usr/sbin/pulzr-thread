@@ -418,14 +418,15 @@ let scan = () => {
     if (!agentUp()) die('The Thread border router is not running.');
     let down = !(role() in ATTACHED);
     if (down) otctl('ifconfig', 'up');
-    let rows = table(otctl('scan', 'energy', '300'));
+    let raw = run([OTCTL, '-I', IFACE, 'scan', 'energy', '300']);
+    let rows = table(split(raw.out, '\n'));
     if (down) otctl('ifconfig', 'down');
     let channels = [];
     for (let r in rows) {
         let ch = int(r['Ch'] ?? ''), rssi = int(r['RSSI'] ?? '');
         if (ch >= 11 && ch <= 26) push(channels, { channel: ch, max_rssi: rssi });
     }
-    if (!length(channels)) die('The radio reported no energy scan.');
+    if (!length(channels)) die(sprintf('The radio reported no energy scan: %s', replace(substr(raw.out, 0, 160), /\n/g, ' | ')));
     let best = null;
     for (let c in channels)
         if (c.channel in QUIET && (best == null || c.max_rssi < best.max_rssi)) best = c;

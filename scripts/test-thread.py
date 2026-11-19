@@ -277,7 +277,10 @@ esac
     br1 = BorderRouter('br1', 1)
     br2 = BorderRouter('br2', 2)
 
-    scan = json.loads(br1.cli('scan'))
+    try:
+        scan = json.loads(br1.cli('scan'))
+    except RuntimeError as e:
+        scan = {'channels': [], 'recommended': None, 'error': str(e)}
     check('scan reports the 16 channels and a quiet one', len(scan['channels']) == 16 and scan['recommended'] in (15, 20, 25),
           json.dumps(scan))
 
