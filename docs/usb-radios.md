@@ -17,9 +17,10 @@ first: the drivers and `pulzr-probe` are in every image.
    in its table of known adapters.
 4. A known adapter is asked what firmware it runs, with only the probes its
    table entry allows. An adapter it cannot name is never written to.
-5. When the list changed, the gateway sends its claim report at once and
-   publishes its retained MQTT state again, both with `radios.detected`.
-   The console shows a card on the gateway's page.
+5. When the list changed, the gateway sends it to Pulzar Cloud at once, on
+   its own (`pulzr-claim radios`, a few hundred bytes), and publishes its
+   retained MQTT state again. The gateway's page shows the card within
+   seconds.
 
 It also runs once at boot, for what was plugged in before power-on, and with
 every six-hourly report.
