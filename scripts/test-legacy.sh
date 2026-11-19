@@ -219,19 +219,22 @@ check "fleet adoption key is the same key, byte for byte" \
 # ── packages ────────────────────────────────────────────────────────────────
 
 STAGE="${SANDBOX}/stage"
-# pulzr-edge's payload is sdk/build.sh's output, which this job does not build;
-# only package metadata is checked here, so a stub binary stands in for it.
+# pulzr-edge's and pulzr-probe's payloads are sdk/build.sh's output, which this
+# job does not build; only package metadata is checked here, so stub binaries
+# stand in for them.
 SDK_STUB="${SANDBOX}/sdk"
-while read -r arch _; do
-    case "${arch}" in ''|'#'*) continue ;; esac
-    mkdir -p "${SDK_STUB}/${arch}" && printf '#!/bin/sh\n' > "${SDK_STUB}/${arch}/pulzr-edge"
-    chmod +x "${SDK_STUB}/${arch}/pulzr-edge"
-done < "${ROOT_DIR}/feed/pulzr-edge/arches"
+for bin in pulzr-edge pulzr-probe; do
+    while read -r arch _; do
+        case "${arch}" in ''|'#'*) continue ;; esac
+        mkdir -p "${SDK_STUB}/${arch}" && printf '#!/bin/sh\n' > "${SDK_STUB}/${arch}/${bin}"
+        chmod +x "${SDK_STUB}/${arch}/${bin}"
+    done < "${ROOT_DIR}/feed/${bin}/arches"
+done
 PULZR_SDK_OUT="${SDK_STUB}" bash "${ROOT_DIR}/scripts/build-feed.sh" "${ROOT_DIR}/feed" "${STAGE}" 0.0.1 1 >/dev/null 2>&1 \
     || { fail=$((fail + 1)); echo "FAIL build-feed.sh stages the feed"; }
 # Packages ParkezeOS never shipped have no old name to answer for. Listed by
 # hand, so a renamed package cannot drop out of this check by accident.
-NEW_IN_PULZROS="pulzr-edge"
+NEW_IN_PULZROS="pulzr-edge pulzr-probe"
 for dir in "${ROOT_DIR}"/feed/pulzr-*/; do
     n="$(basename "${dir}")"; old="parkeze-${n#pulzr-}"
     case " ${NEW_IN_PULZROS} " in *" ${n} "*) continue ;; esac
