@@ -188,13 +188,17 @@ let meshLocal = (v) => {
     return join(':', g);
 };
 
-// What the dataset says, without its keys. dataset_id is the SHA-256 of
-// every TLV but the network key and the PSKc, sorted by type, so the platform
-// can compute it from the copy it keeps however the border router orders them.
+// The TLVs that name a dataset and its version. OpenThread adds and
+// normalizes others when it stores one (security policy, channel masks), so
+// dataset_id covers only these, sorted by type: the platform computes the same
+// from the copy it keeps, and neither side hashes a key.
+const NAMING = [TLV.CHANNEL, TLV.PANID, TLV.EXTPANID, TLV.NAME, TLV.MLPREFIX, TLV.ACTIVE_TS];
+
+// What the dataset says, without its keys.
 let describe = (h) => {
     let list = tlvs(h);
     if (!list || !length(list)) return null;
-    let open = sort(filter(list, (x) => x.type != TLV.KEY && x.type != TLV.PSKC), (a, b) => a.type - b.type);
+    let open = sort(filter(list, (x) => x.type in NAMING), (a, b) => a.type - b.type);
     let digest = sha256(hexdec(join('', map(open, (x) => x.raw))));
     let ch = tlv(list, TLV.CHANNEL), pan = tlv(list, TLV.PANID), ts = tlv(list, TLV.ACTIVE_TS);
     let name = tlv(list, TLV.NAME);
@@ -293,7 +297,9 @@ let table = (lines) => {
     let head = null, rows = [];
     for (let l in lines ?? []) {
         if (!match(l, /^\|/)) continue;
-        let cells = map(slice(split(l, '|'), 1, -1), trim);
+        // Not map(..., trim): map passes the index too, and trim takes it as
+        // the characters to trim.
+        let cells = map(slice(split(l, '|'), 1, -1), (c) => trim(c));
         if (!head) { head = cells; continue; }
         if (match(cells[0] ?? '', /^-+$/) || match(cells[0] ?? '', /^\+/)) continue;
         let row = {};
@@ -392,7 +398,8 @@ let attach = (how) => {
     let s = status(true);
     if (!ok) die(sprintf('Thread started but did not attach in time (%s).', s.role ?? 'unknown'));
     if (s.dataset?.dataset_id != want.dataset_id)
-        die('The border router is running a different dataset from the one sent.');
+        die(sprintf('The border router is running a different dataset from the one sent (%s, not %s).',
+                    s.dataset?.dataset_id ?? 'none', want.dataset_id));
     return s;
 };
 

@@ -112,9 +112,10 @@ def parse(ds):
 
 
 def dataset_id(ds):
-    """pulzr-protocol's dataset_id: SHA-256 of the TLVs but the network key
-    and PSKc, sorted by type."""
-    kept = sorted((t, raw) for t, raw in parse(ds) if t not in (4, 5))
+    """pulzr-protocol's dataset_id: SHA-256 of the naming TLVs (channel, PAN
+    id, extended PAN id, name, mesh-local prefix, active timestamp), sorted by
+    type."""
+    kept = sorted((t, raw) for t, raw in parse(ds) if t in (0, 1, 2, 3, 7, 14))
     return hashlib.sha256(b''.join(raw for _, raw in kept)).hexdigest()[:16]
 
 
