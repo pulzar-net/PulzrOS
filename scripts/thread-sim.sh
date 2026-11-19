@@ -68,7 +68,7 @@ if [ ! -x "${OUT}/ot-rcp" ]; then
   cmake -GNinja -S "${ot}" -B "${WORK}/sim" -DCMAKE_BUILD_TYPE=Release \
     -DOT_PLATFORM=simulation -DOT_COMPILE_WARNING_AS_ERROR=OFF \
     -DOT_FTD=ON -DOT_MTD=OFF -DOT_RCP=ON -DOT_APP_CLI=ON -DOT_APP_NCP=OFF -DOT_APP_RCP=ON \
-    -DOT_JOINER=ON -DOT_COMMISSIONER=OFF -DOT_SRP_CLIENT=ON -DOT_DNS_CLIENT=ON >&2
+    -DOT_JOINER=ON -DOT_COMMISSIONER=OFF >&2
   ninja -C "${WORK}/sim" -j"${jobs}" ot-rcp ot-cli-ftd >&2
   install -m 0755 "$(find "${WORK}/sim" -name ot-rcp -type f | head -n1)" "${OUT}/ot-rcp"
   install -m 0755 "$(find "${WORK}/sim" -name ot-cli-ftd -type f | head -n1)" "${OUT}/ot-cli-ftd"

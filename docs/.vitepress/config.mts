@@ -83,6 +83,7 @@ export default defineConfig({
           { text: 'One-touch provisioning', link: '/provisioning' },
           { text: 'Firmware updates and signing', link: '/firmware' },
           { text: 'Add-ons', link: '/addons' },
+          { text: 'Thread', link: '/thread' },
           { text: 'Upgrading from ParkezeOS', link: '/legacy-migration' },
         ],
       },
