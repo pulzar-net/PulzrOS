@@ -261,7 +261,7 @@ check "install: brief has only wanted, deny, items" '["deny","items","wanted"]' 
   "$(pulzr-addon status --brief | jq -c 'keys')"
 check "install: brief item shape" '["builtIn","error","health","since","state","upstream","version"]' \
   "$(pulzr-addon status --brief | jq -c '.items["pulzr-modbus"] | keys')"
-check "install: full status lists what the release offers" 'pulzr-modbus Modbus,pulzr-meter Meter' \
+check "install: full status lists what the release offers" 'pulzr-meter Meter,pulzr-modbus Modbus' \
   "$(pulzr-addon status | jq -r '[.available[] | "\(.name) \(.title)"] | join(",")')"
 addon start install pulzr-modbus alice; rc=$?
 check "install: twice is refused" "3 Modbus is already installed." "${rc} $(err)"
@@ -380,15 +380,17 @@ check "gate: no install when the gateway is already unhealthy" "75 0" "${rc} $(r
 
 reset
 addon install pulzr-modbus alice
-mkdir -p "${R}/etc/pulzr-modbus"; echo '[[bus]]' > "${R}/etc/pulzr-modbus/buses.toml"
+mkdir -p "${R}/etc/pulzr-edge/radios"; echo '[[bus]]' > "${R}/etc/pulzr-edge/buses.toml"
+echo '{"protocol":"zigbee"}' > "${R}/etc/pulzr-edge/radios/usb-1.json"
 addon start remove pulzr-modbus bob; rc=$?
 check "remove: removed" "0 none" "${rc} $(item pulzr-modbus state)"
 check "remove: not wanted" '[]' "$(wanted)"
-check "remove: the buses are kept" '[[bus]]' "$(cat "${R}/etc/pulzr-modbus/buses.toml" 2>/dev/null)"
+check "remove: the buses are kept" '[[bus]]' "$(cat "${R}/etc/pulzr-edge/buses.toml" 2>/dev/null)"
 check "remove: its files are gone" no "$([ -e "${R}/etc/init.d/pulzr-modbus" ] && echo yes || echo no)"
 addon install pulzr-modbus alice
 addon remove pulzr-modbus bob --purge
-check "remove --purge: the buses go too" no "$([ -e "${R}/etc/pulzr-modbus" ] && echo yes || echo no)"
+check "remove --purge: the buses go too" no "$([ -e "${R}/etc/pulzr-edge/buses.toml" ] && echo yes || echo no)"
+check "remove --purge: a Zigbee network's keys beside them stay" yes "$([ -e "${R}/etc/pulzr-edge/radios/usb-1.json" ] && echo yes || echo no)"
 
 # ── restore after an upgrade ────────────────────────────────────────────────
 

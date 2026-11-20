@@ -19,6 +19,11 @@ The thin add-ons carry what makes each one run: pulzr-modbus the buses'
 service, pulzr-zigbee, pulzr-zwave and pulzr-matter a file in
 `/usr/share/pulzr/radio-protocols/` without which pulzr-edge-radios never
 starts that protocol's radios (`pulzr-radios runnable`).
+A purge deletes only what the add-on's own keep.d names, so the thin add-ons
+name only their own files: pulzr-modbus its buses and maps, and pulzr-zigbee
+and pulzr-zwave nothing, because `/etc/pulzr-edge/radios/` holds every
+protocol's network keys side by side. Upgrades keep all of `/etc/pulzr-edge/`
+through pulzr-edge's keep.d.
 `scripts/check-addons.sh` refuses an add-on with more than one capability, and
 a shared one nothing depends on. A gateway that wanted pulzr-edge when it was
 the Modbus add-on wants pulzr-modbus after the upgrade

@@ -1,6 +1,6 @@
-# The buses and register maps are the operator's own; an upgrade that dropped
-# them would leave the buses silent until they were written again. The broker
-# login is not here: it is the gateway's, in UCI, and the daemon's config is
-# generated from it at every start. Maps live beside buses.toml, wherever it
-# names them under /etc/pulzr-edge/, so the directory is kept whole.
-/etc/pulzr-edge/
+# The buses and register maps are the operator's own. Named one by one, not
+# /etc/pulzr-edge/ whole: a purge of Modbus deletes what this file names, and
+# /etc/pulzr-edge/radios/ beside them holds every Zigbee and Z-Wave network's
+# keys. Upgrades keep the whole directory anyway (pulzr-edge's keep.d).
+/etc/pulzr-edge/buses.toml
+/etc/pulzr-edge/maps/
