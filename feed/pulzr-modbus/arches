@@ -1,0 +1,9 @@
+# <package arch> <Depends, comma-separated or ->
+#
+# No binary of its own: one package per architecture only because the
+# pulzr-edge it depends on is built per architecture (feed/pulzr-edge/arches).
+mipsel_24kc          -
+mipsel_24kc_24kf     -
+aarch64_cortex-a53   -
+aarch64_cortex-a72   -
+aarch64_cortex-a76   -

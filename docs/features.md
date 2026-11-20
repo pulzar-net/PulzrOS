@@ -69,23 +69,23 @@ for.
 
 An add-on (see [addons.md](addons.md)) is installed on a running gateway, not
 built into its image, and may carry a feature word of its own in its `addon`
-file: `ADDON_FEATURE="modbus"` for pulzr-edge. `system.features()` returns
+file: `ADDON_FEATURE="modbus"` for pulzr-modbus. `system.features()` returns
 `PULZR_FEATURES` plus the word of each add-on whose
 `/usr/libexec/pulzr/addon-health/<name>` is on the gateway, which apk removes
-with the package. So a Modbus page gated on `modbus` shows where pulzr-edge is
+with the package. So a Modbus page gated on `modbus` shows where pulzr-modbus is
 installed and nowhere else. An add-on's word must not be a board word
 (`scripts/check-addons.sh`): the two would gate one page on different things.
 
 A board can carry an add-on in its image with `PULZR_ADDONS_BUILTIN`, which
 `pulzr_packages` appends and `pulzr_check_features` checks names an add-on.
-Only the RAK7289CV2 does, with pulzr-edge, because its power board already
-talks Modbus. A built-in add-on upgrades with the image and cannot be
-removed. No other board may carry pulzr-edge, the RAK7268CV2s in
+Only the RAK7289CV2 does, with pulzr-modbus (and the pulzr-edge it runs on),
+because its power board already talks Modbus. A built-in add-on upgrades with
+the image and cannot be removed. No other board may carry either, the RAK7268CV2s in
 production above all.
 
 | Board | Built in |
 |---|---|
-| `rak7289cv2` | `pulzr-edge` |
+| `rak7289cv2` | `pulzr-edge`, `pulzr-modbus` |
 | every other | none |
 
 ## USB cellular is a board's, not a word

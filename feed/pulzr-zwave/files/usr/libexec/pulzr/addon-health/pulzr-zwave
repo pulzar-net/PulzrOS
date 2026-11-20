@@ -1,0 +1,24 @@
+#!/bin/sh
+#
+# Whether this gateway's zwave networks are up, for pulzr-addon's report.
+#
+#   exit 0  ok: a zwave network is up (or forming, or restoring)
+#   exit 2  idle: no radio runs zwave, or none has a network yet
+#   exit 1  failing: a zwave radio's module does not answer, or its
+#           network is down
+#
+# Reported, never acted on: a dongle pulled out is a person's to put back.
+up=0
+for f in /etc/pulzr-edge/radios/*.json; do
+    [ -e "$f" ] || continue
+    [ "$(jsonfilter -i "$f" -e '@.protocol' 2>/dev/null)" = zwave ] || continue
+    id="$(basename "$f" .json)"
+    state="$(pulzr-timeout 35 pulzr-edge radio "$id" status < /dev/null 2>/dev/null | jsonfilter -e '@.state' 2>/dev/null)"
+    case "$state" in
+        up|forming|restoring) up=1 ;;
+        unformed) ;;
+        *) exit 1 ;;
+    esac
+done
+[ "$up" = 1 ] && exit 0
+exit 2

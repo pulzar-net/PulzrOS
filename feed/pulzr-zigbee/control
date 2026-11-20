@@ -1,0 +1,9 @@
+Package: pulzr-zigbee
+Maintainer: Joseph Telaak <joseph@pulzr.net>
+License: Apache-2.0
+Architecture: @ARCH@
+Provides: pulzr-cap-zigbee
+Depends: pulzr-edge=@VERSION@
+Description: Zigbee networks on the gateway's Zigbee radios, on pulzr-edge.
+ A coordinator per radio (EmberZNet, Z-Stack or deCONZ), set up, paired and
+ backed up from Pulzar Net (docs/radio-modules.md).

@@ -238,6 +238,15 @@ network_setup, network_connect, find_operational, commissioning_complete,
 interview), `device` and `reason`; `network.left`; `network.error`. Devices
 are `matter:<compressed fabric id>.<node id>`.
 
+## Which modules run
+
+The pulzr-edge binary carries every module, but a radio's module runs only
+while its protocol's add-on is installed (pulzr-zigbee, pulzr-zwave, and
+pulzr-matter for Matter): each ships `/usr/share/pulzr/radio-protocols/<protocol>`,
+`pulzr-radios runnable` lists only the radios whose protocol has one, and
+pulzr-edge-radios starts only those. So a gateway locked off a capability never
+runs it, and `use` refuses a protocol whose add-on is missing.
+
 ## Implementing a module
 
 A module implements `pulzr_edge::radio::RadioModule` and adds itself to

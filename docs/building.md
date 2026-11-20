@@ -82,7 +82,8 @@ docs/       this site
 | `pulzr-display`, `pulzr-usb-gadget` | the TUI on HDMI and over USB |
 | `pulzr-storage` | the SD card |
 | `pulzr-rak-power` | the RAK7289CV2 power board watchdog |
-| `pulzr-edge` | the Modbus daemon, an add-on |
+| `pulzr-edge` | the edge runtime Modbus, Zigbee and Z-Wave run on, an add-on with no capability |
+| `pulzr-modbus`, `pulzr-zigbee`, `pulzr-zwave` | one capability each, on pulzr-edge, add-ons |
 
 ## The docs site
 

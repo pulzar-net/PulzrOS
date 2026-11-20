@@ -1,0 +1,17 @@
+#!/bin/sh
+#
+# pulzr-edge was the Modbus add-on; now it is the runtime that Modbus, Zigbee
+# and Z-Wave each depend on, and Modbus is pulzr-modbus. A gateway that wanted
+# pulzr-edge wanted Modbus: it wants pulzr-modbus now, which brings pulzr-edge
+# with it, so its buses keep running across the upgrade with no gap. Once
+# pulzr-modbus is wanted, pulzr-edge is no longer wanted on its own, so removing
+# Modbus can let the runtime go when nothing else needs it.
+
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+
+wanted="$(uci -q get pulzr_addons.main.wanted)"
+case " ${wanted} " in *" pulzr-edge "*) ;; *) exit 0 ;; esac
+case " ${wanted} " in *" pulzr-modbus "*) ;; *) uci -q add_list pulzr_addons.main.wanted=pulzr-modbus ;; esac
+uci -q del_list pulzr_addons.main.wanted=pulzr-edge
+uci -q commit pulzr_addons
+exit 0

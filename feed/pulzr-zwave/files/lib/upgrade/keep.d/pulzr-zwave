@@ -1,0 +1,4 @@
+# A radio's file holds its network's keys, and its device store what every
+# device said when it joined: an upgrade that dropped them would cut the
+# network off until it was restored from the platform's backup.
+/etc/pulzr-edge/radios/

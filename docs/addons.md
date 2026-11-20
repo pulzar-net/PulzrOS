@@ -2,9 +2,26 @@
 
 An add-on is a feed package with an `addon` file: something a gateway runs
 that is not in its image, installed on request from a signed repository
-built for exactly the release the gateway runs. Today there is one,
-pulzr-edge (Modbus). The RAK7289CV2 carries it in its image instead
-(`PULZR_ADDONS_BUILTIN`), because its power board is already on a Modbus bus.
+built for exactly the release the gateway runs: pulzr-modbus (Modbus),
+pulzr-zigbee (Zigbee), pulzr-zwave (Z-Wave) and pulzr-thread (Thread). The
+RAK7289CV2 carries pulzr-modbus in its image instead (`PULZR_ADDONS_BUILTIN`),
+because its power board is already on a Modbus bus.
+
+## One capability per add-on
+
+Each add-on brings exactly one capability, so a deny on one never blocks
+another: a gateway locked off Modbus can still have Zigbee. Modbus, Zigbee and
+Z-Wave all run on one binary, pulzr-edge, which is an add-on of its own
+(`ADDON_SHARED=1`) that brings no capability and is installed as their
+dependency, at this release's exact version (`Depends: pulzr-edge=@VERSION@`).
+The thin add-ons carry what makes each one run: pulzr-modbus the buses'
+service, pulzr-zigbee and pulzr-zwave a file in
+`/usr/share/pulzr/radio-protocols/` without which pulzr-edge-radios never
+starts that protocol's radios (`pulzr-radios runnable`).
+`scripts/check-addons.sh` refuses an add-on with more than one capability, and
+a shared one nothing depends on. A gateway that wanted pulzr-edge when it was
+the Modbus add-on wants pulzr-modbus after the upgrade
+(`/etc/uci-defaults/41-pulzr-addons-split`), so its buses keep running.
 
 The design and the decisions behind it are in the logbook's
 `docs/plans/pulzros-addons.md`. This page is what is built.
@@ -117,11 +134,12 @@ listed.
 
 A gateway with Modbus denied (a production RAK7268CV2, say) never gets it. Three things hold it:
 
-- No image but the RAK7289CV2's carries pulzr-edge (`scripts/check-addons.sh`).
+- No image but the RAK7289CV2's carries pulzr-modbus or pulzr-edge (`scripts/check-addons.sh`).
 - `pulzr_addons.main.deny` holds capability words. `install` and `restore`
   refuse any package that brings one, asked for by name or as a dependency,
-  so a `wanted` edited by hand does not bring it back. pulzr-edge also
-  `Provides: pulzr-cap-modbus`.
+  so a `wanted` edited by hand does not bring it back. pulzr-modbus also
+  `Provides: pulzr-cap-modbus`, and pulzr-edge, which it needs, brings no
+  capability, so denying Modbus leaves Zigbee and Z-Wave installable.
 - Pulzar Net holds its own lock, and writes it back to the gateway through
   `POST /api/system/addons/deny` when a report's `addons.deny` lacks it (a
   factory reset wipes `/etc/config`).
@@ -146,25 +164,25 @@ Every POST needs the session's CSRF header, as every POST does.
 `GET /api/system/addons` → `200`, `pulzr-addon status`:
 
 ```json
-{"wanted":["pulzr-edge"],"deny":[],
- "items":{"pulzr-edge":{"state":"installed","version":"0.5.0-r202611201200",
+{"wanted":["pulzr-modbus"],"deny":[],
+ "items":{"pulzr-modbus":{"state":"installed","version":"0.5.0-r202611201200",
    "upstream":"0.2.0","builtIn":false,"health":"idle","since":"2026-11-20T10:02:11Z",
    "error":"","title":"Modbus"}},
  "tag":"v0.5.0","arch":"mipsel_24kc","url":"https://assets.pkze.us/pulzros/addons/v0.5.0",
  "denyBy":null,"denyReason":null,"busy":null,
- "available":[{"name":"pulzr-edge","title":"Modbus","caps":["modbus"],"feature":"modbus",
+ "available":[{"name":"pulzr-modbus","title":"Modbus","caps":["modbus"],"feature":"modbus",
    "upstream":"0.2.0","builtIn":false}],
- "journal":[{"at":"2026-11-20T10:02:11Z","action":"install","name":"pulzr-edge",
+ "journal":[{"at":"2026-11-20T10:02:11Z","action":"install","name":"pulzr-modbus",
    "by":"admin@example.com","result":"installed","version":"0.5.0-r202611201200"}]}
 ```
 
 `busy`, while a job runs: `{"action","name","by","since"}`. `journal` is the
 last 20 entries.
 
-`POST /api/system/addons` with `{"name":"pulzr-edge","action":"install"}` or
-`{"name":"pulzr-edge","action":"remove","purge":false}`:
+`POST /api/system/addons` with `{"name":"pulzr-modbus","action":"install"}` or
+`{"name":"pulzr-modbus","action":"remove","purge":false}`:
 
-- `202 {"ok":true,"name":"pulzr-edge","action":"install","purge":false}`: the
+- `202 {"ok":true,"name":"pulzr-modbus","action":"install","purge":false}`: the
   job is running; its outcome is in `GET` and in the next report, which the
   job sends itself when it finishes.
 - `400 {"error":…}`: not an add-on name, or not install or remove.
@@ -186,7 +204,7 @@ Audited as `system.addon.install` or `system.addon.remove`, `{by, name}`.
 `null` when it cannot say:
 
 ```json
-{"wanted":["pulzr-edge"],"deny":[],"items":{"pulzr-edge":{"state":"installed",
+{"wanted":["pulzr-modbus"],"deny":[],"items":{"pulzr-modbus":{"state":"installed",
  "version":"0.5.0-r202611201200","upstream":"0.2.0","builtIn":false,"health":"idle",
  "since":"2026-11-20T10:02:11Z","error":""}}}
 ```
@@ -214,7 +232,7 @@ the package. See [features.md](features.md).
 4. Its settings in `files/lib/upgrade/keep.d/<name>`.
 
 `scripts/check-addons.sh` checks all four, and that no board but the
-RAK7289CV2 carries pulzr-edge.
+RAK7289CV2 carries pulzr-modbus and pulzr-edge.
 
 ## OpenWrt packages an add-on brings
 

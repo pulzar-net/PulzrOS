@@ -166,7 +166,8 @@ let release = () => {
         out[f[0]] = {
             feature: f[1] == '-' ? null : f[1],
             upstream: f[2] == '-' ? null : f[2],
-            caps: filter(split(f[3], ' '), (c) => length(c) > 0),
+            // "-": a shared runtime, bringing no capability of its own.
+            caps: f[3] == '-' ? [] : filter(split(f[3], ' '), (c) => length(c) > 0),
             title: f[4],
             keep: filter(split(f[5] ?? '', ' '), (p) => length(p) > 0),
         };

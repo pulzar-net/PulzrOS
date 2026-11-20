@@ -53,22 +53,29 @@ keep_all=""
 for pkgdir in "${FEED_DIR}"/*/; do
   [ -f "${pkgdir}/addon" ] || continue
   name="$(basename "${pkgdir}")"
-  title="" caps="" feature=""
+  title="" caps="" feature="" shared=""
   # shellcheck disable=SC1091
-  eval "$(. "${pkgdir}/addon"; printf 'title=%q caps=%q feature=%q' \
-            "${ADDON_TITLE:-}" "${ADDON_CAPS:-}" "${ADDON_FEATURE:-}")"
+  eval "$(. "${pkgdir}/addon"; printf 'title=%q caps=%q feature=%q shared=%q' \
+            "${ADDON_TITLE:-}" "${ADDON_CAPS:-}" "${ADDON_FEATURE:-}" "${ADDON_SHARED:-}")"
   [ -n "${title}" ] || die "${name}/addon has no ADDON_TITLE"
-  [ -n "${caps}" ] || die "${name}/addon has no ADDON_CAPS"
+  # A shared runtime (pulzr-edge) brings no capability: "-".
+  [ -n "${caps}" ] || [ "${shared}" = 1 ] || die "${name}/addon has no ADDON_CAPS"
   case "${title}${caps}${feature}" in *$'\t'*) die "${name}/addon has a tab in a value" ;; esac
   # The upstream release the binary comes from, from the one place it is
   # pinned (an SDK recipe's PKG_VERSION, else a fetch's VERSION=); none for an
   # add-on that is only our own files.
   upstream="$(sed -n 's/^PKG_VERSION:=//p' "${SDK_PACKAGES}/$(basename "${pkgdir}")/Makefile" 2>/dev/null | head -n1 || true)"
   [ -n "${upstream}" ] || upstream="$(sed -n 's/^VERSION=//p' "${pkgdir}/fetch" 2>/dev/null | head -n1 | tr -d '"' || true)"
+  # A thin add-on on a shared runtime (pulzr-modbus on pulzr-edge) runs that
+  # runtime's code: its upstream is the runtime's.
+  if [ -z "${upstream}" ]; then
+    runtime="$(sed -n 's/^Depends:.*\(pulzr-[a-z0-9-]*\)=@VERSION@.*/\1/p' "${pkgdir}/control" | head -n1)"
+    [ -z "${runtime}" ] || upstream="$(sed -n 's/^PKG_VERSION:=//p' "${SDK_PACKAGES}/${runtime}/Makefile" 2>/dev/null | head -n1 || true)"
+  fi
   keep="$(cat "${pkgdir}"/files/lib/upgrade/keep.d/* 2>/dev/null \
             | grep -v '^[[:space:]]*\(#\|$\)' | tr -s '[:space:]' ' ' | sed 's/ $//' || true)"
   printf '%s\t%s\t%s\t%s\t%s\t%s\n' "${name}" "${feature:--}" "${upstream:--}" \
-    "${caps}" "${title}" "${keep}" >> "${caps_file}.new"
+    "${caps:--}" "${title}" "${keep}" >> "${caps_file}.new"
   keep_all="${keep_all} ${keep}"
 done
 

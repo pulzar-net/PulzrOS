@@ -1,0 +1,10 @@
+Package: pulzr-modbus
+Maintainer: Joseph Telaak <joseph@pulzr.net>
+License: Apache-2.0
+Architecture: @ARCH@
+Provides: pulzr-cap-modbus
+Depends: pulzr-edge=@VERSION@
+Description: Modbus RTU and TCP devices behind the gateway, on pulzr-edge.
+ Speaks the Pulzar protocol for the devices on the gateway's own buses over one
+ MQTT session with the gateway's own broker login. Reads its buses from
+ /etc/pulzr-edge/buses.toml and starts once the gateway is adopted.

@@ -8,7 +8,7 @@
 # The ucode needs its fs module beside it, as CI's build has. pulzr-addon
 # runs as shipped except for ROOT, which points into a scratch directory, and
 # the gate's timings, which are zero. Its addons.caps is generated from a
-# scratch feed by the real scripts/addon-index.sh: pulzr-edge's own addon
+# scratch feed by the real scripts/addon-index.sh: pulzr-modbus's own addon
 # file, and a second add-on that depends on it, which is how a deny is
 # refused through a dependency.
 #
@@ -152,26 +152,27 @@ export PATH="${BIN}:${PATH}"
 
 # ── fixtures ────────────────────────────────────────────────────────────────
 
-# pulzr-edge's addon, control, fetch and keep.d as they are, and pulzr-meter,
+# pulzr-modbus's addon, control and keep.d as they are (Modbus, on the shared
+# pulzr-edge runtime, which is not needed for what this tests), and pulzr-meter,
 # an add-on of no capability the deny names that depends on it.
 FEED="${T}/feed"
-mkdir -p "${FEED}/pulzr-edge/files/lib/upgrade/keep.d" "${FEED}/pulzr-meter"
-cp "${ROOT_DIR}"/feed/pulzr-edge/{addon,control,fetch} "${FEED}/pulzr-edge/"
-cp "${ROOT_DIR}"/feed/pulzr-edge/files/lib/upgrade/keep.d/* "${FEED}/pulzr-edge/files/lib/upgrade/keep.d/"
+mkdir -p "${FEED}/pulzr-modbus/files/lib/upgrade/keep.d" "${FEED}/pulzr-meter"
+cp "${ROOT_DIR}"/feed/pulzr-modbus/{addon,control} "${FEED}/pulzr-modbus/"
+cp "${ROOT_DIR}"/feed/pulzr-modbus/files/lib/upgrade/keep.d/* "${FEED}/pulzr-modbus/files/lib/upgrade/keep.d/"
 printf 'ADDON_TITLE="Meter"\nADDON_CAPS="meter"\nADDON_FEATURE=""\nADDON_BOARDS="*"\n' > "${FEED}/pulzr-meter/addon"
 
 # A package's payload, packed as the stand-in apk unpacks it. The init script
-# and uci-defaults only say they ran; the health script is pulzr-edge's own.
+# and uci-defaults only say they ran; the health script is pulzr-modbus's own.
 payload() {
   local name="$1" dir="${T}/payload-$1"
   rm -rf "${dir}"; mkdir -p "${dir}/etc/init.d" "${dir}/usr/libexec/pulzr/addon-health" "${dir}/etc/uci-defaults"
   printf '#!/bin/sh\necho "%s $1" >> "${T}/services.log"\n' "${name}" > "${dir}/etc/init.d/${name}"
   printf '#!/bin/sh\ntouch "${T}/uci-defaults-%s"\n' "${name}" > "${dir}/etc/uci-defaults/90-${name}"
-  if [ "${name}" = pulzr-edge ]; then
-    cp "${ROOT_DIR}/feed/pulzr-edge/files/usr/libexec/pulzr/addon-health/pulzr-edge" "${dir}/usr/libexec/pulzr/addon-health/"
+  if [ "${name}" = pulzr-modbus ]; then
+    cp "${ROOT_DIR}/feed/pulzr-modbus/files/usr/libexec/pulzr/addon-health/pulzr-modbus" "${dir}/usr/libexec/pulzr/addon-health/"
     mkdir -p "${dir}/lib/upgrade/keep.d" "${dir}/usr/sbin"
-    cp "${ROOT_DIR}/feed/pulzr-edge/files/lib/upgrade/keep.d/pulzr-edge" "${dir}/lib/upgrade/keep.d/"
-    head -c 40000 /dev/urandom > "${dir}/usr/sbin/pulzr-edge"
+    cp "${ROOT_DIR}/feed/pulzr-modbus/files/lib/upgrade/keep.d/pulzr-modbus" "${dir}/lib/upgrade/keep.d/"
+    head -c 40000 /dev/urandom > "${dir}/usr/sbin/pulzr-modbus"
   else
     printf '#!/bin/sh\nexit 0\n' > "${dir}/usr/libexec/pulzr/addon-health/${name}"
   fi
@@ -186,12 +187,12 @@ sha() { if command -v sha256sum >/dev/null; then sha256sum "$1" | cut -d' ' -f1;
 serve() {
   local repo="${SERVE}/v${VERSION}/${ARCH}"
   rm -rf "${SERVE}"; mkdir -p "${repo}"
-  payload pulzr-edge "${repo}/pulzr-edge-${PKGVER}.apk"
+  payload pulzr-modbus "${repo}/pulzr-modbus-${PKGVER}.apk"
   payload pulzr-meter "${repo}/pulzr-meter-${PKGVER}.apk"
-  { echo "pulzr-edge ${PKGVER} pulzr-base=${PKGVER}"
-    echo "pulzr-meter ${PKGVER} pulzr-edge pulzr-base=${PKGVER}"; } > "${repo}/packages.adb"
+  { echo "pulzr-modbus ${PKGVER} pulzr-base=${PKGVER}"
+    echo "pulzr-meter ${PKGVER} pulzr-modbus pulzr-base=${PKGVER}"; } > "${repo}/packages.adb"
   local entries=()
-  for n in pulzr-edge pulzr-meter; do
+  for n in pulzr-modbus pulzr-meter; do
     local f="${repo}/${n}-${PKGVER}.apk"
     entries+=("$(jq -nc --arg n "${n}" --arg a "${ARCH}" --arg file "${n}-${PKGVER}.apk" \
                   --arg sha "$(sha "${f}")" --argjson bytes "$(wc -c < "${f}")" \
@@ -240,18 +241,18 @@ STAGE="${R}/tmp/pulzr-addons/v${VERSION}/${ARCH}"
 # ── install ─────────────────────────────────────────────────────────────────
 
 reset
-addon start install pulzr-edge 'alice@example.com'; rc=$?
+addon start install pulzr-modbus 'alice@example.com'; rc=$?
 check "install: start accepted" 0 "${rc}"
-check "install: installed" installed "$(item pulzr-edge state)"
-check "install: wanted" '["pulzr-edge"]' "$(wanted)"
-check "install: version from apk" "${PKGVER}" "$(item pulzr-edge version)"
+check "install: installed" installed "$(item pulzr-modbus state)"
+check "install: wanted" '["pulzr-modbus"]' "$(wanted)"
+check "install: version from apk" "${PKGVER}" "$(item pulzr-modbus version)"
 EDGE_VERSION="$(sed -n 's/^PKG_VERSION:=//p' "${ROOT_DIR}/sdk/packages/pulzr-edge/Makefile")"
-check "install: upstream from addons.caps" "${EDGE_VERSION}" "$(item pulzr-edge upstream)"
+check "install: upstream from addons.caps" "${EDGE_VERSION}" "$(item pulzr-modbus upstream)"
 # No buses: idle, and an idle add-on is not removed.
-check "install: idle without buses, and kept" idle "$(item pulzr-edge health)"
-check "install: service enabled and started" "pulzr-edge enable pulzr-edge start" "$(tr '\n' ' ' < "${T}/services.log" | sed 's/ $//')"
-check "install: its uci-defaults ran" yes "$([ -f "${T}/uci-defaults-pulzr-edge" ] && echo yes)"
-check "install: and were deleted" no "$([ -f "${R}/etc/uci-defaults/90-pulzr-edge" ] && echo yes || echo no)"
+check "install: idle without buses, and kept" idle "$(item pulzr-modbus health)"
+check "install: service enabled and started" "pulzr-modbus enable pulzr-modbus start" "$(tr '\n' ' ' < "${T}/services.log" | sed 's/ $//')"
+check "install: its uci-defaults ran" yes "$([ -f "${T}/uci-defaults-pulzr-modbus" ] && echo yes)"
+check "install: and were deleted" no "$([ -f "${R}/etc/uci-defaults/90-pulzr-modbus" ] && echo yes || echo no)"
 check "install: journal names who asked" 'installed alice@example.com' \
   "$(tail -n1 "${R}/etc/pulzr/addons/journal" | jq -r '"\(.result) \(.by)"')"
 check "install: lock released" no "$([ -e "${R}/var/run/pulzr/addon.lock" ] && echo yes || echo no)"
@@ -259,147 +260,147 @@ check "install: reported" yes "$(grep -q report "${T}/claim.log" && echo yes)"
 check "install: brief has only wanted, deny, items" '["deny","items","wanted"]' \
   "$(pulzr-addon status --brief | jq -c 'keys')"
 check "install: brief item shape" '["builtIn","error","health","since","state","upstream","version"]' \
-  "$(pulzr-addon status --brief | jq -c '.items["pulzr-edge"] | keys')"
-check "install: full status lists what the release offers" 'pulzr-edge Modbus,pulzr-meter Meter' \
+  "$(pulzr-addon status --brief | jq -c '.items["pulzr-modbus"] | keys')"
+check "install: full status lists what the release offers" 'pulzr-modbus Modbus,pulzr-meter Meter' \
   "$(pulzr-addon status | jq -r '[.available[] | "\(.name) \(.title)"] | join(",")')"
-addon start install pulzr-edge alice; rc=$?
+addon start install pulzr-modbus alice; rc=$?
 check "install: twice is refused" "3 Modbus is already installed." "${rc} $(err)"
 
 # ── a download cut off half way ─────────────────────────────────────────────
 
 reset
-echo "pulzr-edge-${PKGVER}.apk" > "${T}/cut"
-addon install pulzr-edge alice; rc=$?
+echo "pulzr-modbus-${PKGVER}.apk" > "${T}/cut"
+addon install pulzr-modbus alice; rc=$?
 check "resume: the cut-off attempt fails, to be retried" 75 "${rc}"
-check "resume: and says so" failed "$(item pulzr-edge state)"
-half="$(wc -c < "${STAGE}/pulzr-edge-${PKGVER}.apk.part" | tr -d ' ')"
+check "resume: and says so" failed "$(item pulzr-modbus state)"
+half="$(wc -c < "${STAGE}/pulzr-modbus-${PKGVER}.apk.part" | tr -d ' ')"
 check "resume: half the package is kept" yes "$([ "${half}" -gt 0 ] && echo yes)"
-addon install pulzr-edge alice; rc=$?
-check "resume: the second attempt installs" "0 installed" "${rc} $(item pulzr-edge state)"
+addon install pulzr-modbus alice; rc=$?
+check "resume: the second attempt installs" "0 installed" "${rc} $(item pulzr-modbus state)"
 check "resume: it resumed at the cut, not from zero" "resume=1 offset=${half}" \
-  "$(grep "pulzr-edge-${PKGVER}.apk" "${T}/curl.log" | tail -n1 | cut -d' ' -f2-)"
-check "resume: the package is whole" "$(sha "${SERVE}/v${VERSION}/${ARCH}/pulzr-edge-${PKGVER}.apk")" \
-  "$(sha "${STAGE}/pulzr-edge-${PKGVER}.apk")"
+  "$(grep "pulzr-modbus-${PKGVER}.apk" "${T}/curl.log" | tail -n1 | cut -d' ' -f2-)"
+check "resume: the package is whole" "$(sha "${SERVE}/v${VERSION}/${ARCH}/pulzr-modbus-${PKGVER}.apk")" \
+  "$(sha "${STAGE}/pulzr-modbus-${PKGVER}.apk")"
 
 # ── refusals ────────────────────────────────────────────────────────────────
 
 reset
-printf 'x' >> "${SERVE}/v${VERSION}/${ARCH}/pulzr-edge-${PKGVER}.apk"
-addon install pulzr-edge alice
-check "sha: a package that does not match the catalog is refused" "failed pulzr-edge-${PKGVER}.apk did not match its checksum." \
-  "$(item pulzr-edge state) $(item pulzr-edge error)"
-check "sha: and thrown away" no "$([ -e "${STAGE}/pulzr-edge-${PKGVER}.apk.part" ] && echo yes || echo no)"
+printf 'x' >> "${SERVE}/v${VERSION}/${ARCH}/pulzr-modbus-${PKGVER}.apk"
+addon install pulzr-modbus alice
+check "sha: a package that does not match the catalog is refused" "failed pulzr-modbus-${PKGVER}.apk did not match its checksum." \
+  "$(item pulzr-modbus state) $(item pulzr-modbus error)"
+check "sha: and thrown away" no "$([ -e "${STAGE}/pulzr-modbus-${PKGVER}.apk.part" ] && echo yes || echo no)"
 check "sha: apk never installed anything" 0 "$(real_adds)"
 
 reset
 echo 100 > "${T}/free_kb"
-addon install pulzr-edge alice; rc=$?
-check "space: refused" "1 failed" "${rc} $(item pulzr-edge state)"
-check "space: says how much" yes "$(item pulzr-edge error | grep -q 'KB free' && echo yes)"
+addon install pulzr-modbus alice; rc=$?
+check "space: refused" "1 failed" "${rc} $(item pulzr-modbus state)"
+check "space: says how much" yes "$(item pulzr-modbus error | grep -q 'KB free' && echo yes)"
 check "space: before any package download" 0 "$(grep -c "\.apk" "${T}/curl.log")"
 
-reset pulzr-edge
-echo "pulzr-edge ${PKGVER}" > "${T}/apk/installed"
-addon start install pulzr-edge alice; rc=$?
+reset pulzr-modbus
+echo "pulzr-modbus ${PKGVER}" > "${T}/apk/installed"
+addon start install pulzr-modbus alice; rc=$?
 check "built in: install refused" "3 Modbus is built into this gateway's firmware." "${rc} $(err)"
-addon start remove pulzr-edge alice; rc=$?
+addon start remove pulzr-modbus alice; rc=$?
 check "built in: remove refused" 3 "${rc}"
-check "built in: reported as built in" "installed true" "$(item pulzr-edge state) $(item pulzr-edge builtIn)"
+check "built in: reported as built in" "installed true" "$(item pulzr-modbus state) $(item pulzr-modbus builtIn)"
 
 reset
 echo pending > "${T}/firmware"
-addon start install pulzr-edge alice; rc=$?
+addon start install pulzr-modbus alice; rc=$?
 check "pending firmware: refused" "3 A firmware upgrade is still being judged." "${rc} $(err)"
 check "pending firmware: nothing downloaded" no "$([ -f "${T}/curl.log" ] && echo yes || echo no)"
 
 reset
 mkdir -p "${R}/var/run/pulzr/addon.lock"
 printf '{"pid":%d,"action":"install","name":"pulzr-meter","at":0}' "$$" > "${R}/var/run/pulzr/addon.lock/job"
-addon start install pulzr-edge alice; rc=$?
+addon start install pulzr-modbus alice; rc=$?
 check "busy: a second job is refused" "3 Another add-on job is running." "${rc} $(err)"
 printf '{"pid":999999,"action":"install","name":"pulzr-meter","at":0}' > "${R}/var/run/pulzr/addon.lock/job"
-addon start install pulzr-edge alice; rc=$?
-check "busy: a lock whose job is gone is taken over" "0 installed" "${rc} $(item pulzr-edge state)"
+addon start install pulzr-modbus alice; rc=$?
+check "busy: a lock whose job is gone is taken over" "0 installed" "${rc} $(item pulzr-modbus state)"
 
 reset
 echo 0.5.0-r2 > "${T}/base_version"
-addon install pulzr-edge alice
+addon install pulzr-modbus alice
 check "pin: an add-on for another build of the release is refused" \
-  "failed Modbus was not built for the firmware this gateway runs." "$(item pulzr-edge state) $(item pulzr-edge error)"
+  "failed Modbus was not built for the firmware this gateway runs." "$(item pulzr-modbus state) $(item pulzr-modbus error)"
 
 reset
-jq -c '.addons |= map(if .name == "pulzr-edge" then .arches = {} else . end)' \
+jq -c '.addons |= map(if .name == "pulzr-modbus" then .arches = {} else . end)' \
   "${SERVE}/v${VERSION}/addons.json" > "${T}/c.json" && mv "${T}/c.json" "${SERVE}/v${VERSION}/addons.json"
-addon install pulzr-edge alice
-check "arch: a release that does not build it here" unavailable "$(item pulzr-edge state)"
+addon install pulzr-modbus alice
+check "arch: a release that does not build it here" unavailable "$(item pulzr-modbus state)"
 
 # ── a production gateway: deny=modbus ──────────────────────────────────────────────
 
 reset
 addon deny 'staff@pulzr.net' 'this gateway never gets Modbus' modbus >/dev/null
 check "deny: recorded" '["modbus"]' "$(pulzr-addon status --brief | jq -c .deny)"
-addon start install pulzr-edge alice; rc=$?
-check "deny: pulzr-edge refused by name" "3 Modbus is locked off on this gateway." "${rc} $(err)"
+addon start install pulzr-modbus alice; rc=$?
+check "deny: pulzr-modbus refused by name" "3 Modbus is locked off on this gateway." "${rc} $(err)"
 addon start install pulzr-meter alice
 check "deny: refused through a dependency" "failed Modbus is locked off on this gateway." \
   "$(item pulzr-meter state) $(item pulzr-meter error)"
-check "deny: nothing installed" "0 none" "$(real_adds) $(item pulzr-edge state)"
+check "deny: nothing installed" "0 none" "$(real_adds) $(item pulzr-modbus state)"
 # Somebody edits wanted by hand; restore must not bring Modbus back.
-jq -c '.pulzr_addons.main.wanted = ["pulzr-edge"]' "${UCI_JSON}" > "${T}/u.json" && mv "${T}/u.json" "${UCI_JSON}"
+jq -c '.pulzr_addons.main.wanted = ["pulzr-modbus"]' "${UCI_JSON}" > "${T}/u.json" && mv "${T}/u.json" "${UCI_JSON}"
 : > "${T}/apk.log"
 addon restore; rc=$?
 check "deny: restore of a hand-edited wanted refuses" "0 failed Modbus is locked off on this gateway." \
-  "${rc} $(item pulzr-edge state) $(item pulzr-edge error)"
+  "${rc} $(item pulzr-modbus state) $(item pulzr-modbus error)"
 check "deny: restore never asked apk to add it" 0 "$(grep -c '^apk add' "${T}/apk.log")"
 addon deny 'staff@pulzr.net' 'again' meter >/dev/null
 check "deny: only ever adds" '["modbus","meter"]' "$(pulzr-addon status --brief | jq -c .deny)"
 addon undeny modbus meter >/dev/null
 addon restore
-check "undeny: from a shell, and restore then installs" installed "$(item pulzr-edge state)"
+check "undeny: from a shell, and restore then installs" installed "$(item pulzr-modbus state)"
 
 # ── the gate ────────────────────────────────────────────────────────────────
 
 reset
 printf 'pass\nfail\n' > "${T}/gate"
-addon install pulzr-edge alice; rc=$?
+addon install pulzr-modbus alice; rc=$?
 check "gate: a gateway that stops reaching Pulzar Cloud undoes the add-on" \
   "1 reverted After the install the gateway could not reach Pulzar Cloud." \
-  "${rc} $(item pulzr-edge state) $(item pulzr-edge error)"
+  "${rc} $(item pulzr-modbus state) $(item pulzr-modbus error)"
 check "gate: removed" "" "$(cat "${T}/apk/installed")"
 check "gate: not wanted" '[]' "$(wanted)"
-check "gate: services stopped and disabled" "pulzr-edge enable pulzr-edge start pulzr-edge stop pulzr-edge disable" \
+check "gate: services stopped and disabled" "pulzr-modbus enable pulzr-modbus start pulzr-modbus stop pulzr-modbus disable" \
   "$(tr '\n' ' ' < "${T}/services.log" | sed 's/ $//')"
 
 reset
 echo fail > "${T}/gate"
-addon install pulzr-edge alice; rc=$?
+addon install pulzr-modbus alice; rc=$?
 check "gate: no install when the gateway is already unhealthy" "75 0" "${rc} $(real_adds)"
 
 # ── remove ──────────────────────────────────────────────────────────────────
 
 reset
-addon install pulzr-edge alice
-mkdir -p "${R}/etc/pulzr-edge"; echo '[[bus]]' > "${R}/etc/pulzr-edge/buses.toml"
-addon start remove pulzr-edge bob; rc=$?
-check "remove: removed" "0 none" "${rc} $(item pulzr-edge state)"
+addon install pulzr-modbus alice
+mkdir -p "${R}/etc/pulzr-modbus"; echo '[[bus]]' > "${R}/etc/pulzr-modbus/buses.toml"
+addon start remove pulzr-modbus bob; rc=$?
+check "remove: removed" "0 none" "${rc} $(item pulzr-modbus state)"
 check "remove: not wanted" '[]' "$(wanted)"
-check "remove: the buses are kept" '[[bus]]' "$(cat "${R}/etc/pulzr-edge/buses.toml" 2>/dev/null)"
-check "remove: its files are gone" no "$([ -e "${R}/etc/init.d/pulzr-edge" ] && echo yes || echo no)"
-addon install pulzr-edge alice
-addon remove pulzr-edge bob --purge
-check "remove --purge: the buses go too" no "$([ -e "${R}/etc/pulzr-edge" ] && echo yes || echo no)"
+check "remove: the buses are kept" '[[bus]]' "$(cat "${R}/etc/pulzr-modbus/buses.toml" 2>/dev/null)"
+check "remove: its files are gone" no "$([ -e "${R}/etc/init.d/pulzr-modbus" ] && echo yes || echo no)"
+addon install pulzr-modbus alice
+addon remove pulzr-modbus bob --purge
+check "remove --purge: the buses go too" no "$([ -e "${R}/etc/pulzr-modbus" ] && echo yes || echo no)"
 
 # ── restore after an upgrade ────────────────────────────────────────────────
 
 reset
 # What sysupgrade leaves: UCI says it was installed, the overlay has no package.
-jq -c '.pulzr_addons.main.wanted = ["pulzr-edge"]
-       | .pulzr_addons.pulzr_edge = {".type":"addon",".name":"pulzr_edge","name":"pulzr-edge","state":"installed","since":"2026-11-20T10:02:11Z"}' \
+jq -c '.pulzr_addons.main.wanted = ["pulzr-modbus"]
+       | .pulzr_addons.pulzr_edge = {".type":"addon",".name":"pulzr_edge","name":"pulzr-modbus","state":"installed","since":"2026-11-20T10:02:11Z"}' \
   "${UCI_JSON}" > "${T}/u.json" && mv "${T}/u.json" "${UCI_JSON}"
-check "restore: an upgraded gateway reads pending-restore" pending-restore "$(item pulzr-edge state)"
+check "restore: an upgraded gateway reads pending-restore" pending-restore "$(item pulzr-modbus state)"
 addon restore; rc=$?
-check "restore: installs what is wanted" "0 installed" "${rc} $(item pulzr-edge state)"
-check "restore: and nothing else" "pulzr-edge" "$(cut -d' ' -f1 "${T}/apk/installed" | tr '\n' ' ' | sed 's/ $//')"
+check "restore: installs what is wanted" "0 installed" "${rc} $(item pulzr-modbus state)"
+check "restore: and nothing else" "pulzr-modbus" "$(cut -d' ' -f1 "${T}/apk/installed" | tr '\n' ' ' | sed 's/ $//')"
 : > "${T}/curl.log"
 addon restore
 check "restore: a second run has nothing to do" "" "$(cat "${T}/curl.log")"
@@ -415,11 +416,11 @@ check "restore: what cannot be restored is journaled once, not at every boot" "1
   "$(grep -c pulzr-gone "${R}/etc/pulzr/addons/journal") $(wc -l < "${T}/claim.log" | tr -d ' ')"
 
 reset
-jq -c '.pulzr_addons.main.wanted = ["pulzr-edge"]' "${UCI_JSON}" > "${T}/u.json" && mv "${T}/u.json" "${UCI_JSON}"
+jq -c '.pulzr_addons.main.wanted = ["pulzr-modbus"]' "${UCI_JSON}" > "${T}/u.json" && mv "${T}/u.json" "${UCI_JSON}"
 rm -rf "${SERVE}"
 addon restore; rc=$?
-check "restore: an unreachable repository is tried again later" "75 failed" "${rc} $(item pulzr-edge state)"
-check "restore: still wanted" '["pulzr-edge"]' "$(wanted)"
+check "restore: an unreachable repository is tried again later" "75 failed" "${rc} $(item pulzr-modbus state)"
+check "restore: still wanted" '["pulzr-modbus"]' "$(wanted)"
 
 [ "${fail}" = 0 ] && echo "pulzr-addon ok"
 exit "${fail}"

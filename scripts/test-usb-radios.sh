@@ -104,6 +104,9 @@ chmod +x "${STUBS}"/*
 export PATH="${STUBS}:${PATH}" SANDBOX
 export PULZR_PROBE_RUN="${SANDBOX}/run" PULZR_PROBE_SETTLE=1 FAKE_LIST="${SANDBOX}/list.json"
 export PULZR_EDGE_RADIOS="${SANDBOX}/edge-radios" PULZR_EDGE_RUN="${SANDBOX}/edge-run" PULZR_EDGE_INIT="${SANDBOX}/init"
+# Every protocol's add-on installed, until the test of a gateway locked off one.
+export PULZR_RADIO_PROTOCOLS="${SANDBOX}/protocols"
+mkdir -p "${PULZR_RADIO_PROTOCOLS}" && touch "${PULZR_RADIO_PROTOCOLS}"/zigbee "${PULZR_RADIO_PROTOCOLS}"/zwave "${PULZR_RADIO_PROTOCOLS}"/matter
 
 fail=0
 pass=0
@@ -237,6 +240,21 @@ check "its file names Matter" [ "$(jsonfilter -i "${PULZR_EDGE_RADIOS}/matter.js
 check "matter is only Matter's" not radios use matter zigbee
 check "and a radio is never Matter" not radios use "${ZBT_ID}" matter
 check "release matter" eval 'radios release matter >/dev/null'
+
+# ── a gateway locked off Modbus and Zigbee, with pulzr-zwave installed ───────
+# pulzr-edge (every module) is installed, but only Z-Wave's add-on: its radio
+# runs, Zigbee's does not, and Modbus's service is not even in pulzr-edge.
+rm -f "${PULZR_RADIO_PROTOCOLS}"/zigbee "${PULZR_RADIO_PROTOCOLS}"/matter
+mkdir -p "${PULZR_EDGE_RADIOS}"
+echo '{"radio":"usb-0658_0200-1-1.3","protocol":"zwave"}' > "${PULZR_EDGE_RADIOS}/usb-0658_0200-1-1.3.json"
+echo '{"radio":"usb-10c4_ea60-9e2adbd1","protocol":"zigbee"}' > "${PULZR_EDGE_RADIOS}/usb-10c4_ea60-9e2adbd1.json"
+check "the Z-Wave radio runs" [ "$(radios runnable)" = usb-0658_0200-1-1.3 ]
+check "a Zigbee radio is never started without pulzr-zigbee" not eval '[ -n "$(radios runnable | grep 10c4)" ]'
+check "and Zigbee cannot be set up" not radios use usb-10c4_ea60-1 zigbee
+check "Modbus's service is pulzr-modbus's, not pulzr-edge's" eval \
+    '[ -e "${ROOT_DIR}/feed/pulzr-modbus/files/etc/init.d/pulzr-edge" ] && [ ! -e "${ROOT_DIR}/feed/pulzr-edge/files/etc/init.d/pulzr-edge" ]'
+check "pulzr-edge-radios starts only what runnable lists" \
+    grep -q 'for id in \$(pulzr-radios runnable)' "${ROOT_DIR}/feed/pulzr-edge/files/etc/init.d/pulzr-edge-radios"
 
 echo "${pass} passed"
 exit "${fail}"

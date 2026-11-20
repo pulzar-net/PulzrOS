@@ -1,16 +1,7 @@
 #!/bin/sh
 #
-# Whether the edge daemon is doing its job, for pulzr-addon's report.
-#
-#   exit 0  ok: buses are configured and the daemon is running
-#   exit 2  idle: no buses yet, so there is nothing to run
-#   exit 1  failing: buses are configured and the daemon is not running
-#
-# Reported, never acted on. A wrong baud rate or an unadopted gateway is a
-# setting to fix, and removing the add-on over it would throw away the buses
-# with the problem. The same test the init script starts on, so idle here is
-# exactly the state in which it declines to start.
-
-[ -s /etc/pulzr-edge/buses.toml ] || exit 2
-/etc/init.d/pulzr-edge running && exit 0
+# The shared runtime's health, for pulzr-addon's report: ok while the binary
+# runs, failing when it cannot (a build for another architecture). What it
+# runs is reported by the add-ons that bring a capability.
+pulzr-edge --version >/dev/null 2>&1 && exit 0
 exit 1
