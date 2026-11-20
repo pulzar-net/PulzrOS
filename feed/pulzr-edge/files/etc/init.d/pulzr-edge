@@ -1,15 +1,13 @@
 #!/bin/sh /etc/rc.common
 #
-# The Modbus (and later Bluetooth and Zigbee) edge daemon. Respawned, because
+# The Modbus edge daemon. Respawned, because
 # a broker that goes away must not leave the buses unread until a reboot; the
 # daemon buffers to disk meanwhile.
 #
 # The operator writes only the buses, in /etc/pulzr-edge/buses.toml. The rest of
-# the daemon's config is the gateway's own and is generated here at every
-# start: the EUI, the broker and the broker login are the ones the gateway
-# already holds in UCI (pulzr-mqtt-agent publishes with the same). So there is
-# no certificate to issue or place, and a re-adoption that changes the
-# credentials takes effect through the config trigger below.
+# the daemon's config is the gateway's own and is generated at every start
+# (/usr/libexec/pulzr/edge-config, shared with pulzr-ble, which starts
+# `pulzr-edge ble` itself while pulzr.ble.backend is pulzr-edge).
 #
 # START=97, after the management agent (96), which wants the same credentials.
 
@@ -19,73 +17,28 @@ STOP=10
 USE_PROCD=1
 
 BUSES=/etc/pulzr-edge/buses.toml
-RUNDIR=/var/run/pulzr-edge
-CONFIG="${RUNDIR}/config.toml"
-PASSWORD="${RUNDIR}/password"
+CONFIG=/var/run/pulzr-edge/config.toml
 
-# Where the buffer and the per-device seq counters live.
-#
-# A card in the slot when there is one, or the disk the system runs from when
-# that is a real filesystem (a Pi); both survive a reboot. Otherwise
-# /var/lib/pulzr-edge, which is RAM on a flash-only board: the buffer and the
-# seq counters are lost at reboot, so readings queued while the broker was away
-# are gone and seq starts again (the platform accepts that, it only loses what
-# had not been sent). The flash overlay is deliberately not used: the buffer is
-# append-only and would wear it.
-state_dir() {
-    local mount
-    if [ "$(uci -q get pulzr.storage.present)" = "1" ] &&
-        [ "$(uci -q get pulzr.storage.writable)" = "1" ]; then
-        mount="$(uci -q get pulzr.storage.mount)"
-        [ -d "${mount}" ] && { echo "${mount}/pulzr/edge"; return 0; }
-    fi
-    if awk '($2 == "/" || $2 == "/overlay") && $3 ~ /^(ext4|f2fs|btrfs)$/ { found = 1 }
-            END { exit !found }' /proc/mounts 2>/dev/null; then
-        echo /srv/pulzr/edge
-        return 0
-    fi
-    echo /var/lib/pulzr-edge
-}
+. /usr/libexec/pulzr/edge-config
 
 # Map paths in buses.toml are relative to /etc/pulzr-edge; the daemon resolves
-# them against the config file, which is in ${RUNDIR}, so they are made
-# absolute here.
+# them against the config file, which is in /var/run/pulzr-edge, so they are
+# made absolute here.
 write_config() {
-    local eui="$1" host="$2" user="$3"
+    local top
+    top="$(edge_common)" || return 1
+    umask 077
     {
-        printf 'gateway_eui = "%s"\n' "${eui}"
-        printf 'state_dir = "%s"\n\n' "$(state_dir)"
-        printf '[broker]\nhost = "%s"\nport = 8883\n' "${host}"
-        printf 'ca = "/etc/ssl/certs/ca-certificates.crt"\n'
-        printf 'username = "%s"\npassword_file = "%s"\n\n' "${user}" "${PASSWORD}"
+        printf '%s\n\n' "${top}"
         sed 's|^\([[:space:]]*map[[:space:]]*=[[:space:]]*"\)\([^/]\)|\1/etc/pulzr-edge/\2|' "${BUSES}"
     } > "${CONFIG}"
 }
 
 start_service() {
-    local eui host user pass
-
     # Not started until there are buses to read and credentials to publish
-    # with. Starting anyway would only respawn an exit every few seconds into
-    # the log, which is how pulzr-mqtt-agent's unadopted gateways filled
-    # theirs.
+    # with (edge_common says why).
     [ -s "${BUSES}" ] || return 0
-    [ "$(uci -q get pulzr.adoption.state)" = "adopted" ] || return 0
-    eui="$(uci -q get pulzr.identity.gateway_eui | tr 'A-F' 'a-f')"
-    host="$(uci -q get pulzr.mqtt.host)"
-    user="$(uci -q get pulzr.mqtt.username)"
-    pass="$(uci -q get pulzr.mqtt.password)"
-    [ -n "${eui}" ] && [ -n "${host}" ] && [ -n "${user}" ] && [ -n "${pass}" ] || return 0
-
-    # Values go into TOML strings; none of them has a reason to hold these.
-    case "${host}${user}" in
-        *\"* | *\\*) logger -t pulzr-edge -p daemon.err "broker host or username has a quote or backslash"; return 0 ;;
-    esac
-
-    umask 077
-    mkdir -p "${RUNDIR}"
-    printf '%s\n' "${pass}" > "${PASSWORD}"
-    write_config "${eui}" "${host}" "${user}"
+    write_config || return 0
 
     procd_open_instance
     procd_set_param command /usr/sbin/pulzr-edge "${CONFIG}"

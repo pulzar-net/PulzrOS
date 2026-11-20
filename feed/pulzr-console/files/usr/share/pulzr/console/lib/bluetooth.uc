@@ -21,7 +21,10 @@ status = function() {
     // Pulzar Cloud cannot read the same gateway two ways.
     const state = run('/usr/sbin/pulzr-ble state') ?? 'absent';
     const enabled = uci.get('pulzr', 'ble', 'enabled') == '1';
-    const running = run('pgrep -f "pulzr-ble run"') != null;
+    // pulzr-ble's service runs its own scanner or, with pulzr.ble.backend
+    // pulzr-edge, execs `pulzr-edge ble`. Two pgreps: BusyBox's takes a basic
+    // regex, with no alternation.
+    const running = run('pgrep -f "pulzr-ble run" || pgrep -f "pulzr-edge ble"') != null;
     let heard = null;
     try { heard = json(readfile('/var/run/pulzr/ble/stats.json') ?? 'null'); } catch (e) {}
     return {
@@ -33,6 +36,7 @@ status = function() {
         // On, not scanning, and a boot is waiting to wire the chip: only the
         // reboot can fix that.
         rebootRequired: enabled && !running && !!readfile(REBOOT_REQUIRED),
+        backend: uci.get('pulzr', 'ble', 'backend') ?? 'pulzr-ble',
         oui: uci.get('pulzr', 'ble', 'oui') ?? '',
         minRssi: +(uci.get('pulzr', 'ble', 'min_rssi') ?? -100),
         heard,

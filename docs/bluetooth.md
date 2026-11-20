@@ -16,6 +16,32 @@ Pulzar Cloud decodes them with the device type's codec, exactly as it decodes
 a KGateway's raw frames, so a new beacon model is a codec there and never a
 firmware change here.
 
+## Which program scans
+
+`pulzr.ble.backend` picks it, and the `pulzr-ble` service is the only one that
+starts either, so they never hold the radio together:
+
+| backend | program | sends |
+|---------|---------|-------|
+| `pulzr-ble` (default) | the shell scanner above (hcitool, hcidump) | one `ble/up` batch per interval, on the gateway's topic |
+| `pulzr-edge` | `pulzr-edge ble`, from the pulzr-edge add-on | Pulzar protocol v1: each beacon its own device `ble:<EUI-64>`, one `up` per interval; GATT and advertising intents |
+
+Both read the same `pulzr.ble` settings (`oui` becomes pulzr-edge's `admit`,
+empty meaning every device; `min_rssi`; `interval`). With `pulzr-edge`, the
+service attaches the chip as before, takes `hci0` down and execs
+`pulzr-edge ble` with a config generated at every start
+(`/usr/libexec/pulzr/edge-config`, which also writes the Modbus daemon's).
+Without the add-on installed it logs that and retries every minute.
+
+Switching a gateway is `uci set pulzr.ble.backend=pulzr-edge`, `uci commit
+pulzr` and `/etc/init.d/pulzr-ble restart`. A gateway whose beacons are live
+moves only on the owner's go-ahead: the platform then hears them as protocol
+v1 devices instead of the `ble/up` batches. The console's beacon count comes
+from the shell scanner and is empty under `pulzr-edge`.
+
+`scripts/test-ble-backend.sh` checks the generated config against what
+pulzr-edge's `[ble]` accepts.
+
 ## On a Pi
 
 OpenWrt's `distroconfig.txt` switches the chip off on every Pi 3 and 4

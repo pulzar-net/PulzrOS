@@ -162,6 +162,7 @@ jobs:
           ./scripts/test-firmware-stash.sh
           ./scripts/test-legacy.sh
           ./scripts/test-usb-radios.sh
+          ./scripts/test-ble-backend.sh
 
       # The reset button, the setup AP and which uplinks count: shell that
       # otherwise only runs on a gateway, behind a physical button.

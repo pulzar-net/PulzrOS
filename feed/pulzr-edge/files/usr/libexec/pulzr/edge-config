@@ -1,0 +1,94 @@
+# The gateway's own part of a pulzr-edge configuration, sourced by the
+# processes that start pulzr-edge: /etc/init.d/pulzr-edge (the buses) and
+# pulzr-ble (the Bluetooth controller, while pulzr.ble.backend is pulzr-edge).
+#
+# The EUI, the broker and the broker login are the ones the gateway already
+# holds in UCI (pulzr-mqtt-agent publishes with the same), so there is no
+# certificate to issue or place, and a re-adoption that changes the
+# credentials takes effect at the next start.
+
+EDGE_RUNDIR=/var/run/pulzr-edge
+EDGE_PASSWORD="${EDGE_RUNDIR}/password"
+
+# Where the buffer and the per-device seq counters live.
+#
+# A card in the slot when there is one, or the disk the system runs from when
+# that is a real filesystem (a Pi); both survive a reboot. Otherwise
+# /var/lib/pulzr-edge, which is RAM on a flash-only board: the buffer and the
+# seq counters are lost at reboot, so readings queued while the broker was away
+# are gone and seq starts again (the platform accepts that, it only loses what
+# had not been sent). The flash overlay is deliberately not used: the buffer is
+# append-only and would wear it.
+edge_state_dir() {
+    local mount
+    if [ "$(uci -q get pulzr.storage.present)" = "1" ] &&
+        [ "$(uci -q get pulzr.storage.writable)" = "1" ]; then
+        mount="$(uci -q get pulzr.storage.mount)"
+        [ -d "${mount}" ] && { echo "${mount}/pulzr/edge"; return 0; }
+    fi
+    if awk '($2 == "/" || $2 == "/overlay") && $3 ~ /^(ext4|f2fs|btrfs)$/ { found = 1 }
+            END { exit !found }' /proc/mounts 2>/dev/null; then
+        echo /srv/pulzr/edge
+        return 0
+    fi
+    echo /var/lib/pulzr-edge
+}
+
+# Prints the top of a config (the EUI, the state directory and [broker]) and
+# writes the broker password beside it. Fails, printing nothing, until the
+# gateway is adopted and holds a broker login: starting anyway would only
+# respawn an exit every few seconds into the log, which is how
+# pulzr-mqtt-agent's unadopted gateways filled theirs.
+edge_common() {
+    local eui host user pass
+    [ "$(uci -q get pulzr.adoption.state)" = "adopted" ] || return 1
+    eui="$(uci -q get pulzr.identity.gateway_eui | tr 'A-F' 'a-f')"
+    host="$(uci -q get pulzr.mqtt.host)"
+    user="$(uci -q get pulzr.mqtt.username)"
+    pass="$(uci -q get pulzr.mqtt.password)"
+    [ -n "${eui}" ] && [ -n "${host}" ] && [ -n "${user}" ] && [ -n "${pass}" ] || return 1
+
+    # Values go into TOML strings; none of them has a reason to hold these.
+    case "${host}${user}" in
+        *\"* | *\\*) logger -t pulzr-edge -p daemon.err "broker host or username has a quote or backslash"; return 1 ;;
+    esac
+
+    (umask 077; mkdir -p "${EDGE_RUNDIR}" && printf '%s\n' "${pass}" > "${EDGE_PASSWORD}") || return 1
+    printf 'gateway_eui = "%s"\n' "${eui}"
+    printf 'state_dir = "%s"\n\n' "$(edge_state_dir)"
+    printf '[broker]\nhost = "%s"\nport = 8883\n' "${host}"
+    printf 'ca = "/etc/ssl/certs/ca-certificates.crt"\n'
+    printf 'username = "%s"\npassword_file = "%s"\n\n' "${user}" "${EDGE_PASSWORD}"
+}
+
+# Prints [ble] from pulzr.ble, the settings pulzr-ble's own scanner reads, so
+# switching pulzr.ble.backend changes the program and nothing else:
+#
+#   oui       admit: the MAC prefixes to send. Empty sends every device, as
+#             pulzr-ble does, which pulzr-edge takes only as admit_all.
+#   min_rssi  min_rssi.
+#   interval  interval_secs.
+#
+# Passive scanning, as pulzr-ble's; the controller is hci0, which pulzr-ble
+# attaches first (a Pi's UART chip needs hciattach to load its firmware).
+edge_ble() {
+    local oui min_rssi interval p list=""
+    oui="$(uci -q get pulzr.ble.oui | tr 'a-f' 'A-F')"
+    min_rssi="$(uci -q get pulzr.ble.min_rssi)"
+    interval="$(uci -q get pulzr.ble.interval)"
+    # Anything else is refused by pulzr-edge (an i8, an interval of at least a
+    # second), which would leave the radio off; pulzr-ble's defaults instead.
+    case "${min_rssi}" in -[0-9] | -[0-9][0-9] | -1[01][0-9] | -12[0-8]) ;; *) min_rssi=-100 ;; esac
+    case "${interval}" in [1-9] | [1-9][0-9] | [1-9][0-9][0-9] | [1-9][0-9][0-9][0-9]) ;; *) interval=10 ;; esac
+    for p in ${oui}; do
+        case "${p}" in *[!0-9A-F]*) logger -t pulzr-ble -p daemon.err "pulzr.ble.oui: ${p} is not hex; skipped"; continue ;; esac
+        list="${list}${list:+, }\"${p}\""
+    done
+    printf '[ble]\nenabled = true\ntransport = "hci0"\n'
+    printf 'interval_secs = %s\nmin_rssi = %s\n' "${interval}" "${min_rssi}"
+    if [ -n "${list}" ]; then
+        printf 'admit = [%s]\n' "${list}"
+    else
+        printf 'admit_all = true\n'
+    fi
+}

@@ -4,7 +4,20 @@
 #
 #   pulzr-ble state    on, off, or absent -- one word, for the facts report
 #   pulzr-ble attach   power the chip and bring hci0 up; nothing if it is up
+#   pulzr-ble backend  pulzr-ble or pulzr-edge: which program scans (below)
 #   pulzr-ble run      scan and publish until killed (procd runs this)
+#
+# ── WHICH PROGRAM ──────────────────────────────────────────────────────────
+#
+# pulzr.ble.backend picks what scans, so the two can never hold the radio at
+# once: this service is the only one that starts either.
+#
+#   pulzr-ble   (the default) the scanner below.
+#   pulzr-edge  `pulzr-edge ble`, from the pulzr-edge add-on: Pulzar protocol
+#               v1 (one device per beacon), GATT and advertising intents. The
+#               same pulzr.ble settings; this service attaches the chip, then
+#               hands hci0 to it. A gateway's beacons move to it only by
+#               somebody setting this, one gateway at a time.
 #
 # ── WHAT IT SENDS ──────────────────────────────────────────────────────────
 #
@@ -45,6 +58,32 @@ STATE_DIR=/var/run/pulzr/ble
 log() { logger -t pulzr-ble -p daemon.info "$*"; }
 
 enabled() { [ "$(uci -q get pulzr.ble.enabled)" = 1 ]; }
+
+backend() {
+    case "$(uci -q get pulzr.ble.backend)" in
+        pulzr-edge) echo pulzr-edge ;;
+        *) echo pulzr-ble ;;
+    esac
+}
+
+# The radio to pulzr-edge, which owns the whole controller (the HCI user
+# channel needs hci0 down and nothing else on it). Its config is generated
+# here at every start, from the gateway's broker login and pulzr.ble.
+edge() {
+    local cfg=/var/run/pulzr-edge/ble.toml top
+    [ -x /usr/sbin/pulzr-edge ] && [ -r /usr/libexec/pulzr/edge-config ] || {
+        # A minute between tries, not procd's ten seconds, while it is missing.
+        log "pulzr.ble.backend is pulzr-edge, but the pulzr-edge add-on is not installed"
+        sleep 60; exit 1
+    }
+    . /usr/libexec/pulzr/edge-config
+    top="$(edge_common)" || { log "not adopted yet"; exit 1; }
+    attach || exit 1
+    hciconfig hci0 down
+    (umask 077; { printf '%s\n\n' "${top}"; edge_ble; } > "${cfg}")
+    log "hci0 handed to pulzr-edge"
+    exec /usr/sbin/pulzr-edge ble "${cfg}"
+}
 
 # A radio this build can drive: the board's own, or a dongle btusb attached.
 radio() {
@@ -97,6 +136,7 @@ attach() {
 
 run() {
     enabled || exit 0
+    [ "$(backend)" = pulzr-edge ] && edge
     attach || exit 1
     mkdir -p "${STATE_DIR}"
 
@@ -137,6 +177,7 @@ run() {
 case "$1" in
     state)  state ;;
     attach) attach ;;
+    backend) backend ;;
     run)    run ;;
-    *)      echo "usage: pulzr-ble state|attach|run" >&2; exit 2 ;;
+    *)      echo "usage: pulzr-ble state|attach|backend|run" >&2; exit 2 ;;
 esac
