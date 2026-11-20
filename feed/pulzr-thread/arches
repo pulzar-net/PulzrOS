@@ -2,12 +2,8 @@
 #
 # Scripts only; built per architecture because the add-on repository is, and
 # because openthread-br is a binary for each.
-#
-# Not mipsel_24kc_24kf: the GL-SFT1200's target is ours, so OpenWrt publishes
-# no target feed for it, and openthread-br needs libstdcpp6, which each
-# target's toolchain builds. There is no OpenWrt-signed one for that board
-# to ship until its target is upstream.
 mipsel_24kc          openthread-br, ip-tiny, curl
+mipsel_24kc_24kf     openthread-br, ip-tiny, curl
 mips_24kc            openthread-br, ip-tiny, curl
 aarch64_cortex-a53   openthread-br, ip-tiny, curl
 aarch64_cortex-a72   openthread-br, ip-tiny, curl

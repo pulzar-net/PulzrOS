@@ -103,6 +103,38 @@ target_of() {
   return 1
 }
 
+# A target OpenWrt does not build (a board whose device support grafts it,
+# boards/<board>/openwrt/graft) has no feeds of its own on
+# downloads.openwrt.org: its kernel, kmods and toolchain libraries are built
+# with that board's ImageBuilder and carried in its packages/
+# (device-imagebuilder-graft.sh). For such an arch, prints the packages
+# directory of that ImageBuilder, extracted after checking it against the
+# sha256sums it was built with; for any other, prints nothing.
+DEVICE_IB_DIR="${DEVICE_IB_DIR:-${ROOT_DIR}/.build/device-ib}"
+target_packages_of() {
+  local conf dev
+  for conf in "${BOARDS_DIR}"/*/board.conf; do
+    [ "${conf}" = "${BOARDS_DIR}/common/board.conf" ] && continue
+    dev="$( BOARDS_DIR="${BOARDS_DIR}"; . "${conf}"
+            [ "${OPENWRT_ARCH:-}" = "$1" ] && echo "${OPENWRT_DEVICE_SUPPORT:-}" )" || true
+    [ -n "${dev}" ] && [ -f "${BOARDS_DIR}/${dev}/openwrt/graft" ] || continue
+    local ib dir="${WORK}/target-packages/${dev}"
+    if [ ! -d "${dir}" ]; then
+      ib="$(ls "${DEVICE_IB_DIR}/${dev}"/openwrt-imagebuilder-*.tar.zst 2>/dev/null | head -n1)"
+      [ -n "${ib}" ] || die "no ImageBuilder for ${dev} in ${DEVICE_IB_DIR}/${dev}: $1's target packages come from it"
+      ( cd "${DEVICE_IB_DIR}/${dev}" && grep -F " *$(basename "${ib}")" sha256sums | sha256sum -c --quiet - ) >&2 \
+        || die "${ib} does not match its sha256sums"
+      mkdir -p "${dir}.x" "${dir}"
+      zstd -dc "${ib}" | tar -x -C "${dir}.x" --wildcards '*/packages/*.apk'
+      find "${dir}.x" -path '*/packages/*.apk' -exec mv -t "${dir}" {} +
+      rm -rf "${dir}.x"
+      ls "${dir}"/*.apk >/dev/null 2>&1 || die "${ib} carries no packages"
+    fi
+    echo "${dir}"
+    return 0
+  done
+}
+
 common_package() {
   ( . "${BOARDS_DIR}/common/board.conf"
     printf '%s\n' "${PACKAGES_COMMON}" | sed 's/#.*//' | tr -s '[:space:]' '\n' | grep -qxF "$1" )
@@ -179,8 +211,10 @@ for pkgdir in "${FEED_DIR}"/*/; do
     # each arch's repository holds it once.
     if [ -f "${pkgdir}/upstream" ]; then
       target="$(target_of "${arch}")" || die "no board runs ${arch}, so ${name}'s upstream packages have no target"
+      target_packages="$(target_packages_of "${arch}")"
       kmods="${WORK}/kmods-${name}-${arch}"
-      upstream_names="$("${ROOT_DIR}/scripts/addon-upstream.sh" "${APK}" "${OPENWRT_KEYS}" "${arch}" "${target}" \
+      upstream_names="$(TARGET_PACKAGES="${target_packages}" \
+          "${ROOT_DIR}/scripts/addon-upstream.sh" "${APK}" "${OPENWRT_KEYS}" "${arch}" "${target}" \
           "${OUT}/${arch}" $(grep -v '^[[:space:]]*\(#\|$\)' "${pkgdir}/upstream") 2>"${kmods}")" \
         || { cat "${kmods}" >&2; die "could not fetch ${name}'s upstream packages for ${arch}"; }
       # A kernel module comes with the image, never with an add-on.

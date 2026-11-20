@@ -509,7 +509,13 @@ jobs:
   #   R2_ADDONS_SECRET_ACCESS_KEY
   addons:
     name: Add-ons
-    needs: feed
+    # devices: an upstream package for a source-only target (the GL-SFT1200's
+    # siflower) resolves against that board's own ImageBuilder
+    # (scripts/addon-upstream.sh).
+    needs: [feed, boards, devices]
+    # Not held up by another board's device support failing: a graft board's
+    # missing ImageBuilder fails build-addons.sh by name.
+    if: ${{ !cancelled() && needs.feed.result == 'success' && needs.boards.result == 'success' }}
     environment: ${{ startsWith(github.ref, 'refs/tags/') && 'release' || 'build' }}
     runs-on: ${{ (github.event.repository.private && vars.RUNNER) || 'ubuntu-latest' }}
     env:
@@ -527,6 +533,23 @@ jobs:
       - name: Take the feed
         if: runner.environment == 'self-hosted'
         run: cp -a "$HANDOFF/$GITHUB_RUN_ID/feed/." .
+
+      # Each into .build/device-ib/<board>/, where build-addons.sh looks.
+      - uses: actions/download-artifact@v4
+        if: needs.boards.outputs.devices != '[]'
+        with:
+          pattern: device-ib-*
+          path: .build/device-ib-artifacts
+
+      - name: Place the device ImageBuilders
+        if: needs.boards.outputs.devices != '[]'
+        run: |
+          for d in .build/device-ib-artifacts/device-ib-*/; do
+            dev="$(basename "${d}")"; dev="${dev#device-ib-}"
+            mkdir -p .build/device-ib
+            rm -rf ".build/device-ib/${dev}"
+            mv "${d}" ".build/device-ib/${dev}"
+          done
 
       - name: Install build dependencies
         run: |

@@ -263,6 +263,9 @@ it (`by`), and `pulzr-addon` installs a package that is not an add-on only when
 the catalog says the add-on being installed brings it, and never a `pulzr-` or
 `kmod-` one. A kernel module is built for one kernel, so one an upstream package
 needs must be in every image (`PACKAGES_COMMON`); `build-addons.sh` refuses
-otherwise. Removing the add-on lets apk remove what only it needed. A board
-whose target OpenWrt does not build (the GL-SFT1200's siflower) has no such
-feeds, and is not offered the add-on.
+otherwise. Removing the add-on lets apk remove what only it needed. A target
+OpenWrt does not build (the GL-SFT1200's siflower) has no feeds of its own, so
+its side comes from that board's ImageBuilder, the one its image is built
+from: kernel, kmods and toolchain libraries. A toolchain library an upstream
+package needs (openthread-br's `libstdcpp6`) is then shipped from that build;
+the rest is still OpenWrt's arch feed.

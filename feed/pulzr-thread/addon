@@ -4,6 +4,5 @@ ADDON_TITLE="Thread"
 ADDON_CAPS="thread"
 ADDON_FEATURE="thread"
 # Any board with a USB port can take a Thread radio; pulzr-addon refuses one
-# whose flash cannot hold the border router, about 4 MB installed. Every
-# board but the GL-SFT1200, whose arch the add-on is not built for (arches).
-ADDON_BOARDS="dragino-lps8n rak7266 rak7267 rak7268c rak7268cv2 rak7268v2 rak7289cv2 rak7289v2 rak7391 rpi3 rpi4 rpi5 sensecap-m2"
+# whose flash cannot hold the border router, about 4 MB installed.
+ADDON_BOARDS="*"

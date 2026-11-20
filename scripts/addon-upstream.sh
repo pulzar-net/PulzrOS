@@ -18,6 +18,14 @@
 # kernel, and a gateway's comes with its image, so a module an upstream
 # package needs must be in every image (PACKAGES_COMMON); the names of those
 # are printed to stderr as `kmod <name>` for the caller to check.
+#
+# TARGET_PACKAGES, when set, is the directory of a source-only target's own
+# packages (the GL-SFT1200's siflower, which OpenWrt does not build): its
+# kernel, kmods and toolchain libraries, from that board's ImageBuilder, which
+# its image is built from too (build-addons.sh checks it). They stand in for
+# the target's feeds; the arch's are OpenWrt's as for every target. A
+# toolchain library an upstream package needs (openthread-br's libstdcpp6) is
+# then that build's, the same one the image's libc and libgcc are.
 
 set -euo pipefail
 
@@ -37,14 +45,32 @@ DL="https://downloads.openwrt.org/releases/${VERSION}"
 WORK="$(mktemp -d)"
 trap 'rm -rf "${WORK}"' EXIT
 
-# The kmods feed is named for the kernel the release ships on this target.
-kernel="$(curl -fsSL --retry 3 "${DL}/targets/${TARGET}/profiles.json" \
-  | jq -r '.linux_kernel | "\(.version)-\(.release)-\(.vermagic)"')"
-case "${kernel}" in *null*|'') echo "no kernel in ${DL}/targets/${TARGET}/profiles.json" >&2; exit 1 ;; esac
-
-repos=(
-  --repository "${DL}/targets/${TARGET}/packages/packages.adb"
-  --repository "${DL}/targets/${TARGET}/kmods/${kernel}/packages.adb"
+repos=()
+if [ -n "${TARGET_PACKAGES:-}" ]; then
+  # apk resolves only from a signed index. These are this build's own files,
+  # checked by the caller, so the index over them is signed here with a key
+  # made for this run and trusted for this run only, beside OpenWrt's.
+  ls "${TARGET_PACKAGES}"/*.apk >/dev/null 2>&1 || { echo "no packages in ${TARGET_PACKAGES}" >&2; exit 1; }
+  trusted="${WORK}/keys"; mkdir -p "${trusted}"
+  cp "${KEYS}"/*.pem "${trusted}/"
+  openssl ecparam -name prime256v1 -genkey -noout -out "${WORK}/local.pem"
+  openssl ec -in "${WORK}/local.pem" -pubout -out "${trusted}/local-target.pem" 2>/dev/null
+  rm -f "${TARGET_PACKAGES}/packages.adb"
+  ( cd "${TARGET_PACKAGES}" && "${APK}" mkndx --keys-dir "${trusted}" --sign "${WORK}/local.pem" \
+      --allow-untrusted --output packages.adb ./*.apk ) >&2
+  KEYS="${trusted}"
+  repos+=(--repository "${TARGET_PACKAGES}/packages.adb")
+else
+  # The kmods feed is named for the kernel the release ships on this target.
+  kernel="$(curl -fsSL --retry 3 "${DL}/targets/${TARGET}/profiles.json" \
+    | jq -r '.linux_kernel | "\(.version)-\(.release)-\(.vermagic)"')"
+  case "${kernel}" in *null*|'') echo "no kernel in ${DL}/targets/${TARGET}/profiles.json" >&2; exit 1 ;; esac
+  repos+=(
+    --repository "${DL}/targets/${TARGET}/packages/packages.adb"
+    --repository "${DL}/targets/${TARGET}/kmods/${kernel}/packages.adb"
+  )
+fi
+repos+=(
   --repository "${DL}/packages/${ARCH}/base/packages.adb"
   --repository "${DL}/packages/${ARCH}/packages/packages.adb"
 )
