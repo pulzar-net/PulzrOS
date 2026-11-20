@@ -69,7 +69,7 @@ for pkgdir in "${FEED_DIR}"/*/; do
   # A thin add-on on a shared runtime (pulzr-modbus on pulzr-edge) runs that
   # runtime's code: its upstream is the runtime's.
   if [ -z "${upstream}" ]; then
-    runtime="$(sed -n 's/^Depends:.*\(pulzr-[a-z0-9-]*\)=@VERSION@.*/\1/p' "${pkgdir}/control" | head -n1)"
+    runtime="$(sed -n 's/^Depends:.*\(pulzr-[a-z0-9-]*\)=@VERSION@.*/\1/p' "${pkgdir}/control" 2>/dev/null | head -n1 || true)"
     [ -z "${runtime}" ] || upstream="$(sed -n 's/^PKG_VERSION:=//p' "${SDK_PACKAGES}/${runtime}/Makefile" 2>/dev/null | head -n1 || true)"
   fi
   keep="$(cat "${pkgdir}"/files/lib/upgrade/keep.d/* 2>/dev/null \
