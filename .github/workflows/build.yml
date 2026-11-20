@@ -44,6 +44,15 @@ on:
     branches: [main]
     # Tagging cuts a release with every board's image attached.
     tags: ['v*']
+    # A push that only touches the docs site or the repository's own Markdown
+    # (README, CONTRIBUTING, ...) builds no firmware: a docs push cancelled
+    # the hours-long build three times on 20 Nov 2026. docs.yml builds those.
+    # Root *.md only, not **.md: feed/*/files/ ship READMEs in the image.
+    # Path filters are never applied to tag pushes, so a release tag always
+    # builds everything; pull_request keeps no filter.
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
   pull_request:
   workflow_dispatch:
     inputs:
