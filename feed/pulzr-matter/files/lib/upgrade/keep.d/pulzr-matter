@@ -1,0 +1,4 @@
+# The controller's state: its intermediate CA key and certificates, its own
+# operational key, and the node store. An upgrade that dropped them would cut
+# the gateway off its organization's fabric and every device on it.
+/etc/pulzr-edge/radios/

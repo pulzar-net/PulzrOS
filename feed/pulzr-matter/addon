@@ -1,0 +1,6 @@
+# What makes this package an add-on (docs/addons.md). One capability, on the
+# shared pulzr-edge runtime it depends on, at this release's exact version.
+ADDON_TITLE="Matter"
+ADDON_CAPS="matter"
+ADDON_FEATURE="matter"
+ADDON_BOARDS="*"

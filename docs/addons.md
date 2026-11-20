@@ -3,19 +3,20 @@
 An add-on is a feed package with an `addon` file: something a gateway runs
 that is not in its image, installed on request from a signed repository
 built for exactly the release the gateway runs: pulzr-modbus (Modbus),
-pulzr-zigbee (Zigbee), pulzr-zwave (Z-Wave) and pulzr-thread (Thread). The
+pulzr-zigbee (Zigbee), pulzr-zwave (Z-Wave), pulzr-matter (Matter) and
+pulzr-thread (Thread). The
 RAK7289CV2 carries pulzr-modbus in its image instead (`PULZR_ADDONS_BUILTIN`),
 because its power board is already on a Modbus bus.
 
 ## One capability per add-on
 
 Each add-on brings exactly one capability, so a deny on one never blocks
-another: a gateway locked off Modbus can still have Zigbee. Modbus, Zigbee and
-Z-Wave all run on one binary, pulzr-edge, which is an add-on of its own
+another: a gateway locked off Modbus can still have Zigbee. Modbus, Zigbee,
+Z-Wave and Matter all run on one binary, pulzr-edge, which is an add-on of its own
 (`ADDON_SHARED=1`) that brings no capability and is installed as their
 dependency, at this release's exact version (`Depends: pulzr-edge=@VERSION@`).
 The thin add-ons carry what makes each one run: pulzr-modbus the buses'
-service, pulzr-zigbee and pulzr-zwave a file in
+service, pulzr-zigbee, pulzr-zwave and pulzr-matter a file in
 `/usr/share/pulzr/radio-protocols/` without which pulzr-edge-radios never
 starts that protocol's radios (`pulzr-radios runnable`).
 `scripts/check-addons.sh` refuses an add-on with more than one capability, and
