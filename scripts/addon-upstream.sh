@@ -8,7 +8,7 @@
 # An add-on whose work is an OpenWrt package (pulzr-thread brings
 # openthread-br) names it in feed/<name>/upstream. Its package and every
 # dependency the image may lack are fetched here for one architecture, with
-# apk checking each one against OpenWrt's signature, and go into the add-on
+# apk checking each one against OpenWrt's signed index, and go into the add-on
 # repository as they are: built by OpenWrt's buildbots from OpenWrt's recipe,
 # never rebuilt or repacked by us. A gateway installs them from our signed
 # index, which carries each one's hash.
@@ -57,13 +57,15 @@ mkdir -p "${root}/lib/apk/db" "${root}/etc/apk" "${WORK}/fetched"
 
 # --no-cache: apk-tools 3 reads a remote index from its cache unless told not
 # to, and this root has none, so without it every feed is "No such file".
+#
+# OpenWrt signs its indexes, not its packages: fetch refuses an index whose
+# signature is not one of KEYS, and checks each package it writes against
+# the digest that index gives it, failing on any mismatch. That is the whole
+# check, and the one a gateway makes; `apk verify` wants a signature on the
+# package file itself, which no OpenWrt package has.
 "${APK}" --root "${root}" --keys-dir "${KEYS}" --no-cache --no-interactive \
   --repositories-file /dev/null "${repos[@]}" --arch "${ARCH}" \
   fetch --recursive --output "${WORK}/fetched" "$@" >&2
-
-# Every fetched file must carry OpenWrt's signature: fetch checks the index,
-# and this checks each package against the keys again, as a gateway would.
-"${APK}" --root "${root}" --keys-dir "${KEYS}" verify "${WORK}/fetched"/*.apk >&2
 
 mkdir -p "${OUT}"
 for f in "${WORK}/fetched"/*.apk; do
