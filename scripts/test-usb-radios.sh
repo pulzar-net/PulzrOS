@@ -87,8 +87,14 @@ radios() { bash "${RADIOS}" "$@" 2>/dev/null; }
 not() { ! "$@"; }
 calls() { local n; n="$(grep -c -e "$2" "${SANDBOX}/$1.log" 2>/dev/null)"; echo "${n:-0}"; }
 fresh() { rm -f "${SANDBOX}"/*.log; }
-# What `tell` starts runs in the background.
+# What `tell` starts runs in the background: a check that something was sent
+# waits for it (up to 5 s, for a loaded machine), and one that nothing was
+# gives it half a second to show up.
 settle() { sleep 0.5; }
+until_calls() {
+    local i=0
+    while [ "$(calls "$1" "$2")" != "$3" ] && [ "${i}" -lt 50 ]; do sleep 0.1; i=$((i + 1)); done
+}
 
 ZBT='{"detected":[{"id":"usb-10c4_ea60-9e2adbd1","bus":"usb","label":"Home Assistant Connect ZBT-1","state":"free","since":1}]}'
 BOTH='{"detected":[{"id":"usb-10c4_ea60-9e2adbd1","bus":"usb","label":"Home Assistant Connect ZBT-1","state":"free","since":1},{"id":"usb-1a86_55d4-1-1.3","bus":"usb","label":"USB serial adapter (CH9102)","state":"unidentified","since":2}]}'
@@ -106,7 +112,7 @@ fresh
 radios scan; settle
 check "the same list says nothing" [ "$(calls claim radios)" = 0 ]
 echo "${BOTH}" > "${FAKE_LIST}"
-radios scan; settle
+radios scan; until_calls claim radios 1; until_calls agent --publish-state 1
 check "a new radio sends the list" [ "$(calls claim radios)" = 1 ]
 check "and publishes the MQTT state again" [ "$(calls agent --publish-state)" = 1 ]
 echo "${ZBT}" > "${FAKE_LIST}"
@@ -118,7 +124,7 @@ check "--quiet never tells" [ "$(calls claim radios)" = 0 ]
 echo "${BOTH}" > "${FAKE_LIST}"
 fresh
 for _ in 1 2 3 4 5 6; do radios hotplug; done
-sleep 2.5
+until_calls claim radios 1; settle
 check "six events, one scan" [ "$(calls probe --report)" = 1 ]
 check "and one list sent" [ "$(calls claim radios)" = 1 ]
 
