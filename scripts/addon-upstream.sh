@@ -55,7 +55,9 @@ mkdir -p "${root}/lib/apk/db" "${root}/etc/apk" "${WORK}/fetched"
 : > "${root}/lib/apk/db/installed"
 : > "${root}/etc/apk/world"
 
-"${APK}" --root "${root}" --keys-dir "${KEYS}" --no-interactive \
+# --no-cache: apk-tools 3 reads a remote index from its cache unless told not
+# to, and this root has none, so without it every feed is "No such file".
+"${APK}" --root "${root}" --keys-dir "${KEYS}" --no-cache --no-interactive \
   --repositories-file /dev/null "${repos[@]}" --arch "${ARCH}" \
   fetch --recursive --output "${WORK}/fetched" "$@" >&2
 
