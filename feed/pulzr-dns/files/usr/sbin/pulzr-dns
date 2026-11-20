@@ -353,3 +353,7 @@ commands['ddns-token'] = () => {
 let cmd = commands[ARGV[0] ?? 'status'];
 cmd ?? die('usage: pulzr-dns {status|upstream|host|unhost|rebind|ddns|ddns-token}', 2);
 call(cmd, null, null, ...slice(ARGV, 1));
+// A change Pulzar Cloud would otherwise have to ask for (pulzr-mqtt-agent
+// --push). A refused change died above and sends nothing.
+if ((ARGV[0] ?? 'status') != 'status')
+    system('( /usr/sbin/pulzr-mqtt-agent --push dns >/dev/null 2>&1 & ) 2>/dev/null');

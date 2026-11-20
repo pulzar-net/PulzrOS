@@ -6,7 +6,7 @@
 #   pulzr-mqtt-agent                  listen for requests until killed
 #   pulzr-mqtt-agent --once           answer nothing; print what `status` would say
 #   pulzr-mqtt-agent --publish-state  publish the retained state again and exit
-#   pulzr-mqtt-agent --push lan|counters
+#   pulzr-mqtt-agent --push lan|uplinks|dns
 #                                     publish what changed without being asked
 #
 # ── WHY ────────────────────────────────────────────────────────────────────
@@ -362,49 +362,22 @@ dispatch() {
 
 # ── pushed, not asked for ───────────────────────────────────────────────────
 #
-# Pulzar Cloud used to ask every gateway with a LAN for it every five minutes
-# (net-api lan-paths), which on a SIM is a request and an answer for nothing
-# most of the time. What it wanted to know is pushed instead, when it changes:
+# Pulzar Cloud used to ask every gateway with a LAN for its LAN, uplinks and
+# DNS every five minutes (net-api lan-paths), which on a SIM is a request and
+# an answer for nothing most of the time. They are pushed instead, when they
+# change:
 #
-#   lan       the `lan` answer, after a DHCP lease is added, changes or
-#             expires (hotplug.d/dhcp/60-pulzr-lan-push in pulzr-lan)
-#   counters  bytes through the WireGuard tunnel and to the broker, when either
-#             moved a MiB since the last push, or every hour
+#   lan       after a DHCP lease is added, changes or expires
+#             (hotplug.d/dhcp/60-pulzr-lan-push in pulzr-lan)
+#   uplinks   after pulzr-uplinks changes the order or the tracking
+#   dns       after pulzr-dns changes the resolver
+#   (all three after pulzr-apply puts a configuration back)
 #
-# On the response topic, unsolicited, with id "push": it is the one this
+# Each is the same document the op answers with, so a missed one heals at the
+# next. On the response topic, unsolicited, with id "push": it is the one this
 # gateway may publish on besides its retained state, and anything that asks
-# requests drops an answer whose id it did not send.
-PUSH_SEEN="${STATE_DIR}/push.counters"
-PUSH_BYTES=1048576
-# An hour, not less: each push is mosquitto_pub's own TLS session, 5 to 6 KB
-# whatever the message, so a fifteen-minute heartbeat would cost a SIM gateway
-# about 17 MB a month to say nothing changed.
-PUSH_HEARTBEAT=3600
-
-read_bytes() { local v; read -r v < "$1" 2>/dev/null && echo "${v:-0}" || echo 0; }
-
-# An nftables named counter's bytes, or nothing when it is not there.
-nft_bytes() {
-    nft -j list counter inet fw4 "$1" 2>/dev/null | jsonfilter -e '@.nftables[*].counter.bytes' 2>/dev/null
-}
-
-op_counters() {
-    local rx tx hs mrx mtx boot
-    rx="$(read_bytes /sys/class/net/wg0/statistics/rx_bytes)"
-    tx="$(read_bytes /sys/class/net/wg0/statistics/tx_bytes)"
-    hs="$(wg show wg0 latest-handshakes 2>/dev/null | awk '$2 > m { m = $2 } END { print m + 0 }')"
-    [ "${hs:-0}" -gt 0 ] 2>/dev/null || hs=null
-    mrx="$(nft_bytes pulzr_mqtt_rx)"; mtx="$(nft_bytes pulzr_mqtt_tx)"
-    boot=$(( $(date +%s) - $(cut -d. -f1 /proc/uptime) ))
-    if [ -n "${mrx}" ] && [ -n "${mtx}" ]; then
-        printf '{"wireguard":{"rx":%s,"tx":%s,"handshake":%s},"mqtt":{"rx":%s,"tx":%s},"boot":%s}' \
-            "${rx}" "${tx}" "${hs}" "${mrx}" "${mtx}" "${boot}"
-    else
-        printf '{"wireguard":{"rx":%s,"tx":%s,"handshake":%s},"mqtt":null,"boot":%s}' \
-            "${rx}" "${tx}" "${hs}" "${boot}"
-    fi
-}
-
+# requests drops an answer whose id it did not send. Tunnel and broker byte
+# counts are not pushed: the WireGuard hub and the broker already hold them.
 push() {
     local kind="$1" result="$2" file="${STATE_DIR}/push.$1.$$"
     [ -s "${STATE_DIR}/backoff" ] && return 0
@@ -412,30 +385,6 @@ push() {
     printf '{"id":"push","ok":true,"push":"%s","at":%s,"result":%s}' "${kind}" "$(date +%s)" "${result}" > "${file}"
     publish "${TOPIC_ROOT}/$(eui)/mgmt/response" "${file}"
     rm -f "${file}"
-}
-
-# Total bytes now, and whether that or the time since the last push is enough.
-push_counters_if_due() {
-    local out total last_total last_at now
-    out="$(op_counters)"
-    total=$(echo "${out}" | jsonfilter -e '@.wireguard.rx' -e '@.wireguard.tx' -e '@.mqtt.rx' -e '@.mqtt.tx' 2>/dev/null \
-            | awk '{ s += $1 } END { printf "%d", s }')
-    now="$(date +%s)"
-    read -r last_total last_at < "${PUSH_SEEN}" 2>/dev/null
-    case "${last_total}${last_at}" in ''|*[!0-9]*) last_total=0; last_at=0 ;; esac
-    if [ "$(( total > last_total ? total - last_total : last_total - total ))" -ge "${PUSH_BYTES}" ] ||
-        [ "$((now - last_at))" -ge "${PUSH_HEARTBEAT}" ]; then
-        push counters "${out}" && echo "${total} ${now}" > "${PUSH_SEEN}"
-    fi
-}
-
-# The one timer: a minute is how late a MiB can be noticed, which is all a
-# threshold needs, and reading two sysfs files and two counters costs nothing.
-counters_loop() {
-    while :; do
-        push_counters_if_due
-        sleep 60
-    done
 }
 
 # ── the loop ────────────────────────────────────────────────────────────────
@@ -465,13 +414,10 @@ fi
 
 if [ "$1" = "--push" ]; then
     case "$2" in
-        lan)
-            [ -x /usr/sbin/pulzr-lan ] || exit 0
-            push lan "$(bounded 15 op_lan)" ;;
-        counters)
-            out="$(op_counters)"
-            push counters "${out}" ;;
-        *) echo "usage: pulzr-mqtt-agent --push lan|counters" >&2; exit 2 ;;
+        lan)     [ -x /usr/sbin/pulzr-lan ] || exit 0; push lan "$(bounded 15 op_lan)" ;;
+        uplinks) [ -x /usr/sbin/pulzr-uplinks ] || exit 0; push uplinks "$(bounded 10 op_uplinks)" ;;
+        dns)     [ -x /usr/sbin/pulzr-dns ] || exit 0; push dns "$(bounded 10 op_dns)" ;;
+        *) echo "usage: pulzr-mqtt-agent --push lan|uplinks|dns" >&2; exit 2 ;;
     esac
     exit $?
 fi
@@ -526,10 +472,6 @@ fi
 log "listening on ${REQUEST}"
 STARTED="$(date +%s)"
 
-# A child of this shell, so the trap below stops it with the subscription,
-# and stopped below when the subscription ends, before procd starts another.
-counters_loop &
-COUNTERS=$!
 
 # One JSON document per message, one message per line.
 #
@@ -588,7 +530,6 @@ done &
 # interruptible, so the trap runs, and both halves are this shell's children.
 trap 'kill $(pgrep -P $$) 2>/dev/null; exit 0' TERM INT
 wait $!
-kill "${COUNTERS}" 2>/dev/null
 
 # How long it lasted is the only signal available for why it ended:
 # mosquitto_sub's stderr is discarded (it would otherwise log a line per

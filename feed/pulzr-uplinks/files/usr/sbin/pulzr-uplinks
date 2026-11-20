@@ -353,3 +353,7 @@ let commands = {
 let cmd = commands[ARGV[0] ?? 'status'];
 cmd ?? die('usage: pulzr-uplinks {status|order|track|tracking|apply|usable|run}', 2);
 call(cmd, null, null, ...slice(ARGV, 1));
+// A person's change (pulzr-mqtt-agent --push); not apply, which re-ranks on
+// every health change, nor the reads. A refused change died above.
+if ((ARGV[0] ?? 'status') in ['order', 'track', 'tracking'])
+    system('( /usr/sbin/pulzr-mqtt-agent --push uplinks >/dev/null 2>&1 & ) 2>/dev/null');

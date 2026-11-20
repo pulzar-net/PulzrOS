@@ -107,6 +107,9 @@ reload() {
     # The tunnel and LoRa routing re-pick their uplink on ifup and ifdown; an
     # uplink that only changed name gets neither, so ask once.
     ( sleep 8; /usr/sbin/pulzr-wireguard-route apply; /usr/sbin/pulzr-lora-route apply ) >/dev/null 2>&1 &
+    # What was put back is pushed, as a change would have been
+    # (pulzr-mqtt-agent --push), once the reloads above have settled.
+    ( sleep 10; for k in lan uplinks dns; do /usr/sbin/pulzr-mqtt-agent --push "${k}"; done ) >/dev/null 2>&1 &
 }
 
 status() {
