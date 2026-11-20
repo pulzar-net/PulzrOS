@@ -207,7 +207,9 @@ op_rak_power() { /usr/sbin/pulzr-rak-power status 2>/dev/null || echo '{"error":
 # answer" and telling you nothing about which part failed.
 bounded() {
     local seconds="$1"; shift
-    local out="${STATE_DIR}/op.$$"
+    # Its own file: the catch-up push runs ops beside the request loop, and
+    # both are this shell's $$.
+    local out; out="$(mktemp "${STATE_DIR}/op.XXXXXX")" || out="${STATE_DIR}/op.$$"
     ( "$@" > "${out}" 2>/dev/null ) &
     local pid=$! waited=0 killed=0
     while kill -0 "${pid}" 2>/dev/null; do
@@ -371,7 +373,9 @@ dispatch() {
 #             (hotplug.d/dhcp/60-pulzr-lan-push in pulzr-lan)
 #   uplinks   after pulzr-uplinks changes the order or the tracking
 #   dns       after pulzr-dns changes the resolver
-#   (all three after pulzr-apply puts a configuration back)
+#   (all three after pulzr-apply puts a configuration back, and each time
+#    this agent connects, since a change made while it was away was sent
+#    nowhere)
 #
 # Each is the same document the op answers with, so a missed one heals at the
 # next. On the response topic, unsolicited, with id "push": it is the one this
@@ -384,6 +388,24 @@ push() {
     [ "${#result}" -le "${MAX_RESPONSE}" ] || { log "push ${kind}: too large to send"; return 1; }
     printf '{"id":"push","ok":true,"push":"%s","at":%s,"result":%s}' "${kind}" "$(date +%s)" "${result}" > "${file}"
     publish "${TOPIC_ROOT}/$(eui)/mgmt/response" "${file}"
+    rm -f "${file}"
+}
+
+# The catch-up after a connect: whichever of the three this gateway has, as
+# one message a line through one mosquitto_pub, so one TLS session, not three.
+push_all() {
+    local file="${STATE_DIR}/push.all.$$" kind out at
+    : > "${file}"
+    at="$(date +%s)"
+    for kind in lan uplinks dns; do
+        [ -x "/usr/sbin/pulzr-${kind}" ] || continue
+        out="$(bounded 15 "op_${kind}" | tr -d '\n')"
+        [ "${#out}" -le "${MAX_RESPONSE}" ] || { log "push ${kind}: too large to send"; continue; }
+        printf '{"id":"push","ok":true,"push":"%s","at":%s,"result":%s}\n' "${kind}" "${at}" "${out}" >> "${file}"
+    done
+    [ -s "${file}" ] && mosquitto_pub -h "$(host)" -p 8883 --capath /etc/ssl/certs \
+        -u "$(username)" -P "$(password)" \
+        -t "${TOPIC_ROOT}/$(eui)/mgmt/response" -l -q 1 < "${file}" >/dev/null 2>&1
     rm -f "${file}"
 }
 
@@ -519,6 +541,12 @@ while IFS= read -r line; do
     publish "${RESPONSE}" "${STATE_DIR}/response.json"
     log "${op:-?} -> ${ok}"
 done &
+SUBSCRIPTION=$!
+
+# The catch-up push (push_all), once the subscription has outlived the time in
+# which a refusal ends it: a broker that will not have this gateway is not
+# sent three documents per attempt.
+( sleep "${FAST_FAILURE}"; kill -0 "${SUBSCRIPTION}" 2>/dev/null && push_all ) &
 
 # Backgrounded and waited on, with the pipeline killed on the way out.
 #
@@ -529,7 +557,7 @@ done &
 # had been restarted once answered every management request twice. `wait` is
 # interruptible, so the trap runs, and both halves are this shell's children.
 trap 'kill $(pgrep -P $$) 2>/dev/null; exit 0' TERM INT
-wait $!
+wait "${SUBSCRIPTION}"
 
 # How long it lasted is the only signal available for why it ended:
 # mosquitto_sub's stderr is discarded (it would otherwise log a line per
