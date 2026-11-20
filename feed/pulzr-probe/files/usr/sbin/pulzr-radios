@@ -108,10 +108,13 @@ networks() {
 use_radio() {
     local id="$1" protocol="$2" f use i
     [ -x "${EDGE_INIT}" ] || { echo "The pulzr-edge add-on is not installed." >&2; exit 1; }
-    jsonfilter -i "${REPORT}" -e "@.detected[@.id='${id}'].id" >/dev/null 2>&1 \
-        || { echo "That radio is not plugged in." >&2; exit 1; }
-    use="$(jsonfilter -i "${REPORT}" -e "@.detected[@.id='${id}'].use" 2>/dev/null)"
-    [ "${use}" = modbus ] && { echo "That adapter is handed to Modbus." >&2; exit 1; }
+    # Matter's controller is on no radio of its own.
+    if [ "${id}" != matter ]; then
+        jsonfilter -i "${REPORT}" -e "@.detected[@.id='${id}'].id" >/dev/null 2>&1 \
+            || { echo "That radio is not plugged in." >&2; exit 1; }
+        use="$(jsonfilter -i "${REPORT}" -e "@.detected[@.id='${id}'].use" 2>/dev/null)"
+        [ "${use}" = modbus ] && { echo "That adapter is handed to Modbus." >&2; exit 1; }
+    fi
     f="${EDGE_RADIOS}/${id}.json"
     if [ -e "${f}" ]; then
         [ "$(jsonfilter -i "${f}" -e '@.protocol')" = "${protocol}" ] \
@@ -161,6 +164,7 @@ facts() {
 # Ids are what pulzr-probe wrote: checked here as well, because these arrive
 # from the network.
 valid_id() {
+    [ "$1" = matter ] && return 0
     case "$1" in
         usb-*|uart-*|lan-*) ;;
         *) return 1 ;;
@@ -191,7 +195,8 @@ case "$1" in
         ;;
     use)
         valid_id "$2" || { echo "not a radio id" >&2; exit 2; }
-        case "$3" in zigbee|zwave) ;; *) echo "use takes zigbee or zwave" >&2; exit 2 ;; esac
+        case "$2:$3" in matter:matter|usb-*:zigbee|usb-*:zwave|uart-*:zigbee|uart-*:zwave|lan-*:zigbee) ;;
+            *) echo "use takes zigbee or zwave on a radio, matter on matter" >&2; exit 2 ;; esac
         use_radio "$2" "$3"
         ;;
     release)

@@ -1,5 +1,7 @@
 // Radio networks: the Zigbee and Z-Wave coordinators the pulzr-edge add-on
-// runs, one `pulzr-edge radio serve` process per radio (docs/radio-modules.md).
+// runs, one `pulzr-edge radio serve` process per radio, and the gateway's
+// controller in its organization's Matter fabric, as the radio `matter`
+// (docs/radio-modules.md).
 //
 // Set up from Pulzar Net only, as add-ons and Thread are: a change needs an
 // `sso` session, which only Pulzar Net mints for a person, and is audited
@@ -31,6 +33,8 @@ const OPS = [
     'use', 'release', 'scan', 'form', 'restore', 'backup', 'leave', 'permit',
     'permit-stop', 'provision', 'grant', 'dsk', 'abort', 'remove', 'replace',
     'channel', 'region',
+    // Matter's: join the organization's fabric, add and share devices.
+    'csr', 'join', 'commission', 'share', 'decommission',
 ];
 
 quote = function(a) {
@@ -38,7 +42,7 @@ quote = function(a) {
 };
 
 valid = function(radio) {
-    return type(radio) == 'string' && !!match(radio, /^(usb|uart|lan)-[a-z0-9._-]{1,96}$/);
+    return radio == 'matter' || (type(radio) == 'string' && !!match(radio, /^(usb|uart|lan)-[a-z0-9._-]{1,96}$/));
 };
 
 // A tool's JSON answer; on failure its last stderr line, with the status the
@@ -72,7 +76,7 @@ run = function(cmd, stdin, name) {
 list = function() {
     const out = [];
     for (let f in (_m_fs.lsdir(RADIOS) ?? [])) {
-        const m = match(f, /^((usb|uart|lan)-[a-z0-9._-]{1,96})\.json$/);
+        const m = match(f, /^((usb|uart|lan)-[a-z0-9._-]{1,96}|matter)\.json$/);
         if (m) push(out, m[1]);
     }
     return sort(out);
@@ -101,8 +105,8 @@ change = function(op, req, session) {
         return { status: 409, error: 'The pulzr-edge add-on is not installed.' };
     let result;
     if (op == 'use') {
-        if (!(req?.protocol in ['zigbee', 'zwave']))
-            return { status: 400, error: 'protocol is zigbee or zwave.' };
+        if (!(req?.protocol in ['zigbee', 'zwave', 'matter']) || ((req.radio == 'matter') != (req.protocol == 'matter')))
+            return { status: 400, error: 'protocol is zigbee or zwave on a radio, matter on the radio matter.' };
         result = run(RADIOS_TOOL + ' use ' + quote(req.radio) + ' ' + quote(req.protocol), null);
     } else if (op == 'release') {
         result = run(RADIOS_TOOL + ' release ' + quote(req.radio), null);

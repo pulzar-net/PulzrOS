@@ -230,5 +230,13 @@ check "as a radio backup" [ "$(calls claim "radio-backup ${ZBT_ID} ${PULZR_EDGE_
 check "and removes it once sent" [ ! -e "${PULZR_EDGE_RUN}/backup/${ZBT_ID}.json" ]
 check "backup refuses a bad id" not radios backup '../x'
 
+# ── Matter's controller: the radio `matter`, on no port of its own ──────────────
+echo '{"radio":"matter","protocol":"matter","state":"unformed"}' > "${SANDBOX}/status-matter.json"
+check "use matter needs no radio plugged in" eval 'radios use matter matter >/dev/null'
+check "its file names Matter" [ "$(jsonfilter -i "${PULZR_EDGE_RADIOS}/matter.json" -e @.protocol)" = matter ]
+check "matter is only Matter's" not radios use matter zigbee
+check "and a radio is never Matter" not radios use "${ZBT_ID}" matter
+check "release matter" eval 'radios release matter >/dev/null'
+
 echo "${pass} passed"
 exit "${fail}"

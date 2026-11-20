@@ -208,6 +208,36 @@ never see an old one.
 { "detected": [ … ], "networks": [ { …the status above… } ] }
 ```
 
+## Matter
+
+A gateway's controller in its organization's Matter fabric is the radio
+`matter`: one `pulzr-edge radio serve matter`, on no port of its own (Matter
+rides on IP, and on Thread through the border router), driven like any other.
+`pulzr-radios use matter matter` starts it.
+
+One fabric per organization. Pulzar Net's device CA holds its root and IPK; a
+gateway joins with an intermediate certificate (ICAC) for a key it makes and
+keeps, and signs its devices' and its own operational certificates itself,
+from a range of node ids no other gateway in the fabric is given.
+
+| Op | Params | Result |
+|---|---|---|
+| `status` | | `{state, fabric_id, compressed_fabric_id, node_id, devices, node_ids_left, commissioning}` |
+| `csr` | | `{csr}`: hex DER PKCS#10 for a P-256 key the module keeps |
+| `join` | `network`, `fabric_id`, `compressed_fabric_id`, `rcac`, `icac` (hex DER, Matter profile), **`ipk`**, `node_ids` `{first, last}`, `admin_cat` | status; again later with a new ICAC or range |
+| `commission` | **`code`** (the QR payload or the manual code), `thread_network` | answers when started; progress as events |
+| `share` | `device`, `seconds` (180–900) | **`{manual_code, qr_code}`**: a commissioning window for another controller |
+| `decommission` | `device` | |
+| `leave` | `erase` | forgets the fabric and its keys |
+| `abort` | | stops a commissioning |
+
+Events on the controller's key `matter:<compressed fabric id>.<node id>`:
+`network.commission` with `stage` (discovery, pase, arm_fail_safe,
+device_attestation, csr_request, add_trusted_root_certificate, add_noc,
+network_setup, network_connect, find_operational, commissioning_complete,
+interview), `device` and `reason`; `network.left`; `network.error`. Devices
+are `matter:<compressed fabric id>.<node id>`.
+
 ## Implementing a module
 
 A module implements `pulzr_edge::radio::RadioModule` and adds itself to
