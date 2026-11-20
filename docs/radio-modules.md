@@ -102,6 +102,7 @@ backup, so a backup can never be restored into the wrong record.
 | `replace` | `device` | Z-Wave: replace a failed node, keeping its node id. Zigbee: refused |
 | `channel` | `channel` (11–26) | Zigbee: moves the network (a network update broadcast). Z-Wave: refused |
 | `region` | `region` | Z-Wave: the RF region. Zigbee: refused |
+| `map` | | `{"started": true, "requests"}` at once; then the module walks the mesh one request at a time (Zigbee: neighbor and routing tables per router; Z-Wave: routing info per node), skipping sleepy end devices, and publishes v1 `topology` with `source: "scan"`, `complete: true`. `busy` while joining, an inclusion or an OTA runs |
 
 `form`, by protocol:
 

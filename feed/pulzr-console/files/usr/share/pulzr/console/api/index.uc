@@ -396,6 +396,7 @@ const ROUTES = {
     'POST /api/system/radio/remove':       radioPost('remove'),
     'POST /api/system/radio/replace':      radioPost('replace'),
     'POST /api/system/radio/channel':      radioPost('channel'),
+    'POST /api/system/radio/map':          radioPost('map'),
     'POST /api/system/radio/region':       radioPost('region'),
 
     // ── network ─────────────────────────────────────────────────────────────

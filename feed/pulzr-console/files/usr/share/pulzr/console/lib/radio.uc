@@ -32,7 +32,7 @@ const RUN = '/var/run/pulzr-console';
 const OPS = [
     'use', 'release', 'scan', 'form', 'restore', 'backup', 'leave', 'permit',
     'permit-stop', 'provision', 'grant', 'dsk', 'abort', 'remove', 'replace',
-    'channel', 'region',
+    'channel', 'region', 'map',
     // Matter's: join the organization's fabric, add and share devices.
     'csr', 'join', 'commission', 'share', 'decommission',
 ];
