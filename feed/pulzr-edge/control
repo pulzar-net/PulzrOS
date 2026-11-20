@@ -2,7 +2,7 @@ Package: pulzr-edge
 Maintainer: Joseph Telaak <joseph@pulzr.net>
 License: Apache-2.0
 Architecture: @ARCH@
-Provides: pulzr-cap-modbus
+Provides: pulzr-cap-modbus pulzr-cap-zigbee pulzr-cap-zwave
 Description: Pulzar edge daemon: Modbus RTU and TCP devices behind the gateway.
  Speaks the Pulzar protocol for the devices on the gateway's own buses over
  one MQTT session with the gateway's own broker login. Reads its buses from

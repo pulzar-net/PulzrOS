@@ -75,6 +75,7 @@ export default defineConfig({
           { text: 'Concentrators and GNSS', link: '/concentrators' },
           { text: 'Bluetooth', link: '/bluetooth' },
           { text: 'Plugged-in radios', link: '/usb-radios' },
+          { text: 'Radio modules', link: '/radio-modules' },
         ],
       },
       {

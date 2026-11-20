@@ -56,6 +56,7 @@ let speedtest = loadfile('/usr/share/pulzr/console/lib/speedtest.uc', { raw_mode
 let addons = loadfile('/usr/share/pulzr/console/lib/addons.uc', { raw_mode: true })();
 let radios = loadfile('/usr/share/pulzr/console/lib/radios.uc', { raw_mode: true })();
 let thread = loadfile('/usr/share/pulzr/console/lib/thread.uc', { raw_mode: true })();
+let radio = loadfile('/usr/share/pulzr/console/lib/radio.uc', { raw_mode: true })();
 // What changes the gateway, shared with the terminal UI; see actions.uc.
 let actions = loadfile('/usr/share/pulzr/console/lib/actions.uc', { raw_mode: true })();
 
@@ -224,6 +225,18 @@ function threadPost(op) {
     };
 }
 
+// A radio network change (lib/radio.uc), audited by what was done and on which
+// radio, never with the request: a form, a restore, a provision or a PIN
+// carries a secret.
+function radioPost(op) {
+    return (env, req, s) => {
+        const result = radio.change(op, req, s);
+        if (result.error) return error(result.status, result.error);
+        auth.audit(sprintf('system.radio.%s', op), { by: s.subject, radio: req.radio });
+        return respond(200, result.result);
+    };
+}
+
 // ── routing ─────────────────────────────────────────────────────────────────
 
 const ROUTES = {
@@ -362,6 +375,28 @@ const ROUTES = {
     'POST /api/system/thread/permit':      threadPost('permit'),
     'POST /api/system/thread/permit-stop': threadPost('permit-stop'),
     'POST /api/system/thread/dataset':     threadPost('dataset'),
+
+    // ── radio networks, see lib/radio.uc ────────────────────────────────────
+    //
+    // Read by anybody signed in; changed only by Pulzar Net (an sso session).
+    'GET  /api/system/radio': () => respond(200, radio.status()),
+    'POST /api/system/radio/use':          radioPost('use'),
+    'POST /api/system/radio/release':      radioPost('release'),
+    'POST /api/system/radio/scan':         radioPost('scan'),
+    'POST /api/system/radio/form':         radioPost('form'),
+    'POST /api/system/radio/restore':      radioPost('restore'),
+    'POST /api/system/radio/backup':       radioPost('backup'),
+    'POST /api/system/radio/leave':        radioPost('leave'),
+    'POST /api/system/radio/permit':       radioPost('permit'),
+    'POST /api/system/radio/permit-stop':  radioPost('permit-stop'),
+    'POST /api/system/radio/provision':    radioPost('provision'),
+    'POST /api/system/radio/grant':        radioPost('grant'),
+    'POST /api/system/radio/dsk':          radioPost('dsk'),
+    'POST /api/system/radio/abort':        radioPost('abort'),
+    'POST /api/system/radio/remove':       radioPost('remove'),
+    'POST /api/system/radio/replace':      radioPost('replace'),
+    'POST /api/system/radio/channel':      radioPost('channel'),
+    'POST /api/system/radio/region':       radioPost('region'),
 
     // ── network ─────────────────────────────────────────────────────────────
     'GET  /api/bluetooth/status': () => respond(200, bluetooth.status()),

@@ -68,7 +68,34 @@ expr = args[args.index('-e') + 1]
 if expr == '@.detected[*].label':
     for r in value['detected']:
         print(r.get('label', ''))
+    sys.exit(0)
+# The few paths the scripts use: @, @.<field>, @.detected[@.id='<id>'].<field>.
+import re
+m = re.fullmatch(r"@\.detected\[@\.id='([^']*)'\]\.(\w+)", expr)
+if m:
+    found = [r for r in value.get('detected', []) if r.get('id') == m.group(1)]
+    value = found[0].get(m.group(2)) if found else None
+elif expr != '@':
+    for part in expr[2:].split('.'):
+        value = value.get(part) if isinstance(value, dict) else None
+if value is None:
+    sys.exit(1)
+print(value if isinstance(value, str) else json.dumps(value))
 EOF
+# `pulzr-edge radio <id> status` answers ${SANDBOX}/status-<id>.json, or exits
+# 3 as when no module runs there.
+cat > "${STUBS}/pulzr-edge" <<'EOF'
+#!/bin/sh
+echo "$*" >> "${SANDBOX}/edge.log"
+[ "$1 $3" = "radio status" ] && [ -f "${SANDBOX}/status-$2.json" ] && { cat "${SANDBOX}/status-$2.json"; exit 0; }
+echo "No radio module is running on that radio." >&2
+exit 3
+EOF
+cat > "${SANDBOX}/init" <<'EOF'
+#!/bin/sh
+echo "$*" >> "${SANDBOX}/init.log"
+EOF
+chmod +x "${SANDBOX}/init"
 if ! command -v md5sum >/dev/null 2>&1; then
     printf '#!/bin/sh\n[ -f "$1" ] || exit 1\nmd5 -q "$1"\n' > "${STUBS}/md5sum"
 fi
@@ -76,6 +103,7 @@ chmod +x "${STUBS}"/*
 
 export PATH="${STUBS}:${PATH}" SANDBOX
 export PULZR_PROBE_RUN="${SANDBOX}/run" PULZR_PROBE_SETTLE=1 FAKE_LIST="${SANDBOX}/list.json"
+export PULZR_EDGE_RADIOS="${SANDBOX}/edge-radios" PULZR_EDGE_RUN="${SANDBOX}/edge-run" PULZR_EDGE_INIT="${SANDBOX}/init"
 
 fail=0
 pass=0
@@ -131,10 +159,10 @@ check "and one list sent" [ "$(calls claim radios)" = 1 ]
 # ── facts, for the claim report ─────────────────────────────────────────────
 age() { touch -t 202001010000 "${PULZR_PROBE_RUN}/radios.json"; }
 fresh
-check "facts prints the list" [ "$(radios facts)" = "${BOTH}" ]
+check "facts prints the list, and no networks" [ "$(radios facts)" = "${BOTH%\}},\"networks\":[]}" ]
 check "a list scanned this minute is not scanned again" [ "$(calls probe --report)" = 0 ]
 age; echo '{"detected":[]}' > "${FAKE_LIST}"
-check "an empty list is still a list" [ "$(radios facts)" = '{"detected":[]}' ]
+check "an empty list is still a list" [ "$(radios facts)" = '{"detected":[],"networks":[]}' ]
 age; echo '{"detected":[{' > "${FAKE_LIST}"
 check "an unreadable list is null" [ "$(radios facts)" = null ]
 
@@ -154,6 +182,53 @@ check "with the use" [ "$(calls probe 'assign usb-1a86_55d4-1-1.3 modbus')" = 1 
 FAKE_IDENTIFY_FAILS=1 radios identify usb-1a86_55d4-1-1.3 && rc=0 || rc=$?
 check "a radio that did not answer is an error" [ "${rc}" != 0 ]
 settle
+
+# ── a radio's module: use, release, backup, and its network in facts ──────────
+ZBT_ID=usb-10c4_ea60-9e2adbd1
+CH_ID=usb-1a86_55d4-1-1.3
+mode() { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"; }
+# A listening socket where the module's would be, so `use` need not wait out
+# its ten seconds; macOS's long temporary paths can be too long for one, and
+# then it does wait.
+sock() { python3 -c 'import os,socket,sys; os.makedirs(os.path.dirname(sys.argv[1]),exist_ok=True); socket.socket(socket.AF_UNIX).bind(sys.argv[1])' "$1" 2>/dev/null || true; }
+echo "${BOTH}" > "${FAKE_LIST}"; radios scan --quiet
+fresh
+chmod -x "${SANDBOX}/init"
+check "use without the add-on is refused" not radios use "${ZBT_ID}" zigbee
+chmod +x "${SANDBOX}/init"
+check "use of a radio not plugged in is refused" not radios use usb-10c4_ea60-gone zigbee
+check "use takes zigbee or zwave only" not radios use "${ZBT_ID}" thread
+echo '{"detected":[{"id":"usb-1a86_55d4-1-1.3","bus":"usb","state":"free","use":"modbus","since":2}]}' > "${PULZR_PROBE_RUN}/radios.json"
+check "use of a Modbus adapter is refused" not radios use "${CH_ID}" zwave
+echo "${BOTH}" > "${PULZR_PROBE_RUN}/radios.json"
+check "nothing written for a refused use" [ ! -e "${PULZR_EDGE_RADIOS}/${ZBT_ID}.json" ]
+
+sock "${PULZR_EDGE_RUN}/radio/${ZBT_ID}.sock"
+echo '{"radio":"usb-10c4_ea60-9e2adbd1","protocol":"zigbee","state":"unformed"}' > "${SANDBOX}/status-${ZBT_ID}.json"
+check "use starts the module and prints its status" [ "$(radios use "${ZBT_ID}" zigbee | jsonfilter -e @.state)" = unformed ]
+check "its file names the protocol" [ "$(jsonfilter -i "${PULZR_EDGE_RADIOS}/${ZBT_ID}.json" -e @.protocol)" = zigbee ]
+check "root's alone" [ "$(mode "${PULZR_EDGE_RADIOS}/${ZBT_ID}.json")" = 600 ]
+check "and procd is told" [ "$(calls init reload)" = 1 ]
+check "use again is the same" eval 'radios use "${ZBT_ID}" zigbee >/dev/null'
+check "without telling procd again" [ "$(calls init reload)" = 1 ]
+check "another protocol on it is refused" not radios use "${ZBT_ID}" zwave
+
+check "facts carries the module's status" [ "$(radios facts | jsonfilter -e @.networks)" = '[{"radio": "usb-10c4_ea60-9e2adbd1", "protocol": "zigbee", "state": "unformed"}]' ]
+
+echo '{"radio":"usb-10c4_ea60-9e2adbd1","protocol":"zigbee","state":"up"}' > "${SANDBOX}/status-${ZBT_ID}.json"
+check "release with a network on it is refused" not radios release "${ZBT_ID}"
+check "and the file stays" [ -e "${PULZR_EDGE_RADIOS}/${ZBT_ID}.json" ]
+echo '{"radio":"usb-10c4_ea60-9e2adbd1","protocol":"zigbee","state":"unformed"}' > "${SANDBOX}/status-${ZBT_ID}.json"
+check "release of an unformed radio" eval 'radios release "${ZBT_ID}" >/dev/null'
+check "removes its file" [ ! -e "${PULZR_EDGE_RADIOS}/${ZBT_ID}.json" ]
+check "and tells procd" [ "$(calls init reload)" = 2 ]
+
+mkdir -p "${PULZR_EDGE_RUN}/backup"
+echo '{"v":1,"protocol":"zigbee"}' > "${PULZR_EDGE_RUN}/backup/${ZBT_ID}.json"
+check "backup hands the file to pulzr-claim" eval 'radios backup "${ZBT_ID}"'
+check "as a radio backup" [ "$(calls claim "radio-backup ${ZBT_ID} ${PULZR_EDGE_RUN}/backup/${ZBT_ID}.json")" = 1 ]
+check "and removes it once sent" [ ! -e "${PULZR_EDGE_RUN}/backup/${ZBT_ID}.json" ]
+check "backup refuses a bad id" not radios backup '../x'
 
 echo "${pass} passed"
 exit "${fail}"

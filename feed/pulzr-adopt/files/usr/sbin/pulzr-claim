@@ -804,6 +804,30 @@ radios() {
     [ "${status}" = "200" ] || { log "radios refused (${status})"; return 1; }
 }
 
+# A radio network's backup, from its module (pulzr-radios backup). It carries
+# the network's keys, so it goes here, over HTTPS with the claim proof, never
+# over MQTT; and the body is built in a root-only file that curl reads, never
+# on a command line another process could read.
+radio_backup() {
+    local radio="$1" file="$2" body raw status
+    ensure_identity
+    adopted || return 0
+    case "${radio}" in usb-*|uart-*|lan-*) ;; *) log "radio backup: not a radio id"; return 1 ;; esac
+    jsonfilter -i "${file}" -e '@.v' >/dev/null 2>&1 || { log "radio backup unreadable"; return 1; }
+    body="$(umask 077; mktemp)" || return 1
+    {
+        printf '{"claimId":"%s","secret":"%s","radio":"%s","backup":' \
+            "$(claim_id)" "$(secret_in "${STATE}")" "${radio}"
+        cat "${file}"
+        printf '}'
+    } > "${body}"
+    raw="$(curl -sS --max-time 60 -w '\n%{http_code}' -X POST "${NET_URL}/api/v1/gateway-ops/radio-backup" \
+        -H 'Content-Type: application/json' --data-binary "@${body}" 2>&1)"
+    rm -f "${body}"
+    status="$(echo "${raw}" | tail -n1)"
+    [ "${status}" = "200" ] || { log "radio backup refused (${status})"; return 1; }
+}
+
 # Exits 0 when accepted, 3 when Pulzar Cloud says the claim is revoked, 1 for
 # anything else, including no answer.
 report() {
@@ -925,6 +949,7 @@ case "${1:-status}" in
     poll)     poll ;;
     report)   report ;;
     radios)   radios ;;
+    radio-backup) radio_backup "$2" "$3" ;;
     tunnel-test) tunnel_test "$2" ;;
     apply)    apply_offline "$2" ;;
     reset)    reset_claim ;;

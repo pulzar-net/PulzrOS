@@ -2,8 +2,8 @@
 # into a repository per release and architecture (scripts/build-addons.sh)
 # and a gateway installs it on request. Read as KEY="value" shell by
 # build-feed.sh, build-addons.sh and check-addons.sh.
-ADDON_TITLE="Modbus"
-ADDON_CAPS="modbus"
+ADDON_TITLE="Modbus, Zigbee and Z-Wave"
+ADDON_CAPS="modbus zigbee zwave"
 ADDON_FEATURE="modbus"
 # Boards that may be offered it: "*" or board ids. Every board's OPENWRT_ARCH
 # must be in this package's arches (scripts/check-addons.sh).

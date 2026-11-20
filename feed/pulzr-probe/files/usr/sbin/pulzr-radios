@@ -9,6 +9,10 @@
 #                                     or null when there is nothing to say
 #   pulzr-radios identify <id>        a person's Identify, from the console
 #   pulzr-radios assign <id> modbus|none
+#   pulzr-radios use <id> zigbee|zwave  start the radio's module (the console's
+#                                     `use`, a person's, from Pulzar Net)
+#   pulzr-radios release <id>         stop it; refused while a network is on it
+#   pulzr-radios backup <id>          post the backup its module just wrote
 #
 # pulzr-probe does the work: names each adapter from sysfs and its table, and
 # probes only what it can name (see its README in pulzar-net/pulzr-edge). This
@@ -77,6 +81,68 @@ hotplug() {
 
 # For the six-hourly report: scanned again unless hotplug or Identify just did,
 # which also picks up a coordinator that appeared on the LAN since.
+EDGE_RADIOS="${PULZR_EDGE_RADIOS:-/etc/pulzr-edge/radios}"
+EDGE_RUN="${PULZR_EDGE_RUN:-/var/run/pulzr-edge}"
+EDGE_INIT="${PULZR_EDGE_INIT:-/etc/init.d/pulzr-edge-radios}"
+
+# Each module's status, as a JSON array, for the claim report: the platform
+# hears of a network even while MQTT is down.
+networks() {
+    local f id s sep=''
+    printf '['
+    for f in "${EDGE_RADIOS}"/*.json; do
+        [ -e "${f}" ] || continue
+        id="$(basename "${f}" .json)"
+        valid_id "${id}" || continue
+        s="$(pulzr-timeout 35 pulzr-edge radio "${id}" status < /dev/null 2>/dev/null)" || continue
+        echo "${s}" | jsonfilter -e '@.state' >/dev/null 2>&1 || continue
+        printf '%s%s' "${sep}" "${s}"
+        sep=','
+    done
+    printf ']'
+}
+
+# The radio's module started: its file says which protocol, and procd runs
+# one `pulzr-edge radio serve` per file (pulzr-edge-radios). A radio handed
+# to Modbus, or not plugged in, is refused.
+use_radio() {
+    local id="$1" protocol="$2" f use i
+    [ -x "${EDGE_INIT}" ] || { echo "The pulzr-edge add-on is not installed." >&2; exit 1; }
+    jsonfilter -i "${REPORT}" -e "@.detected[@.id='${id}'].id" >/dev/null 2>&1 \
+        || { echo "That radio is not plugged in." >&2; exit 1; }
+    use="$(jsonfilter -i "${REPORT}" -e "@.detected[@.id='${id}'].use" 2>/dev/null)"
+    [ "${use}" = modbus ] && { echo "That adapter is handed to Modbus." >&2; exit 1; }
+    f="${EDGE_RADIOS}/${id}.json"
+    if [ -e "${f}" ]; then
+        [ "$(jsonfilter -i "${f}" -e '@.protocol')" = "${protocol}" ] \
+            || { echo "That radio already runs another protocol's network." >&2; exit 1; }
+    else
+        ( umask 077; mkdir -p "${EDGE_RADIOS}" \
+            && printf '{"radio":"%s","protocol":"%s"}\n' "${id}" "${protocol}" > "${f}.tmp" \
+            && mv "${f}.tmp" "${f}" ) || { echo "Cannot write the radio's file." >&2; exit 1; }
+        log "use ${id} ${protocol}"
+        "${EDGE_INIT}" reload >/dev/null 2>&1
+    fi
+    i=0
+    while [ ! -S "${EDGE_RUN}/radio/${id}.sock" ] && [ "${i}" -lt 20 ]; do sleep 0.5; i=$((i + 1)); done
+    pulzr-edge radio "${id}" status < /dev/null
+}
+
+release_radio() {
+    local id="$1" f state
+    f="${EDGE_RADIOS}/${id}.json"
+    [ -e "${f}" ] || { echo '{"released":true}'; return 0; }
+    state="$(pulzr-edge radio "${id}" status < /dev/null 2>/dev/null | jsonfilter -e '@.state' 2>/dev/null)"
+    case "${state}" in
+        ''|unformed) ;;
+        *) echo "Delete the network on this radio first." >&2; exit 1 ;;
+    esac
+    rm -f "${f}"
+    log "release ${id}"
+    "${EDGE_INIT}" reload >/dev/null 2>&1
+    echo '{"released":true}'
+}
+
 facts() {
     local made
     made="$(date -r "${REPORT}" +%s 2>/dev/null || echo 0)"
@@ -85,7 +151,8 @@ facts() {
     fi
     if [ -s "${REPORT}" ] && jsonfilter -i "${REPORT}" -e '@' >/dev/null 2>&1 \
         && [ "$(head -c 13 "${REPORT}")" = '{"detected":[' ]; then
-        cat "${REPORT}"
+        # pulzr-probe's object, with the networks spliced in before its close.
+        printf '%s,"networks":%s}\n' "$(sed 's/}[[:space:]]*$//' "${REPORT}")" "$(networks)"
     else
         echo null
     fi
@@ -122,5 +189,22 @@ case "$1" in
         tell
         cat "${REPORT}"
         ;;
-    *) echo "usage: pulzr-radios {scan [--quiet]|hotplug|facts|identify <id>|assign <id> modbus|none}" >&2; exit 1 ;;
+    use)
+        valid_id "$2" || { echo "not a radio id" >&2; exit 2; }
+        case "$3" in zigbee|zwave) ;; *) echo "use takes zigbee or zwave" >&2; exit 2 ;; esac
+        use_radio "$2" "$3"
+        ;;
+    release)
+        valid_id "$2" || { echo "not a radio id" >&2; exit 2; }
+        release_radio "$2"
+        ;;
+    backup)
+        valid_id "$2" || { echo "not a radio id" >&2; exit 2; }
+        f="${EDGE_RUN}/backup/${2}.json"
+        [ -s "${f}" ] || exit 0
+        # Kept when the post fails: the module's next backup replaces it, and
+        # the platform asks for one when it finds its copy old.
+        pulzr-claim radio-backup "$2" "${f}" && rm -f "${f}"
+        ;;
+    *) echo "usage: pulzr-radios {scan [--quiet]|hotplug|facts|identify <id>|assign <id> modbus|none|use <id> zigbee|zwave|release <id>|backup <id>}" >&2; exit 1 ;;
 esac
