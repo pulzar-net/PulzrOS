@@ -37,21 +37,6 @@ DL="https://downloads.openwrt.org/releases/${VERSION}"
 WORK="$(mktemp -d)"
 trap 'rm -rf "${WORK}"' EXIT
 
-# A target OpenWrt does not build (siflower/sf19a2890 is ours until it is
-# mainline) has no feeds of its own, but its arch has: OpenWrt builds the arch
-# feeds for some other target on it. That target's kernel, modules and libc
-# resolve the dependencies and are dropped below, as every target's are, and
-# what is kept is checked to come from the arch feeds alone.
-arch_only=""
-if ! curl -fsS --retry 3 -o /dev/null "${DL}/targets/${TARGET}/profiles.json"; then
-  ours="${TARGET}"
-  TARGET="$(curl -fsSL --retry 3 "${DL}/.targets.json" \
-    | jq -r --arg a "${ARCH}" '[to_entries[] | select(.value == $a) | .key] | sort | first // empty')"
-  [ -n "${TARGET}" ] || { echo "OpenWrt ${VERSION} builds ${ours} on no target of its own, and nothing on ${ARCH}" >&2; exit 1; }
-  echo "OpenWrt ${VERSION} does not build ${ours}; resolving against ${TARGET}, the same arch" >&2
-  arch_only=1
-fi
-
 # The kmods feed is named for the kernel the release ships on this target.
 kernel="$(curl -fsSL --retry 3 "${DL}/targets/${TARGET}/profiles.json" \
   | jq -r '.linux_kernel | "\(.version)-\(.release)-\(.vermagic)"')"
@@ -82,7 +67,7 @@ mkdir -p "${root}/lib/apk/db" "${root}/etc/apk" "${WORK}/fetched"
   --repositories-file /dev/null "${repos[@]}" --arch "${ARCH}" \
   fetch --recursive --output "${WORK}/fetched" "$@" >&2
 
-kept=()
+mkdir -p "${OUT}"
 for f in "${WORK}/fetched"/*.apk; do
   name="$("${APK}" adbdump "${f}" | sed -n 's/^  name: //p' | head -n1)"
   [ -n "${name}" ] || { echo "cannot read the name of $(basename "${f}")" >&2; exit 1; }
@@ -90,27 +75,6 @@ for f in "${WORK}/fetched"/*.apk; do
     kmod-*) echo "kmod ${name}" >&2; continue ;;
     kernel|libc|libgcc|libgcc1|libatomic|libatomic1|libpthread|librt) continue ;;
   esac
-  kept+=("${f}:${name}")
-done
-
-# Resolved against another target: each kept package must be in the arch
-# feeds, or it was that target's own build and is not ours to ship.
-if [ -n "${arch_only}" ] && [ "${#kept[@]}" -gt 0 ]; then
-  mkdir -p "${WORK}/arch"
-  "${APK}" --root "${root}" --keys-dir "${KEYS}" --no-cache --no-interactive \
-    --repositories-file /dev/null --arch "${ARCH}" \
-    --repository "${DL}/packages/${ARCH}/base/packages.adb" \
-    --repository "${DL}/packages/${ARCH}/packages/packages.adb" \
-    fetch --output "${WORK}/arch" "${kept[@]#*:}" >&2 \
-    || { echo "a package ${TARGET} resolved is not in the ${ARCH} feeds" >&2; exit 1; }
-  for k in "${kept[@]}"; do
-    cmp -s "${k%%:*}" "${WORK}/arch/$(basename "${k%%:*}")" \
-      || { echo "${k#*:} from ${TARGET} is not the ${ARCH} feeds' build" >&2; exit 1; }
-  done
-fi
-
-mkdir -p "${OUT}"
-for k in "${kept[@]}"; do
-  cp "${k%%:*}" "${OUT}/"
-  echo "${k#*:}"
+  cp "${f}" "${OUT}/"
+  echo "${name}"
 done

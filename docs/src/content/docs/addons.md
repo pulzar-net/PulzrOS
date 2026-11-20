@@ -256,11 +256,13 @@ RAK7289CV2 carries pulzr-modbus.
 An add-on whose work is an OpenWrt package names it in `feed/<name>/upstream`
 (pulzr-thread brings `openthread-br`). `scripts/addon-upstream.sh` fetches it
 and its dependencies for each architecture from the release's own feeds, with
-apk checking OpenWrt's signature on each, and `build-addons.sh` puts them in the
+apk checking each against OpenWrt's signed index, and `build-addons.sh` puts them in the
 repository unchanged: built by OpenWrt's buildbots from OpenWrt's recipe, never
 by us. The catalog lists them under `upstream`, each with the add-ons that bring
 it (`by`), and `pulzr-addon` installs a package that is not an add-on only when
 the catalog says the add-on being installed brings it, and never a `pulzr-` or
 `kmod-` one. A kernel module is built for one kernel, so one an upstream package
 needs must be in every image (`PACKAGES_COMMON`); `build-addons.sh` refuses
-otherwise. Removing the add-on lets apk remove what only it needed.
+otherwise. Removing the add-on lets apk remove what only it needed. A board
+whose target OpenWrt does not build (the GL-SFT1200's siflower) has no such
+feeds, and is not offered the add-on.
