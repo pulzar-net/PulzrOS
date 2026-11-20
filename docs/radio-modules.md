@@ -209,6 +209,13 @@ never see an old one.
 { "detected": [ … ], "networks": [ { …the status above… } ] }
 ```
 
+## Firmware for devices
+
+A module that updates its devices' firmware (Zigbee OTA, Z-Wave) fetches it
+only over https, from a host in `[firmware] hosts` of its config, which
+PulzrOS writes from `pulzr.edge.firmware_hosts` (empty by default: nothing is
+fetched). Anything else is refused as invalid.
+
 ## Matter
 
 A gateway's controller in its organization's Matter fabric is the radio

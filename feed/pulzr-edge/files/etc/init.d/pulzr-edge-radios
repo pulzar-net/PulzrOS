@@ -30,7 +30,7 @@ start_service() {
     # Not started until the gateway holds a broker login (edge_common says why).
     top="$(edge_common)" || return 0
     mkdir -p /var/run/pulzr-edge
-    ( umask 077; printf '%s\n' "${top}" > "${CONFIG}" )
+    ( umask 077; { printf '%s\n' "${top}"; edge_firmware; } > "${CONFIG}" )
     # Only radios whose protocol's add-on is installed (pulzr-radios
     # runnable): the binary carries every module, so this is what keeps a
     # gateway locked off a capability from running it.

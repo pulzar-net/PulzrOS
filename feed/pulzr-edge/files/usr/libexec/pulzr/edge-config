@@ -61,6 +61,21 @@ edge_common() {
     printf 'username = "%s"\npassword_file = "%s"\n\n' "${user}" "${EDGE_PASSWORD}"
 }
 
+# Prints [firmware] from pulzr.edge.firmware_hosts: the hosts a radio module
+# may fetch device firmware from (Zigbee OTA images, Z-Wave updates), https
+# only, as Pulzar Net names them. None set, none fetched: an OTA asks for a
+# URL, and a gateway that would fetch from any host would fetch from anyone's.
+edge_firmware() {
+    local h list=""
+    for h in $(uci -q get pulzr.edge.firmware_hosts); do
+        case "${h}" in
+            *[!a-z0-9.-]* | .* | *. | '') logger -t pulzr-edge -p daemon.err "pulzr.edge.firmware_hosts: ${h} is not a host name; skipped"; continue ;;
+        esac
+        list="${list}${list:+, }\"${h}\""
+    done
+    printf '[firmware]\nhosts = [%s]\n\n' "${list}"
+}
+
 # Prints [ble] from pulzr.ble, the settings pulzr-ble's own scanner reads, so
 # switching pulzr.ble.backend changes the program and nothing else:
 #
