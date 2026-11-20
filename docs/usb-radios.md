@@ -57,6 +57,7 @@ probed either.
 | ConBee II | `1cf1:0030` | Zigbee (deCONZ) |
 | ConBee III | `0403:6015` + product | Zigbee (deCONZ) |
 | Nortek HUSBZB-1 | `10c4:8a2a` | Z-Wave (interface 0), Zigbee (interface 1) |
+| Zooz ZST10 700 | `10c4:ea60` + product | Z-Wave |
 | Z-Wave USB controllers (Aeotec, Zooz 500 series, UZB) | `0658:0200` | Z-Wave |
 | RTL8761B Bluetooth 5 adapters, ASUS USB-BT500 | `0bda:8771`, `0b05:190e` | Bluetooth |
 | CSR8510 Bluetooth 4 adapters | `0a12:0001` | Bluetooth |
@@ -89,12 +90,26 @@ serial number when the adapter has one, otherwise the port it is in. `state` is
 is `free` until the pulzr-thread add-on runs a border router on it
 ([thread.md](thread.md)), then `in-use`.
 
+## What a probe asks
+
+Each probe is read-only, takes about three seconds at most, and closes the port
+before it returns. Nothing it sends writes a radio's memory, forms a network or
+resets a controller.
+
+| Radio | Asked with | Reports |
+|---|---|---|
+| Zigbee, Silicon Labs (EZSP) | ASH reset, EZSP `version`, version info, EUI-64, manufacturer and board tokens | EmberZNet firmware, EZSP protocol version, board |
+| Z-Wave | `GET_SERIAL_API_CAPABILITIES`, then controller version, id, init data, capabilities and RF region | Serial API firmware, chip series (500, 700, 800) |
+| Thread (OpenThread RCP) | Spinel `NCP_VERSION` and `CAPS` | OpenThread firmware |
+
+The Zigbee and Z-Wave probes come from the host stacks
+([zigbee-bridge](https://github.com/pulzar-net/zigbee-bridge),
+[zwave-bridge](https://github.com/pulzar-net/zwave-bridge)); the Thread one is
+pulzr-probe's own.
+
 ## Not yet
 
-A Thread radio co-processor is asked by pulzr-probe itself (Spinel
-`NCP_VERSION` and `CAPS`, reads only), so it reports its OpenThread firmware and
-answers Identify. The Zigbee and Z-Wave probe frames come from their host
-stacks, which are not built in yet. Until they are, a known Zigbee or Z-Wave
-adapter is reported as its table entry says it ships, with
-`probe: unavailable`, and Identify tries only Thread. Running a Zigbee or Z-Wave network on a detected
-radio comes with those stacks, as add-ons.
+TI Z-Stack (ZNP) and ConBee (deCONZ) coordinators are named but not asked yet:
+they are reported as their table entry says they ship, with
+`probe: unavailable`. Running a Zigbee or Z-Wave network on a detected radio
+comes with those stacks, as add-ons.
