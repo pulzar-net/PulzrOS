@@ -1,0 +1,6 @@
+# Matter's own files only (pulzr-edge's keep.d keeps all of /etc/pulzr-edge/
+# across upgrades; a purge of this add-on removes exactly these): the radio's
+# file, and the controller's state (its intermediate CA key and certificates,
+# its operational key, the node store, the group key).
+/etc/pulzr-edge/radios/matter.json
+/etc/pulzr-edge/radios/matter.controller/
