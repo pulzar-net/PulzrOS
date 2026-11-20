@@ -1,6 +1,6 @@
 # The gateway's own part of a pulzr-edge configuration, sourced by the
 # processes that start pulzr-edge: /etc/init.d/pulzr-edge (the buses) and
-# pulzr-ble (the Bluetooth controller, while pulzr.ble.backend is pulzr-edge).
+# pulzr-ble (pulzr-edge-ble, the Bluetooth controller).
 #
 # The EUI, the broker and the broker login are the ones the gateway already
 # holds in UCI (pulzr-mqtt-agent publishes with the same), so there is no
@@ -76,23 +76,22 @@ edge_firmware() {
     printf '[firmware]\nhosts = [%s]\n\n' "${list}"
 }
 
-# Prints [ble] from pulzr.ble, the settings pulzr-ble's own scanner reads, so
-# switching pulzr.ble.backend changes the program and nothing else:
+# Prints [ble] from pulzr.ble, the settings the console and Pulzar Net write:
 #
-#   oui       admit: the MAC prefixes to send. Empty sends every device, as
-#             pulzr-ble does, which pulzr-edge takes only as admit_all.
+#   oui       admit: the MAC prefixes to send. Empty sends every device,
+#             which pulzr-edge takes only as admit_all.
 #   min_rssi  min_rssi.
 #   interval  interval_secs.
 #
-# Passive scanning, as pulzr-ble's; the controller is hci0, which pulzr-ble
-# attaches first (a Pi's UART chip needs hciattach to load its firmware).
+# Passive scanning; the controller is hci0, which pulzr-ble attaches first (a
+# Pi's UART chip needs hciattach to load its firmware).
 edge_ble() {
     local oui min_rssi interval p list=""
     oui="$(uci -q get pulzr.ble.oui | tr 'a-f' 'A-F')"
     min_rssi="$(uci -q get pulzr.ble.min_rssi)"
     interval="$(uci -q get pulzr.ble.interval)"
     # Anything else is refused by pulzr-edge (an i8, an interval of at least a
-    # second), which would leave the radio off; pulzr-ble's defaults instead.
+    # second), which would leave the radio off; the seeded defaults instead.
     case "${min_rssi}" in -[0-9] | -[0-9][0-9] | -1[01][0-9] | -12[0-8]) ;; *) min_rssi=-100 ;; esac
     case "${interval}" in [1-9] | [1-9][0-9] | [1-9][0-9][0-9] | [1-9][0-9][0-9][0-9]) ;; *) interval=10 ;; esac
     for p in ${oui}; do

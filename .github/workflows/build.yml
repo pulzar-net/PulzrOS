@@ -162,7 +162,7 @@ jobs:
           ./scripts/test-firmware-stash.sh
           ./scripts/test-legacy.sh
           ./scripts/test-usb-radios.sh
-          ./scripts/test-ble-backend.sh
+          ./scripts/test-ble-config.sh
           ./scripts/test-lan-push.sh
 
       # The reset button, the setup AP and which uplinks count: shell that

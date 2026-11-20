@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
-# The config pulzr-ble writes for `pulzr-edge ble` (pulzr.ble.backend
-# pulzr-edge), from /usr/libexec/pulzr/edge-config, against a uci stub.
+# The config pulzr-ble writes for pulzr-edge-ble, from
+# /usr/libexec/pulzr/edge-config, against a uci stub.
 #
-#   scripts/test-ble-backend.sh
+#   scripts/test-ble-config.sh
 #
 # pulzr-edge refuses unknown keys and an empty admit list without admit_all,
 # so a config that parses as TOML can still stop the service; the keys and
@@ -12,7 +12,7 @@
 set -uo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-LIB="${ROOT_DIR}/feed/pulzr-edge/files/usr/libexec/pulzr/edge-config"
+LIB="${ROOT_DIR}/feed/pulzr-probe/files/usr/libexec/pulzr/edge-config"
 
 command -v python3 >/dev/null 2>&1 || { echo "python3 is required (tomllib)" >&2; exit 2; }
 
@@ -81,7 +81,7 @@ adopted() {
     set_uci mqtt.password 'not-a-real-secret'
 }
 
-# --- the defaults pulzr-ble seeds ------------------------------------------
+# --- the defaults 45-pulzr-ble seeds ----------------------------------------
 clear_uci; adopted
 set_uci ble.oui BC5729; set_uci ble.min_rssi -100; set_uci ble.interval 10
 out="$(config | validate 2>&1)"
@@ -99,11 +99,11 @@ out="$(config | validate 2>&1)"
 check "prefixes upper-cased, the bad one skipped" "admit=['BC5729', 'AC233F']" "$(echo "${out}" | grep '^admit=')"
 check "the bad prefix is logged" "1" "$(grep -c 'XYZ is not hex' "${SANDBOX}/log")"
 
-# --- no prefix: every device, as pulzr-ble sends -------------------------------
+# --- no prefix: every device -------------------------------------------------
 clear_uci; adopted
 out="$(config | validate 2>&1)"
 check "empty oui is admit_all" "admit_all=True" "$(echo "${out}" | grep '^admit')"
-check "unset interval and min_rssi take pulzr-ble's defaults" "interval_secs=10 min_rssi=-100" \
+check "unset interval and min_rssi take the seeded defaults" "interval_secs=10 min_rssi=-100" \
     "$(echo "${out}" | grep -E '^(interval_secs|min_rssi)=' | tr '\n' ' ' | sed 's/ $//')"
 
 # --- garbage in the numbers --------------------------------------------------

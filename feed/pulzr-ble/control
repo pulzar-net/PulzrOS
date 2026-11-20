@@ -1,12 +1,10 @@
 Package: pulzr-ble
-Provides: parkeze-ble
-Replaces: parkeze-ble
-Conflicts: parkeze-ble
-Depends: kmod-bluetooth, bluez-utils, mosquitto-client-ssl
 Maintainer: Joseph Telaak <joseph@pulzr.net>
 License: Apache-2.0
-Architecture: all
-Description: Bluetooth beacons, heard beside the LoRaWAN radio.
- Scans passively with the board's Bluetooth radio or a USB dongle and sends
- the parking beacons it hears to Pulzar Cloud, which decodes them with the
- device type's codec. Off until turned on from Pulzar Cloud or the console.
+Architecture: @ARCH@
+Provides: pulzr-cap-ble
+Description: Bluetooth LE on the board's radio or a USB dongle, on pulzr-edge.
+ Scans passively and sends each beacon it is told to listen for to Pulzar Net
+ as its own device (Pulzar protocol v1), which decodes it with the device
+ type's codec; GATT and advertising on request. Off until turned on from
+ Pulzar Net or the console (docs/bluetooth.md).

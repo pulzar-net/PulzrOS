@@ -1,0 +1,9 @@
+# <package arch> <Depends, comma-separated or ->
+#
+# pulzr-edge-ble, built per architecture with the OpenWrt SDK (fetch), against the
+# image's libc, little-endian only (bt-hci: no big-endian mips); TLS is rustls, built in. libgcc for Rust's runtime.
+mipsel_24kc          libgcc
+mipsel_24kc_24kf     libgcc
+aarch64_cortex-a53   libgcc
+aarch64_cortex-a72   libgcc
+aarch64_cortex-a76   libgcc

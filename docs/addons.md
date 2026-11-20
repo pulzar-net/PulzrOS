@@ -3,8 +3,8 @@
 An add-on is a feed package with an `addon` file: something a gateway runs
 that is not in its image, installed on request from a signed repository
 built for exactly the release the gateway runs: pulzr-modbus (Modbus),
-pulzr-zigbee (Zigbee), pulzr-zwave (Z-Wave), pulzr-matter (Matter) and
-pulzr-thread (Thread). The
+pulzr-zigbee (Zigbee), pulzr-zwave (Z-Wave), pulzr-matter (Matter),
+pulzr-thread (Thread) and pulzr-ble (Bluetooth). The
 RAK7289CV2 carries pulzr-modbus in its image instead (`PULZR_ADDONS_BUILTIN`),
 because its power board is already on a Modbus bus.
 
@@ -22,6 +22,7 @@ installer's 2 MB to spare, while one module's binary is a few MB.
 | pulzr-zigbee | `zigbee` | `pulzr-edge-zigbee` |
 | pulzr-zwave | `zwave` | `pulzr-edge-zwave` |
 | pulzr-matter | `matter` | `pulzr-edge-matter` |
+| pulzr-ble | `ble` | `pulzr-edge-ble` (little-endian only: not on big-endian mips) |
 
 Each is pulzr-edge built with that module's feature alone (the SDK recipe
 `sdk/packages/pulzr-edge`, which `ADDON_UPSTREAM` names). A radio runs where

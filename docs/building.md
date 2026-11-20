@@ -71,7 +71,6 @@ docs/       this site
 | `pulzr-tui` | the terminal UI |
 | `pulzr-adopt` | claim and adoption |
 | `pulzr-concentrator` | LoRa radio detection, forwarders, GNSS |
-| `pulzr-ble` | Bluetooth LE forwarding |
 | `pulzr-mqtt` | the MQTT agent |
 | `pulzr-wireguard` | the management tunnel |
 | `pulzr-cellular`, `pulzr-usb-cellular` | modems, dongles and tethered phones |

@@ -1,5 +1,5 @@
-// Bluetooth: whether this gateway scans for parking beacons beside its
-// LoRaWAN radio, and what it heard. See pulzr-ble for the scanner.
+// Bluetooth: whether this gateway runs its Bluetooth radio (the pulzr-ble
+// add-on, which runs pulzr-edge-ble).
 
 let _m_fs = require('fs');
 let readfile = _m_fs.readfile;; let writefile = _m_fs.writefile;
@@ -21,12 +21,7 @@ status = function() {
     // Pulzar Cloud cannot read the same gateway two ways.
     const state = run('/usr/sbin/pulzr-ble state') ?? 'absent';
     const enabled = uci.get('pulzr', 'ble', 'enabled') == '1';
-    // pulzr-ble's service runs its own scanner or, with pulzr.ble.backend
-    // pulzr-edge, execs `pulzr-edge ble`. Two pgreps: BusyBox's takes a basic
-    // regex, with no alternation.
-    const running = run('pgrep -f "pulzr-ble run" || pgrep -f "pulzr-edge ble"') != null;
-    let heard = null;
-    try { heard = json(readfile('/var/run/pulzr/ble/stats.json') ?? 'null'); } catch (e) {}
+    const running = run('pgrep -f "pulzr-edge-ble ble"') != null;
     return {
         state,
         enabled,
@@ -36,11 +31,8 @@ status = function() {
         // On, not scanning, and a boot is waiting to wire the chip: only the
         // reboot can fix that.
         rebootRequired: enabled && !running && !!readfile(REBOOT_REQUIRED),
-        backend: uci.get('pulzr', 'ble', 'backend') ?? 'pulzr-ble',
         oui: uci.get('pulzr', 'ble', 'oui') ?? '',
         minRssi: +(uci.get('pulzr', 'ble', 'min_rssi') ?? -100),
-        heard,
-        // Seconds each `heard` covers: pulzr-ble's batching interval.
         interval: +(uci.get('pulzr', 'ble', 'interval') ?? 10),
     };
 };

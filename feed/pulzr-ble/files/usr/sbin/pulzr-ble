@@ -1,89 +1,26 @@
 #!/bin/sh
 #
-# Bluetooth beacons, heard by this gateway and handed to Pulzar Cloud.
+# Bluetooth on this gateway, as pulzr-edge-ble.
 #
 #   pulzr-ble state    on, off, or absent -- one word, for the facts report
-#   pulzr-ble attach   power the chip and bring hci0 up; nothing if it is up
-#   pulzr-ble backend  pulzr-ble or pulzr-edge: which program scans (below)
-#   pulzr-ble run      scan and publish until killed (procd runs this)
+#   pulzr-ble attach   power the chip and attach it as hci0; nothing if it is there
+#   pulzr-ble run      attach, write the config and exec pulzr-edge-ble (procd runs this)
 #
-# ── WHICH PROGRAM ──────────────────────────────────────────────────────────
+# pulzr-edge-ble owns the whole controller over the HCI user channel: it scans
+# passively and sends each beacon whose MAC starts with one of pulzr.ble.oui
+# as its own device, ble:<EUI-64>, in Pulzar protocol v1 (at most one up per
+# beacon per pulzr.ble.interval), and answers GATT and advertising intents.
+# Pulzar Net decodes the advertising data with the device type's codec, so a
+# new beacon model is a codec there and never a firmware change here.
 #
-# pulzr.ble.backend picks what scans, so the two can never hold the radio at
-# once: this service is the only one that starts either.
-#
-#   pulzr-ble   (the default) the scanner below.
-#   pulzr-edge  `pulzr-edge ble`, from the pulzr-edge add-on: Pulzar protocol
-#               v1 (one device per beacon), GATT and advertising intents. The
-#               same pulzr.ble settings; this service attaches the chip, then
-#               hands hci0 to it. A gateway's beacons move to it only by
-#               somebody setting this, one gateway at a time.
-#
-# ── WHAT IT SENDS ──────────────────────────────────────────────────────────
-#
-# Every advertisement from a beacon it is told to listen for, at most one per
-# beacon per interval (the latest, with the best signal of the interval), as
-#
-#   parkeze/gateway/<eui>/ble/up   (compat: the topic root is a wire contract with the broker)
-#   {"time": 1791784502, "adverts": [{"mac": "BC5729049964", "rssi": -61,
-#                                     "data": "0201060303aafe..."}]}
-#
-# `data` is the advertising data exactly as the radio received it. Nothing
-# here knows what a beacon means: Pulzar Cloud decodes it with the device
-# type's codec, the same way it decodes a KGateway's raw frames, so a new
-# sensor model is a codec there and never a firmware change here.
-#
-# On the gateway's own broker identity, under its own EUI, which is the only
-# topic of that shape mqtt-authorizer lets it publish -- so Pulzar Cloud can
-# take the gateway's identity from the topic.
-#
-# ── WHY THESE TOOLS ────────────────────────────────────────────────────────
-#
-# This build installs packages, it does not compile them, so the scanner is
-# made of what OpenWrt ships: hcitool turns passive scanning on and keeps it
-# on, hcidump -R prints every HCI event as hex, and awk keeps the
-# advertising reports. A C scanner would be smaller and is not available.
-#
-# ── COST ───────────────────────────────────────────────────────────────────
-#
-# A beacon advertises every second or so. Sending each one would be most of a
-# SIM's allowance; one message per interval with one line per beacon is not.
-# Only beacons whose MAC starts with one of `pulzr.ble.oui` are sent: a car
-# park is full of phones and watches, and none of them is ours to upload.
+# Only beacons with one of the prefixes are sent: a car park is full of phones
+# and watches, and none of them is ours to upload.
 
 . /etc/pulzr/board.conf
-
-STATE_DIR=/var/run/pulzr/ble
 
 log() { logger -t pulzr-ble -p daemon.info "$*"; }
 
 enabled() { [ "$(uci -q get pulzr.ble.enabled)" = 1 ]; }
-
-backend() {
-    case "$(uci -q get pulzr.ble.backend)" in
-        pulzr-edge) echo pulzr-edge ;;
-        *) echo pulzr-ble ;;
-    esac
-}
-
-# The radio to pulzr-edge, which owns the whole controller (the HCI user
-# channel needs hci0 down and nothing else on it). Its config is generated
-# here at every start, from the gateway's broker login and pulzr.ble.
-edge() {
-    local cfg=/var/run/pulzr-edge/ble.toml top
-    [ -x /usr/sbin/pulzr-edge ] && [ -r /usr/libexec/pulzr/edge-config ] || {
-        # A minute between tries, not procd's ten seconds, while it is missing.
-        log "pulzr.ble.backend is pulzr-edge, but the pulzr-edge add-on is not installed"
-        sleep 60; exit 1
-    }
-    . /usr/libexec/pulzr/edge-config
-    top="$(edge_common)" || { log "not adopted yet"; exit 1; }
-    attach || exit 1
-    hciconfig hci0 down
-    (umask 077; { printf '%s\n\n' "${top}"; edge_ble; } > "${cfg}")
-    log "hci0 handed to pulzr-edge"
-    exec /usr/sbin/pulzr-edge ble "${cfg}"
-}
 
 # A radio this build can drive: the board's own, or a dongle btusb attached.
 radio() {
@@ -118,6 +55,9 @@ power() {
     return 0
 }
 
+# A UART chip (a Pi's) is attached from userspace: OpenWrt's hci_uart has H4
+# but not Broadcom's protocol, so the kernel cannot bring it up on its own. A
+# dongle needs nothing; btusb attached it.
 attach() {
     if [ ! -e /sys/class/bluetooth/hci0 ] && [ "${PULZR_BT}" = uart ]; then
         [ -e "${PULZR_BT_UART}" ] || {
@@ -131,53 +71,27 @@ attach() {
             >/dev/null 2>&1 || { log "hciattach failed on ${PULZR_BT_UART}"; return 1; }
     fi
     [ -e /sys/class/bluetooth/hci0 ] || { log "no Bluetooth controller"; return 1; }
-    hciconfig hci0 up
 }
 
+# The config is generated at every start, from the gateway's broker login and
+# pulzr.ble (/usr/libexec/pulzr/edge-config, in pulzr-probe).
 run() {
+    local cfg=/var/run/pulzr-edge/ble.toml top
     enabled || exit 0
-    [ "$(backend)" = pulzr-edge ] && edge
+    . /usr/libexec/pulzr/edge-config
+    top="$(edge_common)" || { log "not adopted yet"; exit 1; }
     attach || exit 1
-    mkdir -p "${STATE_DIR}"
-
-    local eui host user pass oui min_rssi interval
-    eui="$(uci -q get pulzr.identity.gateway_eui)"
-    host="$(uci -q get pulzr.mqtt.host)"
-    user="$(uci -q get pulzr.mqtt.username)"
-    pass="$(uci -q get pulzr.mqtt.password)"
-    oui="$(uci -q get pulzr.ble.oui | tr 'a-f' 'A-F')"
-    min_rssi="$(uci -q get pulzr.ble.min_rssi || echo -100)"
-    interval="$(uci -q get pulzr.ble.interval || echo 10)"
-    [ -n "${eui}" ] && [ -n "${host}" ] && [ -n "${user}" ] || { log "not adopted yet"; exit 1; }
-
-    # Passive, with duplicates: no scan requests on the air, and every
-    # advertisement reported rather than the first from each address -- a
-    # beacon's state is in its later advertisements, not its first.
-    hcitool -i hci0 lescan --passive --duplicates >/dev/null 2>&1 &
-    local scan=$!
-
-    hcidump -i hci0 -R 2>/dev/null | awk -f /usr/share/pulzr/ble-adverts.awk \
-        -v oui="${oui}" -v min_rssi="${min_rssi}" -v interval="${interval}" \
-        -v stats="${STATE_DIR}/stats.json" \
-      | mosquitto_pub -h "${host}" -p 8883 --capath /etc/ssl/certs -u "${user}" -P "${pass}" \
-        -t "parkeze/gateway/${eui}/ble/up" -q 0 -l >/dev/null 2>&1 &
-    local publish=$!
-
-    log "scanning on hci0, sending ${oui:-every beacon} to Pulzar Cloud every ${interval}s"
-    # Either half ending ends the service and procd starts it again: a scan
-    # that stopped would otherwise leave a publisher with nothing to say, and
-    # a broker that went away a scan with nobody to hear it.
-    trap 'kill ${scan} $(pgrep -P $$) 2>/dev/null; hciconfig hci0 down 2>/dev/null; exit 0' TERM INT
-    while kill -0 "${scan}" 2>/dev/null && kill -0 "${publish}" 2>/dev/null; do sleep 5; done
-    kill "${scan}" $(pgrep -P $$) 2>/dev/null
-    log "scan or publisher stopped; restarting"
-    exit 1
+    # The user channel needs hci0 down; hciattach leaves it up. Without
+    # hciconfig (no bluez-utils), pulzr-edge-ble waits for the kernel's own
+    # power-off after setup.
+    command -v hciconfig >/dev/null && hciconfig hci0 down
+    (umask 077; { printf '%s\n\n' "${top}"; edge_ble; } > "${cfg}")
+    exec /usr/sbin/pulzr-edge-ble ble "${cfg}"
 }
 
 case "$1" in
     state)  state ;;
     attach) attach ;;
-    backend) backend ;;
     run)    run ;;
-    *)      echo "usage: pulzr-ble state|attach|backend|run" >&2; exit 2 ;;
+    *)      echo "usage: pulzr-ble state|attach|run" >&2; exit 2 ;;
 esac

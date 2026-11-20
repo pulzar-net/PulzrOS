@@ -1,0 +1,12 @@
+#!/bin/sh
+#
+# Whether Bluetooth is running, for pulzr-addon's report.
+#
+#   exit 0  ok: on, and pulzr-edge-ble is running
+#   exit 2  idle: off (every gateway until somebody turns it on), or no radio
+#   exit 1  failing: on, with a radio, and pulzr-edge-ble is not running
+#
+# Reported, never acted on: the log says why (pulzr-logs ble).
+[ "$(/usr/sbin/pulzr-ble state)" = on ] || exit 2
+pgrep -f "pulzr-edge-ble ble" >/dev/null && exit 0
+exit 1

@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+#
+# Put pulzr-edge-ble, the Bluetooth module (pulzr-edge with its ble feature), for one architecture into a package root:
+# one binary per module, so a gateway carries only what it runs.
+#
+#   fetch <package-arch> <dest-root> <cache-dir>
+#
+# Built from source with the OpenWrt SDK, with every other Rust program in
+# PulzrOS (sdk/packages/pulzr-edge, where its version is pinned), into
+# .build/sdk/<arch>/pulzr-edge: CI's LoRa packages job builds it, the feed job
+# takes it from there, and a local build runs sdk/build.sh first.
+
+set -euo pipefail
+
+ARCH="${1:?arch}" DEST="${2:?dest}"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+SDK_OUT="${PULZR_SDK_OUT:-${ROOT}/.build/sdk}"
+
+# The GL-SFT1200's mipsel_24kc_24kf takes the soft-float mipsel_24kc build: its
+# interAptiv FPU is simply unused, and no LoRa board shares its SDK target.
+case "${ARCH}" in
+  mipsel_24kc_24kf) from=mipsel_24kc ;;
+  *) from="${ARCH}" ;;
+esac
+
+bin="${SDK_OUT}/${from}/pulzr-edge-ble"
+# -f, not -x: a CI artifact keeps no file modes, and install sets the mode.
+[ -f "${bin}" ] || { echo "no pulzr-edge-ble for ${ARCH} in ${SDK_OUT}/${from}; build it with sdk/build.sh" >&2; exit 1; }
+mkdir -p "${DEST}/usr/sbin"
+install -m 0755 "${bin}" "${DEST}/usr/sbin/pulzr-edge-ble"

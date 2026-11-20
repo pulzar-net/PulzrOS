@@ -487,24 +487,13 @@ function BluetoothCard({ bt }: { bt: BluetoothStatus }) {
       : bt.running ? ['success', 'Scanning']
         : bt.rebootRequired ? ['warning', 'Needs a reboot']
           : ['error', 'Stopped'];
-  const heard = bt.enabled && bt.running ? bt.heard : null;
-  const age = heard ? Math.max(0, Math.round(Date.now() / 1000 - heard.at)) : null;
-  const span = bt.interval ? `last ${bt.interval} s` : undefined;
 
   return (
     <Section
       title="Bluetooth"
       icon={BluetoothIcon}
       actions={<><Badge tone={tone}>{state}</Badge><GoTo to="/bluetooth" label="Bluetooth" /></>}
-    >
-      {heard && (
-        <StatGrid>
-          <Stat label="Beacons" value={count(heard.beacons)} detail={span} />
-          {heard.adverts != null && <Stat label="Adverts" value={count(heard.adverts)} detail={span} />}
-          <Stat label="Last batch" value={duration(age)} detail="ago" />
-        </StatGrid>
-      )}
-    </Section>
+    />
   );
 }
 

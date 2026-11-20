@@ -18,7 +18,6 @@ that could only fail.
 |---|---|---|---|---|
 | `lorawan` | `PACKAGES_LORAWAN`: pulzr-concentrator, chirpstack-concentratord-sx1302, chirpstack-mqtt-forwarder, spi-tools, gpiod-tools, mosquitto-ssl | LoRaWAN | `/api/lorawan/` | |
 | `gnss` | none (pulzr-gps is in pulzr-concentrator) | GNSS | `/api/gnss` | `PULZR_GPS` not `none` |
-| `bluetooth` | `PACKAGES_BLUETOOTH`: pulzr-ble | Bluetooth | `/api/bluetooth` | |
 | `cellular` | `PACKAGES_CELLULAR`: pulzr-cellular, ModemManager, qmi-wwan; `PACKAGES_USB_CELLULAR` on a board with a USB host port | Backhaul > Cellular, Overview's Cellular card | `/api/network/cellular` | |
 | `wifi` | `PACKAGES_WIFI`: pulzr-ap, wpad-openssl | Backhaul > WiFi, Access's setup AP | `/api/access/wifi`, `scan`, `ap`, `key` | |
 | `lan` | `PACKAGES_LAN`: pulzr-lan | Network > LAN | `/api/lan/` | `PULZR_LAN_PORTS` |
@@ -69,7 +68,7 @@ for.
 
 An add-on (see [addons.md](addons.md)) is installed on a running gateway, not
 built into its image, and may carry a feature word of its own in its `addon`
-file: `ADDON_FEATURE="modbus"` for pulzr-modbus. `system.features()` returns
+file: `ADDON_FEATURE="modbus"` for pulzr-modbus, `"bluetooth"` for pulzr-ble. `system.features()` returns
 `PULZR_FEATURES` plus the word of each add-on whose
 `/usr/libexec/pulzr/addon-health/<name>` is on the gateway, which apk removes
 with the package. So a Modbus page gated on `modbus` shows where pulzr-modbus is

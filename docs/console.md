@@ -43,7 +43,7 @@ Details: [Networking](/networking), [Setup access](/access).
 | **LoRaWAN > Forwarders** | each concentrator slot: detected part, gateway ID, packets, the LNS broker it publishes to | `lorawan` |
 | **LoRaWAN > Settings** | region plan, bus and reset line on kit boards, uplink delivery over cellular | `lorawan` |
 | **WiFi** | each radio, what runs on it, the path from the internet to its clients; channels, access points, the uplink's radio, a repeater. Undone unless confirmed. | `wifi` |
-| **Bluetooth** | the adapter and what it forwards | `bluetooth` |
+| **Bluetooth** | the adapter and what it forwards | `bluetooth` (the pulzr-ble add-on) |
 | **GNSS** | receiver, live fix and recorded position | `gnss` |
 
 On fixed hardware (RAK units) the radio settings are read-only: the hardware cannot change. Details: [Concentrators and GNSS](/concentrators), [Bluetooth](/bluetooth), [WiFi radios and repeaters](/radios).

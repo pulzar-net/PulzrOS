@@ -1,9 +1,10 @@
 #!/bin/sh /etc/rc.common
 #
-# Beacon scanning. Not started at all while Bluetooth is off, which it is on
-# every gateway until somebody turns it on, or before the gateway has broker
-# credentials to publish with. Respawned: a scan or a broker connection that
-# drops comes back on its own.
+# Bluetooth, as pulzr-edge-ble. Not started at all while Bluetooth is off,
+# which it is on every gateway until somebody turns it on, or before the
+# gateway has broker credentials to publish with. Respawned: a controller or
+# a broker connection that drops comes back on its own (pulzr-edge-ble also
+# buffers to disk meanwhile).
 #
 # START=97, after the MQTT agent (96): same credentials, same reason to wait.
 

@@ -6,8 +6,7 @@
 #
 # The operator writes only the buses, in /etc/pulzr-edge/buses.toml. The rest of
 # the daemon's config is the gateway's own and is generated at every start
-# (/usr/libexec/pulzr/edge-config, shared with pulzr-ble, which starts
-# `pulzr-edge ble` itself while pulzr.ble.backend is pulzr-edge).
+# (/usr/libexec/pulzr/edge-config, shared with pulzr-ble's pulzr-edge-ble).
 #
 # START=97, after the management agent (96), which wants the same credentials.
 

@@ -1,51 +1,36 @@
 # Bluetooth
 
-A PulzarOS gateway can scan for parking beacons beside its LoRaWAN radio, so
-one gateway serves both kinds of sensor. It is off on every gateway until it
-is turned on, from the gateway's page in Pulzar Cloud (Settings → General →
-Bluetooth) or from the console's Bluetooth page. Both write
+Bluetooth is the pulzr-ble add-on ([addons.md](addons.md)): installed on
+request from Pulzar Net, on the board's own radio or a USB dongle, and off
+until it is turned on, from the gateway's page in Pulzar Net or the console's
+Bluetooth page, which is there while the add-on is installed. Both write
 `pulzr.ble.enabled`.
 
 ## What it sends
 
-`pulzr-ble` scans passively and, every `pulzr.ble.interval` seconds,
-publishes the latest advertisement of each beacon whose MAC starts with one of
-`pulzr.ble.oui` (KKM's `BC5729` by default) on
-`parkeze/gateway/<eui>/ble/up`, with the gateway's own broker identity.
-Pulzar Cloud decodes them with the device type's codec, exactly as it decodes
-a KGateway's raw frames, so a new beacon model is a codec there and never a
-firmware change here.
+The add-on runs `pulzr-edge-ble`, pulzr-edge built with its `ble` feature
+alone. It scans passively and sends each beacon whose MAC starts with one of
+`pulzr.ble.oui` (KKM's `BC5729` by default; empty sends every device) as its
+own device, `ble:<EUI-64>`, in Pulzar protocol v1: at most one `up` per
+beacon per `pulzr.ble.interval` seconds, none weaker than `pulzr.ble.min_rssi`,
+on the gateway's own broker login. Pulzar Net decodes the advertising data
+with the device type's codec, so a new beacon model is a codec there and never
+a firmware change here. GATT reads and writes and advertising come as intents.
 
-## Which program scans
+`pulzr-edge-ble` owns the whole controller over the HCI user channel. The
+`pulzr-ble` service attaches the chip, takes `hci0` down and execs it with a
+config generated at every start (`/usr/libexec/pulzr/edge-config`, in
+pulzr-probe, which also writes the Modbus daemon's).
+`scripts/test-ble-config.sh` checks that config against what pulzr-edge's
+`[ble]` accepts.
 
-`pulzr.ble.backend` picks it, and the `pulzr-ble` service is the only one that
-starts either, so they never hold the radio together:
-
-| backend | program | sends |
-|---------|---------|-------|
-| `pulzr-ble` (default) | the shell scanner above (hcitool, hcidump) | one `ble/up` batch per interval, on the gateway's topic |
-| `pulzr-edge` | `pulzr-edge ble`, from the pulzr-edge add-on | Pulzar protocol v1: each beacon its own device `ble:<EUI-64>`, one `up` per interval; GATT and advertising intents |
-
-Both read the same `pulzr.ble` settings (`oui` becomes pulzr-edge's `admit`,
-empty meaning every device; `min_rssi`; `interval`). With `pulzr-edge`, the
-service attaches the chip as before, takes `hci0` down and execs
-`pulzr-edge ble` with a config generated at every start
-(`/usr/libexec/pulzr/edge-config`, which also writes the Modbus daemon's).
-Without the add-on installed it logs that and retries every minute.
-
-Switching a gateway is `uci set pulzr.ble.backend=pulzr-edge`, `uci commit
-pulzr` and `/etc/init.d/pulzr-ble restart`. A gateway whose beacons are live
-moves only on the owner's go-ahead: the platform then hears them as protocol
-v1 devices instead of the `ble/up` batches. The console's beacon count comes
-from the shell scanner and is empty under `pulzr-edge`.
-
-`scripts/test-ble-backend.sh` checks the generated config against what
-pulzr-edge's `[ble]` accepts.
+Bluetooth is little-endian only (bt-hci), so there is no pulzr-ble for a
+big-endian mips board.
 
 ## On a Pi
 
 OpenWrt's `distroconfig.txt` switches the chip off on every Pi 3 and 4
-(`disable-bt`) to give the PL011 to the header pins, which PulzarOS uses for
+(`disable-bt`) to give the PL011 to the header pins, which PulzrOS uses for
 the console or GNSS. Turning Bluetooth on moves the chip to the mini UART
 instead (`miniuart-bt`), so the header is unchanged:
 
@@ -62,7 +47,8 @@ time needs one reboot, which both switches offer.
 
 At start, `pulzr-ble` raises `BT_ON` (line 0 of the firmware's GPIO
 expander) and attaches the chip with `hciattach … bcm43xx 460800`. Without
-`BT_ON` the chip stays in reset and `hciattach` times out.
+`BT_ON` the chip stays in reset and `hciattach` times out. `hciattach` is
+bluez-utils, in every Pi image: an add-on brings only its own package.
 
 Proven on a Pi 3 on 12 October 2026: attached on the mini UART,
 heard 27 devices in 15 seconds, and Pulzar Cloud stored what it sent. The Pi 4

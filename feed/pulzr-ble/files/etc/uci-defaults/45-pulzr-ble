@@ -3,12 +3,11 @@
 # implied by their absence; see pulzr-ble for what each one does.
 #
 #   oui       MAC prefixes to send, space-separated. BC5729 is KKM's, whose
-#             beacons are the parking sensors Pulzar Cloud decodes today.
+#             beacons are the parking sensors Pulzar Net decodes today.
 #   min_rssi  weaker than this is not sent. -100 is the radio's floor.
-#   interval  seconds between messages.
-#   backend   pulzr-ble (this package's scanner) or pulzr-edge (the add-on's
-#             `pulzr-edge ble`); see pulzr-ble. Added to gateways that already
-#             had the section, so every gateway names the one it runs.
+#   interval  seconds between a beacon's uplinks.
+#
+# pulzr.ble.backend, from when a shell scanner was the other choice, goes.
 
 # OpenWrt runs uci-defaults during image assembly too; this is the device's.
 [ -n "${IPKG_INSTROOT}" ] && exit 0
@@ -20,6 +19,6 @@ set pulzr.ble.oui='BC5729'
 set pulzr.ble.min_rssi='-100'
 set pulzr.ble.interval='10'
 UCI
-uci -q get pulzr.ble.backend >/dev/null 2>&1 || uci -q set pulzr.ble.backend='pulzr-ble'
+uci -q delete pulzr.ble.backend
 uci -q commit pulzr
 exit 0

@@ -433,10 +433,7 @@ export interface BluetoothStatus {
   rebootRequired: boolean;
   oui: string;
   minRssi: number;
-  /** The scanner's last batch: beacons heard in it and the advertisements
-      they sent (adverts is absent from firmware before it was counted). */
-  heard: { at: number; beacons: number; adverts?: number } | null;
-  /** Seconds a batch covers. */
+  /** Seconds between a beacon's uplinks. */
   interval?: number;
 }
 

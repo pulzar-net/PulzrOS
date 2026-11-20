@@ -10,8 +10,8 @@ import Spinner from '@/components/ui/Spinner';
 import ErrorState from '@/components/ErrorState';
 
 /**
- * Scanning for parking beacons beside the LoRaWAN radio (pulzr-ble), and the
- * switch for it. The same switch is on the gateway's page in Pulzar Cloud; both
+ * The Bluetooth radio (the pulzr-ble add-on, pulzr-edge-ble), and the switch
+ * for it. The same switch is on the gateway's page in Pulzar Cloud; both
  * write pulzr.ble.enabled, so whichever was used last is what holds.
  */
 export default function Bluetooth() {
@@ -64,7 +64,6 @@ export default function Bluetooth() {
         {set.isError && <Notice tone="error">{(set.error as Error).message}</Notice>}
         <FactList>
           <Fact label="Scanning" value={!bt.enabled ? 'Off' : bt.running ? 'Yes' : 'No'} />
-          <Fact label="Beacons heard" value={bt.enabled && bt.heard ? String(bt.heard.beacons) : null} />
           <Fact label="Sending" value={bt.oui ? bt.oui.split(' ').join(', ') : 'Every beacon'} mono />
           <Fact label="Weakest sent" value={`${bt.minRssi} dBm`} />
         </FactList>
