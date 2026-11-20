@@ -1,0 +1,23 @@
+---
+title: Hardware
+description: Every board PulzrOS supports, from its board.conf.
+tableOfContents: false
+---
+
+import BoardTable from '../../components/BoardTable.astro';
+import { FAMILIES } from '../../boards.mjs';
+
+Every board below is a directory in [`boards/`](https://github.com/pulzar-net/PulzrOS/tree/main/boards). This page and each board's page are generated from its `board.conf` when the site is built.
+
+A board marked **CI** has an image on every release. One that **needs device support** has its board file and OpenWrt device support in the repository and no image until that support builds and boots on a unit.
+
+{FAMILIES.map((f) => (
+	<>
+		<h2 id={f.toLowerCase().replace(/\s+/g, '-')}>{f}</h2>
+		<BoardTable family={f} />
+	</>
+))}
+
+## A board that is not here
+
+A board is a page of deltas over `boards/common/board.conf`, not a fork. See [Adding a board](/PulzrOS/boards.html).

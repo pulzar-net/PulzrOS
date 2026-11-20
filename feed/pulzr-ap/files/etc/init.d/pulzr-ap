@@ -23,7 +23,7 @@ boot() {
     # On a gateway that has never been adopted, raise the AP straight away
     # rather than waiting out the fallback timer. There is nothing to protect
     # yet and somebody is very likely standing there with a phone, trying to
-    # claim it — see docs/provisioning.md.
+    # claim it — see docs/src/content/docs/provisioning.md.
     if [ "$(uci -q get pulzr.adoption.state)" != "adopted" ] \
        && [ "$(uci -q get pulzr.ap.enabled)" != "0" ] \
        && [ "$(uci -q get pulzr.ap.onboarding)" != "0" ]; then

@@ -1,0 +1,110 @@
+---
+// One page per boards/<id>/, from its board.conf (../../boards.mjs). The
+// page's "Edit" link opens the board.conf it came from.
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
+import { Code } from '@astrojs/starlight/components';
+import { StatusBadge } from '@pulzar-net/docs-theme/components';
+import { BASE, REPO, boards, built, code, facts, inline, notes, statusText } from '../../boards.mjs';
+
+export function getStaticPaths() {
+	return boards().map((b) => ({ params: { board: b.id }, props: { b } }));
+}
+
+const { b } = Astro.props;
+const [summary, ...rest] = b.header.split('\n');
+const blocks = notes(rest.join('\n').replace(/^\s*\n/, ''));
+const headings = [
+	b.leds.length > 0 && { depth: 2, slug: 'panel-lights', text: 'Panel lights' },
+	{ depth: 2, slug: 'install', text: 'Install' },
+	blocks.length > 0 && { depth: 2, slug: 'notes', text: 'Notes from board.conf' },
+].filter(Boolean);
+---
+
+<StarlightPage
+	frontmatter={{
+		title: b.name,
+		description: summary,
+		editUrl: `${REPO}/edit/main/boards/${b.id}/board.conf`,
+	}}
+	headings={headings}
+>
+	<p>
+		<StatusBadge label={statusText(b)} tone={built(b) ? 'tested' : 'progress'} />
+	</p>
+	<p set:html={inline(summary)} />
+
+	<table class="pz-facts">
+		<tbody>
+			{facts(b).map(([k, v]) => (
+				<tr>
+					<th scope="row">{k}</th>
+					<td set:html={v} />
+				</tr>
+			))}
+		</tbody>
+	</table>
+
+	{b.leds.length > 0 && (
+		<>
+			<h2 id="panel-lights">Panel lights</h2>
+			<table>
+				<thead>
+					<tr><th>Label</th><th>Colour</th><th>Role</th><th>sysfs</th></tr>
+				</thead>
+				<tbody>
+					{b.leds.map((l) => (
+						<tr><td>{l.label}</td><td>{l.colour}</td><td>{l.role}</td><td><code>{l.sysfs}</code></td></tr>
+					))}
+				</tbody>
+			</table>
+		</>
+	)}
+
+	<h2 id="install">Install</h2>
+	{!built(b) ? (
+		<p>
+			No image is built for this board yet. Its OpenWrt device support is in the repository and has to build and boot
+			on a unit first.
+		</p>
+	) : b.install === 'sdcard' ? (
+		<>
+			<p>Write the image to an SD card with any writer, or:</p>
+			<Code code={`./flash.sh --download ${b.id}`} lang="bash" />
+			<p>See <a href={`${BASE}/flashing.html`}>Flashing</a>.</p>
+		</>
+	) : (
+		<p>
+			This board boots from soldered flash. A unit already running PulzrOS upgrades from its console or with
+			<code>sysupgrade</code> (<a href={`${BASE}/firmware.html`}>Firmware updates</a>).
+		</p>
+	)}
+	{b.readme && (
+		<p>
+			The first install, recovery and the hardware record:
+			<a href={`${REPO}/blob/main/${b.readme}`} set:html={code(b.readme)} />.
+		</p>
+	)}
+
+	{blocks.length > 0 && (
+		<>
+			<h2 id="notes">Notes from board.conf</h2>
+			{blocks.map((x) =>
+				x.type === 'h3' ? <h3 set:html={x.html} />
+				: x.type === 'pre' ? <Code code={x.text} lang="text" />
+				: x.type === 'ul' ? <ul>{x.items.map((i) => <li set:html={i} />)}</ul>
+				: <p set:html={x.html} />,
+			)}
+		</>
+	)}
+
+	<p>
+		Source: <a href={`${REPO}/blob/main/boards/${b.id}/board.conf`}><code>boards/{b.id}/board.conf</code></a>
+	</p>
+</StarlightPage>
+
+<style>
+	.pz-facts th {
+		width: 11rem;
+		white-space: nowrap;
+	}
+</style>

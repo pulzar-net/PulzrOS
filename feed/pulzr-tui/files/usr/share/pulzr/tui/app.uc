@@ -22,7 +22,7 @@
 //   pulzr-tui --console    as the program on a port: a Pi's HDMI console,
 //                            the USB gadget's serial port. The same sign-in
 //                            the web console has — the port is physical
-//                            access, and docs/auth.md is plain that physical
+//                            access, and docs/src/content/docs/auth.md is plain that physical
 //                            access proves nothing on a gateway in a car park.
 //   pulzr-tui --remote     as an SSH session's only command, opened from
 //                            Pulzar Cloud for an organization's admin. They

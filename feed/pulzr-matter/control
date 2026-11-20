@@ -5,4 +5,4 @@ Architecture: @ARCH@
 Provides: pulzr-cap-matter
 Description: The gateway's controller in its organization's Matter fabric, on pulzr-edge.
  Joined, commissioning devices over IP and Thread, and sharing them with other
- ecosystems from Pulzar Net (docs/radio-modules.md).
+ ecosystems from Pulzar Net (https://pulzar-net.github.io/PulzrOS/radio-modules.html).

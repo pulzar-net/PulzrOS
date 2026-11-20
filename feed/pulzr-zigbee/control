@@ -5,4 +5,4 @@ Architecture: @ARCH@
 Provides: pulzr-cap-zigbee
 Description: Zigbee networks on the gateway's Zigbee radios, on pulzr-edge.
  A coordinator per radio (EmberZNet, Z-Stack or deCONZ), set up, paired and
- backed up from Pulzar Net (docs/radio-modules.md).
+ backed up from Pulzar Net (https://pulzar-net.github.io/PulzrOS/radio-modules.html).

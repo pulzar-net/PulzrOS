@@ -1,0 +1,39 @@
+---
+title: PulzrOS
+description: The gateway OS for LoRaWAN, Bluetooth and IP devices. OpenWrt underneath; a web console, a terminal UI, signed updates and one-touch adoption on top.
+template: splash
+---
+
+import { Hero, Features } from '@pulzar-net/docs-theme/components';
+import { LinkCard, CardGrid } from '@astrojs/starlight/components';
+
+<Hero
+	eyebrow="Pulzar open source"
+	title="PulzrOS"
+	tagline="The gateway OS for LoRaWAN, Bluetooth and IP devices. OpenWrt underneath; a web console, a terminal UI, signed updates and one-touch adoption on top."
+	actions={[
+		{ text: 'Get started', link: '/PulzrOS/getting-started.html', icon: 'right-arrow' },
+		{ text: 'Supported hardware', link: '/PulzrOS/hardware.html', variant: 'minimal' },
+		{ text: 'GitHub', link: 'https://github.com/pulzar-net/PulzrOS', variant: 'minimal', icon: 'github' },
+	]}
+/>
+
+<Features
+	items={[
+		{ title: 'LoRaWAN gateway', body: 'Concentratord and an MQTT forwarder per radio. An 8-channel Pi and a 16-channel WisGate Edge Pro run the same code; SPI, USB and UART radios are probed on kit boards.', icon: 'rss', link: '/PulzrOS/concentrators.html' },
+		{ title: 'One-touch adoption', body: 'Power on, scan the code the gateway shows, pick the organization. The gateway adopts itself and nobody types a credential into it.', icon: 'approve-check', link: '/PulzrOS/provisioning.html' },
+		{ title: 'A console three ways', body: 'A web console served by the gateway, and the same pages as a terminal UI over serial, SSH, HDMI and USB.', icon: 'laptop', link: '/PulzrOS/console.html' },
+		{ title: 'Backhaul that knows what it costs', body: 'Ethernet, WiFi and cellular uplinks with failover. The management tunnel never rides a metered link unless you say so.', icon: 'random', link: '/PulzrOS/networking.html' },
+		{ title: 'Signed firmware and add-ons', body: 'Every release image is Ed25519-signed and checked on the gateway before it is written. Add-ons come from a signed repository per release.', icon: 'seti:lock', link: '/PulzrOS/firmware.html' },
+		{ title: 'A board is a page of deltas', body: 'Raspberry Pi, RAKwireless, Seeed, Dragino and GL.iNet hardware, each one board.conf over a shared configuration.', icon: 'puzzle', link: '/PulzrOS/hardware.html' },
+	]}
+/>
+
+## Where to go next
+
+<CardGrid>
+	<LinkCard title="Flash a gateway" description="Write an image to an SD card, or upgrade a running gateway." href="/PulzrOS/flashing.html" />
+	<LinkCard title="First boot and access" description="Find the gateway, sign in and finish setup." href="/PulzrOS/first-boot.html" />
+	<LinkCard title="Build from source" description="Build an image for any board, with your own keys." href="/PulzrOS/building.html" />
+	<LinkCard title="Add a board" description="A board.conf over the shared configuration, not a fork." href="/PulzrOS/boards.html" />
+</CardGrid>

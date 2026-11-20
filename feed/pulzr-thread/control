@@ -7,4 +7,4 @@ Description: A Thread border router on the gateway's Thread radio.
  OpenThread's border router (OpenWrt's openthread-br) on the radio co-processor
  pulzr-probe found, set up from Pulzar Net: form a network or join one as
  another border router, let devices join, and report the network's state and
- its mesh as Pulzar protocol v1. See docs/thread.md.
+ its mesh as Pulzar protocol v1. See https://pulzar-net.github.io/PulzrOS/thread.html.

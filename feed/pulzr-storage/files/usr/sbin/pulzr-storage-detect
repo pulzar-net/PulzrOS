@@ -13,7 +13,7 @@
 # 32MB of soldered flash is the reason half the decisions in this repo are
 # what they are — and it is the only place on a RAK large enough to hold a
 # copy of the firmware we are about to overwrite, which is the thing that
-# makes an automatic rollback possible there at all. See docs/firmware.md.
+# makes an automatic rollback possible there at all. See docs/src/content/docs/firmware.md.
 #
 # ── THE RULE THAT MATTERS MORE THAN ANY OTHER HERE ─────────────────────────
 #

@@ -21,7 +21,7 @@
 #                                so it can be read by putting the card back.
 #                                Removed once the password has been changed.
 #   pulzr-authorized-keys      you write it. Installed as root's SSH key, on a
-#                                development build only (see docs/auth.md).
+#                                development build only (see docs/src/content/docs/auth.md).
 #
 # WHY NOT A DEFAULT PASSWORD
 #
@@ -38,7 +38,7 @@
 # access that physical possession did not. The one case where it lowers the bar
 # is somebody who can read FAT but not ext4, which is why none of it happens on
 # an adopted gateway: that is the same rule the setup AP follows in
-# docs/access.md — as open as the unit has something to lose.
+# docs/src/content/docs/access.md — as open as the unit has something to lose.
 
 START=14
 

@@ -25,7 +25,7 @@ import styles from './Login.module.css';
  * The gateway holds only a *public* key, so nothing stored on it grants
  * access — dump the flash of a stolen unit and you get nothing. Instead it
  * prints a challenge, an operator carries it to Pulzar Cloud on a phone, and
- * brings back a signature over those exact bytes. See PulzarOS docs/auth.md
+ * brings back a signature over those exact bytes. See PulzarOS docs/src/content/docs/auth.md
  * for why a stored break-glass password would be the wrong answer.
  *
  * The screen is two numbered steps on one card, deliberately. Somebody using

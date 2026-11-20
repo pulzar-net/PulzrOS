@@ -5,7 +5,7 @@
 #
 # otbr-agent is started here, not by OpenWrt's netifd protocol handler
 # (openthread-br's /lib/netifd/proto/openthread.sh), for two reasons that are
-# both upstream bugs, listed with their fixes in docs/thread.md:
+# both upstream bugs, listed with their fixes in docs/src/content/docs/thread.md:
 #
 # - The handler starts otbr-agent without --rest-listen-address, and the
 #   agent's default is every address. Its REST API has no authentication and

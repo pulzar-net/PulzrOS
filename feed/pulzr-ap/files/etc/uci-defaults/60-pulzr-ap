@@ -52,7 +52,7 @@ EOF
 # phone on this AP keeps its cellular data for everything but the console, and
 # that is what lets one phone do all of it: "Sign in with Pulzar" needs the
 # browser to reach the platform while the gateway cannot. A default route here
-# would point it at a gateway with no uplink. See docs/access.md for why that
+# would point it at a gateway with no uplink. See docs/src/content/docs/access.md for why that
 # beat the captive portal this used to attempt.
 
 # dnsmasq is bound to loopback by pulzr-base, because an open resolver on a

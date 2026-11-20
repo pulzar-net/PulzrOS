@@ -2,7 +2,7 @@
 #
 # The TUI as a port's own program: a Pi's HDMI console, the USB gadget's serial
 # port. Behind the web console's sign-in, because the port is physical access
-# and on a gateway in a car park that proves nothing (docs/auth.md).
+# and on a gateway in a car park that proves nothing (docs/src/content/docs/auth.md).
 #
 #   pulzr-tui-console <tty> [TERM]
 #

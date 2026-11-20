@@ -497,7 +497,7 @@ backoff() {
 apply_offline() {
     # The gateway never got internet, so the operator carried the bundle back
     # from Pulzar Cloud by hand. It is signed with the fleet key, whose public
-    # half is baked into the image — see docs/provisioning.md for why that is
+    # half is baked into the image — see docs/src/content/docs/provisioning.md for why that is
     # both safe and necessary here.
     local blob="${1:?usage: pulzr-claim apply <bundle>}"
     [ -f "${blob}" ] || { echo "${blob}" > /tmp/.claim-bundle; blob=/tmp/.claim-bundle; }

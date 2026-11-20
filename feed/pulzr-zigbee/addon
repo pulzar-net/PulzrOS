@@ -1,4 +1,4 @@
-# What makes this package an add-on (docs/addons.md). One capability, with
+# What makes this package an add-on (docs/src/content/docs/addons.md). One capability, with
 # its own pulzr-edge binary (one per module, so a gateway carries only what
 # it runs). ADDON_UPSTREAM: the SDK recipe its binary is built from.
 ADDON_TITLE="Zigbee"

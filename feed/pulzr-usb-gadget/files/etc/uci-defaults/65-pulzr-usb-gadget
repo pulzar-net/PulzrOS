@@ -6,7 +6,7 @@
 #
 # The ethernet port does not serve DHCP because nothing on the gateway can
 # tell a laptop from a customer's network, and the cost of guessing wrong is
-# somebody else's outage (20-pulzr-network, docs/access.md). The USB port has
+# somebody else's outage (20-pulzr-network, docs/src/content/docs/access.md). The USB port has
 # no such question. The only thing that can be on the other end of it is the
 # one computer the cable is plugged into, so there is nobody else's network to
 # break, and handing that computer an address is the whole point.

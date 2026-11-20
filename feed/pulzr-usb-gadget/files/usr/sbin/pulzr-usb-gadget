@@ -31,7 +31,7 @@
 # fraction of what a Pi with a concentrator and a modem draws. A gateway on
 # PoE, or powered through its header, is fine; one powered from its USB-C
 # port needs a splitter that carries data from the laptop and power from the
-# supply. See docs/access.md.
+# supply. See docs/src/content/docs/access.md.
 
 . /etc/pulzr/board.conf
 

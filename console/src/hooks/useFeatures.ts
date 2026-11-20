@@ -3,8 +3,8 @@ import { api } from '@/services/api';
 import type { Feature } from '@/types';
 
 /**
- * What this board was built with (PULZR_FEATURES; docs/features.md), and what
- * its installed add-ons bring (docs/addons.md).
+ * What this board was built with (PULZR_FEATURES; docs/src/content/docs/features.md), and what
+ * its installed add-ons bring (docs/src/content/docs/addons.md).
  *
  * The image's are fixed for its life and an add-on is installed from Pulzar
  * Net rather than from here, so asked once; a reload picks up an install. Until it answers nothing

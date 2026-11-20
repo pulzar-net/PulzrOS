@@ -56,6 +56,6 @@ in each package's own `LICENSE`.
 
 ## Boards that build from source
 
-`docs/boards.md` describes boards whose OpenWrt support lives in separate
+`docs/src/content/docs/boards.md` describes boards whose OpenWrt support lives in separate
 `openwrt-<board>` repositories (GPL-2.0-only, with their vendors' drivers, for
 example the Siflower Wi-Fi driver, GPL-2.0).

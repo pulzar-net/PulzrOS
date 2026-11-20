@@ -485,7 +485,7 @@ jobs:
   # ───────────────────────────────────────────────────────────────────────
   # The add-ons are the packages with a feed/*/addon file. Images do not carry
   # them; a gateway installs one from a repository per release and architecture
-  # (docs/addons.md). Runs on every push, so a broken add-on, or an apk that no
+  # (docs/src/content/docs/addons.md). Runs on every push, so a broken add-on, or an apk that no
   # longer reads what we sign, fails here and not on the first tag.
   #
   # Secrets, all optional, and in the `release` environment, which only a

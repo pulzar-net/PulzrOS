@@ -1,7 +1,7 @@
 // Radio networks: the Zigbee and Z-Wave coordinators, one process per radio
 // running its protocol's module binary (pulzr-edge-zigbee, pulzr-edge-zwave,
 // each in its add-on), and the gateway's controller in its organization's
-// Matter fabric, as the radio `matter` (docs/radio-modules.md). Every op goes
+// Matter fabric, as the radio `matter` (docs/src/content/docs/radio-modules.md). Every op goes
 // through `pulzr-radios call`, which picks the radio's binary.
 //
 // Set up from Pulzar Net only, as add-ons and Thread are: a change needs an
@@ -46,7 +46,7 @@ valid = function(radio) {
 };
 
 // A tool's JSON answer; on failure its last stderr line, with the status the
-// exit code means (docs/radio-modules.md: 2 bad request, 3 no module).
+// exit code means (docs/src/content/docs/radio-modules.md: 2 bad request, 3 no module).
 run = function(cmd, stdin, name) {
     let input = null;
     if (stdin != null) {

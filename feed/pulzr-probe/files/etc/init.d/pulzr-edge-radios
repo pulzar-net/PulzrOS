@@ -2,7 +2,7 @@
 #
 # The radio modules: one `pulzr-edge radio serve` per radio in
 # /etc/pulzr-edge/radios/, each a Zigbee or Z-Wave coordinator
-# (docs/radio-modules.md). A file appears when a person sets up a network from
+# (docs/src/content/docs/radio-modules.md). A file appears when a person sets up a network from
 # Pulzar Net (`pulzr-radios use`, through the console API) and goes with
 # `pulzr-radios release`; both reload this.
 #

@@ -2,13 +2,14 @@
   "name": "pulzros-docs",
   "private": true,
   "type": "module",
-  "description": "The PulzrOS documentation site, built with VitePress and published to GitHub Pages.",
+  "description": "The PulzrOS documentation site: Starlight with the Pulzar docs theme, published to GitHub Pages.",
   "scripts": {
-    "dev": "vitepress dev",
-    "build": "vitepress build",
-    "preview": "vitepress preview"
+    "dev": "astro dev",
+    "build": "astro build"
   },
-  "devDependencies": {
-    "vitepress": "1.6.4"
+  "dependencies": {
+    "@astrojs/starlight": "0.43.1",
+    "@pulzar-net/docs-theme": "git+https://github.com/pulzar-net/docs-theme.git#v0.1.2",
+    "astro": "7.4.13"
   }
 }

@@ -10,7 +10,7 @@
 -- Kept apart from the daemon so the tests can drive it with a fake clock
 -- against a simulated slave: everything that touches the bus or decides when
 -- is here, and the daemon only supplies the clock, the port path and the
--- loop. See docs/rak-power.md.
+-- loop. See docs/src/content/docs/rak-power.md.
 --
 -- Lua, in a ucode tree, because of the Modbus library. libmodbus is the one
 -- OpenWrt packages, and its bindings are Lua (lua-libmodbus, 8KB) and Python

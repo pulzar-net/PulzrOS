@@ -1,4 +1,4 @@
-# What makes this package an add-on (docs/addons.md). Read as KEY="value"
+# What makes this package an add-on (docs/src/content/docs/addons.md). Read as KEY="value"
 # shell by build-feed.sh, build-addons.sh and check-addons.sh.
 ADDON_TITLE="Thread"
 ADDON_CAPS="thread"

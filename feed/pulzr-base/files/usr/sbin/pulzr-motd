@@ -113,7 +113,7 @@ concentrator_line() {
 backhaul_line() {
     # Reads the tunnel's last handshake from the kernel and the routing table.
     # Nothing here goes near the network, so printing a banner never costs
-    # cellular data — see docs/backhaul.md for why that matters on this fleet.
+    # cellular data — see docs/src/content/docs/backhaul.md for why that matters on this fleet.
     local colour text
     if [ "$(pulzr-backhaul-check --tunnel 2>/dev/null)" = "up" ]; then
         colour="${GREEN}"; text="wired (management tunnel up)"

@@ -7,7 +7,7 @@
 --   pulzr-rak-power status    the last recorded state, as JSON
 --
 -- The work is in /usr/lib/lua/pulzr/rak_power.lua; this is the clock, the
--- loop and the record. See docs/rak-power.md.
+-- loop and the record. See docs/src/content/docs/rak-power.md.
 
 local power = require("pulzr.rak_power")
 local cjson = require("cjson")

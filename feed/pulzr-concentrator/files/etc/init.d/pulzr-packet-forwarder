@@ -15,7 +15,7 @@
 # (a RAK7289CV2: two SX1302s) runs two pairs, and an 8-channel gateway runs one.
 # Treating the single-concentrator case as the general case would have made the
 # 16-channel board a fork of this file; instead the loop below runs once on most
-# boards and twice on that one. See docs/concentrators.md for how the second
+# boards and twice on that one. See docs/src/content/docs/concentrators.md for how the second
 # slot appears in ChirpStack.
 #
 # The name stays pulzr-packet-forwarder: the console, adoption and hotplug all

@@ -92,7 +92,7 @@ export interface SystemSummary {
   };
 }
 
-/** pulzr-addon's states; docs/addons.md says what each means. */
+/** pulzr-addon's states; docs/src/content/docs/addons.md says what each means. */
 export type AddonState =
   | 'installed'
   | 'downloading'
@@ -672,7 +672,7 @@ export interface LanForward {
   expiresIn: number;
 }
 
-/** `pulzr-lan status`; see docs/lan.md. */
+/** `pulzr-lan status`; see docs/src/content/docs/lan.md. */
 export interface LanStatus {
   configured: boolean;
   address?: string;

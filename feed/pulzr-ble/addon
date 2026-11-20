@@ -1,4 +1,4 @@
-# What makes this package an add-on (docs/addons.md). One capability, with
+# What makes this package an add-on (docs/src/content/docs/addons.md). One capability, with
 # its own pulzr-edge binary (pulzr-edge-ble). ADDON_FEATURE: the console's
 # Bluetooth page and /api/bluetooth, there while this is installed.
 ADDON_TITLE="Bluetooth"

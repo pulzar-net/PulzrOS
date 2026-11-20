@@ -34,7 +34,7 @@ import styles from './Pages.module.css';
  *   the setup AP        a radio anyone in range can see, off by default.
  *                       Powerful, and the thing most worth being careful with.
  *
- * See docs/access.md for the reasoning behind both.
+ * See docs/src/content/docs/access.md for the reasoning behind both.
  */
 export default function Access() {
   const queryClient = useQueryClient();

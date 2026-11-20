@@ -252,7 +252,7 @@ apply = function(IMAGE, manifest, issuer, owned, staff) {
     // reads it from a file beside the image. The release workflow produces
     // it.
     //
-    // Required. Root on a gateway is Pulzar's alone (docs/auth.md), and an
+    // Required. Root on a gateway is Pulzar's alone (docs/src/content/docs/auth.md), and an
     // image somebody built themselves is root on it, so an unsigned image
     // installed from the console would hand root to anybody who can sign in
     // to it. Every release since 0.3.x carries a .pulzr.json beside each

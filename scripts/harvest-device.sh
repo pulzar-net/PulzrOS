@@ -28,7 +28,7 @@
 # editing before OpenWrt will take it (vendor trees carry out-of-tree bindings
 # and hardcoded paths), but every address in it is real.
 #
-# docs/boards.md has the rest of the port: boards/<board>/openwrt/.
+# docs/src/content/docs/boards.md has the rest of the port: boards/<board>/openwrt/.
 
 set -uo pipefail
 
@@ -138,5 +138,5 @@ Next:
      to match exactly, and it is what bricks a unit if it does not.
   2. Read devices/${BOARD}/devicetree.dts for the LoRa reset GPIO, the LED
      pins and the SPI chip selects, and put them in boards/${BOARD}/board.conf.
-  3. Put the DTS and an OpenWrt patch in boards/${BOARD}/openwrt/ (docs/boards.md).
+  3. Put the DTS and an OpenWrt patch in boards/${BOARD}/openwrt/ (https://pulzar-net.github.io/PulzrOS/boards.html).
 EOF

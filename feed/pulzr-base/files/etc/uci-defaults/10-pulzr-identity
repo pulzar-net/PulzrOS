@@ -50,7 +50,7 @@ hostname="${PULZR_HOSTNAME_PREFIX:-pulzr}-${short}"
 # ethernet MAC as it was until 0.4: a MAC is on the label and on the site's
 # network, and claim/register takes any EUI from anyone, so a gateway whose EUI
 # could be read or guessed could have a stranger's claim registered and
-# adopted for it first, and its owner turned away (docs/provisioning.md).
+# adopted for it first, and its owner turned away (docs/src/content/docs/provisioning.md).
 #
 # Kept once set. uci-defaults run again after every sysupgrade, and a gateway
 # from before 0.4 keeps the MAC-derived EUI it is known by: changing a

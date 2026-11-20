@@ -11,7 +11,7 @@
 #
 # ── WHAT A CLIENT CAN REACH ────────────────────────────────────────────────
 #
-# Modelled on the setup network (60-pulzr-ap, docs/access.md): its own zone,
+# Modelled on the setup network (60-pulzr-ap, docs/src/content/docs/access.md): its own zone,
 # REJECT by default, and nothing that is not named below.
 #
 #   the gateway    DHCP, DNS and the console's sign-in. Not SSH.
@@ -33,7 +33,7 @@
 # has moved a gateway has a cable and a port, and on a board with LAN ports the
 # uplink port is the one going to the wall. What it reaches is the sign-in page,
 # the same one the uplink port offers a cable. Authentication is the boundary
-# there and it is here (docs/access.md), and a device on this port is on a
+# there and it is here (docs/src/content/docs/access.md), and a device on this port is on a
 # network this gateway serves, not a stranger's. 8443 is the WiFi sign-in proxy,
 # which goes where the console goes. SSH stays off: a PLC has no business with
 # it, and everything a laptop here needs is in the console.

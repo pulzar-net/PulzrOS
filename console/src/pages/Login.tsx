@@ -19,7 +19,7 @@ import styles from './Login.module.css';
  * gateway decides — not this component. An unadopted gateway offers a local
  * password because that is the only thing that could work; an adopted one
  * offers recovery, because the credential a thief could pull out of its flash
- * must not be a way in. See PulzarOS docs/auth.md.
+ * must not be a way in. See PulzarOS docs/src/content/docs/auth.md.
  *
  * Note that the *reason* text comes from the API too. It changes with adoption
  * state and there is no version of it that belongs in the frontend.

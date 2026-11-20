@@ -88,7 +88,7 @@ iccid=""
 
 # Poll ModemManager's own location state for a fix and freeze it into
 # pulzr.location.*, the same reference-coordinate mechanism a board with no
-# receiver at all already reports through (see docs/concentrators.md's GNSS
+# receiver at all already reports through (see docs/src/content/docs/concentrators.md's GNSS
 # section). Backgrounded and called once, right after the engine is enabled —
 # a cold GPS fix can take minutes, and this must not hold up the rest of
 # modem detection or a boot waiting on it.

@@ -37,18 +37,18 @@ console/dist/
 # every typecheck.
 console/tsconfig.tsbuildinfo
 
-# The docs site: its dependencies and what VitePress builds. The Pages
+# The docs site: its dependencies and what Astro builds. The Pages
 # workflow builds it from source; nothing built is committed.
-docs/node_modules/
-docs/.vitepress/dist/
-docs/.vitepress/cache/
+docs/node_modules
+docs/dist/
+docs/.astro/
 
 # A local ucode build for scripts/check-ucode.sh — see the README.
 ucode/
 
 # ── secrets ───────────────────────────────────────────────────────────────
 # Never commit a gateway credential or the fleet recovery PRIVATE key. That
-# key is the anchor for every adopted gateway; see docs/auth.md for what its
+# key is the anchor for every adopted gateway; see docs/src/content/docs/auth.md for what its
 # disclosure would cost.
 .env
 .env.local

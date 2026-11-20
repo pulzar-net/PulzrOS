@@ -21,7 +21,7 @@
 //     to a module is not reachable here until somebody decides it should be.
 //
 // The serial, HDMI and USB consoles keep running the TUI as root: they are
-// physical access, which root on the flash already is (docs/auth.md).
+// physical access, which root on the flash already is (docs/src/content/docs/auth.md).
 
 'use strict';
 

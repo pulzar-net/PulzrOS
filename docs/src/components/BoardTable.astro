@@ -1,0 +1,85 @@
+---
+// The boards of one family, for the Hardware page; from the same facts as
+// each board's page (../boards.mjs).
+import { StatusBadge } from '@pulzar-net/docs-theme/components';
+import { BASE, boards, built, family, features, radio } from '../boards.mjs';
+interface Props {
+	family: string;
+}
+const rows = boards().filter((b) => family(b) === Astro.props.family);
+---
+
+<table class="pz-boards">
+	<thead>
+		<tr><th>Board</th><th>ID</th><th>LoRa radio</th><th>Features</th><th>Image</th></tr>
+	</thead>
+	<tbody>
+		{rows.map((b) => (
+			<tr>
+				<td class="name"><a href={`${BASE}/hardware/${b.id}.html`}>{b.name}</a></td>
+				<td class="id"><code>{b.id}</code></td>
+				<td data-label="LoRa radio">{radio(b)}</td>
+				<td data-label="Features">{features(b)}</td>
+				<td class="image">
+					<StatusBadge
+						label={built(b) ? 'CI' : 'Needs device support'}
+						tone={built(b) ? 'tested' : 'progress'}
+					/>
+				</td>
+			</tr>
+		))}
+	</tbody>
+</table>
+
+<style>
+	/* On a phone each board is a card: name and image state, then the radio
+	   and features, labelled. */
+	@media (max-width: 40rem) {
+		:global(.sl-markdown-content) table.pz-boards {
+			display: block;
+			border: none;
+			overflow: visible;
+		}
+		.pz-boards thead {
+			display: none;
+		}
+		.pz-boards tbody {
+			display: grid;
+			gap: 0.75rem;
+		}
+		.pz-boards tr {
+			display: grid;
+			grid-template-columns: 1fr auto;
+			gap: 0.2rem 0.75rem;
+			padding: 0.75rem 0.9rem;
+			border: 1px solid var(--pz-card-border);
+			border-radius: var(--pz-radius-md);
+			background: var(--pz-card-bg);
+		}
+		:global(.sl-markdown-content) .pz-boards :is(tr, td) {
+			margin: 0;
+		}
+		:global(.sl-markdown-content) .pz-boards td {
+			display: block;
+			padding: 0;
+			border: none;
+		}
+		.pz-boards .name {
+			font-weight: 600;
+		}
+		.pz-boards .image {
+			grid-column: 2;
+			grid-row: 1;
+			align-self: start;
+		}
+		.pz-boards .id,
+		.pz-boards [data-label] {
+			grid-column: 1 / -1;
+			margin: 0;
+		}
+		.pz-boards [data-label]::before {
+			content: attr(data-label) ': ';
+			color: var(--pz-text-secondary);
+		}
+	}
+</style>
