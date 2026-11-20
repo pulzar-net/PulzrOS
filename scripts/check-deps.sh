@@ -141,8 +141,10 @@ for board in "${boards[@]}"; do
               | sed 's/#.*//' \
               | tr -s '[:space:]' '\n' \
               | grep -v '^$' | grep -v '^-')"
+    # A version constraint (pulzr-edge=@VERSION@, which build-feed fills in)
+    # is apk's to check at install; the name is what must exist.
     deps="$(grep -h '^Depends:' "${ROOT_DIR}"/feed/*/control \
-            | sed 's/^Depends: *//' | tr ',' '\n' | tr -d ' ' | grep -v '^$')"
+            | sed 's/^Depends: *//' | tr ', ' '\n\n' | sed 's/[=<>~].*//' | grep -v '^$')"
     # Per-architecture packages keep their Depends in `arches`, by arch.
     deps="${deps}
 $(cat "${ROOT_DIR}"/feed/*/arches 2>/dev/null \
