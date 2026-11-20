@@ -4,7 +4,7 @@
 // published by .github/workflows/docs.yml.
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
-import { pulzarPlugins } from '@pulzar-net/docs-theme';
+import { pulzarPlugins } from '@pulzr/docs-theme';
 import { FAMILIES, boards, family } from './src/boards.mjs';
 
 const hardware = FAMILIES.map((f) => ({
