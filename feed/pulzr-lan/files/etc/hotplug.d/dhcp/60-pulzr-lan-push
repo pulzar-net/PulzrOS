@@ -1,0 +1,33 @@
+#!/bin/sh
+#
+# A DHCP lease added, changed or expired: push the LAN to Pulzar Cloud
+# (pulzr-mqtt-agent --push lan), so it learns where a device is when it moves
+# instead of asking every gateway every five minutes over its SIM.
+#
+# dnsmasq runs its dhcp-script for every lease event once a handler exists in
+# this directory, and procd calls this with ACTION add, update (every renewal,
+# and every lease again when dnsmasq restarts) or remove. A renewal that
+# changes nothing is not news, and a restart is dozens of events at once, so
+# each event only marks the LAN as maybe changed; one job five seconds later
+# compares the leases (MAC, address, name, never the expiry) with what was
+# last pushed and pushes once if they differ.
+
+case "${ACTION}" in add|update|remove) ;; *) exit 0 ;; esac
+[ "$(uci -q get pulzr.adoption.state)" = "adopted" ] || exit 0
+
+DIR="${PULZR_LAN_PUSH_DIR:-/var/run/pulzr/lan-push}"
+LEASES="${PULZR_LEASES:-/tmp/dhcp.leases}"
+AGENT="${PULZR_MQTT_AGENT:-/usr/sbin/pulzr-mqtt-agent}"
+[ -x "${AGENT}" ] || exit 0
+mkdir -p "${DIR}"
+# One job at a time: a burst of events while one waits is in its five seconds.
+mkdir "${DIR}/pending" 2>/dev/null || exit 0
+
+(
+    sleep "${PULZR_LAN_PUSH_WAIT:-5}"
+    rmdir "${DIR}/pending"
+    seen="$(awk '{ print $2, $3, $4 }' "${LEASES}" 2>/dev/null | sort | md5sum | cut -d' ' -f1)"
+    [ "${seen}" = "$(cat "${DIR}/pushed" 2>/dev/null)" ] && exit 0
+    "${AGENT}" --push lan >/dev/null 2>&1 && echo "${seen}" > "${DIR}/pushed"
+) </dev/null >/dev/null 2>&1 &
+exit 0
