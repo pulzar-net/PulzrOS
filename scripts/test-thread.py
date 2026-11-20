@@ -296,6 +296,18 @@ esac
           f"{s1['dataset']['dataset_id']} != {dataset_id(ds)}")
     check('form: the network id is kept', (br1.dir / 'network').read_text().strip() == network)
 
+    # What matter-bridge reads to give a Thread device the network when it
+    # commissions it: otbr's own REST API on loopback, the active dataset as
+    # hex TLVs. It must be this network, key and all.
+    tlvs = br1.ns('curl', '-s', '-H', 'Accept: text/plain', 'http://127.0.0.1:8081/node/dataset/active').stdout.strip()
+    try:
+        handed = bytes.fromhex(tlvs)
+    except ValueError:
+        handed = b''
+    check('matter: the commissioning dataset is the network the platform made',
+          handed and dataset_id(handed) == dataset_id(ds) and netkey in tlvs.lower(), tlvs[:40])
+    outputs.append('')
+
     # One gateway, one Thread network: a dataset for another is refused until leave.
     other = make_dataset(15)
     json.loads(br2.cli('form', request={'dataset': other.hex()}))
