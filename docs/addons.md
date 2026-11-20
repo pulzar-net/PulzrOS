@@ -11,22 +11,29 @@ because its power board is already on a Modbus bus.
 ## One capability per add-on
 
 Each add-on brings exactly one capability, so a deny on one never blocks
-another: a gateway locked off Modbus can still have Zigbee. Modbus, Zigbee,
-Z-Wave and Matter all run on one binary, pulzr-edge, which is an add-on of its own
-(`ADDON_SHARED=1`) that brings no capability and is installed as their
-dependency, at this release's exact version (`Depends: pulzr-edge=@VERSION@`).
-The thin add-ons carry what makes each one run: pulzr-modbus the buses'
-service, pulzr-zigbee, pulzr-zwave and pulzr-matter a file in
-`/usr/share/pulzr/radio-protocols/` without which pulzr-edge-radios never
-starts that protocol's radios (`pulzr-radios runnable`).
-A purge deletes only what the add-on's own keep.d names, so the thin add-ons
-name only their own files: pulzr-modbus its buses and maps, and pulzr-zigbee
-and pulzr-zwave nothing, because `/etc/pulzr-edge/radios/` holds every
-protocol's network keys side by side. Upgrades keep all of `/etc/pulzr-edge/`
-through pulzr-edge's keep.d.
-`scripts/check-addons.sh` refuses an add-on with more than one capability, and
-a shared one nothing depends on. A gateway that wanted pulzr-edge when it was
-the Modbus add-on wants pulzr-modbus after the upgrade
+another: a gateway locked off Modbus can still have Zigbee. And each carries
+its own binary, so a gateway carries only what it runs: pulzr-edge with every
+module is over 10 MB on mipsel, more than a 32 MB RAK's overlay takes with the
+installer's 2 MB to spare, while one module's binary is a few MB.
+
+| Add-on | Brings | Binary |
+|---|---|---|
+| pulzr-modbus | `modbus` | `pulzr-edge` (Modbus buses) |
+| pulzr-zigbee | `zigbee` | `pulzr-edge-zigbee` |
+| pulzr-zwave | `zwave` | `pulzr-edge-zwave` |
+| pulzr-matter | `matter` | `pulzr-edge-matter` |
+
+Each is pulzr-edge built with that module's feature alone (the SDK recipe
+`sdk/packages/pulzr-edge`, which `ADDON_UPSTREAM` names). A radio runs where
+its protocol's binary is installed: `pulzr-radios runnable` lists the radios
+whose module is there and pulzr-edge-radios (in pulzr-probe, every image)
+starts each with it, so a gateway locked off a capability, which never gets
+its add-on, never runs it. A purge deletes only what the add-on's keep.d
+names: pulzr-modbus its buses and maps; the radio add-ons nothing, because
+`/etc/pulzr-edge/radios/` holds every protocol's network keys side by side and
+is kept by pulzr-probe. `scripts/check-addons.sh` refuses an add-on with other
+than one capability. A gateway that wanted pulzr-edge when it was the Modbus
+add-on wants pulzr-modbus after the upgrade
 (`/etc/uci-defaults/41-pulzr-addons-split`), so its buses keep running.
 
 The design and the decisions behind it are in the logbook's
@@ -140,12 +147,12 @@ listed.
 
 A gateway with Modbus denied (a production RAK7268CV2, say) never gets it. Three things hold it:
 
-- No image but the RAK7289CV2's carries pulzr-modbus or pulzr-edge (`scripts/check-addons.sh`).
+- No image but the RAK7289CV2's carries pulzr-modbus (`scripts/check-addons.sh`).
 - `pulzr_addons.main.deny` holds capability words. `install` and `restore`
   refuse any package that brings one, asked for by name or as a dependency,
   so a `wanted` edited by hand does not bring it back. pulzr-modbus also
-  `Provides: pulzr-cap-modbus`, and pulzr-edge, which it needs, brings no
-  capability, so denying Modbus leaves Zigbee and Z-Wave installable.
+  `Provides: pulzr-cap-modbus`, and depends on nothing another capability
+  brings, so denying Modbus leaves Zigbee and Z-Wave installable.
 - Pulzar Net holds its own lock, and writes it back to the gateway through
   `POST /api/system/addons/deny` when a report's `addons.deny` lacks it (a
   factory reset wipes `/etc/config`).
@@ -238,7 +245,7 @@ the package. See [features.md](features.md).
 4. Its settings in `files/lib/upgrade/keep.d/<name>`.
 
 `scripts/check-addons.sh` checks all four, and that no board but the
-RAK7289CV2 carries pulzr-modbus and pulzr-edge.
+RAK7289CV2 carries pulzr-modbus.
 
 ## OpenWrt packages an add-on brings
 

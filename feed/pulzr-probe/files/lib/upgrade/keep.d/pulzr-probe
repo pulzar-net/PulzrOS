@@ -1,3 +1,8 @@
 # What a person decided about the radios: which serial adapters are Modbus
 # ones (never probed again) and what Identify found on ports nobody could name.
 /etc/pulzr-probe/
+
+# The radio modules' files: each network's keys and device store, side by side
+# for every protocol. Kept here, in the package every image carries, so no
+# add-on's purge can delete another protocol's keys and an upgrade keeps them.
+/etc/pulzr-edge/radios/

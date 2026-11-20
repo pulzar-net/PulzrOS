@@ -3,7 +3,6 @@ Maintainer: Joseph Telaak <joseph@pulzr.net>
 License: Apache-2.0
 Architecture: @ARCH@
 Provides: pulzr-cap-zwave
-Depends: pulzr-edge=@VERSION@
 Description: Z-Wave networks on the gateway's Z-Wave controllers, on pulzr-edge.
  A Serial API controller per radio, set up, paired (S2 and SmartStart) and
  backed up from Pulzar Net (docs/radio-modules.md).

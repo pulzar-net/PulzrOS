@@ -13,8 +13,11 @@
 #                                     `use`, a person's, from Pulzar Net)
 #   pulzr-radios release <id>         stop it; refused while a network is on it
 #   pulzr-radios backup <id>          post the backup its module just wrote
-#   pulzr-radios runnable             the radios whose protocol's add-on is
-#                                     installed: what pulzr-edge-radios runs
+#   pulzr-radios runnable             "<id> <binary>" for each radio whose
+#                                     protocol's module is installed: what
+#                                     pulzr-edge-radios runs
+#   pulzr-radios call <id> <op>       one op on a radio's module (params on
+#                                     stdin), through its protocol's binary
 #
 # pulzr-probe does the work: names each adapter from sysfs and its table, and
 # probes only what it can name (see its README in pulzar-net/pulzr-edge). This
@@ -86,25 +89,42 @@ hotplug() {
 EDGE_RADIOS="${PULZR_EDGE_RADIOS:-/etc/pulzr-edge/radios}"
 EDGE_RUN="${PULZR_EDGE_RUN:-/var/run/pulzr-edge}"
 EDGE_INIT="${PULZR_EDGE_INIT:-/etc/init.d/pulzr-edge-radios}"
-# One file per protocol whose add-on is installed (pulzr-zigbee, pulzr-zwave,
-# pulzr-matter). The binary carries every module; this is what decides which
-# may run, so a gateway locked off a capability never runs it.
-PROTOCOLS="${PULZR_RADIO_PROTOCOLS:-/usr/share/pulzr/radio-protocols}"
+# One binary per module, each in its protocol's add-on (pulzr-zigbee brings
+# pulzr-edge-zigbee, ...): a protocol runs where its binary is installed, so a
+# gateway locked off a capability, which never gets its add-on, never runs it.
+EDGE_BIN="${PULZR_EDGE_BIN:-/usr/sbin}"
 
-protocol_installed() {
-    [ -e "${PROTOCOLS}/$1" ]
+module_of() {
+    case "$1" in zigbee|zwave|matter) echo "${EDGE_BIN}/pulzr-edge-$1" ;; *) return 1 ;; esac
 }
 
-# The radios a module may run on: a file, and its protocol's add-on installed.
+# A radio's module binary: from its file's protocol, if that is installed.
+radio_bin() {
+    local p b
+    p="$(jsonfilter -i "${EDGE_RADIOS}/$1.json" -e '@.protocol' 2>/dev/null)" || return 1
+    b="$(module_of "${p}")" || return 1
+    [ -x "${b}" ] && echo "${b}"
+}
+
+# The radios a module may run on, "<id> <binary>": a file, and its protocol's
+# module installed.
 runnable() {
-    local f id p
+    local f id b
     for f in "${EDGE_RADIOS}"/*.json; do
         [ -e "${f}" ] || continue
         id="$(basename "${f}" .json)"
         valid_id "${id}" || continue
-        p="$(jsonfilter -i "${f}" -e '@.protocol' 2>/dev/null)"
-        protocol_installed "${p}" && echo "${id}"
+        b="$(radio_bin "${id}")" && echo "${id} ${b}"
     done
+}
+
+# One op on a radio's running module, its params on stdin, exactly as
+# `pulzr-edge radio <id> <op>` takes them (exit 2 bad request, 1 refused or
+# busy, 3 no module).
+call() {
+    local b
+    b="$(radio_bin "$1")" || { echo "No radio module for that radio is installed." >&2; exit 3; }
+    exec "${b}" radio "$1" "$2"
 }
 
 # Each module's status, as a JSON array, for the claim report: the platform
@@ -116,7 +136,7 @@ networks() {
         [ -e "${f}" ] || continue
         id="$(basename "${f}" .json)"
         valid_id "${id}" || continue
-        s="$(pulzr-timeout 35 pulzr-edge radio "${id}" status < /dev/null 2>/dev/null)" || continue
+        s="$(pulzr-timeout 35 "$0" call "${id}" status < /dev/null 2>/dev/null)" || continue
         echo "${s}" | jsonfilter -e '@.state' >/dev/null 2>&1 || continue
         printf '%s%s' "${sep}" "${s}"
         sep=','
@@ -125,12 +145,11 @@ networks() {
 }
 
 # The radio's module started: its file says which protocol, and procd runs
-# one `pulzr-edge radio serve` per file (pulzr-edge-radios). A radio handed
-# to Modbus, or not plugged in, is refused.
+# that protocol's binary, `pulzr-edge-<protocol> radio serve`, per file
+# (pulzr-edge-radios). A radio handed to Modbus, or not plugged in, is refused.
 use_radio() {
-    local id="$1" protocol="$2" f use i
-    [ -x "${EDGE_INIT}" ] || { echo "The pulzr-edge add-on is not installed." >&2; exit 1; }
-    protocol_installed "${protocol}" \
+    local id="$1" protocol="$2" f use i b
+    b="$(module_of "${protocol}")" && [ -x "${b}" ] \
         || { echo "The ${protocol} add-on (pulzr-${protocol}) is not installed." >&2; exit 1; }
     # Matter's controller is on no radio of its own.
     if [ "${id}" != matter ]; then
@@ -152,14 +171,14 @@ use_radio() {
     fi
     i=0
     while [ ! -S "${EDGE_RUN}/radio/${id}.sock" ] && [ "${i}" -lt 20 ]; do sleep 0.5; i=$((i + 1)); done
-    pulzr-edge radio "${id}" status < /dev/null
+    "${b}" radio "${id}" status < /dev/null
 }
 
 release_radio() {
     local id="$1" f state
     f="${EDGE_RADIOS}/${id}.json"
     [ -e "${f}" ] || { echo '{"released":true}'; return 0; }
-    state="$(pulzr-edge radio "${id}" status < /dev/null 2>/dev/null | jsonfilter -e '@.state' 2>/dev/null)"
+    state="$("$0" call "${id}" status < /dev/null 2>/dev/null | jsonfilter -e '@.state' 2>/dev/null)"
     case "${state}" in
         ''|unformed) ;;
         *) echo "Delete the network on this radio first." >&2; exit 1 ;;
@@ -228,6 +247,11 @@ case "$1" in
         release_radio "$2"
         ;;
     runnable) runnable ;;
+    call)
+        valid_id "$2" || { echo "not a radio id" >&2; exit 2; }
+        case "$3" in *[!a-z-]*|'') echo "op is a lower-case name" >&2; exit 2 ;; esac
+        call "$2" "$3"
+        ;;
     backup)
         valid_id "$2" || { echo "not a radio id" >&2; exit 2; }
         f="${EDGE_RUN}/backup/${2}.json"

@@ -3,7 +3,6 @@ Maintainer: Joseph Telaak <joseph@pulzr.net>
 License: Apache-2.0
 Architecture: @ARCH@
 Provides: pulzr-cap-matter
-Depends: pulzr-edge=@VERSION@
 Description: The gateway's controller in its organization's Matter fabric, on pulzr-edge.
  Joined, commissioning devices over IP and Thread, and sharing them with other
  ecosystems from Pulzar Net (docs/radio-modules.md).

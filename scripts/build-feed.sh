@@ -125,10 +125,7 @@ package_one() {
   # metadata; apk wants it as KEY:VALUE pairs. The Description's continuation
   # lines fold into one, and Depends loses its commas, which is apk's spelling.
   local control="${WORK}/${name}-${want_arch}.control"
-  # @VERSION@ is this release's version: an add-on that needs another's code
-  # (pulzr-modbus, pulzr-zigbee and pulzr-zwave on pulzr-edge) pins it exactly,
-  # as every add-on pins pulzr-base.
-  sed -e "s/@ARCH@/${want_arch}/g" -e "s/@VERSION@/${PKG_VERSION}/g" "${pkgdir}/control" > "${control}"
+  sed -e "s/@ARCH@/${want_arch}/g" "${pkgdir}/control" > "${control}"
   [ "${depends}" = "-" ] && depends=""
   # An add-on is installed later, from a repository, by a gateway that is
   # already running a release. Pinning it to that release's pulzr-base, to the

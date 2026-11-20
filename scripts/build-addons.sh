@@ -119,12 +119,10 @@ for pkgdir in "${FEED_DIR}"/*/; do
 
   # shellcheck disable=SC1091
   ( . "${pkgdir}/addon"
-    : "${ADDON_TITLE:?${name}/addon needs ADDON_TITLE}"
-    [ -n "${ADDON_CAPS:-}" ] || [ "${ADDON_SHARED:-}" = 1 ] || { echo "${name}/addon needs ADDON_CAPS" >&2; exit 1; } ) \
+    : "${ADDON_TITLE:?${name}/addon needs ADDON_TITLE}" "${ADDON_CAPS:?${name}/addon needs ADDON_CAPS}" ) \
     || exit 1
   title="$(. "${pkgdir}/addon"; echo "${ADDON_TITLE}")"
-  caps="$(. "${pkgdir}/addon"; echo "${ADDON_CAPS:-}")"
-  shared="$(. "${pkgdir}/addon"; echo "${ADDON_SHARED:-}")"
+  caps="$(. "${pkgdir}/addon"; echo "${ADDON_CAPS}")"
   # The upstream release the binary comes from, from the one place it is pinned.
   # Its upstream version: an SDK recipe's PKG_VERSION, else a fetch's VERSION=.
   upstream="$(sed -n 's/^PKG_VERSION:=//p' "${ROOT_DIR}/sdk/packages/$(basename "${pkgdir}")/Makefile" 2>/dev/null | head -n1 || true)"
@@ -162,14 +160,13 @@ for pkgdir in "${FEED_DIR}"/*/; do
       "${APK}" mkpkg "${info[@]}" --files "${tmp}/data" --output "${OUT}/${arch}/${file}" \
       || die "apk could not pack ${name} for ${arch}"
 
-    jq -nc --arg name "${name}" --arg title "${title}" --arg caps "${caps}" --arg shared "${shared}" \
+    jq -nc --arg name "${name}" --arg title "${title}" --arg caps "${caps}" \
           --arg upstream "${upstream}" --argjson builtin "${builtin}" --arg keep "${keep}" \
           --arg arch "${arch}" --arg file "${file}" \
           --argjson bytes "$(stat -c %s "${OUT}/${arch}/${file}")" \
           --argjson installed "$(du -sb "${tmp}/data" | cut -f1)" \
           --arg sha "$(sha256 "${OUT}/${arch}/${file}")" \
-      '{name:$name, title:$title, caps:($caps|split(" ")|map(select(length>0))), shared:($shared == "1"),
-        upstream:$upstream,
+      '{name:$name, title:$title, caps:($caps|split(" ")|map(select(length>0))), upstream:$upstream,
         builtIn:$builtin, keep:($keep|split("\n")|map(select(length>0))),
         arch:$arch, file:$file, bytes:$bytes, installedBytes:$installed, sha256:$sha}' \
       >> "${ENTRIES}"
@@ -252,7 +249,7 @@ done
 jq -sc --arg tag "${TAG}" '
   { tag: $tag,
     addons: ( group_by(.name) | map(
-      { name: .[0].name, title: .[0].title, caps: .[0].caps, shared: .[0].shared,
+      { name: .[0].name, title: .[0].title, caps: .[0].caps,
         upstream: .[0].upstream, builtIn: .[0].builtIn, keep: .[0].keep,
         arches: ( map({ key: .arch, value: {file, bytes, installedBytes, sha256} })
                   | from_entries ) } ) ),

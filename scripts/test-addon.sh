@@ -257,7 +257,7 @@ check "install: journal names who asked" 'installed alice@example.com' \
   "$(tail -n1 "${R}/etc/pulzr/addons/journal" | jq -r '"\(.result) \(.by)"')"
 check "install: lock released" no "$([ -e "${R}/var/run/pulzr/addon.lock" ] && echo yes || echo no)"
 check "install: reported" yes "$(grep -q report "${T}/claim.log" && echo yes)"
-check "install: brief has only wanted, deny, items" '["deny","items","wanted"]' \
+check "install: brief has only wanted, deny, items and free" '["deny","free","items","wanted"]' \
   "$(pulzr-addon status --brief | jq -c 'keys')"
 check "install: brief item shape" '["builtIn","error","health","since","state","upstream","version"]' \
   "$(pulzr-addon status --brief | jq -c '.items["pulzr-modbus"] | keys')"

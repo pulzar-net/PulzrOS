@@ -8,7 +8,7 @@
 #
 # Reported, never acted on.
 [ -e /etc/pulzr-edge/radios/matter.json ] || exit 2
-state="$(pulzr-timeout 35 pulzr-edge radio matter status < /dev/null 2>/dev/null | jsonfilter -e '@.state' 2>/dev/null)"
+state="$(pulzr-timeout 35 pulzr-radios call matter status < /dev/null 2>/dev/null | jsonfilter -e '@.state' 2>/dev/null)"
 case "$state" in
     up) exit 0 ;;
     unjoined) exit 2 ;;

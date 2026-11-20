@@ -63,24 +63,15 @@ for pkgdir in "${FEED_DIR}"/*/; do
   [ -f "${pkgdir}/addon" ] || continue
   name="$(basename "${pkgdir}")"; count=$((count + 1))
 
-  title="" caps="" boards_ok="" feature="" shared=""
-  eval "$(. "${pkgdir}/addon"; printf 'title=%q caps=%q boards_ok=%q feature=%q shared=%q' \
-            "${ADDON_TITLE:-}" "${ADDON_CAPS:-}" "${ADDON_BOARDS:-}" "${ADDON_FEATURE:-}" "${ADDON_SHARED:-}")"
+  title="" caps="" boards_ok="" feature=""
+  eval "$(. "${pkgdir}/addon"; printf 'title=%q caps=%q boards_ok=%q feature=%q' \
+            "${ADDON_TITLE:-}" "${ADDON_CAPS:-}" "${ADDON_BOARDS:-}" "${ADDON_FEATURE:-}")"
   [ -n "${title}" ] || bad "${name}/addon has no ADDON_TITLE"
-  # One capability per add-on, so a deny on one never blocks another
+  # Exactly one capability per add-on, so a deny on one never blocks another
   # (Osborne is locked off modbus and must still be able to have Zigbee).
-  # None only for a shared runtime (ADDON_SHARED=1) another add-on depends on.
   # shellcheck disable=SC2086
   set -- ${caps}
-  [ "$#" -le 1 ] || bad "${name}/addon brings ${caps}: one capability per add-on"
-  if [ "$#" = 0 ]; then
-    if [ "${shared}" = 1 ]; then
-      grep -lsE "^Depends:.*(^|[ ,:])${name}(=|[ ,]|$)" "${FEED_DIR}"/*/control >/dev/null \
-        || bad "${name} is a shared runtime nothing depends on"
-    else
-      bad "${name}/addon has no ADDON_CAPS"
-    fi
-  fi
+  [ "$#" = 1 ] || bad "${name}/addon brings '${caps}': exactly one capability per add-on"
   [ -n "${boards_ok}" ] || bad "${name}/addon has no ADDON_BOARDS"
   [ -x "${pkgdir}/files/usr/libexec/pulzr/addon-health/${name}" ] \
     || bad "${name} has no executable files/usr/libexec/pulzr/addon-health/${name}"
@@ -109,7 +100,7 @@ for pkgdir in "${FEED_DIR}"/*/; do
 
     # Stands for a production RAK7268CV2: see the header.
     case " ${packages} " in *" ${name} "*)
-      if { [ "${name}" = pulzr-edge ] || [ "${name}" = pulzr-modbus ]; } && [ "${id}" != rak7289cv2 ]; then
+      if [ "${name}" = pulzr-modbus ] && [ "${id}" != rak7289cv2 ]; then
         bad "${id} installs ${name} in its image; only rak7289cv2 may. It is an add-on everywhere else."
       fi
       [ "${allowed}" = 1 ] || bad "${id} installs ${name}, which ADDON_BOARDS does not allow it"

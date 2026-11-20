@@ -166,8 +166,7 @@ let release = () => {
         out[f[0]] = {
             feature: f[1] == '-' ? null : f[1],
             upstream: f[2] == '-' ? null : f[2],
-            // "-": a shared runtime, bringing no capability of its own.
-            caps: f[3] == '-' ? [] : filter(split(f[3], ' '), (c) => length(c) > 0),
+            caps: filter(split(f[3], ' '), (c) => length(c) > 0),
             title: f[4],
             keep: filter(split(f[5] ?? '', ' '), (p) => length(p) > 0),
         };
@@ -750,7 +749,9 @@ let status = (brief) => {
         let it = state(n, rel, w, built, recorded(n), busy);
         if (it) items[n] = it;
     }
-    let out = { wanted: w, deny: list(cf.deny), items };
+    // free: the overlay's free bytes, so Pulzar Net can say an add-on will
+    // not fit (with the 2 MB this keeps spare) before anybody asks for it.
+    let out = { wanted: w, deny: list(cf.deny), items, free: freeBytes() };
     if (brief) return out;
 
     let b = board();

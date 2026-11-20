@@ -13,7 +13,7 @@ for f in /etc/pulzr-edge/radios/*.json; do
     [ -e "$f" ] || continue
     [ "$(jsonfilter -i "$f" -e '@.protocol' 2>/dev/null)" = zigbee ] || continue
     id="$(basename "$f" .json)"
-    state="$(pulzr-timeout 35 pulzr-edge radio "$id" status < /dev/null 2>/dev/null | jsonfilter -e '@.state' 2>/dev/null)"
+    state="$(pulzr-timeout 35 pulzr-radios call "$id" status < /dev/null 2>/dev/null | jsonfilter -e '@.state' 2>/dev/null)"
     case "$state" in
         up|forming|restoring) up=1 ;;
         unformed) ;;

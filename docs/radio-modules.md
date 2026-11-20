@@ -47,7 +47,8 @@ Pulzar Net ──gateway-link──▶ console API ──stdin──▶ pulzr-ed
    <protocol>` writes the radio's file and starts its process (one procd
    instance per radio); `release` stops it and removes the file, and is
    refused while a network is on the radio.
-3. **`pulzr-edge radio <radio id> <op>`** for every other op. The request
+3. **`pulzr-radios call <radio id> <op>`** for every other op, which runs
+   `pulzr-edge-<protocol> radio <radio id> <op>`, the radio's module binary. The request
    body arrives on stdin, never on the command line, from a file only root
    can read that is removed before the answer goes back. The command
    connects to that radio's control socket and prints the result as one JSON
@@ -248,12 +249,14 @@ are `matter:<compressed fabric id>.<node id>`.
 
 ## Which modules run
 
-The pulzr-edge binary carries every module, but a radio's module runs only
-while its protocol's add-on is installed (pulzr-zigbee, pulzr-zwave, and
-pulzr-matter for Matter): each ships `/usr/share/pulzr/radio-protocols/<protocol>`,
-`pulzr-radios runnable` lists only the radios whose protocol has one, and
-pulzr-edge-radios starts only those. So a gateway locked off a capability never
-runs it, and `use` refuses a protocol whose add-on is missing.
+Each module is its own binary, pulzr-edge built with that module alone, in
+its protocol's add-on: `pulzr-edge-zigbee` in pulzr-zigbee, `pulzr-edge-zwave`
+in pulzr-zwave, `pulzr-edge-matter` in pulzr-matter. A radio runs where its
+protocol's binary is installed: `pulzr-radios runnable` lists the radios whose
+module is there, with its binary, and pulzr-edge-radios starts each with it.
+So a gateway locked off a capability never runs it, and `use` refuses a
+protocol whose add-on is missing. `pulzr-radios call <radio id> <op>` runs one
+op through the radio's binary; the console API and the health checks use it.
 
 ## Implementing a module
 

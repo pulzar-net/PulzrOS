@@ -1,7 +1,0 @@
-#!/bin/sh
-#
-# The shared runtime's health, for pulzr-addon's report: ok while the binary
-# runs, failing when it cannot (a build for another architecture). What it
-# runs is reported by the add-ons that bring a capability.
-pulzr-edge --version >/dev/null 2>&1 && exit 0
-exit 1

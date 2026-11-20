@@ -89,8 +89,10 @@ grep -v '^#' "${HERE}/built" | while IFS= read -r name; do
   [ -n "${apk}" ] || { echo "the SDK built no ${name}" >&2; exit 1; }
   cp "${apk}" "${OUT}/${arch}/"
 done
-# pulzr-edge's binaries, for feed/pulzr-edge's and feed/pulzr-probe's fetch.
-for bin in pulzr-edge pulzr-probe; do
+# pulzr-edge's binaries, one per module, for the add-ons' and pulzr-probe's fetch.
+for bin in pulzr-edge pulzr-edge-zigbee pulzr-edge-zwave pulzr-edge-matter pulzr-edge-camera pulzr-edge-ble pulzr-probe; do
+  # Bluetooth is little-endian only (bt-hci): no pulzr-edge-ble on mips.
+  case "${bin}:${arch}" in pulzr-edge-ble:mips_*) continue ;; esac
   found="$(find build_dir -path "*pulzr-edge-bin/usr/sbin/${bin}" -type f | head -n1)"
   [ -n "${found}" ] || { echo "the SDK built no ${bin}" >&2; exit 1; }
   install -m 0755 "${found}" "${OUT}/${arch}/${bin}"

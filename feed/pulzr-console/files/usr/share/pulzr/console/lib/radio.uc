@@ -1,7 +1,8 @@
-// Radio networks: the Zigbee and Z-Wave coordinators the pulzr-edge add-on
-// runs, one `pulzr-edge radio serve` process per radio, and the gateway's
-// controller in its organization's Matter fabric, as the radio `matter`
-// (docs/radio-modules.md).
+// Radio networks: the Zigbee and Z-Wave coordinators, one process per radio
+// running its protocol's module binary (pulzr-edge-zigbee, pulzr-edge-zwave,
+// each in its add-on), and the gateway's controller in its organization's
+// Matter fabric, as the radio `matter` (docs/radio-modules.md). Every op goes
+// through `pulzr-radios call`, which picks the radio's binary.
 //
 // Set up from Pulzar Net only, as add-ons and Thread are: a change needs an
 // `sso` session, which only Pulzar Net mints for a person, and is audited
@@ -23,12 +24,11 @@ let _m_fs = require('fs');
 // ucode does not hoist function declarations; see util.uc.
 let run, list, status, change, quote, valid;
 
-const EDGE = '/usr/sbin/pulzr-edge';
 const RADIOS_TOOL = '/usr/sbin/pulzr-radios';
 const RADIOS = '/etc/pulzr-edge/radios';
 const RUN = '/var/run/pulzr-console';
 // What a module takes. `use` and `release` are pulzr-radios', the rest the
-// module's own (pulzr-edge radio <id> <op>).
+// module's own (pulzr-radios call <id> <op>).
 const OPS = [
     'use', 'release', 'scan', 'form', 'restore', 'backup', 'leave', 'permit',
     'permit-stop', 'provision', 'grant', 'dsk', 'abort', 'remove', 'replace',
@@ -84,13 +84,12 @@ list = function() {
 
 // GET /api/system/radio: every module's status, or why it has none.
 status = function() {
-    if (!_m_fs.access(EDGE, 'x')) return { radios: [], installed: false };
     const radios = [];
     for (let id in list()) {
-        const s = run(EDGE + ' radio ' + quote(id) + ' status', null);
+        const s = run(RADIOS_TOOL + ' call ' + quote(id) + ' status', null);
         push(radios, s.error ? { radio: id, state: 'down', error: s.error } : s);
     }
-    return { radios, installed: true };
+    return { radios };
 };
 
 // POST /api/system/radio/<op>, `radio` in the body. { result } or { error, status }.
@@ -101,8 +100,6 @@ change = function(op, req, session) {
         return { status: 404, error: 'No such radio operation.' };
     if (!valid(req?.radio))
         return { status: 400, error: 'radio is a detected radio id.' };
-    if (!_m_fs.access(EDGE, 'x'))
-        return { status: 409, error: 'The pulzr-edge add-on is not installed.' };
     let result;
     if (op == 'use') {
         if (!(req?.protocol in ['zigbee', 'zwave', 'matter']) || ((req.radio == 'matter') != (req.protocol == 'matter')))
@@ -113,7 +110,7 @@ change = function(op, req, session) {
     } else {
         const params = {};
         for (let k, v in req) if (k != 'radio') params[k] = v;
-        result = run(EDGE + ' radio ' + quote(req.radio) + ' ' + quote(op), params, req.radio + '.' + op);
+        result = run(RADIOS_TOOL + ' call ' + quote(req.radio) + ' ' + quote(op), params, req.radio + '.' + op);
     }
     if (result.error) return { status: result.status ?? 409, error: result.error };
     return { status: 200, result };

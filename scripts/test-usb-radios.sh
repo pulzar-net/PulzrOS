@@ -82,15 +82,21 @@ if value is None:
     sys.exit(1)
 print(value if isinstance(value, str) else json.dumps(value))
 EOF
-# `pulzr-edge radio <id> status` answers ${SANDBOX}/status-<id>.json, or exits
-# 3 as when no module runs there.
-cat > "${STUBS}/pulzr-edge" <<'EOF'
+# Each module's binary (pulzr-edge-zigbee, ...), as its add-on installs it:
+# `radio <id> status` answers ${SANDBOX}/status-<id>.json, or exits 3 as when
+# no module runs there.
+EDGE_BIN="${SANDBOX}/edge-bin"
+mkdir -p "${EDGE_BIN}"
+for m in zigbee zwave matter; do
+cat > "${EDGE_BIN}/pulzr-edge-${m}" <<'EOF'
 #!/bin/sh
-echo "$*" >> "${SANDBOX}/edge.log"
+echo "$(basename "$0") $*" >> "${SANDBOX}/edge.log"
 [ "$1 $3" = "radio status" ] && [ -f "${SANDBOX}/status-$2.json" ] && { cat "${SANDBOX}/status-$2.json"; exit 0; }
 echo "No radio module is running on that radio." >&2
 exit 3
 EOF
+chmod +x "${EDGE_BIN}/pulzr-edge-${m}"
+done
 cat > "${SANDBOX}/init" <<'EOF'
 #!/bin/sh
 echo "$*" >> "${SANDBOX}/init.log"
@@ -104,9 +110,8 @@ chmod +x "${STUBS}"/*
 export PATH="${STUBS}:${PATH}" SANDBOX
 export PULZR_PROBE_RUN="${SANDBOX}/run" PULZR_PROBE_SETTLE=1 FAKE_LIST="${SANDBOX}/list.json"
 export PULZR_EDGE_RADIOS="${SANDBOX}/edge-radios" PULZR_EDGE_RUN="${SANDBOX}/edge-run" PULZR_EDGE_INIT="${SANDBOX}/init"
-# Every protocol's add-on installed, until the test of a gateway locked off one.
-export PULZR_RADIO_PROTOCOLS="${SANDBOX}/protocols"
-mkdir -p "${PULZR_RADIO_PROTOCOLS}" && touch "${PULZR_RADIO_PROTOCOLS}"/zigbee "${PULZR_RADIO_PROTOCOLS}"/zwave "${PULZR_RADIO_PROTOCOLS}"/matter
+# Every protocol's module installed, until the test of a gateway locked off one.
+export PULZR_EDGE_BIN="${EDGE_BIN}"
 
 fail=0
 pass=0
@@ -196,9 +201,9 @@ mode() { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"; }
 sock() { python3 -c 'import os,socket,sys; os.makedirs(os.path.dirname(sys.argv[1]),exist_ok=True); socket.socket(socket.AF_UNIX).bind(sys.argv[1])' "$1" 2>/dev/null || true; }
 echo "${BOTH}" > "${FAKE_LIST}"; radios scan --quiet
 fresh
-chmod -x "${SANDBOX}/init"
-check "use without the add-on is refused" not radios use "${ZBT_ID}" zigbee
-chmod +x "${SANDBOX}/init"
+chmod -x "${EDGE_BIN}/pulzr-edge-zigbee"
+check "use without the Zigbee add-on's module is refused" not radios use "${ZBT_ID}" zigbee
+chmod +x "${EDGE_BIN}/pulzr-edge-zigbee"
 check "use of a radio not plugged in is refused" not radios use usb-10c4_ea60-gone zigbee
 check "use takes zigbee or zwave only" not radios use "${ZBT_ID}" thread
 echo '{"detected":[{"id":"usb-1a86_55d4-1-1.3","bus":"usb","state":"free","use":"modbus","since":2}]}' > "${PULZR_PROBE_RUN}/radios.json"
@@ -242,19 +247,24 @@ check "and a radio is never Matter" not radios use "${ZBT_ID}" matter
 check "release matter" eval 'radios release matter >/dev/null'
 
 # ── a gateway locked off Modbus and Zigbee, with pulzr-zwave installed ───────
-# pulzr-edge (every module) is installed, but only Z-Wave's add-on: its radio
-# runs, Zigbee's does not, and Modbus's service is not even in pulzr-edge.
-rm -f "${PULZR_RADIO_PROTOCOLS}"/zigbee "${PULZR_RADIO_PROTOCOLS}"/matter
+# Only pulzr-zwave is installed, so only its module's binary is on the
+# gateway: its radio runs, Zigbee's does not, and nothing of Modbus is there.
+rm -f "${EDGE_BIN}/pulzr-edge-zigbee" "${EDGE_BIN}/pulzr-edge-matter"
 mkdir -p "${PULZR_EDGE_RADIOS}"
 echo '{"radio":"usb-0658_0200-1-1.3","protocol":"zwave"}' > "${PULZR_EDGE_RADIOS}/usb-0658_0200-1-1.3.json"
 echo '{"radio":"usb-10c4_ea60-9e2adbd1","protocol":"zigbee"}' > "${PULZR_EDGE_RADIOS}/usb-10c4_ea60-9e2adbd1.json"
-check "the Z-Wave radio runs" [ "$(radios runnable)" = usb-0658_0200-1-1.3 ]
+check "the Z-Wave radio runs, with Z-Wave's binary" [ "$(radios runnable)" = "usb-0658_0200-1-1.3 ${EDGE_BIN}/pulzr-edge-zwave" ]
+echo '{"radio":"usb-0658_0200-1-1.3","protocol":"zwave","state":"up"}' > "${SANDBOX}/status-usb-0658_0200-1-1.3.json"
+check "call reaches it through that binary" [ "$(radios call usb-0658_0200-1-1.3 status < /dev/null | jsonfilter -e @.state)" = up ]
+check "and a Zigbee radio's call finds no module" not radios call "${ZBT_ID}" status
 check "a Zigbee radio is never started without pulzr-zigbee" not eval '[ -n "$(radios runnable | grep 10c4)" ]'
 check "and Zigbee cannot be set up" not radios use usb-10c4_ea60-1 zigbee
-check "Modbus's service is pulzr-modbus's, not pulzr-edge's" eval \
-    '[ -e "${ROOT_DIR}/feed/pulzr-modbus/files/etc/init.d/pulzr-edge" ] && [ ! -e "${ROOT_DIR}/feed/pulzr-edge/files/etc/init.d/pulzr-edge" ]'
-check "pulzr-edge-radios starts only what runnable lists" \
-    grep -q 'for id in \$(pulzr-radios runnable)' "${ROOT_DIR}/feed/pulzr-edge/files/etc/init.d/pulzr-edge-radios"
+check "Modbus's binary and service are pulzr-modbus's alone" eval \
+    '[ -e "${ROOT_DIR}/feed/pulzr-modbus/files/etc/init.d/pulzr-edge" ] && grep -q "usr/sbin/pulzr-edge\"" "${ROOT_DIR}/feed/pulzr-modbus/fetch"'
+check "each radio add-on ships its own binary" eval \
+    '( for m in zigbee zwave matter; do grep -q "usr/sbin/pulzr-edge-${m}" "${ROOT_DIR}/feed/pulzr-${m}/fetch" || exit 1; done )'
+check "pulzr-edge-radios starts each radio with the binary runnable names" \
+    grep -q 'procd_set_param command "${bin}" radio serve' "${ROOT_DIR}/feed/pulzr-probe/files/etc/init.d/pulzr-edge-radios"
 
 echo "${pass} passed"
 exit "${fail}"

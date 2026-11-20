@@ -9,12 +9,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=pulzr-edge
-PKG_VERSION:=0.4.4
+PKG_VERSION:=0.5.0
 PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://codeload.github.com/pulzar-net/pulzr-edge/tar.gz/v$(PKG_VERSION)?
-PKG_HASH:=f5ef80f029a489b4af353b1fe277285d0cd197254c11f9d8dc0fe3757d4fc00e
+PKG_HASH:=7e24f2fa4635a8ee337d56f694f1f817af655886de8ee0b2c2a9c199cfaa6581
 
 PKG_MAINTAINER:=Joseph Telaak <joseph@pulzr.net>
 PKG_LICENSE:=Apache-2.0
@@ -33,14 +33,39 @@ define Package/pulzr-edge-bin
 	DEPENDS:=$(RUST_ARCH_DEPENDS)
 endef
 
+# One binary per module, each pulzr-edge built with that module's feature
+# alone, so a gateway carries only what it runs: each capability's add-on
+# ships its own (feed/pulzr-modbus pulzr-edge, feed/pulzr-zigbee
+# pulzr-edge-zigbee, ...). cargo install keeps one pulzr-edge in its root, so
+# each is renamed as it lands (--force, or cargo skips a package it already
+# installed); Modbus's goes last and keeps the name. Bluetooth builds on
+# little-endian machines only. Written out, not looped, so each is one plain
+# recipe line.
+NO_BLE:=$(filter mips,$(ARCH))
+
 define Build/Compile
-	$(call Build/Compile/Cargo,crates/pulzr-edge)
 	$(call Build/Compile/Cargo,crates/pulzr-probe)
+	$(call Build/Compile/Cargo,crates/pulzr-edge,--force --no-default-features --features zigbee)
+	mv -f $(PKG_INSTALL_DIR)/bin/pulzr-edge $(PKG_INSTALL_DIR)/bin/pulzr-edge-zigbee
+	$(call Build/Compile/Cargo,crates/pulzr-edge,--force --no-default-features --features zwave)
+	mv -f $(PKG_INSTALL_DIR)/bin/pulzr-edge $(PKG_INSTALL_DIR)/bin/pulzr-edge-zwave
+	$(call Build/Compile/Cargo,crates/pulzr-edge,--force --no-default-features --features matter)
+	mv -f $(PKG_INSTALL_DIR)/bin/pulzr-edge $(PKG_INSTALL_DIR)/bin/pulzr-edge-matter
+	$(call Build/Compile/Cargo,crates/pulzr-edge,--force --no-default-features --features camera)
+	mv -f $(PKG_INSTALL_DIR)/bin/pulzr-edge $(PKG_INSTALL_DIR)/bin/pulzr-edge-camera
+	$(if $(NO_BLE),,$(call Build/Compile/Cargo,crates/pulzr-edge,--force --no-default-features --features ble))
+	$(if $(NO_BLE),true,mv -f $(PKG_INSTALL_DIR)/bin/pulzr-edge $(PKG_INSTALL_DIR)/bin/pulzr-edge-ble)
+	$(call Build/Compile/Cargo,crates/pulzr-edge,--force --no-default-features --features modbus)
 endef
 
 define Package/pulzr-edge-bin/install
 	$(INSTALL_DIR) $(1)/usr/sbin
 	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/bin/pulzr-edge $(1)/usr/sbin/pulzr-edge
+	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/bin/pulzr-edge-zigbee $(1)/usr/sbin/pulzr-edge-zigbee
+	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/bin/pulzr-edge-zwave $(1)/usr/sbin/pulzr-edge-zwave
+	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/bin/pulzr-edge-matter $(1)/usr/sbin/pulzr-edge-matter
+	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/bin/pulzr-edge-camera $(1)/usr/sbin/pulzr-edge-camera
+	$(if $(NO_BLE),,$(INSTALL_BIN) $(PKG_INSTALL_DIR)/bin/pulzr-edge-ble $(1)/usr/sbin/pulzr-edge-ble)
 	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/bin/pulzr-probe $(1)/usr/sbin/pulzr-probe
 endef
 

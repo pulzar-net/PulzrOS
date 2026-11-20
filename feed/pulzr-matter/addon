@@ -1,6 +1,8 @@
-# What makes this package an add-on (docs/addons.md). One capability, on the
-# shared pulzr-edge runtime it depends on, at this release's exact version.
+# What makes this package an add-on (docs/addons.md). One capability, with
+# its own pulzr-edge binary (one per module, so a gateway carries only what
+# it runs). ADDON_UPSTREAM: the SDK recipe its binary is built from.
 ADDON_TITLE="Matter"
 ADDON_CAPS="matter"
 ADDON_FEATURE="matter"
 ADDON_BOARDS="*"
+ADDON_UPSTREAM="pulzr-edge"

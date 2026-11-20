@@ -78,14 +78,14 @@ installed and nowhere else. An add-on's word must not be a board word
 
 A board can carry an add-on in its image with `PULZR_ADDONS_BUILTIN`, which
 `pulzr_packages` appends and `pulzr_check_features` checks names an add-on.
-Only the RAK7289CV2 does, with pulzr-modbus (and the pulzr-edge it runs on),
+Only the RAK7289CV2 does, with pulzr-modbus (and the pulzr-edge binary it carries),
 because its power board already talks Modbus. A built-in add-on upgrades with
 the image and cannot be removed. No other board may carry either, the RAK7268CV2s in
 production above all.
 
 | Board | Built in |
 |---|---|
-| `rak7289cv2` | `pulzr-edge`, `pulzr-modbus` |
+| `rak7289cv2` | `pulzr-modbus` |
 | every other | none |
 
 ## USB cellular is a board's, not a word
