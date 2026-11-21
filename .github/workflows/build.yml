@@ -991,10 +991,32 @@ jobs:
           done
           ls -la release
 
+      # The annotated tag's message (git tag -a vX.Y.Z --cleanup=whitespace
+      # -F notes.md), else GitHub's generated notes; never none. From the API:
+      # this job has no checkout.
+      - name: Release notes from the tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          notes="${RUNNER_TEMP}/notes.md"
+          : > "${notes}"
+          ref="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" -q '.object.type + " " + .object.sha')"
+          if [ "${ref%% *}" = tag ]; then
+            gh api "repos/${GITHUB_REPOSITORY}/git/tags/${ref#* }" -q .message \
+              | sed '/^-----BEGIN [A-Z ]*SIGNATURE-----$/,$d' > "${notes}"
+          fi
+          if ! awk -v t="${TAG}" 'NF && $0 != t { f = 1 } END { exit !f }' "${notes}"; then
+            gh api "repos/${GITHUB_REPOSITORY}/releases/generate-notes" -f tag_name="${TAG}" -q .body > "${notes}"
+            awk 'NF && !/Full Changelog/ { f = 1 } END { exit !f }' "${notes}" || {
+              echo "::error::${TAG} has no release notes: tag it with git tag -a and the notes as its message"; exit 1; }
+          fi
+
       - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           files: release/*
-          generate_release_notes: true
+          body_path: ${{ runner.temp }}/notes.md
           # v0.4.0-rc1 and the like are pre-releases: net-api installs one by
           # its tag but never offers it as the latest to a gateway.
           prerelease: ${{ contains(github.ref_name, '-') }}
