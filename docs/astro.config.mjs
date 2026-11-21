@@ -16,7 +16,7 @@ const hardware = FAMILIES.map((f) => ({
 }));
 
 export default defineConfig({
-	site: 'https://pulzar-net.github.io',
+	site: 'https://oss.pulzr.net',
 	base: '/PulzrOS',
 	// Pages are page.html; GitHub Pages also serves them at the clean URLs
 	// the earlier VitePress site had (/PulzrOS/flashing).

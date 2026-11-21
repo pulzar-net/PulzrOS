@@ -31,7 +31,7 @@ Fields:
 - `channels`     how many LoRa channels this part carries. Eight for every
                  SX130x we support — a 16-channel gateway is two of these in
                  two slots, not one part with sixteen. See
-                 https://pulzar-net.github.io/PulzrOS/concentrators.html.
+                 https://oss.pulzr.net/PulzrOS/concentrators.html.
 - `lbt`          whether the part supports listen-before-talk in hardware.
                  Required in some regions and not others; a region that
                  mandates it on a part that lacks it is a configuration error

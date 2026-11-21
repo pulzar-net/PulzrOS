@@ -7,4 +7,4 @@ Description: Bluetooth LE on the board's radio or a USB dongle, on pulzr-edge.
  Scans passively and sends each beacon it is told to listen for to Pulzar Net
  as its own device (Pulzar protocol v1), which decodes it with the device
  type's codec; GATT and advertising on request. Off until turned on from
- Pulzar Net or the console (https://pulzar-net.github.io/PulzrOS/bluetooth.html).
+ Pulzar Net or the console (https://oss.pulzr.net/PulzrOS/bluetooth.html).

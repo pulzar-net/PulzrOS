@@ -12,13 +12,13 @@
   <a href="https://github.com/pulzar-net/PulzrOS/actions/workflows/build.yml"><img src="https://github.com/pulzar-net/PulzrOS/actions/workflows/build.yml/badge.svg?branch=main" alt="Build"></a>
   <a href="https://github.com/pulzar-net/PulzrOS/releases"><img src="https://img.shields.io/github/v/release/pulzar-net/PulzrOS?include_prereleases&sort=semver" alt="Release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/pulzar-net/PulzrOS" alt="License: Apache-2.0"></a>
-  <a href="https://pulzar-net.github.io/PulzrOS/"><img src="https://img.shields.io/badge/docs-pulzar--net.github.io-4f46e5" alt="Docs"></a>
+  <a href="https://oss.pulzr.net/PulzrOS/"><img src="https://img.shields.io/badge/docs-oss.pulzr.net-4f46e5" alt="Docs"></a>
 </p>
 
 <p align="center">
-  <a href="https://pulzar-net.github.io/PulzrOS/"><b>Documentation</b></a> ·
-  <a href="https://pulzar-net.github.io/PulzrOS/getting-started">Quick start</a> ·
-  <a href="https://pulzar-net.github.io/PulzrOS/hardware/">Hardware</a> ·
+  <a href="https://oss.pulzr.net/PulzrOS/"><b>Documentation</b></a> ·
+  <a href="https://oss.pulzr.net/PulzrOS/getting-started">Quick start</a> ·
+  <a href="https://oss.pulzr.net/PulzrOS/hardware/">Hardware</a> ·
   <a href="https://github.com/pulzar-net/PulzrOS/releases">Releases</a>
 </p>
 
@@ -37,7 +37,7 @@ PulzrOS turns a Raspberry Pi, a RAK WisGate or a GL.iNet router into a managed g
 | RAK7266, RAK7267 | 8 channels | `sysupgrade` |
 | GL.iNet GL-SFT1200 Opal | none: a router for IP devices | `sysupgrade` |
 
-Every board, with what is verified on hardware, is on the [hardware pages](https://pulzar-net.github.io/PulzrOS/hardware/).
+Every board, with what is verified on hardware, is on the [hardware pages](https://oss.pulzr.net/PulzrOS/hardware/).
 
 ## Quick start
 
@@ -45,7 +45,7 @@ Every board, with what is verified on hardware, is on the [hardware pages](https
 2. **Flash** it with Raspberry Pi Imager (*Use custom*), Etcher or `./flash.sh --download rpi4`.
 3. **Open the console**: plug a laptop into the gateway's ethernet port and browse to `https://pulzr-<serial>.local`. Scan the claim code to adopt it.
 
-The full walk-through is in [Getting started](https://pulzar-net.github.io/PulzrOS/getting-started).
+The full walk-through is in [Getting started](https://oss.pulzr.net/PulzrOS/getting-started).
 
 ## Build from source
 
@@ -53,11 +53,11 @@ The full walk-through is in [Getting started](https://pulzar-net.github.io/Pulzr
 ./build.sh rpi4
 ```
 
-Needs Node 20+, `curl`, `jq`, `zstd`, and Linux or Docker for image assembly. See [Building from source](https://pulzar-net.github.io/PulzrOS/building).
+Needs Node 20+, `curl`, `jq`, `zstd`, and Linux or Docker for image assembly. See [Building from source](https://oss.pulzr.net/PulzrOS/building).
 
 ## Contributing
 
-Board support, fixes and documentation are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) and the [contributor guide](https://pulzar-net.github.io/PulzrOS/contributing). Commits are signed off under the DCO.
+Board support, fixes and documentation are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) and the [contributor guide](https://oss.pulzr.net/PulzrOS/contributing). Commits are signed off under the DCO.
 
 ## Security
 

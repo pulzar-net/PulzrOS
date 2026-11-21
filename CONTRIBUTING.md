@@ -2,12 +2,12 @@
 
 Bug reports, board support, documentation and fixes are welcome.
 
-The contributor guide is on the docs site: **[pulzar-net.github.io/PulzrOS/contributing](https://pulzar-net.github.io/PulzrOS/contributing)**. It covers setup, the checks, the tests, and adding a board.
+The contributor guide is on the docs site: **[oss.pulzr.net/PulzrOS/contributing](https://oss.pulzr.net/PulzrOS/contributing)**. It covers setup, the checks, the tests, and adding a board.
 
 ## In short
 
 1. **Open an issue first** for anything bigger than a fix, so the design is agreed before you write it.
-2. **Keep a change to one thing.** A new board is `boards/<id>/board.conf` and little else ([Adding a board](https://pulzar-net.github.io/PulzrOS/boards)).
+2. **Keep a change to one thing.** A new board is `boards/<id>/board.conf` and little else ([Adding a board](https://oss.pulzr.net/PulzrOS/boards)).
 3. **Run the checks that touch your change**: `scripts/check-ucode.sh`, `scripts/check-ucode-scope.py`, the `scripts/test-*.sh` for what you changed, and `npm run typecheck` in `console/`. Do not work around a failing check.
 4. **Follow [CLAUDE.md](CLAUDE.md)**: it applies to people too. Comments say why, not what. Console text is for a technician. No emoji anywhere.
 5. **Sign off every commit** (`git commit -s`), certifying the [Developer Certificate of Origin](https://developercertificate.org/) 1.1.

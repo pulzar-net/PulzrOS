@@ -14,7 +14,7 @@ body:
     id: board
     attributes:
       label: Board
-      description: The board ID from https://pulzar-net.github.io/PulzrOS/hardware/, or "none" for the build, console or docs.
+      description: The board ID from https://oss.pulzr.net/PulzrOS/hardware/, or "none" for the build, console or docs.
       placeholder: rpi4
     validations:
       required: true

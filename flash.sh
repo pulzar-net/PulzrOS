@@ -271,7 +271,7 @@ install_method="$(board_field "${BOARD}" BOARD_INSTALL)"
 if [ "${install_method}" != sdcard ]; then
   die "${BOARD} does not install from an SD card (BOARD_INSTALL=${install_method}).
        It boots from soldered flash and is updated through its own upgrade
-       path — see https://pulzar-net.github.io/PulzrOS/hardware/${BOARD}.html"
+       path — see https://oss.pulzr.net/PulzrOS/hardware/${BOARD}.html"
 fi
 
 [ "${DOWNLOAD}" = 1 ] && download_image "${BOARD}"
@@ -283,7 +283,7 @@ if [ "${#candidates[@]}" -eq 0 ]; then
        Build one:     ./build.sh ${BOARD}
        Or fetch one:  ./flash.sh --download ${BOARD}
        Or skip this script entirely and use Raspberry Pi Imager —
-       see https://pulzar-net.github.io/PulzrOS/flashing.html"
+       see https://oss.pulzr.net/PulzrOS/flashing.html"
 fi
 
 IMAGE="${candidates[0]}"

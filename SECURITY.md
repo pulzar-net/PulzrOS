@@ -18,7 +18,7 @@ you disclose.
 
 PulzarOS gateway software: the console and its API, the terminal UI, adoption
 and claim handling, the management tunnel, the SSH and recovery trust model
-([Authentication and SSH](https://pulzar-net.github.io/PulzrOS/auth.html)), the firmware update check, and the image
+([Authentication and SSH](https://oss.pulzr.net/PulzrOS/auth.html)), the firmware update check, and the image
 build. A flaw in OpenWrt or another upstream component is best reported
 upstream; tell us as well if PulzarOS's configuration makes it worse.
 
@@ -26,7 +26,7 @@ upstream; tell us as well if PulzarOS's configuration makes it worse.
 
 The latest release. Older images should be upgraded; a gateway can be upgraded
 from its console or with `sysupgrade`
-([Flashing](https://pulzar-net.github.io/PulzrOS/flashing.html#upgrading-a-running-gateway)).
+([Flashing](https://oss.pulzr.net/PulzrOS/flashing.html#upgrading-a-running-gateway)).
 
 ## Keys and secrets
 

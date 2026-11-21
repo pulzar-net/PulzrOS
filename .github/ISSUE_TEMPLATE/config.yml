@@ -4,5 +4,5 @@ contact_links:
     url: https://github.com/pulzar-net/PulzrOS/security/policy
     about: Email security@pulzr.net. Do not open a public issue.
   - name: Documentation
-    url: https://pulzar-net.github.io/PulzrOS/
+    url: https://oss.pulzr.net/PulzrOS/
     about: Setup, hardware, networking and building from source.

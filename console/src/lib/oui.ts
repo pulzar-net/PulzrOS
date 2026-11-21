@@ -15,7 +15,7 @@
  */
 import { useQuery } from '@tanstack/react-query';
 
-const BASE = 'https://pulzar-net.github.io/oui/v1/';
+const BASE = 'https://oss.pulzr.net/oui/v1/';
 const DAY = 24 * 60 * 60 * 1000;
 
 interface Shard {
