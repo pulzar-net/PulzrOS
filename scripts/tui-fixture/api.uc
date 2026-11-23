@@ -25,6 +25,12 @@ return {
         destroySession: (t) => null,
         audit: () => null,
     },
+    // One add-on in, one an upgrade has yet to put back.
+    addons: {
+        status: () => ({ items: {
+            'pulzr-zigbee': { state: 'installed', health: 'ok', title: 'Zigbee' },
+            'pulzr-lorawan': { state: 'pending-restore', title: 'LoRaWAN', error: 'Pulzr Cloud cannot be reached.' } } }),
+    },
     system: {
         summary: () => ({ identity: { hostname: 'pulzr-1234ab', gatewayEui: 'a84041ffff1234ab', serial: '10000000d3a1234ab', serialSource: 'cpuinfo', board: 'rpi4', boardName: 'Raspberry Pi 4' },
             firmware: { version: '0.2.1', build: '202610131200', commit: '190239c', openwrt: 'OpenWrt 24.10.0 r28427-6df0e3d02a', kernel: '6.6.73' },

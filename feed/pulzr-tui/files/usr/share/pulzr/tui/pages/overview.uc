@@ -1,7 +1,26 @@
 // Overview — console/src/pages/Overview.tsx.
 return function(ctx) {
     const ui = ctx.ui, fmt = ctx.fmt, api = ctx.api;
-    const st = { summary: null, backhaul: null, lora: null };
+    const st = { summary: null, backhaul: null, lora: null, addons: null };
+
+    // The web console's addonBadge, word for word: an add-on an upgrade has
+    // yet to put back reads Restoring until it is in.
+    const STATES = {
+        downloading: [ 'Downloading', 'info' ], installing: [ 'Installing', 'info' ],
+        removing: [ 'Removing', 'info' ], reverted: [ 'Reverted', 'warning' ],
+        failed: [ 'Failed', 'error' ], 'pending-restore': [ 'Restoring', 'info' ],
+        unavailable: [ 'Unavailable', 'neutral' ],
+    };
+    const addonBadge = (it) => {
+        if (it.state != 'installed') {
+            const s = STATES[it.state] ?? [ it.state, 'neutral' ];
+            return { badge: s[0], tone: s[1] };
+        }
+        if (it.health == 'ok') return { badge: 'Running', tone: 'success' };
+        if (it.health == 'idle') return { badge: 'Idle', tone: 'neutral' };
+        if (it.health == 'failing') return { badge: 'Failing', tone: 'error' };
+        return { badge: 'Installed', tone: 'success' };
+    };
 
     return {
         interval: 15,
@@ -9,6 +28,7 @@ return function(ctx) {
             st.summary = api.system.summary();
             st.backhaul = api.network.backhaul();
             st.lora = api.lorawan.status();
+            st.addons = api.addons.status();
         },
         view: function(width) {
             const s = st.summary, b = st.backhaul ?? {}, l = st.lora;
@@ -52,6 +72,13 @@ return function(ctx) {
             push(out, { t: 'fact', label: 'Adoption', value: adoption.state == 'adopted'
                 ? { badge: adoption.org ? 'Adopted ' + ui.glyph('dot') + ' ' + adoption.org : 'Adopted', tone: 'success' }
                 : { badge: 'Not adopted', tone: 'warning' } });
+
+            const items = st.addons?.items ?? {};
+            if (length(keys(items))) {
+                push(out, { t: 'section', title: 'Add-ons' });
+                for (let n in sort(keys(items)))
+                    push(out, { t: 'fact', label: items[n].title ?? n, value: addonBadge(items[n]) });
+            }
 
             push(out, { t: 'section', title: 'Firmware' });
             push(out, { t: 'fact', label: 'PulzrOS', value: fw.version ? sprintf('%s (%s)', fw.version, fw.commit) : null });

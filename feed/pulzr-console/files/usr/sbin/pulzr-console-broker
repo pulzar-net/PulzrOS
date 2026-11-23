@@ -41,6 +41,7 @@ const M = {
     io: load('io'),
     access: load('access'),
     bluetooth: load('bluetooth'),
+    addons: load('addons'),
     actions: load('actions'),
 };
 const diag = load('diag');
@@ -66,6 +67,7 @@ const SIGNED_IN = {
     ports: [ 'status' ],
     io: [ 'status' ],
     bluetooth: [ 'status' ],
+    addons: [ 'status' ],
     access: [ 'scan', 'wifiDetail', 'probeResult', 'key' ],
     claim: [ 'status', 'qr', 'adoptionCheckResult' ],
 };

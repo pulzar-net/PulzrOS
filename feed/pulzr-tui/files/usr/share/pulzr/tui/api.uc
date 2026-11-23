@@ -20,7 +20,7 @@ const uid = int(match(_m_fs.readfile('/proc/self/status') ?? '', /\nUid:\s+([0-9
 if (uid == 0) {
     const out = { unprivileged: false, useToken: () => null };
     for (let name in [ 'auth', 'system', 'network', 'ports', 'lorawan', 'claim', 'io',
-                       'access', 'bluetooth', 'actions', 'diag' ])
+                       'access', 'bluetooth', 'addons', 'actions', 'diag' ])
         out[name] = load(name);
     out.act = (name, req, session) => out.actions[name](req, session);
     return out;
@@ -46,6 +46,7 @@ const NAMES = {
     ports: [ 'status' ],
     io: [ 'status' ],
     bluetooth: [ 'status' ],
+    addons: [ 'status' ],
     access: [ 'status', 'scan', 'wifiDetail', 'probeResult', 'key' ],
     claim: [ 'status', 'qr', 'isAdopted', 'reclaiming', 'adoptionCheckResult' ],
 };
