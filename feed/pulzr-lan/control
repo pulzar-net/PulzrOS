@@ -2,7 +2,7 @@ Package: pulzr-lan
 Provides: parkeze-lan
 Replaces: parkeze-lan
 Conflicts: parkeze-lan
-Depends: ucode, ucode-mod-fs, ucode-mod-uci, dnsmasq-full, firewall4, nftables-json, kmod-nft-nat, nmap
+Depends: ucode, ucode-mod-fs, ucode-mod-uci, dnsmasq-full, firewall4, nftables-json, kmod-nft-nat, kmod-nft-bridge, iputils-arping, nmap
 Maintainer: Joseph Telaak <joseph@pulzr.net>
 License: Apache-2.0
 Architecture: all

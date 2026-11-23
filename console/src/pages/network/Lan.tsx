@@ -174,7 +174,7 @@ export default function Lan() {
               ? `${duration(Math.floor(Date.now() / 1000) - info.getValue())} ago`
               // In the bridge's table and nowhere else: never asked for a
               // lease, and not on this subnet if it answers no ARP either.
-              : info.row.original.port && !info.row.original.ip
+              : (info.row.original.port && !info.row.original.ip) || info.row.original.learned
                 ? <Badge tone="warning">No lease</Badge>
                 : '—',
       }),

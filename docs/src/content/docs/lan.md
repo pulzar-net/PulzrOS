@@ -114,6 +114,7 @@ pulzr-lan unforward <tunnel port>
 pulzr-lan expose tcp|udp <port> <ip> [<client port>]
 pulzr-lan unexpose tcp|udp <port>
 pulzr-lan address add|remove <a.b.c.d/nn> another subnet on the bridge
+pulzr-lan address for <device ip>         one in a device's own subnet, probed free
 pulzr-lan links                           reload the uplinks' devices and addresses
 pulzr-lan scan                            scan the clients' management ports now
 pulzr-lan save-usage                      save each client's totals for the next boot
@@ -136,7 +137,7 @@ Over MQTT (`parkeze/gateway/<eui>/mgmt/request`, see `pulzr-mqtt-agent`):
 | `lan-reserve` | `mac`, `ip`, optional `name`; no `ip` releases it | `{mac, ip, name}` |
 | `lan-forward` | `ip`, `port`, `seconds` | `{port, ip, dport, expires}` |
 | `lan-unforward` | `port` | `{port, closed}` |
-| `lan-address` | `address` (`10.0.0.2/24`), optional `remove: true` | `{addresses}` |
+| `lan-address` | `address` (`10.0.0.2/24`) and optional `remove: true`, or `for` (a device's address) | `{addresses, address}` |
 
 `lan` is not part of `all`: it grows with the number of devices, and `all` has
 to stay under the agent's 8KB answer.
@@ -257,22 +258,52 @@ carries `listening`: the same six ports, for those something on the gateway
 listens on beyond loopback, read from the kernel's socket table
 (`pulzr-claim`). The console offers the gateway's Shell and Web UI by it.
 
-## Devices with static addresses
+## Devices with a static address
 
-A device set to a static address on another subnet, such as a camera at
-`10.0.0.112` from the factory, is on the bridge but nothing can reach it: the
-gateway has no address there. `pulzr-lan address add 10.0.0.2/24` gives it
-one, kept in `network.devlan_extra`, a second interface on `br-devlan`, so it
-survives reboots and upgrades. At most eight, from `/8` to `/30`, and none
-that overlaps the LAN, another of them, an uplink's or the tunnel's subnet,
-or the console, setup, USB or link-local networks.
+Plenty of devices come out of the box with a fixed address, such as a camera
+at `10.0.0.112`, and never ask for a lease. They are a supported mode, end to
+end, in three steps:
 
-A device there is treated like any other client: the same zone, isolation,
-policy, cellular rules and counting, since every rule matches the bridge
-rather than a subnet. It can be reserved (the name resolves; no lease is
-served there), forwarded to and exposed. A subnet an exposed port points
-into cannot be removed until the port goes. The report lists them as
-`addresses`.
+| Step | What happens | Who does it |
+|---|---|---|
+| Heard | The device's own ARP says its address; the gateway reads it off the bridge | the gateway, passively |
+| Reached | The gateway takes an address in the device's subnet | somebody, one click |
+| Used | Web UI, SSH, reservations and exposed ports, as for a leased client | as for any client |
+
+**Heard.** The kernel drops ARP from a subnet the gateway has no address on,
+so the neighbour table never sees such a device. A bridge-family nftables
+table of pulzr-lan's own (`bridge pulzr_lan_learn`) reads every ARP that
+arrives on a LAN port and keeps the sender's MAC and address for 30 minutes
+(`wire4`, at most 512). Nothing is sent and no subnet is swept; ARP probes
+from `0.0.0.0` are skipped. A client with no lease, reservation or neighbour
+entry is reported with that address, `"learned": true`, and `onLan`: whether
+any subnet of the LAN holds it.
+
+**Reached.** A learned address never makes a route or a subnet on its own.
+`pulzr-lan address for 10.0.0.112` (MQTT `lan-address` with `for`; the
+console's **Add Subnet** on the client's row) gives the gateway an address in
+the device's `/24`: from `.253` down, skipping the device's own, any address
+heard on the wire and any that answers a duplicate-address probe
+(`arping -D`, at most eight), so a device that is switched off is the only
+collision left. `.254` and `.1` are left alone, being where a site's router
+usually sits. A `/24` because factory defaults are; a device on a wider
+subnet still reaches a `/24` inside it.
+
+`pulzr-lan address add 10.0.0.2/24` does the same with an address of your
+choosing. Either way it is kept in `network.devlan_extra`, a second interface
+on `br-devlan`, so it survives reboots and upgrades. At most eight, from `/8`
+to `/30`, and none that overlaps the LAN, another of them, an uplink's or the
+tunnel's subnet, or the console, setup, USB or link-local networks. The
+report lists them as `addresses`.
+
+**Used.** A device there is treated like any other client: the same zone,
+isolation, policy, cellular rules and counting, since every rule matches the
+bridge rather than a subnet. It can be forwarded to through the tunnel (the
+console's Web UI and SSH), reserved (the name resolves; no lease is served
+there) and exposed. A subnet an exposed port points into cannot be removed
+until the port goes. A forward, reservation or exposed port to an address on
+no subnet of the LAN is refused with `<ip> is on no subnet of the LAN: add
+one for it first`.
 
 ## The tunnel forward
 

@@ -1,0 +1,8 @@
+#!/bin/sh
+# Duplicate-address detection for pulzr-lan: an address listed in
+# $T/arp.taken answers (exit 1), any other is free (exit 0). Each probe is
+# logged to $T/arping.log.
+for last in "$@"; do :; done
+echo "${last}" >> "${T}/arping.log"
+grep -qx "${last}" "${T}/arp.taken" 2>/dev/null && exit 1
+exit 0

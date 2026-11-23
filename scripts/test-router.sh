@@ -645,4 +645,42 @@ lan policy "${B}" internet >/dev/null
 check "policy: back to the internet drops the rules and the section" 'null null' \
     "$(jq -c '.firewall.lan_pulzr_02000000000b_wan, .pulzr.lan_02000000000b' "${UCI_JSON}" | paste -sd' ' -)"
 
+# ── lan: a device with a static address, learned from its own ARP ───────────
+#
+# A camera fixed at 172.16.5.112 that never asked for a lease: the bridge
+# table's wire4 set heard it (twice; the fresher answer wins). Another device
+# says 172.16.5.252 and 172.16.5.253 answers a duplicate-address probe, so
+# the gateway's own address there is .251.
+lan apply
+check "learn: the bridge's ports fed to the learning table" \
+    'add element bridge pulzr_lan_learn lan_ports { "lan1", "lan2" }' \
+    "$(grep '^add element bridge pulzr_lan_learn lan_ports' "${T}/nft.log" | tail -n1)"
+cat > "${T}/nft.set.wire4" <<'JSON'
+{"nftables": [{"set": {"family": "bridge", "name": "wire4", "elem": [
+  {"elem": {"val": {"concat": ["3c:ef:8c:00:00:01", "172.16.5.112"]}, "timeout": 1800, "expires": 1700}},
+  {"elem": {"val": {"concat": ["3c:ef:8c:00:00:01", "172.16.5.9"]}, "timeout": 1800, "expires": 20}},
+  {"elem": {"val": {"concat": ["3c:ef:8c:00:00:02", "172.16.5.252"]}, "timeout": 1800, "expires": 900}}]}}]}
+JSON
+echo 172.16.5.253 > "${T}/arp.taken"; : > "${T}/arping.log"
+check "learn: a static device's address, learned and off every subnet" '"172.16.5.112" true false' \
+    "$(lan status | jq -c '.clients[] | select(.mac == "3c:ef:8c:00:00:01") | .ip, .learned, .onLan' | paste -sd' ' -)"
+check "learn: a leased or reserved client keeps its own address" 'null' \
+    "$(lan status | jq -c '.clients[] | select(.mac == "f0:00:06:10:91:6b") | .learned')"
+check "learn: nothing is probed or added by status" '0 null' \
+    "$(wc -l < "${T}/arping.log" | tr -d ' ') $(jq -c '.network.devlan_extra' "${UCI_JSON}")"
+out="$(lan forward 172.16.5.112 80 600 2>&1)" || true
+check "refused: a forward to a subnet the gateway has no address on, saying so" \
+    '172.16.5.112 is on no subnet of the LAN: add one for it first' "${out}"
+refuse_lan "a subnet for a device on an uplink's subnet" address for 10.0.0.112
+refuse_lan "a subnet for a device already on the LAN" address for 192.168.64.77
+check "address for: the first free address from .253 down" '{"addresses":["172.16.5.251/24"],"address":"172.16.5.251/24"}' \
+    "$(lan address for 172.16.5.112 | jq -c .)"
+check "address for: probed .253 (taken) and .251, never the device or an address on the wire" \
+    '172.16.5.253 172.16.5.251' "$(paste -sd' ' - < "${T}/arping.log")"
+check "learn: on the LAN once the subnet is there" 'true' \
+    "$(lan status | jq -c '.clients[] | select(.mac == "3c:ef:8c:00:00:01") | .onLan')"
+check "a forward to it, through the tunnel" '172.16.5.112 80' "$(lan forward 172.16.5.112 80 600 | jq -r '"\(.ip) \(.dport)"')"
+check "the forward's element" '1' "$(lastload | grep -c ': 172.16.5.112 . 80 }')"
+lan address remove 172.16.5.251/24 >/dev/null
+
 exit "${fail}"

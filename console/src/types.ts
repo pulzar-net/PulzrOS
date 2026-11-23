@@ -666,6 +666,10 @@ export interface LanClient {
   traffic: LanTraffic;
   /** The LAN port it is behind, from the bridge's forwarding table. */
   port?: string | null;
+  /** The address is what the device's own ARP said: no lease, no reservation. */
+  learned?: boolean;
+  /** For a learned address: whether a subnet of the LAN holds it. */
+  onLan?: boolean;
   /** Whether it may use cellular when that carries traffic. */
   cellular?: 'allow' | 'block';
   /** Ports refused on cellular while allowed: "tcp:554", "udp:5000-5010". */

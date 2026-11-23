@@ -18,6 +18,7 @@
 //                                              across the reboot to come
 //   pulzr-lan isolate                        port isolation on every member
 //   pulzr-lan address add|remove <a.b.c.d/nn>  another subnet on the bridge
+//   pulzr-lan address for <device ip>          one for a device's own subnet
 //   pulzr-lan scan                           which management ports each
 //                                              client answers on (nmap)
 //   pulzr-lan scan-service                   scan every so often (procd)
@@ -98,6 +99,26 @@
 // reservation (the name resolves; dnsmasq leases nothing outside its range)
 // and an exposed port reach them. No DHCP is served there.
 //
+// ── WHAT A DEVICE SAYS ON THE WIRE ─────────────────────────────────────────
+//
+// A device with a static address on a subnet the gateway has no address on
+// is invisible to it: the kernel drops ARP from a foreign subnet, so it never
+// reaches the neighbour table and `status` could list it by MAC only. Its own
+// ARP says its address anyway (who-has its router, tell 10.0.0.112), so a
+// bridge-family table of our own (bridge pulzr_lan_learn) reads every ARP
+// arriving on a LAN port and keeps the sender's MAC and address in a set with
+// a timeout. Passive: nothing is sent, no subnet is swept. ARP probes from
+// 0.0.0.0 (a DHCP client checking its lease) are skipped.
+//
+// A learned address is reported and never acted on. It makes no route and no
+// subnet; `address for <ip>` does, when somebody asks (the console's Add on
+// the client's row). That picks the gateway's own address in the device's
+// /24 from .253 down, skipping the device, any address seen on the wire and
+// any that answers a duplicate-address probe (arping -D), so a silent device
+// is the only collision left, and returns it. A /24, because factory
+// defaults are /24 and a device on a wider subnet still reaches a /24 inside
+// it; .254 and .1 are left alone, being where a site's router usually is.
+//
 // ── THE PORT SCAN ──────────────────────────────────────────────────────────
 //
 // Which management ports each client answers on: SSH, telnet and web, so the
@@ -172,6 +193,8 @@ const STATE = '/etc/pulzr/lan';
 const JOURNAL = STATE + '/forwards.log';
 const SEEN = STATE + '/seen.json';
 const WIRE_ONLY_MAX = 8;
+const LEARN = 'pulzr_lan_learn';
+const PROBES = 8;
 const EXTRA = 'devlan_extra';
 const MAX_EXTRA = 8;
 // Subnets another subnet on the bridge may not touch even while they are
@@ -295,6 +318,57 @@ let clientIp = (ip) => {
 };
 
 let bridge = () => cursor.get('network', 'devlan_dev', 'name') ?? 'br-devlan';
+
+let intToIp = (n) => sprintf('%d.%d.%d.%d', (n >> 24) & 255, (n >> 16) & 255, (n >> 8) & 255, n & 255);
+
+// The learning table, and which ports it reads: the bridge's members now.
+// Refilled with the isolation flags, on every ifup and every port that
+// comes back.
+let learnTable = () => sprintf(`
+table bridge ${LEARN} {
+	set lan_ports { type ifname; }
+	set wire4 { type ether_addr . ipv4_addr; flags dynamic, timeout; timeout 30m; size 512; }
+	chain learn {
+		type filter hook prerouting priority filter; policy accept;
+		iifname @lan_ports ether type arp arp saddr ip != 0.0.0.0 update @wire4 { arp saddr ether . arp saddr ip }
+	}
+}
+`);
+
+let ensureLearn = () => {
+    if (!length(capture(['nft', 'list', 'set', 'bridge', LEARN, 'wire4'])) && !nftScript(learnTable()))
+        return false;
+    let ports = map(cursor.get('network', 'devlan_dev', 'ports') ?? [], (p) => sprintf('"%s"', p));
+    return nftScript(sprintf('flush set bridge %s lan_ports\n', LEARN) +
+                     (length(ports) ? sprintf('add element bridge %s lan_ports { %s }\n', LEARN, join(', ', ports)) : ''));
+};
+
+// {mac: {ip, left}}: each device's address as its own ARP said it, the most
+// recently heard where it said more than one.
+let learned = () => {
+    let out = {};
+    let doc = captureJson(['nft', '-j', 'list', 'set', 'bridge', LEARN, 'wire4']);
+    for (let item in doc?.nftables ?? [])
+        for (let e in item.set?.elem ?? []) {
+            let key = (e.elem ? e.elem.val : e)?.concat;
+            let mac = normalMac(key?.[0]), ip = key?.[1];
+            if (!mac || ipToInt(ip) == null) continue;
+            let left = e.elem?.expires ?? 0;
+            if (!out[mac] || left > out[mac].left) out[mac] = { ip, left };
+        }
+    return out;
+};
+
+// A client address, or the reason it is not one.
+let needClient = (ip) => {
+    if (clientIp(ip)) return;
+    if (ipToInt(ip) == null) die('an IPv4 address', 2);
+    for (let x in [lanNet(), ...extraNets()])
+        if (ipToInt(ip) == x.addr || (ipToInt(ip) & x.mask) == x.net)
+            die(sprintf('%s is the gateway\'s own or not a host address', ip), 2);
+    die(sprintf('%s is on no subnet of the LAN: add one for it first', ip), 3);
+};
+
 
 // ── the table ─────────────────────────────────────────────────────────────
 
@@ -874,7 +948,23 @@ let status = () => {
     // there. Capped: a LAN port cabled into a site switch learns every MAC
     // on that network, and the whole answer has to stay under the MQTT
     // agent's 8 KB.
-    let behind = ports(), unknown = 0;
+    let unknown = 0;
+
+    // What each device's own ARP says its address is (see WHAT A DEVICE SAYS
+    // ON THE WIRE). A client with no lease, reservation or neighbour entry
+    // takes it as its address, marked learned, and onLan says whether any
+    // subnet of the LAN holds it: the console offers to add one when not.
+    let wire = learned();
+    for (let mac in sort(keys(wire))) {
+        if (!clients[mac] && unknown++ >= WIRE_ONLY_MAX) continue;
+        let c = client(mac);
+        if (c.ip) continue;
+        c.ip = wire[mac].ip;
+        c.learned = true;
+        c.onLan = clientIp(c.ip);
+    }
+
+    let behind = ports();
     for (let mac in sort(keys(behind)))
         if (!clients[mac] && unknown++ < WIRE_ONLY_MAX) client(mac);
     for (let mac in keys(clients))
@@ -901,10 +991,10 @@ let status = () => {
         clients: sort(values(clients), (a, b) => (a.ip ?? '') < (b.ip ?? '') ? -1 : 1),
         forwards: forwards(),
         exposed: exposed(),
+        addresses: map(extraNets(), (n) => n.text),
         // Where exposed ports answer now: the wired and WiFi uplinks'
         // addresses. A private one is behind a site router, which has to
         // forward to it as well.
-        addresses: map(extraNets(), (n) => n.text),
         exposedOn: map(links().expose, (e) => ({ uplink: e.uplink, address: e.address })),
         journal: journalTail(),
         scannedAt: readScan().at ?? null,
@@ -921,6 +1011,7 @@ let isolate = () => {
         let flag = sprintf('/sys/class/net/%s/brport/isolated', port);
         if (fs.access(flag)) fs.writefile(flag, '1');
     }
+    ensureLearn() || warn('could not load the learning table\n');
 };
 
 // A reservation an exposed port points at stays where it is: moved or
@@ -981,9 +1072,9 @@ let commands = {
         if (length(capture(['nft', 'list', 'set', 'inet', TABLE, 'usage_up'])) && fs.access(USAGE_SAVED))
             fs.unlink(USAGE_SAVED);
         ensureTable() || die('could not load the nftables table');
+        isolate();
         loadSets() || die('could not load the exposed ports and cellular rules');
         applyPolicy();
-        isolate();
     },
 
     isolate: () => isolate(),
@@ -991,6 +1082,24 @@ let commands = {
     // Another subnet on the bridge, for devices with static addresses.
     address: (op, text) => {
         lanNet() || die('no LAN on this gateway');
+        if (op == 'for') {
+            let device = ipToInt(text) ?? die('a device\'s IPv4 address', 2);
+            clientIp(text) && die(sprintf('%s is already on the LAN', text), 3);
+            let net = device & 0xffffff00, taken = {}, pick = null, probes = 0;
+            let wire = learned();
+            for (let mac in keys(wire)) taken[wire[mac].ip] = true;
+            let why = refuseExtra(cidr(intToIp(net | 253) + '/24'));
+            why && die(sprintf('%s/24 %s', intToIp(net), why), 3);
+            for (let host = 253; host >= 2 && pick == null && probes < PROBES; host--) {
+                let ip = intToIp(net | host);
+                if ((net | host) == device || taken[ip]) continue;
+                probes++;
+                if (system(['arping', '-D', '-q', '-I', bridge(), '-c', '2', '-w', '2', ip]) == 0) pick = ip;
+            }
+            pick ?? die(sprintf('no free address in %s/24 after %d probes', intToIp(net), probes), 3);
+            op = 'add';
+            text = pick + '/24';
+        }
         let n = cidr(text) ?? die('an address and prefix, like 10.0.0.2/24', 2);
         let have = extraNets();
         if (op == 'add') {
@@ -1010,12 +1119,12 @@ let commands = {
                 if ((ipToInt(e.ip) & n.mask) == n.net) die(sprintf('%s has exposed ports; remove them first', e.ip), 3);
             have = kept;
         } else {
-            die('address add|remove <a.b.c.d/nn>', 2);
+            die('address add|remove <a.b.c.d/nn> | address for <device ip>', 2);
         }
         let texts = map(have, (x) => x.text);
         saveExtra(texts);
         log(sprintf('address %s %s', op, n.text));
-        printf('%J\n', { addresses: texts });
+        printf('%J\n', { addresses: texts, address: n.text });
     },
 
     // An uplink came up, went down or changed address (hotplug).
@@ -1057,7 +1166,7 @@ let commands = {
         port = match(port ?? '', /^[0-9]{1,5}$/) ? int(port) : 0;
         (port >= 1 && port <= 65535) || die('a port from 1 to 65535', 2);
         (port in RESERVED[proto]) && die(sprintf('%s %d is the gateway\'s own', proto, port), 3);
-        clientIp(ip) || die('an address on the LAN, other than the gateway', 2);
+        needClient(ip);
         dport = dport == null ? port : (match(dport, /^[0-9]{1,5}$/) ? int(dport) : 0);
         (dport >= 1 && dport <= 65535) || die('a client port from 1 to 65535', 2);
         let reserved = false;
@@ -1093,7 +1202,7 @@ let commands = {
 
     reserve: (mac, ip, name) => {
         mac = normalMac(mac) ?? die('a MAC address, like 00:11:22:33:44:55', 2);
-        clientIp(ip) || die('an address on the LAN, other than the gateway', 2);
+        needClient(ip);
         (name == null || match(name, /^[A-Za-z0-9-]{1,63}$/)) || die('a name is letters, digits and hyphens', 2);
         let section = 'lan_' + macId(mac);
         keepExposed(cursor.get('dhcp', section, 'ip'), ip);
@@ -1129,7 +1238,7 @@ let commands = {
     },
 
     forward: (ip, port, seconds, id) => {
-        clientIp(ip) || die('an address on the LAN, other than the gateway', 2);
+        needClient(ip);
         port = match(port ?? '', /^[0-9]{1,5}$/) ? int(port) : 0;
         (port >= 1 && port <= 65535) || die('a port from 1 to 65535', 2);
         seconds = match(seconds ?? '', /^[0-9]{1,6}$/) ? int(seconds) : 0;

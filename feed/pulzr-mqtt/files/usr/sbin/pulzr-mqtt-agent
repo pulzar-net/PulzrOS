@@ -335,8 +335,11 @@ dispatch() {
                 out="$(lan reserve "$(field mac)" "$(field ip)")"
             fi || { echo "${out}"; return 1; } ;;
         # Another subnet on the LAN bridge, or with remove true, the end of one.
+        # `for` a device's address: the gateway picks its own in that subnet.
         lan-address)
-            if [ "$(field remove)" = "true" ]; then
+            if [ -n "$(field for)" ]; then
+                out="$(lan address for "$(field for)")"
+            elif [ "$(field remove)" = "true" ]; then
                 out="$(lan address remove "$(field address)")"
             else
                 out="$(lan address add "$(field address)")"
