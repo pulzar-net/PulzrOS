@@ -262,6 +262,14 @@ being joined to eduroam. Each switch (from, to, the failing step, how long it
 waited) is kept in `/var/run/pulzr/wifi-roams.json`, the last ten, which the
 console shows while the gateway is still on the network it moved to.
 
+`offline` for three minutes while still associated, the station's radio is
+taken down and brought up again (`network.wireless` down, then up), at most
+once every 30 minutes and never on a radio carrying the setup AP; the log
+says `offline for N s while associated, restarting radio0`. A site with one
+network has nowhere to roam to, and an associated station with an address
+is one netifd leaves alone: a GL-SFT1200 sat that way, its router's DNS not
+answering it, while a laptop on the same router was fine.
+
 ### Cellular comes back on its own
 
 `pulzr-cellular-watchdog` keeps the cellular link carrying traffic. It was

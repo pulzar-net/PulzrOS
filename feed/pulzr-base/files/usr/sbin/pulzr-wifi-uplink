@@ -94,6 +94,22 @@
 # when the answer changes. Until the first answer the WiFi is not usable — the
 # console joins a network at metric 30 for the same reason — and the hotplug
 # handler asks within seconds of the link coming up.
+#
+# ── ASSOCIATED, ADDRESSED, AND DEAD ────────────────────────────────────────
+#
+# Offline for BOUNCE_AFTER while still associated, the station's radio is
+# taken down and brought up again: a new association, a new lease. Nothing
+# else here would ever do it. netifd sees an interface with an address and
+# leaves it be; roam() only moves to another remembered network, and a site
+# with one network has none. Cigar Curer (GL-SFT1200, rc.12) sat associated
+# to its router at -47 dBm with 192.168.1.12, and the router's own DNS did
+# not answer it, from 17:33 until somebody looked, while a laptop on the same
+# router was fine. Not again for BOUNCE_EVERY (its own file: the answer goes
+# when the station does, and the restart is exactly that),
+# so a network whose internet really is gone (the ISP, not us) costs its
+# access points one restart every half hour, not one a minute. Not on a radio
+# carrying the setup AP: whoever is on it is fixing this already, and a
+# portal is not this (it answers; signing in is what it needs).
 
 . /lib/functions/network.sh
 . /usr/share/libubox/jshn.sh
@@ -115,6 +131,8 @@ PROBE_URL="${PULZR_WIFI_PROBE_URL:-http://connectivitycheck.gstatic.com/generate
 PROBE_URL2="${PULZR_WIFI_PROBE_URL2:-http://cp.cloudflare.com/generate_204}"
 TLS_URL="${PULZR_WIFI_TLS_URL:-https://cp.cloudflare.com/generate_204}"
 OPEN_METRIC=15
+BOUNCE_AFTER="${PULZR_WIFI_BOUNCE_AFTER:-180}"
+BOUNCE_EVERY="${PULZR_WIFI_BOUNCE_EVERY:-1800}"
 HELD_METRIC=30
 
 log() { logger -t wifi-uplink -p daemon.info "$*"; }
@@ -241,9 +259,25 @@ probe() {
     return 0
 }
 
+# The station's radio down and up again. down returns before netifd has
+# finished, and an up while it is still going down is dropped, so this waits
+# for the radio to read down first.
+bounce() {
+    local radio
+    radio="$(uci -q get "wireless.${SECTION}.device")"
+    case "${radio}" in ''|*[!A-Za-z0-9_]*) return 0 ;; esac
+    log "${LABEL} ${net}: offline for $((now - since)) s while associated, restarting ${radio}"
+    ubus call network.wireless down "{\"device\":\"${radio}\"}" >/dev/null 2>&1
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+        sleep 1
+        [ "$(ubus call network.wireless status 2>/dev/null | jsonfilter -e "@.${radio}.up" 2>/dev/null)" = true ] || break
+    done
+    ubus call network.wireless up "{\"device\":\"${radio}\"}" >/dev/null 2>&1
+}
+
 check() {
     local dev gw servers verdict step host detail url hijack now previous since net reason \
-          f_verdict f_step f_host f_detail f_url target unchanged
+          f_verdict f_step f_host f_detail f_url target unchanged bounced restart
 
     # No WiFi uplink, or not associated: nothing to ask, and no answer to keep.
     # The next one belongs to whatever network comes up next.
@@ -301,12 +335,22 @@ check() {
     reason="${step}${host:+ ${host}}${detail:+: ${detail}}"
     since="$(last since)"
     [ "${verdict}" = "${previous}" ] && [ -n "${since}" ] || since="${now}"
+    bounced="$(cat "${STATE%.json}.bounced" 2>/dev/null)"
+    case "${bounced}" in ''|*[!0-9]*) bounced=0 ;; esac
+    restart=''
+    if [ "${verdict}" = offline ] && [ $((now - since)) -ge "${BOUNCE_AFTER}" ] \
+            && [ $((now - bounced)) -ge "${BOUNCE_EVERY}" ] \
+            && [ "$(uci -q get wireless.parkeze_ap.device)" != "$(uci -q get "wireless.${SECTION}.device")" ]; then
+        restart=1
+        echo "${now}" > "${STATE%.json}.bounced"
+    fi
     [ "${previous}" = "${verdict}" ] && [ "$(last step)$(last host)$(last detail)" = "${step}${host}${detail}" ] \
         && unchanged=1 || unchanged=''
     write
 
     if [ "${verdict}" = open ]; then set_metric "${OPEN_METRIC}"
     else set_metric "${HELD_METRIC}"; fi
+    [ -n "${restart}" ] && bounce
 
     [ -n "${unchanged}" ] && return 0
     if [ "${verdict}" = "${previous}" ]; then

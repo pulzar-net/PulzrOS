@@ -165,6 +165,33 @@ echo '{"state":"offline","ssid":"Guest","since":1,"checkedAt":1}' > "${T}/run/wi
 up check
 check "another network's verdict is not carried over" "yes" "$([ "$(field since)" -gt 1 ] && echo yes || echo no)"
 
+# Associated and dead: the radio restarted once it has been offline long
+# enough, and not again until BOUNCE_EVERY has passed.
+dead() {
+    reset; export "CURL_http_${G}=28 000 0 0" "CURL_http_${C}=28 000 0 0" "CURL_https_${C}=28 000 0 0"
+    echo "{\"state\":\"offline\",\"ssid\":\"eduroam\",\"step\":\"connect_timeout\",\"since\":$(( $(date +%s) - $1 )),\"checkedAt\":1}" \
+        > "${T}/run/wifi-uplink.json"
+    : > "${T}/events"; : > "${T}/log"
+}
+rm -f "${T}/run/wifi-uplink.bounced"
+dead 60; up check
+check "offline a minute: the radio left alone" "" "$(grep wireless "${T}/events" || true)"
+dead 200; up check
+check "offline three minutes while associated: the radio down, then up" \
+    "network.wireless down|network.wireless up" "$(grep wireless "${T}/events" | paste -sd'|' -)"
+check "the restart logged, with how long" \
+    "WiFi uplink eduroam: offline for 200 s while associated, restarting radio0" \
+    "$(grep restarting "${T}/log")"
+dead 400; up check
+check "restarted a minute ago: not again" "" "$(grep wireless "${T}/events" || true)"
+rm -f "${T}/run/wifi-uplink.bounced"
+dead 400; WIFI_AP_RADIO=radio0 up check
+check "the setup AP on that radio: left alone" "" "$(grep wireless "${T}/events" || true)"
+rm -f "${T}/run/wifi-uplink.bounced"
+dead 400; export "CURL_http_${G}=0 302 0.01 0 https://portal.example/login"; up check
+check "a portal: left alone" "portal " "$(field state) $(grep wireless "${T}/events" || true)"
+rm -f "${T}/run/wifi-uplink.bounced"
+
 reset; WIFI_DEV='' up check
 check "not associated: no answer kept" "gone" "$([ -f "${T}/run/wifi-uplink.json" ] && echo kept || echo gone)"
 

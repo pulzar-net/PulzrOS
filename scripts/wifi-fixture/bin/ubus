@@ -4,5 +4,7 @@ case "$1 $2 $3" in
     "call network.interface.wwifi status") cat "${T}/wwifi.json" ;;
     "call iwinfo scan") cat "${T}/scan.json" ;;
     "call network reload") echo reload >> "${T}/events" ;;
+    "call network.wireless down"|"call network.wireless up") echo "$2 $3" >> "${T}/events" ;;
+    "call network.wireless status") echo '{"radio0":{"up":false}}' ;;
     *) exit 4 ;;
 esac
