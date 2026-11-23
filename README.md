@@ -1,8 +1,9 @@
 <p align="center">
-  <img src="console/public/icon.svg" alt="PulzrOS" width="96" height="96">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/pulzros-dark.svg">
+    <img src="docs/assets/pulzros-light.svg" alt="PulzrOS" width="352">
+  </picture>
 </p>
-
-<h1 align="center">PulzrOS</h1>
 
 <p align="center">
   The open gateway OS for LoRaWAN, Bluetooth LE and IP devices, built on OpenWrt.
@@ -12,7 +13,7 @@
   <a href="https://github.com/pulzar-net/PulzrOS/actions/workflows/build.yml"><img src="https://github.com/pulzar-net/PulzrOS/actions/workflows/build.yml/badge.svg?branch=main" alt="Build"></a>
   <a href="https://github.com/pulzar-net/PulzrOS/releases"><img src="https://img.shields.io/github/v/release/pulzar-net/PulzrOS?include_prereleases&sort=semver" alt="Release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/pulzar-net/PulzrOS" alt="License: Apache-2.0"></a>
-  <a href="https://oss.pulzr.net/PulzrOS/"><img src="https://img.shields.io/badge/docs-oss.pulzr.net-4f46e5" alt="Docs"></a>
+  <a href="https://oss.pulzr.net/PulzrOS/"><img src="https://img.shields.io/badge/docs-oss.pulzr.net-047857" alt="Docs"></a>
 </p>
 
 <p align="center">
