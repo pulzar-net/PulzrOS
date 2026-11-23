@@ -18,6 +18,7 @@ import PasswordPrompt from '@/components/PasswordPrompt';
  * difference between parsing one page and parsing seven is visible.
  */
 const Backhaul = lazy(() => import('@/pages/backhaul/Backhaul'));
+const Network = lazy(() => import('@/pages/network/Network'));
 const Ethernet = lazy(() => import('@/pages/backhaul/Ethernet'));
 const Cellular = lazy(() => import('@/pages/backhaul/Cellular'));
 const Wifi = lazy(() => import('@/pages/backhaul/Wifi'));
@@ -101,7 +102,7 @@ export default function App() {
         <Route path="lorawan/forwarders" element={<Navigate to="/lorawan/forwarders/1/status" replace />} />
         <Route path="lorawan/forwarders/:forwarder/:tab" element={<Gated feature="lorawan"><Forwarders /></Gated>} />
         <Route path="lorawan/settings" element={<Gated feature="lorawan"><LorawanSettings /></Gated>} />
-        <Route path="network" element={<Navigate to="/network/ports" replace />} />
+        <Route path="network" element={<Network />} />
         <Route path="network/ports" element={<Ports />} />
         <Route path="network/lan" element={<Gated feature="lan"><Lan /></Gated>} />
         <Route path="network/dns" element={<Gated feature="dns"><Dns /></Gated>} />

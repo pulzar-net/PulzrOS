@@ -48,7 +48,7 @@ export interface NavEntry {
   feature?: Feature;
   children?: NavChild[];
   /** Its own path is a page too, over its children: Backhaul's list of
-      every connection. */
+      every connection, Network's ports and clients. */
   overview?: boolean;
   /** Uses the whole window rather than the reading column — a table that
       needs every column it can get. */
@@ -84,6 +84,7 @@ export const NAV_GROUPS: NavGroup[] = [
         path: '/network',
         label: 'Network',
         icon: Router, tone: 'violet',
+        overview: true,
         children: [
           { path: '/network/ports', label: 'Ports', wide: true },
           { path: '/network/lan', label: 'LAN', feature: 'lan', wide: true },
