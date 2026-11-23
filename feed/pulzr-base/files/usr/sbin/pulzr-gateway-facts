@@ -64,6 +64,15 @@ fi
 # not in it.
 echo "features=$(echo ${PULZR_FEATURES} | tr ' ' ',')"
 
+# The Wi-Fi bands its radios have, as 2g,5g,6g: what the gateway's page lists
+# beside the other standards. From `iw phy` (nl80211's band numbers: 1 is
+# 2.4 GHz, 2 is 5, 4 is 6), as the console's radios page reads it.
+if command -v iw >/dev/null 2>&1; then
+    bands="$(iw phy 2>/dev/null | sed -n 's/^[[:space:]]*Band \([124]\):.*/\1/p' | sort -u \
+        | sed 's/^1$/2g/; s/^2$/5g/; s/^4$/6g/' | tr '\n' ',')"
+    [ -n "${bands}" ] && echo "wifi_bands=${bands%,}"
+fi
+
 # The unit as its maker recorded it, where it did (pulzr-hwdesc): which of
 # a model's builds this is, the serial on its label, and its capabilities.
 if hw="$(pulzr-hwdesc get DEV_NAME 2>/dev/null)" && [ -n "${hw}" ]; then

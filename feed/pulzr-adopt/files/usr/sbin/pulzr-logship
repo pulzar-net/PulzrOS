@@ -1,0 +1,218 @@
+#!/bin/sh
+#
+# Send this gateway's system log to Pulzar Cloud, where its page keeps it.
+#
+#   pulzr-logship           follow the log and send it, until killed (procd)
+#   pulzr-logship filter    `logread -t` lines on stdin into the spool
+#   pulzr-logship flush     send what is spooled, once
+#
+# ── WHY ────────────────────────────────────────────────────────────────────
+#
+# The log is in RAM and gone at the next boot, which is when it mattered: a
+# gateway that rebooted itself out of a bad uplink has nothing left to say
+# about it. Reading it meant support opening SSH to it (pulzr-logs), over its
+# SIM if that was the path, after the fact.
+#
+# ── WHAT IS SENT ───────────────────────────────────────────────────────────
+#
+# Lines at `pulzr.logship.level` and worse, notice by default: what daemons
+# say when something changes or fails, not their chatter. Debug and info stay
+# here for pulzr-logs. Its own lines are never sent, so a failure to send is
+# not a line to send.
+#
+# Each line is stamped from logd's own clock (`logread -t`), not parsed out of
+# the local-time date in front of it. A gateway before NTP has a 1970 clock;
+# Pulzar Cloud files those at the time they arrive.
+#
+# ── WHAT IT COSTS ──────────────────────────────────────────────────────────
+#
+# Held to a token bucket: 60 lines at once, then 10 a minute (600 an hour).
+# A daemon in a crash loop costs that and one line saying how many more there
+# were. Sent every minute, or every five on a metered uplink, or sooner once
+# 100 lines are waiting: one HTTPS POST each, which on a SIM is the cost that
+# counts. Pulzar Cloud has its own ceiling as well, whatever firmware sends.
+#
+# Proved the way a report is, by the claim secret (pulzr-claim syslog), over
+# the same HTTPS: no second credential, no second connection held open.
+#
+# A batch that does not get through is kept and sent with the next, up to
+# 1000 lines; past that the oldest batch is dropped and counted.
+
+RUN="${PULZR_LOGSHIP_DIR:-/var/run/pulzr/logship}"
+SPOOL="${RUN}/spool"
+CLAIM="${PULZR_CLAIM:-/usr/sbin/pulzr-claim}"
+BURST="${PULZR_LOGSHIP_BURST:-60}"
+PER_MINUTE="${PULZR_LOGSHIP_PER_MINUTE:-10}"
+BATCH=100
+KEEP=1000
+
+log() { logger -t logship -p daemon.info "$*"; }
+
+# emerg 0 .. debug 7, as syslog numbers them.
+severity() {
+    case "$1" in
+        emerg|panic) echo 0 ;; alert) echo 1 ;; crit) echo 2 ;; err|error) echo 3 ;;
+        warn|warning) echo 4 ;; notice) echo 5 ;; info) echo 6 ;; debug) echo 7 ;;
+        *) echo 5 ;;
+    esac
+}
+
+# `logread -t` lines, as ubox's logread writes them:
+#   Sun Nov 22 18:00:00 2026 [1795370400.123] daemon.notice netifd: Interface 'wan' is up
+# into one JSON object a line. Control characters are gone before this (tr in
+# run()); a backslash and a quote are escaped here, and the rest is plain text.
+filter() {
+    mkdir -p "${RUN}"
+    awk -v max="$(severity "$(uci -q get pulzr.logship.level || echo notice)")" \
+        -v burst="${BURST}" -v rate="${PER_MINUTE}" -v spool="${SPOOL}" \
+        -v lastfile="${RUN}/last" '
+    function sev(w) {
+        if (w == "emerg" || w == "panic") return 0
+        if (w == "alert") return 1
+        if (w == "crit") return 2
+        if (w == "err" || w == "error") return 3
+        if (w == "warn" || w == "warning") return 4
+        if (w == "notice") return 5
+        if (w == "info") return 6
+        return 7
+    }
+    function esc(s) {
+        gsub(/\\/, "\\\\", s)
+        gsub(/"/, "\\\"", s)
+        gsub(/\t/, " ", s)
+        return s
+    }
+    BEGIN {
+        tokens = burst
+        last = 0
+        if ((getline seen < lastfile) > 0) last = seen + 0
+        close(lastfile)
+    }
+    {
+        if ($6 !~ /^\[[0-9]+\.[0-9]+\]$/) next
+        stamp = substr($6, 2, length($6) - 2) + 0
+        t = int(stamp)
+        n = split($7, fp, ".")
+        if (n != 2) next
+        lvl = fp[2]
+        if (sev(lvl) > max + 0) next
+        # Already sent before a restart of this service: the log is replayed
+        # in full when it starts following. To the millisecond, so a line in
+        # the same second as the last one sent is not lost or sent twice.
+        if (stamp <= last) next
+
+        rest = $0
+        sub(/^[^[]*\[[0-9]+\.[0-9]+\] [^ ]+ /, "", rest)
+        tag = ""
+        if (match(rest, /^[^ :]+: /)) {
+            tag = substr(rest, 1, RLENGTH - 2)
+            rest = substr(rest, RLENGTH + 1)
+            sub(/\[[0-9]+\]$/, "", tag)
+        }
+        if (tag == "logship") next
+
+        if (seen_t != "") {
+            tokens += (t - seen_t) * rate / 60
+            if (tokens > burst) tokens = burst
+        }
+        seen_t = t
+        if (tokens < 1) { dropped++; next }
+        tokens -= 1
+
+        if (dropped) {
+            printf "{\"dropped\":%d}\n", dropped >> spool
+            dropped = 0
+        }
+        printf "{\"t\":%d,\"l\":\"%s\",\"tag\":\"%s\",\"msg\":\"%s\"}\n", \
+            t, lvl, esc(substr(tag, 1, 64)), esc(substr(rest, 1, 1000)) >> spool
+        # Closed every line, so flush() can move the file out from under it.
+        close(spool)
+        printf "%.3f\n", stamp > lastfile
+        close(lastfile)
+    }
+    END {
+        if (dropped) { printf "{\"dropped\":%d}\n", dropped >> spool; close(spool) }
+    }'
+}
+
+# The uplink in use is metered (a SIM): send less often.
+metered() {
+    local active
+    active="$(pulzr-uplinks status 2>/dev/null)" || return 1
+    [ "$(echo "${active}" | jsonfilter -e "@.uplinks[@.iface='$(echo "${active}" | jsonfilter -e '@.active' 2>/dev/null)'].metered" 2>/dev/null)" = true ]
+}
+
+# Everything waiting, oldest first, as one request: {"lines":[...],"dropped":n}.
+flush() {
+    mkdir -p "${RUN}"
+    # Taken first, so lines written while this sends start a new spool.
+    [ -s "${SPOOL}" ] && mv "${SPOOL}" "${RUN}/batch.$(date +%s).$$"
+    set -- "${RUN}"/batch.*
+    [ -e "$1" ] || return 0
+
+    # Over KEEP waiting (Pulzar Cloud unreachable for a long while): the
+    # oldest batches go, counted, so what is sent last is the latest.
+    local total=0 count lost=0 f
+    for f in $(ls -r "${RUN}"/batch.*); do
+        count="$(grep -c '"t":' "${f}")"
+        if [ $((total + count)) -gt "${KEEP}" ]; then
+            lost=$((lost + count))
+            rm -f "${f}"
+        else
+            total=$((total + count))
+        fi
+    done
+
+    local body="${RUN}/body.$$"
+    set -- "${RUN}"/batch.*
+    [ -e "$1" ] || return 0
+    cat "$@" | awk -v lost="${lost}" '
+        /^\{"dropped":/ { n = $0; gsub(/[^0-9]/, "", n); dropped += n; next }
+        /^\{"t":/       { lines = lines (lines == "" ? "" : ",") $0 }
+        END { printf "\"lines\":[%s],\"dropped\":%d", lines, dropped + lost }
+    ' > "${body}"
+
+    if "${CLAIM}" syslog "${body}" >/dev/null 2>&1; then
+        rm -f "$@"
+    fi
+    rm -f "${body}"
+}
+
+run() {
+    [ "$(uci -q get pulzr.adoption.state)" = "adopted" ] || { log "not adopted; nothing to send to"; exit 0; }
+    mkdir -p "${RUN}"
+
+    # The sender: every ten seconds, look; send at the interval or at BATCH.
+    (
+        sent="$(date +%s)"
+        while sleep 10; do
+            now="$(date +%s)"
+            waiting="$(cat "${SPOOL}" 2>/dev/null | grep -c '"t":')"
+            interval=60
+            metered && interval=300
+            if [ "${waiting:-0}" -ge "${BATCH}" ] || [ $((now - sent)) -ge "${interval}" ]; then
+                flush
+                sent="${now}"
+            fi
+        done
+    ) &
+    sender=$!
+
+    # Control characters out before awk: they are not valid in a JSON string,
+    # and nothing a person reads needs them. In the background and waited
+    # for, so procd's TERM reaches this shell's trap at once and the pipeline
+    # follows: logread and tr end on their next write (SIGPIPE). Not killall:
+    # another logread may be the log service's own remote sender.
+    logread -f -t | tr -d '\000-\010\013-\037\177' | filter &
+    follower=$!
+    trap 'kill "${sender}" "${follower}" 2>/dev/null; exit 0' INT TERM
+    wait "${follower}"
+    kill "${sender}" 2>/dev/null
+}
+
+case "${1:-run}" in
+    run)    run ;;
+    filter) filter ;;
+    flush)  flush ;;
+    *)      echo "usage: pulzr-logship [run|filter|flush]" >&2; exit 2 ;;
+esac

@@ -59,6 +59,7 @@ EOF
     /etc/init.d/pulzr-wireguard stop >/dev/null 2>&1
     /etc/init.d/pulzr-mqtt-agent stop >/dev/null 2>&1
     /etc/init.d/pulzr-report stop >/dev/null 2>&1
+    /etc/init.d/pulzr-logship stop >/dev/null 2>&1
     /etc/init.d/pulzr-claim restart >/dev/null 2>&1
     echo "Released. Local sign-in is enabled again."
 }
@@ -244,6 +245,9 @@ EOF
     # a gateway crosses from one to the other.
     /etc/init.d/pulzr-report enable >/dev/null 2>&1
     /etc/init.d/pulzr-report start >/dev/null 2>&1
+    # And its system log starts going where its page can show it.
+    /etc/init.d/pulzr-logship enable >/dev/null 2>&1
+    /etc/init.d/pulzr-logship start >/dev/null 2>&1
 
     logger -t adopt "adopted into ${org}"
     echo "Adopted into ${org}. Local sign-in is now disabled; manage this gateway from Pulzar Cloud."

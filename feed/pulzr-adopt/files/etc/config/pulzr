@@ -34,3 +34,9 @@ config lorawan 'lorawan'
 config mqtt 'mqtt'
 	option host ''
 	option port '8883'
+
+config logship 'logship'
+	# System log lines at this level and worse go to Pulzar Cloud
+	# (pulzr-logship): emerg, alert, crit, err, warning, notice, info, debug.
+	option level 'notice'
+	option enabled '1'

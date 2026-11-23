@@ -848,6 +848,28 @@ radio_backup() {
     [ "${status}" = "200" ] || { log "radio backup refused (${status})"; return 1; }
 }
 
+# System log lines (pulzr-logship), from a file holding the body's
+# `"lines":[...],"dropped":n`. The claim proof goes in front of it in a
+# root-only file curl reads, as with radio_backup: never on a command line.
+# Exits 0 when Pulzar Cloud kept them, 1 otherwise; logship keeps the batch.
+syslog_lines() {
+    local file="$1" body raw status
+    ensure_identity
+    adopted || return 1
+    [ -s "${file}" ] || return 1
+    body="$(umask 077; mktemp)" || return 1
+    {
+        printf '{"claimId":"%s","secret":"%s",' "$(claim_id)" "$(secret_in "${STATE}")"
+        cat "${file}"
+        printf '}'
+    } > "${body}"
+    raw="$(curl -sS --max-time 30 -w '\n%{http_code}' -X POST "${NET_URL}/api/v1/gateway-ops/syslog" \
+        -H 'Content-Type: application/json' --data-binary "@${body}" 2>&1)"
+    rm -f "${body}"
+    status="$(echo "${raw}" | tail -n1)"
+    [ "${status}" = "200" ]
+}
+
 # Exits 0 when accepted, 3 when Pulzar Cloud says the claim is revoked, 1 for
 # anything else, including no answer.
 report() {
@@ -970,11 +992,12 @@ case "${1:-status}" in
     report)   report ;;
     radios)   radios ;;
     radio-backup) radio_backup "$2" "$3" ;;
+    syslog)   syslog_lines "$2" ;;
     tunnel-test) tunnel_test "$2" ;;
     apply)    apply_offline "$2" ;;
     reset)    reset_claim ;;
     reclaiming)   reclaiming ;;
     backoff)      backoff ;;
     note-revoked) note_revoked ;;
-    *)        die "usage: pulzr-claim {status|qr|register|poll|report|radios|tunnel-test|apply|reset|reclaiming|backoff|note-revoked}" ;;
+    *)        die "usage: pulzr-claim {status|qr|register|poll|report|radios|syslog|tunnel-test|apply|reset|reclaiming|backoff|note-revoked}" ;;
 esac
