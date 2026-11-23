@@ -177,7 +177,7 @@ case "${1:-}" in
         exit 0
         ;;
     --held)
-        read -r until < "${HOLD_FILE}" 2>/dev/null || exit 1
+        read -r until 2>/dev/null < "${HOLD_FILE}" || exit 1
         [ "$(uptime_seconds)" -lt "${until:-0}" ]
         exit $?
         ;;

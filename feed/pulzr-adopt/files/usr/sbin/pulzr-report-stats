@@ -37,13 +37,13 @@ num() { case "$1" in ''|*[!0-9]*) return 1 ;; esac; }
 # ── CPU ─────────────────────────────────────────────────────────────────────
 cpu() {
     local up up_prev t_prev idle_prev name u n s i io irq sirq st total idle dt di tenths
-    read -r up _ < "${PROC}/uptime" 2>/dev/null || return
+    read -r up _ 2>/dev/null < "${PROC}/uptime" || return
     up="${up%%.*}"
-    read -r name u n s i io irq sirq st _ < "${PROC}/stat" 2>/dev/null || return
+    read -r name u n s i io irq sirq st _ 2>/dev/null < "${PROC}/stat" || return
     [ "${name}" = cpu ] || return
     total=$(( ${u:-0} + ${n:-0} + ${s:-0} + ${i:-0} + ${io:-0} + ${irq:-0} + ${sirq:-0} + ${st:-0} ))
     idle=$(( ${i:-0} + ${io:-0} ))
-    if read -r up_prev t_prev idle_prev < "${STATE}" 2>/dev/null \
+    if read -r up_prev t_prev idle_prev 2>/dev/null < "${STATE}" \
         && num "${up_prev}" && num "${t_prev}" && num "${idle_prev}" \
         && [ "${up}" -ge "${up_prev}" ]; then
         # Younger than a minute: keep the earlier sample and say nothing.
@@ -75,7 +75,7 @@ temperature() {
     local zone raw
     for zone in "${SYS}"/class/thermal/thermal_zone*/temp; do
         [ -r "${zone}" ] || continue
-        read -r raw < "${zone}" 2>/dev/null || continue
+        read -r raw 2>/dev/null < "${zone}" || continue
         case "${raw}" in ''|*[!0-9-]*|-) continue ;; esac
         # Millidegrees, which is what the kernel's thermal ABI says.
         add "\"temperatureC\":$(awk -v t="${raw}" 'BEGIN { printf "%.1f", t / 1000 }')"
@@ -161,8 +161,8 @@ traffic() {
         dev="$(printf '%s' "${status}" | jsonfilter -e "@.uplinks[${i}].device" 2>/dev/null)"
         i=$(( i + 1 ))
         case "${dev}" in ''|*[!A-Za-z0-9._-]*) continue ;; esac
-        read -r rx < "${SYS}/class/net/${dev}/statistics/rx_bytes" 2>/dev/null || continue
-        read -r tx < "${SYS}/class/net/${dev}/statistics/tx_bytes" 2>/dev/null || continue
+        read -r rx 2>/dev/null < "${SYS}/class/net/${dev}/statistics/rx_bytes" || continue
+        read -r tx 2>/dev/null < "${SYS}/class/net/${dev}/statistics/tx_bytes" || continue
         num "${rx}" && num "${tx}" || continue
         case "${kind}" in
             ethernet) wired_rx=$(( wired_rx + rx )); wired_tx=$(( wired_tx + tx )); wired_n=$(( wired_n + 1 )) ;;

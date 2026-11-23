@@ -115,5 +115,11 @@ fresh hw
 sh "${LED}" lora on
 check "a plain LED still lights" "1" "$(val green:lora/brightness)"
 
+# The daemon asks every few seconds and there is usually no hold: no file, so
+# no, and nothing in the log (the redirect has to be quiet before it opens).
+rm -rf "${PULZR_LED_CACHE}"
+err="$(sh "${LED}" --held 2>&1)"; rc=$?
+check "--held without a hold is a quiet no" "1 " "${rc} ${err}"
+
 [ "${failures}" -eq 0 ] || { echo "${failures} failed"; exit 1; }
 echo "all passed"
