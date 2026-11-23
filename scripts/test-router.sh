@@ -582,7 +582,7 @@ rm -f "${T}"/nft.set.*
 traffic() { lan status | jq -c --arg m "$1" '[.clients[] | select(.mac == $m)][0].traffic'; }
 counted() {
     local set="$1"; shift
-    jq -nc --args '{nftables: [{set: {name: $ARGS.positional[0], elem: [$ARGS.positional[1:] | _nwise(3) |
+    jq -nc --args '{nftables: [{set: {name: $ARGS.positional[0], elem: [$ARGS.positional[1:] as $a | range(0; $a | length; 3) as $i | $a[$i:$i + 3] |
         {elem: {val: {concat: [.[0], .[1]]}, counter: {packets: 1, bytes: (.[2] | tonumber)}}}]}}]}' \
         "${set}" "$@" > "${T}/nft.set.${set}"
 }
