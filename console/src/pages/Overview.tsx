@@ -38,6 +38,7 @@ import TimeChart, { Legend, type Series } from '@/components/TimeChart';
 import { bitrate, bytes, count, duration, inUnit } from '@/lib/format';
 import { uplinkRows, type LinkRow } from '@/lib/uplinks';
 import { useFeatures } from '@/hooks/useFeatures';
+import { useCellular } from '@/hooks/useCellular';
 import styles from './Overview.module.css';
 
 /**
@@ -55,6 +56,7 @@ const DAY = 86400;
 
 export default function Overview() {
   const features = useFeatures();
+  const cellular = useCellular();
   const summary = useQuery({
     queryKey: ['system-summary'],
     queryFn: () => api.get<SystemSummary>('/system/summary'),
@@ -111,7 +113,7 @@ export default function Overview() {
   const points = history.data?.points ?? [];
   const latest = points.at(-1);
   const links = uplinkRows(
-    { paths: backhaul.data, order: features.has('failover') ? order.data : undefined },
+    { paths: backhaul.data, order: features.has('failover') ? order.data : undefined, cellular: cellular.shown },
     features,
   );
 

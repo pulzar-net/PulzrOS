@@ -53,6 +53,9 @@ export interface LinkSources {
   ports?: PortsStatus;
   access?: AccessStatus;
   network?: NetworkStatus;
+  /** False leaves cellular out: the add-on on a board with no modem plugged
+      in (useCellular). */
+  cellular?: boolean;
 }
 
 const KIND_ICONS: Record<Uplink['kind'], LucideIcon> = {
@@ -127,12 +130,13 @@ export function uplinkRows(
   features: { has: (feature?: Feature) => boolean },
 ): LinkRow[] {
   const { paths, order, ports, network } = sources;
+  const withCellular = sources.cellular !== false;
   if (order) {
     const byIface = new Map(order.uplinks.map((u) => [u.iface, u]));
     const ordered = [
       ...order.order.map((iface) => byIface.get(iface)).filter((u): u is Uplink => !!u),
       ...order.uplinks.filter((u) => !order.order.includes(u.iface)),
-    ];
+    ].filter((u) => withCellular || (u.kind !== 'cellular' && u.kind !== 'usb-cellular'));
     return ordered.map((u) => {
       const active = order.active === u.iface;
       const [tone, state] = trackedState(u, active);
@@ -205,7 +209,7 @@ export function uplinkRows(
       metered: false,
     });
   }
-  if (features.has('cellular')) {
+  if (features.has('cellular') && withCellular) {
     const modem = cellular.modem;
     const usb = modem?.kind === 'hilink' || modem?.kind === 'tether';
     rows.push({

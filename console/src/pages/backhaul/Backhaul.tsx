@@ -44,6 +44,7 @@ import ErrorState from '@/components/ErrorState';
 import ApplyChangeNotice from '@/components/ApplyChangeNotice';
 import { useApplyChange, type Pending } from '@/hooks/useApplyChange';
 import { useFeatures } from '@/hooks/useFeatures';
+import { useCellular } from '@/hooks/useCellular';
 import { duration } from '@/lib/format';
 import { uplinkRows, type LinkRow } from '@/lib/uplinks';
 import pages from '../Pages.module.css';
@@ -75,6 +76,7 @@ const SWITCH = [
 export default function Backhaul() {
   const features = useFeatures();
   const failover = features.has('failover');
+  const cellular = useCellular();
   const queryClient = useQueryClient();
   const change = useApplyChange();
 
@@ -165,6 +167,7 @@ export default function Backhaul() {
       ports: ports.data,
       access: access.data,
       network: network.data,
+      cellular: cellular.shown,
     },
     features,
   );
@@ -187,7 +190,12 @@ export default function Backhaul() {
     const keys = shown.map((row) => row.key);
     const next = arrayMove(keys, keys.indexOf(String(active.id)), keys.indexOf(String(over.id)));
     setDropped(next);
-    save.mutate(next);
+    // An uplink left off the list (cellular with no modem in) keeps its
+    // place: the dropped order fills the places of the ones shown.
+    const visible = new Set(keys);
+    const queue = [...next];
+    const full = order.data?.order ?? keys;
+    save.mutate(full.map((key) => (visible.has(key) ? queue.shift()! : key)));
   };
 
   const latest = new Map<string, SpeedResult>();

@@ -7,6 +7,7 @@ import { NAV, NAV_GROUPS, type NavEntry, type Tone } from '@/nav';
 import RecoveryBanner from './RecoveryBanner';
 import { useSessionCountdown } from '@/hooks/useSessionCountdown';
 import { useFeatures } from '@/hooks/useFeatures';
+import { useCellular } from '@/hooks/useCellular';
 import { countdown } from '@/lib/format';
 import ErrorBoundary from './ErrorBoundary';
 import Spinner from './ui/Spinner';
@@ -22,12 +23,15 @@ export default function Layout({
   const location = useLocation();
   const queryClient = useQueryClient();
   const features = useFeatures();
+  // Cellular's page only while it belongs on screen (useCellular).
+  const cellular = useCellular();
   const available = (entries: NavEntry[]) =>
     entries
       .filter((entry) => features.has(entry.feature))
       .map((entry) => ({
         ...entry,
-        children: entry.children?.filter((child) => features.has(child.feature)),
+        children: entry.children?.filter((child) =>
+          features.has(child.feature) && (child.feature !== 'cellular' || cellular.shown)),
       }))
       .filter((entry) => !entry.children || entry.children.length > 0);
   // A heading whose entries this board has none of goes with them.

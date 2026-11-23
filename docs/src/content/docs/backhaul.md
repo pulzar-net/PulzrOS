@@ -326,6 +326,12 @@ module and checks that the metrics and the tracker follow it.
 A board without `failover` shows the same list with no grips: its order is
 fixed, Ethernet, then WiFi, then cellular.
 
+Cellular is listed where the pulzr-cellular add-on is: always on a board it
+is built into (a soldered modem missing is a fault to see), and on a board
+where it was installed only while a modem is plugged in. With cellular left
+off the list, a drag reorders the rest and cellular keeps its place in the
+saved order. Backhaul > Cellular and Overview's row follow the same rule.
+
 With the `speedtest` feature each row also has its last speed test and a
 button that tests that connection alone, out of its own device, whatever its
 place in the order; a cellular one asks first, with the data it will cost.
