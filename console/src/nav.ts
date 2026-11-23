@@ -55,8 +55,9 @@ export interface NavEntry {
   wide?: boolean;
 }
 
-/** A run of the sidebar under one heading. The first has none: Overview
-    stands above the rest. */
+/** A run of the sidebar under one heading, as app.pulzr.net's sidebar has
+    them. The first has none: Overview and Logs are about all of it, as Map
+    and Logs are there. */
 export interface NavGroup {
   label?: string;
   entries: NavEntry[];
@@ -64,7 +65,10 @@ export interface NavGroup {
 
 export const NAV_GROUPS: NavGroup[] = [
   {
-    entries: [{ path: '/', label: 'Overview', icon: Gauge, tone: 'green' }],
+    entries: [
+      { path: '/', label: 'Overview', icon: Gauge, tone: 'green' },
+      { path: '/logs', label: 'Logs', icon: ScrollText, tone: 'slate', wide: true },
+    ],
   },
   {
     label: 'Connectivity',
@@ -119,7 +123,6 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'Gateway',
     entries: [
       { path: '/io', label: 'Panel', icon: Lightbulb, tone: 'rose' },
-      { path: '/logs', label: 'Logs', icon: ScrollText, tone: 'slate', wide: true },
       {
         path: '/system',
         label: 'System',

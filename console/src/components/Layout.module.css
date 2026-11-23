@@ -35,18 +35,19 @@
   padding: var(--space-2) 10px var(--space-3);
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-3);
 }
 
 .group { display: flex; flex-direction: column; gap: 1px; }
 
 /* A heading over a run of the sidebar: small capitals in the quietest grey,
-   so it orders the list without competing with it. */
+   so it orders the list without competing with it. app.pulzr.net's .navLabel
+   to the pixel, so the two sidebars read as one product. */
 .groupLabel {
-  padding: 10px 10px 5px;
-  font-size: var(--fs-2xs);
+  padding: 8px 10px 4px;
+  font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.07em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-tertiary);
 }
@@ -225,7 +226,10 @@
   }
   .brand { height: 48px; padding: 0 14px; border-bottom: none; border-right: 1px solid var(--rule); flex: 0 0 auto; }
   .nav { flex-direction: row; align-items: center; overflow: visible; padding: 0 8px; gap: 2px; }
-  .group { display: contents; }
+  /* No room for a heading in the strip, so a rule stands in for it, as in
+     app.pulzr.net's collapsed rail. */
+  .group { flex-direction: row; align-items: center; gap: 2px; }
+  .group + .group { border-left: 1px solid var(--rule); padding-left: 6px; margin-left: 4px; }
   .groupLabel { display: none; }
   .navItem { height: 32px; white-space: nowrap; }
   .active::before { left: 10px; right: 10px; top: auto; bottom: -8px; width: auto; height: 2px; border-radius: 2px; }
