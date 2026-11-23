@@ -33,7 +33,8 @@ import styles from '../Pages.module.css';
  * /radios, which is what says a client is on WiFi and on which network: on
  * the LAN bridge a WiFi client is only behind the AP's interface. A station
  * on an AP that is not on the LAN (the setup network) has no lease here and
- * is listed by its MAC alone.
+ * is listed by its MAC alone. Services are the LAN port scan's (pulzr-lan):
+ * what answered among a camera's and a router's usual ports.
  */
 
 interface ClientRow {
@@ -47,7 +48,11 @@ interface ClientRow {
   online: boolean;
   /** Unix seconds. */
   lastSeen: number | null;
+  /** Open ports at the last scan; undefined before one reached it. */
+  services?: number[];
 }
+
+const SERVICES: Record<number, string> = { 22: 'SSH', 23: 'Telnet', 80: 'HTTP', 8080: 'HTTP', 443: 'HTTPS', 8443: 'HTTPS' };
 
 interface PortRow {
   name: string;
@@ -116,6 +121,7 @@ export default function Network() {
         signal: station?.signal ?? null,
         online: c.online || Boolean(station),
         lastSeen: Math.max(c.lastSeen ?? 0, station?.seen ?? 0) || null,
+        services: c.services,
       });
     }
     for (const [mac, s] of stations) {
@@ -158,7 +164,7 @@ export default function Network() {
     clientColumn.accessor((c) => c.where ?? '', {
       id: 'where',
       header: 'On',
-      size: 230,
+      size: 200,
       cell: (info) => {
         const c = info.row.original;
         if (!c.where) return '—';
@@ -169,6 +175,20 @@ export default function Network() {
             {c.signal != null && <span className={styles.dim}>{c.signal} dBm</span>}
           </span>
         );
+      },
+    }),
+    clientColumn.accessor((c) => c.services?.length ?? -1, {
+      id: 'services',
+      header: 'Services',
+      size: 150,
+      cell: (info) => {
+        const open = info.row.original.services;
+        // Absent is a client no scan has reached yet: unknown, not closed.
+        if (!open) return <span className={styles.dim}>—</span>;
+        if (!open.length) return <span className={styles.dim}>None</span>;
+        // The usual port reads as its name; 8080 and 8443 say which.
+        return open.map((port) => (port === 8080 || port === 8443 ? `${SERVICES[port]} ${port}` : SERVICES[port] ?? `${port}`))
+          .join(', ');
       },
     }),
     clientColumn.accessor((c) => (c.online ? Number.MAX_SAFE_INTEGER : (c.lastSeen ?? 0)), {
@@ -249,7 +269,8 @@ export default function Network() {
           {lan.isError
             ? <ErrorState error={lan.error} onRetry={lan.refetch} />
             : clients.length
-              ? <DataTable table={clientTable} fill="name" minWidth={640} />
+              // The fixed columns and room for a name: narrower scrolls.
+              ? <DataTable table={clientTable} fill="name" minWidth={880} />
               : <span className={styles.dim}>No clients yet.</span>}
         </Section>
       )}

@@ -31,7 +31,7 @@ The gateway at a glance: uplink in use, LoRaWAN and radio state, resources, firm
 | **Backhaul > Ethernet** | DHCP or a static address on each wired uplink, and its VLAN | every board |
 | **Backhaul > Cellular** | APN, on or off, signal and the modem's state; which SIM slot on a modem with several | `cellular` |
 | **Backhaul > WiFi** | scan and join a network, see why it is not online, sign in to a captive portal | `wifi` |
-| **Network** | every port with its role, link and speed; every client on the LAN and the access points, with its MAC, address, port or SSID and when it was last seen | every board; clients with `lan` or `wifi` |
+| **Network** | every port with its role, link and speed; every client on the LAN and the access points, with its MAC, address, port or SSID, the services the LAN port scan found open and when it was last seen | every board; clients with `lan` or `wifi` |
 | **Network > Ports** | each port an uplink, a LAN port or unused; tagged VLANs. Undone unless confirmed. | every board |
 | **Network > LAN** | clients, reservations, per-device policy and cellular rule, exposed ports | `lan` |
 | **Network > DNS** | upstream servers, local names, rebind protection, dynamic DNS | `dns` |

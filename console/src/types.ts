@@ -670,6 +670,9 @@ export interface LanClient {
   cellular?: 'allow' | 'block';
   /** Ports refused on cellular while allowed: "tcp:554", "udp:5000-5010". */
   cellularBlock?: string[];
+  /** Open among 22, 23, 80, 443, 8080 and 8443 at the last scan that reached
+      it. Absent until one has: unknown, not closed. */
+  services?: number[];
 }
 
 export interface LanLink {
@@ -703,6 +706,8 @@ export interface LanStatus {
   exposed?: LanExposed[];
   /** The wired and WiFi uplink addresses exposed ports answer on now. */
   exposedOn?: { uplink: string; address: string }[];
+  /** Unix seconds of the last port scan. */
+  scannedAt?: number | null;
 }
 
 /** A port on the uplinks forwarded to a client for good (pulzr-lan expose). */
