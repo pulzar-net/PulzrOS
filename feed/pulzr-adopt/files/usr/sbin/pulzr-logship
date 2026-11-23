@@ -76,11 +76,19 @@ filter() {
         if (w == "info") return 6
         return 7
     }
-    function esc(s) {
-        gsub(/\\/, "\\\\", s)
-        gsub(/"/, "\\\"", s)
-        gsub(/\t/, " ", s)
-        return s
+    # A character at a time, not gsub: awks disagree on what a backslash in
+    # the replacement in gsub means (BusyBox and gawk halve it, BWK does not), and
+    # a lone backslash makes the whole batch invalid JSON.
+    function esc(s,    out, i, c) {
+        out = ""
+        for (i = 1; i <= length(s); i++) {
+            c = substr(s, i, 1)
+            if (c == "\\") out = out "\\\\"
+            else if (c == "\"") out = out "\\\""
+            else if (c == "\t") out = out " "
+            else out = out c
+        }
+        return out
     }
     BEGIN {
         tokens = burst
