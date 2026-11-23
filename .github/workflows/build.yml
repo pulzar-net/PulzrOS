@@ -4,10 +4,19 @@
 #
 #   check     lint and typecheck. Fast, and gates everything else.
 #   console   build the React app ONCE.
-#   feed      stage the packages ONCE.
-#   addons    pack the add-ons into a signed apk repository; on a tag, publish it.
-#   image     per-board matrix, consuming both of the above.
-#   release   on a tag, collect every board's image.
+#   feed      stage the noarch packages ONCE.
+#   image     per-board matrix: restores its own target's SDK packages and
+#             device ImageBuilder (prebuilt.yml builds them), stages its own
+#             architecture's packages, assembles. No board waits on another
+#             target, and one whose prebuilt is missing waits alone.
+#   addons    pack the add-ons into a signed apk repository; on a tag, publish
+#             it. Needs every architecture, so it collects (prebuilt,
+#             prebuilt-devices); no image waits on it.
+#   release   on a tag, collect every board's image; refuses a missing one.
+#
+# The hours-long builds, the SDK packages and the device ImageBuilders, are
+# not here: prebuilt.yml runs them in concurrency groups that never cancel, so
+# a push that supersedes this run costs minutes, not a cold build.
 #
 # The point of splitting console and feed out is that neither depends on the
 # board. Nearly every package in feed/ is noarch — interpreted shell, ucode and
@@ -62,8 +71,9 @@ on:
         type: string
 
 concurrency:
-  # A new push supersedes an in-flight build of the same ref. Image builds are
-  # minutes each across five boards; queueing them up serves nobody.
+  # A new push supersedes an in-flight build of the same ref. Everything here
+  # is minutes (the hours are prebuilt.yml's, which never cancels), and
+  # queueing superseded builds up serves nobody.
   group: build-${{ github.ref }}
   cancel-in-progress: true
 
@@ -360,18 +370,13 @@ jobs:
           cp -a feed/pulzr-console/files/www/. "$h/"
 
   # ───────────────────────────────────────────────────────────────────────
-  # The LoRa gateway half -- ChirpStack Concentratord and MQTT Forwarder --
-  # built by ChirpStack's OpenWrt recipes in the OpenWrt SDK, one target each
-  # (sdk/). A cold build is hours: the SDK compiles Rust and LLVM first. So
-  # each target's packages are cached by sdk/key, and most runs restore them.
-  #
-  # Hosted, not the self-hosted runner: it has neither the disk nor the hours,
-  # and it also deploys the platform.
-  lora:
-    name: LoRa packages (${{ matrix.target }})
+  # The SDK packages and device ImageBuilders are built by prebuilt.yml, which
+  # nothing cancels, and only restored here. A board's image job restores its
+  # own; the add-ons need every architecture's, which this collects.
+  prebuilt:
+    name: Collect ${{ matrix.target }}
     needs: check
     runs-on: ubuntu-latest
-    timeout-minutes: 360
     strategy:
       fail-fast: false
       matrix:
@@ -382,40 +387,47 @@ jobs:
       - id: key
         run: echo "key=$(sdk/key '${{ matrix.target }}')" >> "$GITHUB_OUTPUT"
 
-      - id: cache
-        uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
         with:
           path: .build/sdk
           key: ${{ steps.key.outputs.key }}
-
-      # Rust, LLVM and the SDK want tens of GB; the image starts with about 14.
-      - uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
-        if: steps.cache.outputs.cache-hit != 'true'
-        with:
-          tool-cache: true
-
-      # OpenWrt's build prerequisites for Ubuntu, and clang for bindgen.
-      - name: Install the SDK's prerequisites
-        if: steps.cache.outputs.cache-hit != 'true'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential clang libclang-dev flex bison g++ gawk gettext git \
-            libncurses-dev libssl-dev python3-setuptools rsync swig unzip zlib1g-dev file wget zstd
-
-      - name: Build
-        if: steps.cache.outputs.cache-hit != 'true'
-        run: sdk/build.sh '${{ matrix.target }}' .build/sdk
+          fail-on-cache-miss: true
 
       - uses: actions/upload-artifact@v4
         with:
-          name: lora-${{ strategy.job-index }}
+          name: sdk-${{ strategy.job-index }}
           path: .build/sdk
+          retention-days: 1
+          if-no-files-found: error
+
+  prebuilt-devices:
+    name: Collect ${{ matrix.device }}
+    needs: boards
+    if: needs.boards.outputs.devices != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.boards.outputs.devices) }}
+    steps:
+      - uses: actions/cache/restore@v4
+        with:
+          path: .build/device-ib/${{ matrix.device }}
+          key: device-ib-${{ matrix.device }}-${{ matrix.deviceKey }}
+          fail-on-cache-miss: true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: device-ib-${{ matrix.device }}
+          path: |
+            .build/device-ib/${{ matrix.device }}/*.tar.zst
+            .build/device-ib/${{ matrix.device }}/sha256sums
           retention-days: 1
           if-no-files-found: error
 
   feed:
     name: Packages
-    needs: [console, lora]
+    needs: console
     runs-on: ${{ (github.event.repository.private && vars.RUNNER) || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
@@ -464,17 +476,20 @@ jobs:
             echo "::warning::No PARKEZE_FIRMWARE_PUBKEY secret — gateways from this build cannot check whether an image is ours."
           fi
 
-      # The LoRa packages, for the images: they travel with the feed.
-      - name: Take the LoRa packages
-        uses: actions/download-artifact@v4
+      - name: Cache the host ucode
+        uses: actions/cache@v4
         with:
-          pattern: lora-*
-          path: .build/sdk
-          merge-multiple: true
+          path: .build/host-ucode
+          key: host-ucode-${{ hashFiles('scripts/host-ucode.sh') }}
 
+      # The noarch half: every package with no arches file. An arch package's
+      # binary comes from its architecture's SDK build, so each board stages
+      # its own beside its image and waits on no other architecture's.
       # cmake and json-c: scripts/host-ucode.sh builds the compiler that ships
       # the feed's ucode as bytecode.
       - name: Build the package feed
+        env:
+          PULZR_FEED_ARCHES: noarch
         run: |
           sudo apt-get install -y cmake libjson-c-dev
           ./build.sh --stage feed
@@ -487,7 +502,6 @@ jobs:
           name: feed
           path: |
             .build/feed
-            .build/sdk
             boards/common/files
           retention-days: 1
           if-no-files-found: error
@@ -497,7 +511,7 @@ jobs:
         run: |
           h="$HANDOFF/$GITHUB_RUN_ID/feed"
           rm -rf "$h"; mkdir -p "$h"
-          cp -a --parents .build/feed .build/sdk boards/common/files "$h/"
+          cp -a --parents .build/feed boards/common/files "$h/"
 
   # ───────────────────────────────────────────────────────────────────────
   # The add-ons are the packages with a feed/*/addon file. Images do not carry
@@ -520,10 +534,14 @@ jobs:
     # devices: an upstream package for a source-only target (the GL-SFT1200's
     # siflower) resolves against that board's own ImageBuilder
     # (scripts/addon-upstream.sh).
-    needs: [feed, boards, devices]
-    # Not held up by another board's device support failing: a graft board's
-    # missing ImageBuilder fails build-addons.sh by name.
-    if: ${{ !cancelled() && needs.feed.result == 'success' && needs.boards.result == 'success' }}
+    # Every architecture's SDK packages (prebuilt) and the device
+    # ImageBuilders (prebuilt-devices): an upstream package for a source-only
+    # target (the GL-SFT1200's siflower) resolves against that board's own
+    # ImageBuilder (scripts/addon-upstream.sh). Not on any image's path.
+    needs: [feed, boards, prebuilt, prebuilt-devices]
+    # A collector that found nothing fails, and the add-ons with it; a missing
+    # graft ImageBuilder also fails build-addons.sh by name.
+    if: ${{ !cancelled() && needs.feed.result == 'success' && needs.boards.result == 'success' && needs.prebuilt.result == 'success' }}
     environment: ${{ startsWith(github.ref, 'refs/tags/') && 'release' || 'build' }}
     runs-on: ${{ (github.event.repository.private && vars.RUNNER) || 'ubuntu-latest' }}
     env:
@@ -559,10 +577,30 @@ jobs:
             mv "${d}" ".build/device-ib/${dev}"
           done
 
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: sdk-*
+          path: .build/sdk
+          merge-multiple: true
+
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y zstd jq
+          sudo apt-get install -y zstd jq cmake libjson-c-dev
+
+      - name: Cache the host ucode
+        uses: actions/cache@v4
+        with:
+          path: .build/host-ucode
+          key: host-ucode-${{ hashFiles('scripts/host-ucode.sh') }}
+
+      # Every architecture's arch packages, under the feed job's build stamp:
+      # an add-on pins the pulzr-base the images carry. Not the noarch half,
+      # which the feed job staged and which needs the console this job lacks.
+      - name: Stage every architecture
+        run: |
+          PULZR_FEED_ARCHES="$(awk '!/^[[:space:]]*#/ && NF { print $1 }' feed/*/arches | sort -u | xargs)" \
+          PULZR_BUILD="$(cat .build/feed/BUILD)" ./build.sh --stage feed
 
       # Only the apk inside it is used, and it is the same in every
       # ImageBuilder, so rpi4's, which that board's image job already caches.
@@ -724,70 +762,16 @@ jobs:
           echo "devices=$(./build.sh --list-json | jq -c '[.[] | select(.device != "") | {device, deviceKey}] | unique')" >> "$GITHUB_OUTPUT"
           jq -r '.[] | "  \(.board)  \(.target)/\(.subtarget)"' <<<"${matrix}"
 
-  # ───────────────────────────────────────────────────────────────────────
-  # ───────────────────────────────────────────────────────────────────────
-  # The ImageBuilder for each board OpenWrt does not support yet, built from
-  # its boards/<board>/openwrt/ (scripts/device-imagebuilder.sh) and cached by
-  # those files and the release (deviceKey), so it is built once per change:
-  # a couple of hours, the toolchain and kernel from source.
-  devices:
-    name: Device support (${{ matrix.device }})
-    needs: boards
-    if: needs.boards.outputs.devices != '[]'
-    runs-on: ubuntu-latest
-    timeout-minutes: 360
-    strategy:
-      fail-fast: false
-      matrix:
-        include: ${{ fromJSON(needs.boards.outputs.devices) }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - id: cache
-        uses: actions/cache@v4
-        with:
-          path: .build/device-ib/${{ matrix.device }}
-          key: device-ib-${{ matrix.device }}-${{ matrix.deviceKey }}
-
-      # The buildroot wants ~25GB; a stock runner has that only once the
-      # preinstalled SDKs are gone.
-      - name: Free disk and install the buildroot dependencies
-        if: steps.cache.outputs.cache-hit != 'true'
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
-          sudo apt-get update
-          sudo apt-get install -y build-essential clang flex bison g++ gawk gettext \
-            git libncurses-dev libssl-dev python3-dev python3-setuptools rsync swig \
-            unzip zlib1g-dev file wget zstd
-
-      # Source tarballs only; the build itself does not fit a cache.
-      - uses: actions/cache@v4
-        if: steps.cache.outputs.cache-hit != 'true'
-        with:
-          path: |
-            .build/device/${{ matrix.device }}/openwrt/dl
-            .build/device/${{ matrix.device }}/grafts
-          key: device-dl-${{ matrix.device }}-${{ matrix.deviceKey }}
-          restore-keys: device-dl-${{ matrix.device }}-
-
-      - name: Build
-        if: steps.cache.outputs.cache-hit != 'true'
-        run: scripts/device-imagebuilder.sh "${{ matrix.device }}" ".build/device-ib/${{ matrix.device }}"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: device-ib-${{ matrix.device }}
-          path: |
-            .build/device-ib/${{ matrix.device }}/*.tar.zst
-            .build/device-ib/${{ matrix.device }}/sha256sums
-          retention-days: 1
-          if-no-files-found: error
-
   image:
     name: ${{ matrix.board }}
-    needs: [feed, boards, devices]
-    # A board's device support failing fails that board, not every other.
-    if: ${{ !cancelled() && needs.feed.result == 'success' && needs.boards.result == 'success' }}
+    # The noarch feed and the board list, nothing per target: each board
+    # restores its own target's SDK packages and device ImageBuilder below, so
+    # none waits on another target's, and one that is not built yet waits alone.
+    needs: [feed, boards]
+    permissions:
+      contents: read
+      # To start prebuilt.yml for a build it finds missing.
+      actions: write
     runs-on: ${{ (github.event.repository.private && vars.RUNNER) || 'ubuntu-latest' }}
     strategy:
       # One board failing should not hide whether the others build — a broken
@@ -817,28 +801,82 @@ jobs:
           cp -a "$HANDOFF/$GITHUB_RUN_ID/console/." feed/pulzr-console/files/www/
           cp -a "$HANDOFF/$GITHUB_RUN_ID/feed/." .
 
-      - uses: actions/download-artifact@v4
-        if: matrix.device != ''
+      # Built by prebuilt.yml, restored here by the same keys.
+      - id: sdk
+        uses: actions/cache/restore@v4
         with:
-          name: device-ib-${{ matrix.device }}
+          path: .build/sdk
+          key: ${{ matrix.sdkKey }}
+
+      - id: device
+        if: matrix.device != ''
+        uses: actions/cache/restore@v4
+        with:
           path: .build/device-ib/${{ matrix.device }}
+          key: device-ib-${{ matrix.device }}-${{ matrix.deviceKey }}
+
+      # Not built yet: this board waits, says why, and starts the build if no
+      # prebuilt run is already doing it. The job stays green so a waiting
+      # board does not read as a broken one; a release refuses to go out
+      # without every board (the release job).
+      - name: Waiting on prebuilt
+        id: ready
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SDK_HIT: ${{ steps.sdk.outputs.cache-hit }}
+          DEVICE_HIT: ${{ matrix.device == '' && 'true' || steps.device.outputs.cache-hit }}
+        run: |
+          missing=""
+          [ "${SDK_HIT}" = true ] || missing="the ${{ matrix.sdk }} SDK packages (${{ matrix.sdkKey }})"
+          [ "${DEVICE_HIT}" = true ] || missing="${missing:+${missing} and }the ${{ matrix.device }} ImageBuilder (${{ matrix.deviceKey }})"
+          if [ -z "${missing}" ]; then echo "go=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          echo "::warning::${{ matrix.board }} waits on ${missing}, which prebuilt.yml has not built yet."
+          { echo "### ${{ matrix.board }} waits"; echo; echo "On ${missing}: prebuilt.yml builds it, and the next run builds this board."; } >> "$GITHUB_STEP_SUMMARY"
+          active="$(gh run list -R "${GITHUB_REPOSITORY}" -w prebuilt.yml -L 5 --json status \
+                      -q '[.[] | select(.status != "completed")] | length' || echo 0)"
+          if [ "${active}" = 0 ]; then
+            gh workflow run prebuilt.yml -R "${GITHUB_REPOSITORY}" --ref "${{ github.event.repository.default_branch }}" \
+              && echo "Started prebuilt.yml." || echo "::warning::Could not start prebuilt.yml."
+          else
+            echo "prebuilt.yml is already running."
+          fi
+          echo "go=false" >> "$GITHUB_OUTPUT"
 
       - name: Install build dependencies
+        if: steps.ready.outputs.go == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential libncurses-dev zstd unzip \
-                                  file wget python3 rsync
+                                  file wget python3 rsync cmake libjson-c-dev
+
+      - name: Cache the host ucode
+        if: steps.ready.outputs.go == 'true'
+        uses: actions/cache@v4
+        with:
+          path: .build/host-ucode
+          key: host-ucode-${{ hashFiles('scripts/host-ucode.sh') }}
+
+      # This board's architecture of the arch packages (pulzr-probe and the
+      # like), whose binaries are in the SDK packages restored above, under the
+      # feed job's build stamp so the whole release carries one.
+      - name: Stage ${{ matrix.arch }}
+        if: steps.ready.outputs.go == 'true'
+        env:
+          PULZR_FEED_ARCHES: ${{ matrix.arch }}
+        run: PULZR_BUILD="$(cat .build/feed/BUILD)" ./build.sh --stage feed
 
       # Keyed on the ImageBuilder itself — version, target, subtarget, and where
       # it comes from — not on the board, so boards sharing a download share a
       # cache entry.
       - name: Cache the ImageBuilder
+        if: steps.ready.outputs.go == 'true'
         uses: actions/cache@v4
         with:
           path: .build/imagebuilder
           key: imagebuilder-${{ matrix.imagebuilder }}
 
       - name: Assemble ${{ matrix.board }}
+        if: steps.ready.outputs.go == 'true'
         run: ./build.sh --stage image "${{ matrix.board }}"
 
       # ImageBuilder failures are often a package that will not resolve, and
@@ -862,9 +900,11 @@ jobs:
       # card. This renames the right one, produces the .img.xz Pi Imager wants,
       # and emits that board's entry for the OS list.
       - name: Package for humans
+        if: steps.ready.outputs.go == 'true'
         run: ./scripts/package-images.sh "${{ matrix.board }}" "$(cat VERSION)"
 
       - name: Summarize
+        if: steps.ready.outputs.go == 'true'
         run: |
           {
             echo "### ${{ matrix.board }} · ${{ matrix.target }}/${{ matrix.subtarget }}"
@@ -881,7 +921,7 @@ jobs:
       # and the OS list fragment. Not the raw ImageBuilder output, which is
       # four cryptic files nobody can choose between.
       - uses: actions/upload-artifact@v4
-        if: runner.environment == 'github-hosted'
+        if: steps.ready.outputs.go == 'true' && runner.environment == 'github-hosted'
         with:
           name: pulzros-${{ matrix.board }}
           path: out/release/*
@@ -891,7 +931,7 @@ jobs:
           if-no-files-found: error
 
       - name: Hand over the images
-        if: runner.environment == 'self-hosted'
+        if: steps.ready.outputs.go == 'true' && runner.environment == 'self-hosted'
         env:
           BOARD: ${{ matrix.board }}
         run: |
@@ -907,7 +947,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     # Not the add-ons: they publish to their own bucket, and a firmware fix
     # must never wait on, or be blocked by, an add-on that failed to build.
-    needs: [image]
+    needs: [image, boards]
     runs-on: ${{ (github.event.repository.private && vars.RUNNER) || 'ubuntu-latest' }}
     permissions:
       contents: write
@@ -937,6 +977,21 @@ jobs:
                -exec cp {} release/ \;
           ( cd release && sha256sum ./* > sha256sums.txt )
           ls -la release
+
+      # A board waiting on prebuilt.yml finishes green with no image, so a push
+      # is not red for it; a release is every board or nothing.
+      - name: Every board built
+        env:
+          MATRIX: ${{ needs.boards.outputs.matrix }}
+        run: |
+          missing=""
+          for b in $(jq -r '.[].board' <<<"${MATRIX}"); do
+            compgen -G "release/*-${b}[.-]*" >/dev/null || missing="${missing} ${b}"
+          done
+          if [ -n "${missing}" ]; then
+            echo "::error::No image for${missing}: a release needs every board. Wait for prebuilt.yml, then retag."
+            exit 1
+          fi
 
       # Sign each image, so a gateway can tell it is ours before it writes one
       # over itself. Produces <image>.pulzr.json beside each, which travels

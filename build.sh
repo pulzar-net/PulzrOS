@@ -57,7 +57,10 @@ if [ "${PULZR_DEV:-0}" = 1 ]; then
   fi
   PULZR_VERSION="${PULZR_VERSION}-dev"
 fi
-PULZR_BUILD="$(date -u +%Y%m%d%H%M)"
+# The build stamp, every package's revision. A CI run stages the feed in
+# several jobs (build.yml) and passes the first job's stamp to the rest, so one
+# release's packages carry one stamp.
+PULZR_BUILD="${PULZR_BUILD:-$(date -u +%Y%m%d%H%M)}"
 PULZR_COMMIT="$(git -C "${ROOT_DIR}" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 
 log()  { printf '\033[36m==>\033[0m %s\n' "$*"; }
@@ -90,6 +93,26 @@ list_boards() {
 # the board — several boards can share one. Emitting them here means the
 # workflow never has to parse board.conf itself, and a board whose target
 # changes updates its own cache key without anybody editing the workflow.
+# The SDK build a board on <arch> takes its binaries from (pulzr-probe,
+# pulzr-edge, busybox): the sdk/targets target on that arch, and for the
+# GL-SFT1200's mipsel_24kc_24kf the soft-float mipsel_24kc one, as
+# feed/pulzr-probe/fetch takes. Here, not in sdk/: sdk/key hashes every file
+# there, and a lookup is not what the SDK builds.
+sdk_target_for() {
+  local arch="$1" t conf
+  case "${arch}" in mipsel_24kc_24kf) arch=mipsel_24kc ;; esac
+  for t in $("${ROOT_DIR}/sdk/targets"); do
+    for conf in "${BOARDS_DIR}"/*/board.conf; do
+      [ "${conf}" = "${BOARDS_DIR}/common/board.conf" ] && continue
+      # shellcheck disable=SC1090
+      if ( . "${conf}"; [ "${OPENWRT_TARGET}/${OPENWRT_SUBTARGET}" = "${t}" ] && [ "${OPENWRT_ARCH}" = "${arch}" ] ); then
+        echo "${t}"; return 0
+      fi
+    done
+  done
+  return 1
+}
+
 list_boards_json() {
   local first=1
   printf '['
@@ -97,11 +120,15 @@ list_boards_json() {
     (
       # shellcheck disable=SC1090
       . "${BOARDS_DIR}/${board}/board.conf"
-      printf '{"board":"%s","name":"%s","status":"%s","target":"%s","subtarget":"%s","arch":"%s","imagebuilder":"%s","device":"%s","deviceKey":"%s"}' \
+      # sdk: the SDK build its binaries come from (sdk_target_for), and
+      # that build's cache key (sdk/key).
+      local sdk; sdk="$(sdk_target_for "${OPENWRT_ARCH}")" || die "no SDK target builds ${OPENWRT_ARCH} (sdk/targets)"
+      printf '{"board":"%s","name":"%s","status":"%s","target":"%s","subtarget":"%s","arch":"%s","imagebuilder":"%s","device":"%s","deviceKey":"%s","sdk":"%s","sdkKey":"%s"}' \
         "${BOARD_ID}" "${BOARD_NAME}" "${BOARD_STATUS:-supported}" \
         "${OPENWRT_TARGET}" "${OPENWRT_SUBTARGET}" \
         "${OPENWRT_ARCH}" "$(imagebuilder_id)" "${OPENWRT_DEVICE_SUPPORT:-}" \
-        "$( [ -n "${OPENWRT_DEVICE_SUPPORT:-}" ] && device_key || true)"
+        "$( [ -n "${OPENWRT_DEVICE_SUPPORT:-}" ] && device_key || true)" \
+        "${sdk}" "$("${ROOT_DIR}/sdk/key" "${sdk}")"
     )
     [ "${first}" = 1 ] && first=0 || true
     [ "${board}" = "$(all_boards | tail -n1)" ] || printf ','
@@ -735,9 +762,10 @@ build_feed() {
       || die "no host ucode to compile the feed with (needs cmake and json-c)"
   fi
 
-  log "Staging Pulzar feed"
+  log "Staging Pulzar feed${PULZR_FEED_ARCHES:+ (${PULZR_FEED_ARCHES})}"
   UCODE="${ucode}" "${ROOT_DIR}/scripts/build-feed.sh" "${FEED_DIR}" "${stage}" \
     "${PULZR_VERSION}" "${PULZR_BUILD}"
+  echo "${PULZR_BUILD}" > "${stage}/BUILD"
 }
 
 # The add-on repository for this release. It needs an ImageBuilder only for the

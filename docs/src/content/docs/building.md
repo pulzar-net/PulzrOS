@@ -60,10 +60,14 @@ By default a gateway adopts into Pulzar Cloud at `https://app.pulzr.net`. To use
 boards/     one directory per board; common/ holds everything shared
 console/    the React console, built to static files
 feed/       the OpenWrt package feed (pulzr-*)
-sdk/        the LoRa packages, built with the OpenWrt SDK
+sdk/        what is built with the OpenWrt SDK: LoRa, busybox, pulzr-probe, pulzr-edge
 scripts/    the feed and image tooling, the checks and the tests
 docs/       this site
 ```
+
+## CI
+
+The hours-long builds run in `prebuilt.yml`: each SDK target's packages (`sdk/build.sh`, cached by `sdk/key`) and each device ImageBuilder (`scripts/device-imagebuilder.sh`, cached by its device key). Each is its own concurrency group that never cancels a running job, and saves its cache as soon as it is built. `build.yml` only restores them. Each board's image job restores its own target's SDK packages and ImageBuilder, stages its own architecture's packages, and assembles, so no board waits on another target. A board whose build is not cached yet waits: its job says so, starts `prebuilt.yml` if nothing is running it, and `prebuilt.yml` starts `build.yml` again when the build is saved. A release refuses to publish unless every board has an image.
 
 ## Packages
 

@@ -171,9 +171,24 @@ package_one() {
   echo "  staged ${name} ${PKG_VERSION} (${arch})"
 }
 
-# Every package is restaged on every run, so nothing a feed/ directory no
-# longer has can linger here and be packed into an image.
-rm -f "${STAGE_DIR}"/*.tar
+# PULZR_FEED_ARCHES picks part of the feed: `noarch` for the packages with no
+# arches file, or a list of architectures for those packages' lines on them.
+# Unset, everything. CI stages the noarch half once and each board its own
+# architecture beside its image, since an arch package's binary comes from
+# that architecture's SDK build and a board waits on no other's.
+ARCHES="${PULZR_FEED_ARCHES:-}"
+want_noarch() { [ -z "${ARCHES}" ] || [ "${ARCHES}" = noarch ]; }
+want_arch() { [ -z "${ARCHES}" ] || case " ${ARCHES} " in *" $1 "*) true ;; *) false ;; esac; }
+
+# Every package of the part being staged is restaged on every run, so nothing
+# a feed/ directory no longer has can linger here and be packed into an image.
+if [ -z "${ARCHES}" ]; then
+  rm -f "${STAGE_DIR}"/*.tar
+elif [ "${ARCHES}" = noarch ]; then
+  rm -f "${STAGE_DIR}"/*_noarch.tar
+else
+  for a in ${ARCHES}; do rm -f "${STAGE_DIR}"/*_"${a}".tar; done
+fi
 
 for pkgdir in "${FEED_DIR}"/*/; do
   name="$(basename "${pkgdir}")"
@@ -182,9 +197,10 @@ for pkgdir in "${FEED_DIR}"/*/; do
   if [ -f "${pkgdir}/arches" ]; then
     while read -r arch depends; do
       case "${arch}" in ''|'#'*) continue ;; esac
+      want_arch "${arch}" || continue
       package_one "${pkgdir}" "${name}" "${arch}" "${depends//,/ }"
     done < "${pkgdir}/arches"
-  else
+  elif want_noarch; then
     package_one "${pkgdir}" "${name}" "" ""
   fi
 done
