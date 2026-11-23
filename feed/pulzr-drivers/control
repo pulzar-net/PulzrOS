@@ -1,0 +1,12 @@
+Package: pulzr-drivers
+Depends: pulzr-base, ucode, ucode-mod-fs, curl, ca-bundle, mosquitto-client-ssl, nftables-json
+Maintainer: Joseph Telaak <joseph@pulzr.net>
+License: Apache-2.0
+Architecture: all
+Description: Run device packages' drivers for the devices on this gateway.
+ A device type's package may carry a driver, a ucode script that speaks that
+ device's own protocol (an IP camera's settings API). Pulzar delivers the
+ drivers of the adapter devices this gateway is given, with each device's
+ address and login; this checks each against its SHA-256 and runs one process
+ per command, as that device's own user, able to reach only its address,
+ within CPU, memory and time limits. Nothing device-specific is in the OS.

@@ -79,6 +79,7 @@ export default defineConfig({
 						{ label: 'Firmware updates and signing', slug: 'firmware' },
 						{ label: 'Logging', slug: 'logging' },
 						{ label: 'Add-ons', slug: 'addons' },
+						{ label: 'Device drivers', slug: 'drivers' },
 						{ label: 'Thread', slug: 'thread' },
 						{ label: 'Upgrading from ParkezeOS', slug: 'legacy-migration' },
 					],

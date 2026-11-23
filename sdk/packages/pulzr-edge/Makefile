@@ -51,8 +51,6 @@ define Build/Compile
 	mv -f $(PKG_INSTALL_DIR)/bin/pulzr-edge $(PKG_INSTALL_DIR)/bin/pulzr-edge-zwave
 	$(call Build/Compile/Cargo,crates/pulzr-edge,--force --no-default-features --features matter)
 	mv -f $(PKG_INSTALL_DIR)/bin/pulzr-edge $(PKG_INSTALL_DIR)/bin/pulzr-edge-matter
-	$(call Build/Compile/Cargo,crates/pulzr-edge,--force --no-default-features --features camera)
-	mv -f $(PKG_INSTALL_DIR)/bin/pulzr-edge $(PKG_INSTALL_DIR)/bin/pulzr-edge-camera
 	$(if $(NO_BLE),,$(call Build/Compile/Cargo,crates/pulzr-edge,--force --no-default-features --features ble))
 	$(if $(NO_BLE),true,mv -f $(PKG_INSTALL_DIR)/bin/pulzr-edge $(PKG_INSTALL_DIR)/bin/pulzr-edge-ble)
 	$(call Build/Compile/Cargo,crates/pulzr-edge,--force --no-default-features --features modbus)
@@ -64,7 +62,6 @@ define Package/pulzr-edge-bin/install
 	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/bin/pulzr-edge-zigbee $(1)/usr/sbin/pulzr-edge-zigbee
 	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/bin/pulzr-edge-zwave $(1)/usr/sbin/pulzr-edge-zwave
 	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/bin/pulzr-edge-matter $(1)/usr/sbin/pulzr-edge-matter
-	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/bin/pulzr-edge-camera $(1)/usr/sbin/pulzr-edge-camera
 	$(if $(NO_BLE),,$(INSTALL_BIN) $(PKG_INSTALL_DIR)/bin/pulzr-edge-ble $(1)/usr/sbin/pulzr-edge-ble)
 	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/bin/pulzr-probe $(1)/usr/sbin/pulzr-probe
 endef

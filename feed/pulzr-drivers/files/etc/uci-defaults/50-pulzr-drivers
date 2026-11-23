@@ -1,0 +1,21 @@
+#!/bin/sh
+#
+# The users drivers run as: pzdrv0..pzdrv15, uid and gid 61000..61015, one per
+# device with a driver (pulzr-drivers numbers them in key order). Made here
+# rather than when a device arrives, so the passwd file on flash is written
+# once. start-stop-daemon -c needs the passwd entry even for a numeric uid.
+# The firewall matches the numbers, never the names (pulzr-firewall-guard).
+
+# OpenWrt's prepare_rootfs runs every uci-defaults script during image
+# assembly, with IPKG_INSTROOT set and absolute paths resolving to the build
+# host. Everything below belongs to the device, so defer it to first boot.
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+
+. /lib/functions.sh
+
+n=0
+while [ "${n}" -lt 16 ]; do
+	user_exists "pzdrv${n}" || user_add "pzdrv${n}" "$((61000 + n))" "$((61000 + n))" "pulzr driver" /var/empty /bin/false
+	n=$((n + 1))
+done
+exit 0

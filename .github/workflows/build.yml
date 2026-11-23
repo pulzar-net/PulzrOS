@@ -207,6 +207,12 @@ jobs:
       - name: Uplinks and DNS
         run: UCODE=/tmp/ucode/build/ucode scripts/test-router.sh
 
+      # Device drivers: what a gateway pulls and keeps, the fence, and that a
+      # command's secret reaches the driver and nothing else. Against a local
+      # stand-in for Pulzar, the broker and nft.
+      - name: Device drivers
+        run: UCODE=/tmp/ucode/build/ucode scripts/test-drivers.py
+
       # The WiFi uplink's verdict, its resolver and roam(): one blocked host or
       # one lost DNS datagram used to read as offline, and a join used to be
       # undone by roam() within the minute. Against a fake netifd, curl, DNS

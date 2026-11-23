@@ -1,0 +1,394 @@
+#!/usr/bin/ucode
+// Device drivers: run a device package's driver for each adapter device this
+// gateway is given, so nothing device-specific lives in the OS.
+//
+//   pulzr-drivers sync       pull this gateway's devices and drivers from
+//                            Pulzar; prints what it holds, no credentials
+//   pulzr-drivers listen     answer the devices' commands until killed
+//   pulzr-drivers handle <topic> < command
+//                            answer one command (what listen does per message)
+//
+// ── WHAT PULZAR SENDS ───────────────────────────────────────────────────────
+//
+// POST /api/v1/gateway-ops/drivers, proved by the claim secret as the report
+// is, answers this gateway's adapter devices whose type's package has a
+// driver: each one's key (ext:camera.f0000610916b), its address on the LAN,
+// the login the driver uses on it, and the SHA-256 of its driver; and the
+// source of each driver not already held here. A source whose hash is not the
+// one it was named by is thrown away, and every driver is hashed again before
+// each run. All of it is kept in /var/run, RAM: nothing of a device's lands on
+// flash, and a reboot pulls it again (a command comes from Pulzar anyway).
+//
+// It is pulled at start, when pulzr-mqtt-agent's `drivers` op says something
+// changed, and before a command when the copy is over a minute old or the
+// device is not in it.
+//
+// ── ONE COMMAND ─────────────────────────────────────────────────────────────
+//
+// A command on pulzr/a/edge-<EUI>/d/<key>/cmd for a device with a driver is
+// answered queued, then run as one process: `ucode <driver>`, its stdin
+//
+//   {"name", "params", "by", "device": {"key", "address", "credentials"}, "tmp"}
+//
+// with the command's secret params opened (adapter-ingest opens them to
+// publish). Through a pipe, never an argument, the environment or a file: the
+// secrets exist only in this process and the driver's. It prints one cmd/res,
+// {"status", "reason", "detail", "data"}, which goes back on .../cmd/res. A
+// key with no driver here is another module's (pulzr-edge's Modbus) and is
+// left alone.
+//
+// ── THE SANDBOX ─────────────────────────────────────────────────────────────
+//
+// Each device's driver runs as its own user, pzdrv<n> (uid 61000 + n, made by
+// uci-defaults; start-stop-daemon needs a passwd entry), whose sockets an nft
+// table of our own lets reach that device's address and nothing else: not
+// loopback, not Pulzar, not the LAN's other devices, not the internet. A
+// table of our own and numeric uids, never a fw4 snippet: one bad line there
+// loads no firewall at all (pulzr-firewall-guard). Its CPU, address space,
+// processes and wall time are limited, and its scratch directory is its own
+// and emptied after every command.
+//
+// ponytail: the driver users can still read world-readable files (UCI keeps
+// the broker login 0644); the fence is the network. A chroot or ujail per
+// driver when a driver from someone else's package runs on our gateways.
+//
+// ponytail: one command at a time across every device. A driver is bounded
+// to DRIVER_SECONDS, which is fine for a few cameras; per-device workers when
+// a gateway runs many drivers.
+
+import * as fs from 'fs';
+
+const RUN = getenv('PULZR_DRIVERS_RUN') ?? '/var/run/pulzr-drivers';
+const CLAIM = getenv('PULZR_CLAIM_DIR') ?? '/etc/pulzr/claim';
+const NET_URL = getenv('PULZR_NET_URL') ?? 'https://app.pulzr.net';
+const UCODE = getenv('PULZR_DRIVERS_UCODE') ?? '/usr/bin/ucode';
+// `none` runs a driver as this user, for scripts/test-drivers.sh on a Mac.
+const SANDBOX = getenv('PULZR_DRIVERS_SANDBOX') ?? 'uid';
+const MANIFEST = RUN + '/manifest.json';
+const UID_BASE = 61000;
+const MAX_DEVICES = 16;
+const STALE_SECONDS = 60;
+const DRIVER_SECONDS = 30;
+const CPU_SECONDS = 20;
+const MEMORY_KB = 65536;
+const MAX_ANSWER = 16384;
+
+const SHA = /^[0-9a-f]{64}$/;
+const IPV4 = /^((25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])$/;
+// protocol v1's cmd: id and name.
+const CMD_ID = /^[A-Za-z0-9-]{8,64}$/;
+const CMD_NAME = /^[a-z0-9_.-]{1,64}$/;
+const STATUSES = ['ok', 'refused', 'failed'];
+const REASONS = ['local_only', 'remote_false', 'unknown', 'invalid', 'busy', 'error', 'undeliverable', 'expired'];
+
+let log = (msg) => warn('pulzr-drivers: ' + msg + '\n');
+
+let quote = (s) => "'" + replace('' + s, /'/g, "'\\''") + "'";
+
+let run = (argv) => {
+    let proc = fs.popen(join(' ', map(argv, quote)) + ' 2>/dev/null', 'r');
+    if (!proc) return { code: 127, out: '' };
+    let out = proc.read('all') ?? '';
+    return { code: proc.close(), out: trim(out) };
+};
+
+let uciGet = (opt) => {
+    let r = run(['uci', '-q', 'get', opt]);
+    return r.code == 0 && length(r.out) ? r.out : null;
+};
+
+let readJson = (path) => {
+    try { return json(fs.readfile(path) ?? 'null'); } catch (e) { return null; }
+};
+
+// Written beside and renamed over: sync runs from the agent while listen reads.
+let writePrivate = (path, data) => {
+    let tmp = path + '.new';
+    fs.writefile(tmp, data);
+    fs.chmod(tmp, 0600);
+    return fs.rename(tmp, path);
+};
+
+let sha256File = (path) => {
+    let r = run(['sha256sum', path]);
+    return r.code == 0 ? substr(r.out, 0, 64) : null;
+};
+
+let gatewayEui = () => {
+    let eui = lc(uciGet('pulzr.identity.gateway_eui') ?? '');
+    return match(eui, /^[0-9a-f]{16}$/) ? eui : null;
+};
+
+let dirs = () => {
+    for (let d in [RUN, RUN + '/drivers', RUN + '/work', RUN + '/tmp']) fs.mkdir(d, 0700);
+    // The drivers user reads its driver and enters its scratch directory.
+    fs.chmod(RUN, 0711);
+    fs.chmod(RUN + '/drivers', 0711);
+    fs.chmod(RUN + '/tmp', 0711);
+};
+
+// ── the fence ────────────────────────────────────────────────────────────────
+
+let fenceRules = (devices) => {
+    let lines = [
+        'table inet pulzr_drivers',
+        'delete table inet pulzr_drivers',
+        'table inet pulzr_drivers {',
+        '\tchain output {',
+        '\t\ttype filter hook output priority filter; policy accept;',
+        sprintf('\t\tmeta skuid %d-%d jump driver', UID_BASE, UID_BASE + MAX_DEVICES - 1),
+        '\t}',
+        '\tchain driver {',
+    ];
+    for (let d in devices)
+        if (d.address) push(lines, sprintf('\t\tmeta skuid %d ip daddr %s accept', d.uid, d.address));
+    push(lines, '\t\treject', '\t}', '}', '');
+    return join('\n', lines);
+};
+
+let fence = (devices) => {
+    let nft = fs.popen('nft -f - 2>&1', 'w');
+    if (!nft) return false;
+    nft.write(fenceRules(devices));
+    let ok = nft.close() == 0;
+    if (!ok) log('the driver firewall did not load; no driver runs until it does');
+    return ok;
+};
+
+// ── sync ─────────────────────────────────────────────────────────────────────
+
+// The drivers held whole: one whose bytes no longer match its name is
+// dropped, so Pulzar sends it again.
+let held = () => {
+    let out = [];
+    for (let f in fs.lsdir(RUN + '/drivers') ?? []) {
+        if (!match(f, /^[0-9a-f]{64}\.uc$/)) continue;
+        if (sha256File(RUN + '/drivers/' + f) == substr(f, 0, 64)) push(out, substr(f, 0, 64));
+        else fs.unlink(RUN + '/drivers/' + f);
+    }
+    return out;
+};
+
+let summary = (m) => ({
+    devices: map(m?.devices ?? [], (d) => ({ key: d.key, address: d.address, driver: d.driver,
+                                             credentials: d.credentials != null })),
+    at: m?.at,
+});
+
+let sync = () => {
+    dirs();
+    let id = trim(fs.readfile(CLAIM + '/id') ?? ''), secret = trim(fs.readfile(CLAIM + '/secret') ?? '');
+    if (!length(id) || !length(secret)) return { error: 'this gateway is not adopted' };
+
+    // The claim secret on the command line would be in every process listing.
+    let req = RUN + '/work/sync.json';
+    writePrivate(req, sprintf('%J', { claimId: id, secret: secret, have: held() }));
+    let r = run(['curl', '-sS', '--fail-with-body', '--max-time', '30', '-X', 'POST',
+                 NET_URL + '/api/v1/gateway-ops/drivers', '-H', 'Content-Type: application/json',
+                 '--data-binary', '@' + req]);
+    fs.unlink(req);
+    let answer;
+    try { answer = json(r.out); } catch (e) { answer = null; }
+    if (r.code != 0 || type(answer?.devices) != 'array') return { error: 'Pulzar did not answer' };
+
+    for (let sha, source in answer.drivers ?? {}) {
+        if (!match(sha, SHA) || type(source) != 'string') continue;
+        let path = RUN + '/drivers/' + sha + '.uc';
+        fs.writefile(path + '.new', source);
+        if (sha256File(path + '.new') != sha) {
+            log('a driver did not match its hash and was thrown away: ' + sha);
+            fs.unlink(path + '.new');
+            continue;
+        }
+        fs.chmod(path + '.new', 0644);
+        fs.rename(path + '.new', path);
+    }
+
+    let devices = [], wanted = {};
+    for (let d in sort(answer.devices, (a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0)) {
+        if (type(d?.key) != 'string' || !match(d.driver ?? '', SHA)) continue;
+        if (!fs.stat(RUN + '/drivers/' + d.driver + '.uc')) continue;
+        if (length(devices) >= MAX_DEVICES) {
+            log(sprintf('more than %d devices with drivers; %s is left out', MAX_DEVICES, d.key));
+            continue;
+        }
+        push(devices, { key: d.key, driver: d.driver, uid: UID_BASE + length(devices),
+                        address: match(d.address ?? '', IPV4) ? d.address : null,
+                        credentials: type(d.credentials) == 'object' ? d.credentials : null });
+        wanted[d.driver] = true;
+    }
+    for (let sha in held()) if (!wanted[sha]) fs.unlink(RUN + '/drivers/' + sha + '.uc');
+
+    fence(devices);
+    let m = { at: time(), devices: devices };
+    writePrivate(MANIFEST, sprintf('%J', m));
+    return summary(m);
+};
+
+// ── one command ──────────────────────────────────────────────────────────────
+
+let publish = (topic, body) => {
+    let host = uciGet('pulzr.mqtt.host'), user = uciGet('pulzr.mqtt.username'),
+        pass = uciGet('pulzr.mqtt.password');
+    if (!host || !user) return false;
+    let file = RUN + '/work/res.json';
+    writePrivate(file, sprintf('%J', body));
+    // The password on mosquitto_pub's command line as pulzr-mqtt-agent's: the
+    // gateway's own broker login, already in its UCI.
+    let r = run(['mosquitto_pub', '-h', host, '-p', '8883', '--capath', '/etc/ssl/certs',
+                 '-u', user, '-P', pass ?? '', '-t', topic, '-f', file, '-q', '1']);
+    fs.unlink(file);
+    return r.code == 0;
+};
+
+let answer = (topic, id, status, reason, detail, data) => {
+    let res = { v: 1, id: id, status: status };
+    if (reason) res.reason = reason;
+    if (detail) res.detail = substr('' + detail, 0, 500);
+    if (type(data) == 'object') res.data = data;
+    publish(topic + '/res', res);
+    return res;
+};
+
+// What a driver printed, as a cmd/res, or a failure that says it misbehaved.
+let parseAnswer = (out) => {
+    let last = null;
+    for (let line in split(trim(out ?? ''), '\n'))
+        if (length(trim(line))) last = trim(line);
+    let a;
+    try { a = json(last ?? ''); } catch (e) { a = null; }
+    if (type(a) != 'object' || !(a.status in STATUSES))
+        return { status: 'failed', reason: 'error', detail: 'the driver gave no answer' };
+    if (a.status != 'ok' && !(a.reason in REASONS)) a.reason = 'error';
+    if (a.status == 'ok') delete a.reason;
+    return a;
+};
+
+// The driver as its device's user, its stdin our pipe. ash gives a background
+// job /dev/null for stdin unless it is redirected, hence fd 3; the wall-time
+// watcher is pulzr-timeout's, which cannot be used here for that reason.
+let sandboxed = (dev, driver, out) => {
+    let tmp = RUN + '/tmp/' + dev.uid;
+    if (SANDBOX == 'none')
+        return sprintf('cd %s && exec %s %s >%s 2>/dev/null', quote(tmp), quote(UCODE), quote(driver), quote(out));
+    return sprintf(
+        // One limit per call: a flag this ash lacks would fail the whole call.
+        'exec 3<&0; ulimit -t %d; ulimit -v %d; ulimit -u 32; ' +
+        'start-stop-daemon -S -q -p %s -c %d:%d -d %s -x %s -- %s <&3 >%s 2>/dev/null & p=$!; exec 3<&-; ' +
+        '( n=0; while kill -0 $p 2>/dev/null; do [ $n -ge %d ] && { kill -KILL $p; break; }; sleep 1; n=$((n+1)); done ) & ' +
+        'wait $p',
+        CPU_SECONDS, MEMORY_KB, quote(RUN + '/work/none.pid'), dev.uid, dev.uid, quote(tmp), quote(UCODE),
+        quote(driver), quote(out), DRIVER_SECONDS);
+};
+
+let execute = (dev, cmd) => {
+    let driver = RUN + '/drivers/' + dev.driver + '.uc';
+    if (sha256File(driver) != dev.driver)
+        return { status: 'failed', reason: 'error', detail: 'the driver does not match its hash; run pulzr-drivers sync' };
+    let tmp = RUN + '/tmp/' + dev.uid, out = RUN + '/work/out.json';
+    run(['rm', '-rf', tmp]);
+    fs.mkdir(tmp, 0700);
+    if (SANDBOX != 'none') fs.chown(tmp, dev.uid, dev.uid);
+    fs.unlink(out);
+
+    let proc = fs.popen(sandboxed(dev, driver, out), 'w');
+    if (!proc) return { status: 'failed', reason: 'error', detail: 'the driver did not start' };
+    proc.write(sprintf('%J\n', {
+        name: cmd.name, params: cmd.params ?? {}, by: cmd.by,
+        device: { key: dev.key, address: dev.address, credentials: dev.credentials },
+        tmp: tmp,
+    }));
+    let code = proc.close();
+    let printed = fs.readfile(out, MAX_ANSWER);
+    fs.unlink(out);
+    run(['rm', '-rf', tmp]);
+    let a = parseAnswer(printed);
+    if (a.detail == 'the driver gave no answer' && code != 0)
+        a.detail = sprintf('the driver stopped (%d) without an answer', code);
+    return a;
+};
+
+let fresh = (m, key) =>
+    m && time() - (m.at ?? 0) <= STALE_SECONDS && length(filter(m.devices ?? [], (d) => d.key == key));
+
+let handle = (topic, payload) => {
+    let eui = gatewayEui();
+    let prefix = sprintf('pulzr/a/edge-%s/d/', eui);
+    if (!eui || index(topic, prefix) != 0 || substr(topic, -4) != '/cmd') return null;
+    let key = substr(topic, length(prefix), length(topic) - length(prefix) - 4);
+
+    let m = readJson(MANIFEST);
+    if (!fresh(m, key) && !sync().error) m = readJson(MANIFEST);
+    let dev = filter(m?.devices ?? [], (d) => d.key == key)[0];
+    if (!dev) return null;
+
+    let cmd;
+    try { cmd = json(payload); } catch (e) { cmd = null; }
+    if (type(cmd) != 'object' || !match(cmd.id ?? '', CMD_ID)) return null;
+    if (cmd.v != 1)
+        return answer(topic, cmd.id, 'refused', 'invalid', 'unsupported protocol version');
+    if (!match(cmd.name ?? '', CMD_NAME) || (cmd.params != null && type(cmd.params) != 'object'))
+        return answer(topic, cmd.id, 'refused', 'invalid', 'not a protocol v1 command');
+    if (cmd.expires != null && cmd.expires < time())
+        return answer(topic, cmd.id, 'failed', 'expired');
+
+    answer(topic, cmd.id, 'queued');
+    let a = execute(dev, cmd);
+    // The name and the outcome, never the params: some are secrets.
+    log(sprintf('%s %s: %s%s', key, cmd.name, a.status, a.reason ? ' ' + a.reason : ''));
+    return answer(topic, cmd.id, a.status, a.reason, a.detail, a.data);
+};
+
+// ── listen ───────────────────────────────────────────────────────────────────
+
+let listen = () => {
+    while (true) {
+        let eui = gatewayEui(), host = uciGet('pulzr.mqtt.host'), user = uciGet('pulzr.mqtt.username');
+        if (!eui || !host || !user) { sleep(60000); continue; }
+        let s = sync();
+        if (s.error) log('not synced: ' + s.error);
+        // -v: "<topic> <payload>", one message per line. Not -N, which drops
+        // the newline read() needs (pulzr-mqtt-agent learned that).
+        let sub = fs.popen(join(' ', map(['mosquitto_sub', '-h', host, '-p', '8883', '--capath', '/etc/ssl/certs',
+                                          '-u', user, '-P', uciGet('pulzr.mqtt.password') ?? '',
+                                          '-t', sprintf('pulzr/a/edge-%s/d/+/cmd', eui), '-q', '1', '-k', '60', '-v'],
+                                         quote)) + ' 2>/dev/null', 'r');
+        let line;
+        while (sub && (line = sub.read('line')) != null && length(line)) {
+            let sp = index(line, ' ');
+            if (sp < 0) continue;
+            try {
+                handle(substr(line, 0, sp), trim(substr(line, sp + 1)));
+            } catch (e) {
+                log('a command failed: ' + e);
+            }
+        }
+        sub?.close();
+        sleep(10000);
+    }
+};
+
+// ── main ─────────────────────────────────────────────────────────────────────
+
+switch (ARGV[0]) {
+case 'sync': {
+    let s = sync();
+    print(sprintf('%J\n', s));
+    exit(s.error ? 1 : 0);
+}
+case 'listen':
+    listen();
+    break;
+case 'handle': {
+    let r = handle(ARGV[1] ?? '', fs.stdin.read('all') ?? '');
+    print(sprintf('%J\n', r));
+    break;
+}
+case 'rules':
+    // The fence for the devices held now, for a person reading it.
+    print(fenceRules(readJson(MANIFEST)?.devices ?? []));
+    break;
+default:
+    warn('usage: pulzr-drivers sync | listen | handle <topic> < command | rules\n');
+    exit(2);
+}
