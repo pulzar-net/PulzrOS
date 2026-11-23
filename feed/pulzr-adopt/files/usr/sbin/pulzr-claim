@@ -697,7 +697,7 @@ setup_ap_facts() {
     fi
 }
 
-# The network the WiFi uplink is set to join, for Pulzar Cloud's topology,
+# The network the WiFi uplink is set to join, for Pulzr Cloud's topology,
 # which names the uplink by it. jshn escapes it: an SSID is any 32 bytes,
 # quotes included. null without one.
 wifi_facts() {
