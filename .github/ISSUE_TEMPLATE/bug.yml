@@ -7,7 +7,7 @@ body:
     attributes:
       label: Version
       description: PULZR_VERSION in /etc/pulzr/board.conf, the console's Overview, or the image name.
-      placeholder: 0.4.0-rc6
+      placeholder: 0.4.0-rc.9
     validations:
       required: true
   - type: input

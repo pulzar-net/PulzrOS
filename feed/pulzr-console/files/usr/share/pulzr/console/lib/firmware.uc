@@ -249,22 +249,34 @@ runningVersion = function() {
     return m ? m[1] : null;
 };
 
-// Whether release a is older than release b: 0.4.0-rc5 < 0.4.0 < v0.4.1.
-// null when either is not a version, which callers treat as older.
+// Whether release a is older than release b: 0.4.0-rc8 < 0.4.0-rc.9 <
+// 0.4.0-rc.10 < 0.4.0 < v0.4.1. The pre-release is semver's identifiers,
+// numbers compared as numbers and before words, with a word run into a number
+// read as two: tags were undotted to 0.4.0-rc8 and are dotted from rc.9, and
+// net-api orders them the same way. null when either is not a version, which
+// callers treat as older.
 olderThan = function(a, b) {
     const parse = (v) => {
-        const m = match(v ?? '', /^v?([0-9]+)\.([0-9]+)\.([0-9]+)(-([A-Za-z]+)?([0-9]*))?/);
+        const m = match(v ?? '', /^v?([0-9]+)\.([0-9]+)\.([0-9]+)(-([0-9A-Za-z.]+))?/);
         if (!m) return null;
-        return { n: [int(m[1]), int(m[2]), int(m[3])], pre: m[4] != null,
-                 tag: m[5] ?? '', num: length(m[6] ?? '') ? int(m[6]) : 0 };
+        const ids = [];
+        for (let part in split(m[5] ?? '', '.'))
+            for (let t in (match(part, /[0-9]+|[^0-9]+/g) ?? []))
+                push(ids, match(t[0], /^[0-9]+$/) ? int(t[0]) : t[0]);
+        return { n: [int(m[1]), int(m[2]), int(m[3])], pre: m[4] != null, ids };
     };
     const x = parse(a), y = parse(b);
     if (!x || !y) return null;
     for (let i = 0; i < 3; i++)
         if (x.n[i] != y.n[i]) return x.n[i] < y.n[i];
     if (x.pre != y.pre) return x.pre;          // a pre-release comes before its release
-    if (x.tag != y.tag) return x.tag < y.tag;
-    return x.num < y.num;
+    for (let i = 0; i < length(x.ids) && i < length(y.ids); i++) {
+        const p = x.ids[i], q = y.ids[i];
+        if (p === q) continue;
+        if (type(p) != type(q)) return type(p) == 'int';   // numbers before words
+        return p < q;
+    }
+    return length(x.ids) < length(y.ids);
 };
 
 // Check a staged image and, if it passes, hand it to sysupgrade. `owned` says
@@ -308,7 +320,7 @@ apply = function(IMAGE, manifest, issuer, owned, staff) {
     if (!manifest && !match(_m_fs.readfile('/etc/pulzr/board.conf') ?? '',
                             /PULZR_VERSION='[^']*-dev'/))
         return refuse('That image has no signature. Upload the .pulzr.json released beside it.');
-    let signed = false, version = null;
+    let signed = false, version = null, release = null;
     if (manifest) {
         const mf = _m_fs.open(MANIFEST, 'w');
         if (mf) { mf.write(manifest); mf.close(); }
@@ -327,7 +339,12 @@ apply = function(IMAGE, manifest, issuer, owned, staff) {
         try {
             const p = _m_fs.popen(sprintf("printf %%s %s | openssl base64 -d -A",
                                           shellQuote(json(manifest).manifest ?? '')), 'r');
-            version = json(p.read('all')).version;
+            const said = json(p.read('all'));
+            version = said.version;
+            // The release's own name, where a release signs one (the version
+            // is undotted for gateways on the old ordering; see the release
+            // job): what its add-on repository is published under.
+            release = said.tag ?? said.version;
             p.close();
         } catch (e) {}
         const older = olderThan(version, runningVersion());
@@ -347,7 +364,7 @@ apply = function(IMAGE, manifest, issuer, owned, staff) {
     // a signed image, the one kind that says which release it is; a gateway
     // with no such add-on fetches nothing.
     if (version && _m_fs.access('/usr/sbin/pulzr-addon')) {
-        const c = _m_fs.popen(sprintf('pulzr-addon carry %s 2>&1', shellQuote(version)), 'r');
+        const c = _m_fs.popen(sprintf('pulzr-addon carry %s 2>&1', shellQuote(release ?? version)), 'r');
         const out = c ? trim(c.read('all') ?? '') : '';
         if (!c || c.close() != 0)
             return refuse(sprintf('Could not fetch this gateway\'s backhaul add-on for %s first: %s',
@@ -382,4 +399,4 @@ apply = function(IMAGE, manifest, issuer, owned, staff) {
 };
 
 // ── module exports ──────────────────────────────────────────────────────────
-return { inspect, installFile, upload };
+return { inspect, installFile, upload, olderThan };

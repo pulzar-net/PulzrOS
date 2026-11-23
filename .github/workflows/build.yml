@@ -233,6 +233,12 @@ jobs:
       - name: WiFi radios
         run: UCODE=/tmp/ucode/build/ucode scripts/test-radios.sh
 
+      # Whether a signed image is an upgrade or a downgrade only staff may
+      # make: dotted release candidates (rc.9), the undotted ones before them
+      # (rc8) and the releases they lead to, in semver's order.
+      - name: Release ordering
+        run: UCODE=/tmp/ucode/build/ucode scripts/test-firmware-versions.sh
+
       # pulzr-addon puts root code on gateways nobody can reach, and is the
       # gateway's half of a denied capability staying off. Each refusal, a
       # download cut off half way, the gate's revert and the restore after an
@@ -1039,8 +1045,16 @@ jobs:
             # -A on every base64: openssl wraps at 64 columns by default, and a
             # wrapped value inside a JSON string is a different string from the
             # one that was signed. pulzr-adopt hit exactly this.
-            manifest="$(printf '{"sha256":"%s","board":"","version":"%s","built":"%s"}' \
-                          "${digest}" "${GITHUB_REF_NAME}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            # version is what a gateway's downgrade check orders by, and those
+            # up to 0.4.0-rc8 read a dotted pre-release (rc.9) as rc 0, older
+            # than their own rc8, and refuse it as a downgrade. So it is
+            # written undotted (v0.4.0-rc9), which they order correctly and
+            # newer gateways read as the same release (firmware.uc,
+            # olderThan). tag is the release's own name, which newer gateways
+            # find its add-on repository by (pulzr-addon carry).
+            compat="$(printf '%s' "${GITHUB_REF_NAME}" | sed -E 's/-([A-Za-z]+)\.([0-9]+)$/-\1\2/')"
+            manifest="$(printf '{"sha256":"%s","board":"","version":"%s","tag":"%s","built":"%s"}' \
+                          "${digest}" "${compat}" "${GITHUB_REF_NAME}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
                         | openssl base64 -A)"
 
             # Through a file, not a pipe. Ed25519 signing is one-shot: openssl

@@ -729,7 +729,9 @@ let carried = (rel) => {
 };
 
 let carry = (version) => {
-    match(version ?? '', /^[0-9][0-9A-Za-z.+~-]{0,40}$/) || die('usage: pulzr-addon carry <version>', 2);
+    // As the signed manifest names it (the tag, v0.4.0-rc.9) or bare.
+    version = replace(version ?? '', /^v/, '');
+    match(version, /^[0-9][0-9A-Za-z.+~-]{0,40}$/) || die('usage: pulzr-addon carry <version>', 2);
     let rel = release(), b = board(), a = arch(), deny = denied();
     run(['rm', '-rf', CARRY_DIR]);
     let names = filter(carried(rel), (n) => !lockedOff(rel, n, deny));

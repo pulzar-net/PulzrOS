@@ -515,6 +515,9 @@ check "carry: the next release's add-on and what it brings" \
 check "carry: not a kmod it does not bring" no "$([ -e "${CARRY}/kmod-other-6.12-r1.apk" ] && echo yes || echo no)"
 check "carry: with that release's signed index" yes "$(cmp -s "${CARRY}/packages.adb" "${SERVE}/v${NEXT}/${ARCH}/packages.adb" && echo yes)"
 check "carry: says what it carried" '["pulzr-cell"]' "$(jq -c .carried <<<"${out}")"
+# As the signed manifest names the release: its tag, v and all.
+out="$(pulzr-addon carry "v${NEXT}")"; rc=$?
+check "carry: a release named by its tag" '0 ["pulzr-cell"]' "${rc} $(jq -c .carried <<<"${out}")"
 check "carry: under /etc/pulzr/addons, which sysupgrade keeps" yes \
   "$(grep -qx '/etc/pulzr/addons/' "${ROOT_DIR}/feed/pulzr-base/files/lib/upgrade/keep.d/pulzr" && echo yes)"
 

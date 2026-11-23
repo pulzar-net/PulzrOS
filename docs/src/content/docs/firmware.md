@@ -47,7 +47,11 @@ The `release` job in [`.github/workflows/build.yml`](https://github.com/pulzar-n
 
 A tag must match `VERSION`: a gateway reports `VERSION`, and the cloud offers a release whose version is newer. CI refuses a mismatch before building anything.
 
-Tags with a hyphen (`v0.4.0-rc6`) are pre-releases: installable by tag, never offered as the latest.
+Versions are SemVer. A release candidate is dotted (`v0.4.0-rc.9`, then `v0.4.0-rc.10`), so its number compares as a number, and leads to that version's release (`v0.4.0`). Tags up to `v0.4.0-rc8` were undotted and still order: `rc8` reads as `rc.8`. Tags with a hyphen are pre-releases: installable by tag, never offered as the latest.
+
+Cut a release on the commit that sets `VERSION` to it, as an annotated tag whose message is the release notes: `git tag -a v0.4.0-rc.9 --cleanup=whitespace -F notes.md`. Without `--cleanup=whitespace`, git drops Markdown headings as comments.
+
+The signed manifest beside each image names the release twice: `tag`, as tagged, and `version`, with a dotted release candidate written undotted (`v0.4.0-rc9`). Gateways up to `v0.4.0-rc8` order by `version`, and read `rc.9` as older than their own `rc8`, so they would refuse it as a downgrade. Newer gateways read both spellings as one release, and find the release's add-ons by `tag`.
 
 ## Your own keys
 
