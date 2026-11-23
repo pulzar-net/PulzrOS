@@ -156,12 +156,14 @@ log "Configuring"
   # about 200 KB over it. The upstream series makes it this target's default
   # in config/Config-kernel.in, which the graft does not carry.
   echo "CONFIG_KERNEL_CC_OPTIMIZE_FOR_SIZE=y"
-  # busybox as every other board's: the release's configuration with the
-  # shell's login banner compiled out (sdk/build.sh, which proves that is the
-  # only difference; build.sh checks the image carries it).
-  echo "CONFIG_BUSYBOX_CUSTOM=y"
-  echo "CONFIG_BUSYBOX_CONFIG_FEATURE_SH_EXTRA_QUIET=y"
 } > .config
+make defconfig >/dev/null
+# busybox as every other board's: the release's configuration with the
+# shell's login banner compiled out (scripts/busybox-quiet-config.sh, which
+# needs the release's defaults from the defconfig above; sdk/build.sh proves
+# the result differs in that line alone, and build.sh checks the image
+# carries it).
+sh "${REPO_ROOT}/scripts/busybox-quiet-config.sh" .config >> .config
 make defconfig >/dev/null
 
 for d in ${devices}; do

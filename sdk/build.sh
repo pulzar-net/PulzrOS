@@ -97,10 +97,7 @@ stock="$(busybox_config .busybox-mark)"
 [ -n "${stock}" ] || { echo "busybox configured no .config" >&2; exit 1; }
 cp "${stock}" .busybox-stock.config
 make package/feeds/base/busybox/clean >/dev/null
-{
-  echo 'CONFIG_BUSYBOX_CUSTOM=y'
-  echo 'CONFIG_BUSYBOX_CONFIG_FEATURE_SH_EXTRA_QUIET=y'
-} >> .config
+sh "${HERE}/../scripts/busybox-quiet-config.sh" .config >> .config
 make defconfig
 touch .busybox-mark
 make package/feeds/base/busybox/configure >/dev/null
