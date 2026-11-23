@@ -184,27 +184,32 @@ export default function TimeChart({
         </div>
       )}
 
-      {/* The same numbers without a pointer, for a screen reader. */}
-      <table className={styles.srOnly}>
-        <thead>
-          <tr>
-            <th>Time</th>
-            {series.map((s) => (
-              <th key={s.name}>{s.name}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {times.map((t, i) => (
-            <tr key={t}>
-              <td>{moment(t)}</td>
+      {/* The same numbers without a pointer, for a screen reader. In a div:
+          a table ignores the height and overflow that hide it, so on its own
+          its 360 rows hung below the chart and the page scrolled on for
+          thousands of pixels of nothing. */}
+      <div className={styles.srOnly}>
+        <table>
+          <thead>
+            <tr>
+              <th>Time</th>
               {series.map((s) => (
-                <td key={s.name}>{s.values[i] == null ? '—' : format(s.values[i]!)}</td>
+                <th key={s.name}>{s.name}</th>
               ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {times.map((t, i) => (
+              <tr key={t}>
+                <td>{moment(t)}</td>
+                {series.map((s) => (
+                  <td key={s.name}>{s.values[i] == null ? '—' : format(s.values[i]!)}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

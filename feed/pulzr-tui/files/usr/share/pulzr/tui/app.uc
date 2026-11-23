@@ -586,20 +586,37 @@ handleKey = function(key) {
 };
 
 // Focus moves through the items; on a page with none, the arrows scroll.
+// Below the last item they scroll on through the rest of the page (the
+// processes under All processes, a long table), letting go of the focus as
+// paging does, so Enter never acts on a control that has scrolled away. They
+// used to stop at the last item, and what lay under it was out of reach
+// without Page Down.
 moveFocus = function(dir) {
     const items = app.view ? app.view.items : [];
-    if (!length(items)) {
-        app.scroll[app.path] = (app.scroll[app.path] ?? 0) + dir;
-        return;
-    }
+    const top = app.scroll[app.path] ?? 0;
+    const bottom = top + (app.view ? app.view.height : 0);
+    const more = app.view && bottom < length(app.view.lines);
+    const scrollBy = function(d) {
+        app.scroll[app.path] = top + d;
+        app.focusKey[app.path] = false;
+    };
+    if (!length(items)) return scrollBy(dir);
     let at = -1;
     for (let i = 0; i < length(items); i++) if (items[i].key == app.focusKey[app.path]) at = i;
     if (at < 0) {
-        // Nothing focused yet (or it scrolled away): start from what is on
-        // screen rather than jumping back to the top.
-        const top = app.scroll[app.path] ?? 0;
-        for (let i = 0; i < length(items); i++)
-            if (items[i].line >= top) { at = dir > 0 ? i - 1 : i; break; }
+        // Nothing focused (paged, or scrolled past the last item): pick up
+        // from what is on screen rather than jumping back to the top, and
+        // scroll while there is nothing to land on in that direction.
+        if (dir > 0) {
+            if (more && !length(filter(items, (it) => it.line >= bottom))) return scrollBy(1);
+            for (let it in items) if (it.line >= top) { app.focusKey[app.path] = it.key; return; }
+            return;
+        }
+        let low = null;
+        for (let it in items) if (it.line >= top && it.line < bottom) low = it;
+        if (low) { app.focusKey[app.path] = low.key; return; }
+        if (!length(filter(items, (it) => it.line < top))) { app.focusKey[app.path] = items[0].key; return; }
+        return scrollBy(-1);
     }
     let next = at + dir;
     if (next < 0) {
@@ -607,7 +624,10 @@ moveFocus = function(dir) {
         app.scroll[app.path] = 0;
         next = 0;
     }
-    if (next >= length(items)) next = length(items) - 1;
+    if (next >= length(items)) {
+        if (more) scrollBy(1);
+        return;
+    }
     app.focusKey[app.path] = items[next].key;
 };
 
