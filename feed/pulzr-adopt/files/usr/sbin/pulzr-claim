@@ -587,9 +587,9 @@ facts() {
     apply_support=0
     command -v pulzr-apply >/dev/null 2>&1 && apply_support=1
 
-    printf '{"board":"%s","osVersion":"%s","modemPresent":%s,"modemModel":"%s","modemKind":"%s","simIccid":"%s","simSlots":%s,"sshHostKey":"%s","wiredUsable":%s,"tunnelVia":"%s","tunnelState":"%s","wifiUplink":"%s","consolePort":443,"consoleScheme":"https","tunnelConsolePort":8080,"sshPort":22,"apply":%s,"sshCa":%s,"system":%s,"rakPower":%s,"setupAp":%s,"speedtest":%s,"wiredRouters":%s,"activeUplink":"%s","stats":%s,"addons":%s,"radios":%s,"thread":%s,"consoleCertificate":%s,"listening":%s%s}' \
+    printf '{"board":"%s","osVersion":"%s","modemPresent":%s,"modemModel":"%s","modemKind":"%s","simIccid":"%s","simSlots":%s,"sshHostKey":"%s","wiredUsable":%s,"tunnelVia":"%s","tunnelState":"%s","wifiUplink":"%s","consolePort":443,"consoleScheme":"https","tunnelConsolePort":8080,"sshPort":22,"apply":%s,"sshCa":%s,"system":%s,"rakPower":%s,"setupAp":%s,"wifi":%s,"speedtest":%s,"wiredRouters":%s,"activeUplink":"%s","stats":%s,"addons":%s,"radios":%s,"thread":%s,"consoleCertificate":%s,"listening":%s%s}' \
         "${board_id}" "${version}" "${modem_present}" "${modem_model:-}" "${modem_kind:-}" "${iccid:-}" "${sim_slots}" \
-        "${host_key:-}" "${wired_usable}" "${tunnel_via:-none}" "${tunnel:-none}" "${wifi_uplink:-unchecked}" "${apply_support}" "${ssh_ca}" "$(system_facts)" "$(rak_power_facts)" "$(setup_ap_facts)" "$(speedtest_facts)" "$(router_facts)" "$(active_uplink)" "$(stats_facts)" \
+        "${host_key:-}" "${wired_usable}" "${tunnel_via:-none}" "${tunnel:-none}" "${wifi_uplink:-unchecked}" "${apply_support}" "${ssh_ca}" "$(system_facts)" "$(rak_power_facts)" "$(setup_ap_facts)" "$(wifi_facts)" "$(speedtest_facts)" "$(router_facts)" "$(active_uplink)" "$(stats_facts)" \
         "$(addon_facts)" "$(radio_facts)" "$(thread_facts)" "$(console_cert_facts)" "$(listening_facts)" "$(console_csr_field)"
 }
 
@@ -695,6 +695,16 @@ setup_ap_facts() {
     else
         echo null
     fi
+}
+
+# The network the WiFi uplink is set to join, for Pulzar Cloud's topology,
+# which names the uplink by it. jshn escapes it: an SSID is any 32 bytes,
+# quotes included. null without one.
+wifi_facts() {
+    local ssid
+    ssid="$(uci -q get wireless.parkeze_sta.ssid)" || true
+    [ -n "${ssid}" ] || { echo null; return; }
+    ( . /usr/share/libubox/jshn.sh; json_init; json_add_string ssid "${ssid}"; json_dump )
 }
 
 # The RAK power board's watchdog and battery pack, as pulzr-rak-power last
