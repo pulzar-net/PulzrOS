@@ -7,7 +7,7 @@ A board says what it is for in one variable, and that one list decides what
 goes in its image, what its console shows and what its API answers.
 
 ```sh
-PULZR_FEATURES="lorawan cellular wifi gnss"
+PULZR_FEATURES="lorawan wifi gnss"
 ```
 
 Before this, everything was in `PACKAGES_COMMON` and every page was in every
@@ -21,12 +21,14 @@ that could only fail.
 |---|---|---|---|---|
 | `lorawan` | `PACKAGES_LORAWAN`: pulzr-concentrator, chirpstack-concentratord-sx1302, chirpstack-mqtt-forwarder, spi-tools, gpiod-tools, mosquitto-ssl | LoRaWAN | `/api/lorawan/` | |
 | `gnss` | none (pulzr-gps is in pulzr-concentrator) | GNSS | `/api/gnss` | `PULZR_GPS` not `none` |
-| `cellular` | `PACKAGES_CELLULAR`: pulzr-cellular, ModemManager, qmi-wwan; `PACKAGES_USB_CELLULAR` on a board with a USB host port | Backhaul > Cellular, Overview's Cellular card | `/api/network/cellular` | |
 | `wifi` | `PACKAGES_WIFI`: pulzr-ap, wpad-openssl | Backhaul > WiFi, Access's setup AP | `/api/access/wifi`, `scan`, `ap`, `key` | |
 | `lan` | `PACKAGES_LAN`: pulzr-lan | Network > LAN | `/api/lan/` | `PULZR_LAN_PORTS` |
 | `dns` | `PACKAGES_DNS`: pulzr-dns | Network > DNS | `/api/dns/` | |
-| `failover` | `PACKAGES_FAILOVER`: pulzr-uplinks | Backhaul's order and Tracking; Overview's Uplink row follows its order | `/api/uplinks/` | `cellular` or `wifi` |
+| `failover` | `PACKAGES_FAILOVER`: pulzr-uplinks | Backhaul's order and Tracking; Overview's Uplink row follows its order | `/api/uplinks/` | cellular (built in or the add-on) or `wifi` |
 | `speedtest` | `PACKAGES_SPEEDTEST`: pulzr-speedtest, librespeed-cli | Network > Speed Test ([speedtest.md](/PulzrOS/speedtest.html)) | `/api/speedtest/` | not `PULZR_FLASH_CONSTRAINED` |
+
+Cellular is not a board word: `cellular` is the word of the pulzr-cellular
+add-on, built in where the modem is soldered on (below).
 
 Always present, on every board: Overview, Backhaul > Ethernet, Access, Panel,
 Logs, System, the management tunnel, adoption, MQTT and the TUI.
@@ -36,7 +38,8 @@ and two functions every caller shares:
 
 - `pulzr_check_features` refuses an unknown word, a word whose "needs" the
   board does not meet (failover with nowhere to fail over to is one), and
-  `PULZR_WAN_CELL_ENABLED=1` without `cellular`.
+  `PULZR_WAN_CELL_ENABLED=1` on a board that can have no cellular, built in
+  or as the add-on.
   `build.sh` and `scripts/check-deps.sh` both run it.
 - `pulzr_packages` prints `PACKAGES_COMMON`, then each listed word's group,
   then `PACKAGES_BOARD`, then `PULZR_ADDONS_BUILTIN`. `build.sh` and `scripts/check-deps.sh` both install
@@ -56,12 +59,11 @@ Each board's words are on its [Hardware](/PulzrOS/hardware.html) page, read from
 `board.conf`.
 
 The Pi and RAK images were package-for-package what they were before the
-feature list existed; the list only named what they already carried. The Pis
-have since gained `PACKAGES_USB_CELLULAR` (below). The Opal
-loses pulzr-concentrator, chirpstack-concentratord-sx1302,
-chirpstack-mqtt-forwarder, spi-tools, gpiod-tools, mosquitto-ssl and pulzr-ap. It keeps `cellular` because a USB modem is its
-second uplink, and has no `wifi` because its radios have only Siflower's
-vendor driver.
+feature list existed; the list only named what they already carried. The
+Opal loses pulzr-concentrator, chirpstack-concentratord-sx1302,
+chirpstack-mqtt-forwarder, spi-tools, gpiod-tools and mosquitto-ssl. Since
+cellular became an add-on, the Opal, the Pis and the RAK7391 carry none of
+it until a modem is plugged in and the add-on installed.
 
 RAK gateways never get the router set: their one port is the uplink and the
 console at once (see [access.md](/PulzrOS/access.html)), and there is nothing to route
@@ -80,43 +82,51 @@ installed and nowhere else. An add-on's word must not be a board word
 
 A board can carry an add-on in its image with `PULZR_ADDONS_BUILTIN`, which
 `pulzr_packages` appends and `pulzr_check_features` checks names an add-on.
-Only the RAK7289CV2 does, with pulzr-modbus (and the pulzr-edge binary it carries),
-because its power board already talks Modbus. A built-in add-on upgrades with
-the image and cannot be removed. No other board may carry either, the RAK7268CV2s in
-production above all.
+A built-in add-on upgrades with the image and cannot be removed, and its word
+is on from the first boot, because its addon-health script is in the image.
+The boards with a soldered LTE modem carry pulzr-cellular. Only the
+RAK7289CV2 carries pulzr-modbus (and the pulzr-edge binary it brings),
+because its power board already talks Modbus; no other board may, the
+RAK7268CV2s in production above all.
 
 | Board | Built in |
 |---|---|
-| `rak7289cv2` | `pulzr-modbus` |
+| `rak7268c`, `rak7268cv2` | `pulzr-cellular` |
+| `rak7289cv2` | `pulzr-modbus`, `pulzr-cellular` |
 | every other | none |
 
-## USB cellular is a board's, not a word
+## Cellular is an add-on
 
-`PACKAGES_USB_CELLULAR` is the drivers for a modem somebody plugs in: MBIM,
-AT ports, a Huawei stick, `usb-modeswitch`, and the USB Ethernet drivers and
-`pulzr-usb-cellular` for a HiLink dongle or a tethered phone (see
-[backhaul.md](/PulzrOS/backhaul.html), "Cellular adapters"). It is a group a board adds
-to `PACKAGES_BOARD`, like the display and USB gadget groups, not a feature
-word.
+Cellular was a word until the Opal, with 115 MB of RAM and an upgrade that
+needed every MB of it, was found running ModemManager and usbmuxd with no
+modem plugged in. Most of the boards that took it have no modem of their own:
+whatever cellular there is, is plugged into a USB host port, often never. So
+it is the add-on pulzr-cellular (see [addons.md](/PulzrOS/addons.html)), with the `cellular`
+word:
 
-A word is what a board is for, and brings pages and endpoints with it. A USB
-modem is the `cellular` feature's own page, endpoint and uplink, reached
-through a different socket; what decides it is whether the board has a free
-USB host port, which is hardware, the question the display and gadget groups
-already answer per board. A word for it would have had no page to gate.
+- **Built in** where the modem is soldered on: the RAK7268C, RAK7268CV2 and
+  RAK7289CV2 (`PULZR_ADDONS_BUILTIN`), with ModemManager and the QMI driver
+  alone, as their images always had.
+- **Offered** where it is plugged in: the Opal, the Pis and the RAK7391,
+  whose LTE is an optional mPCIe card on USB (its `ADDON_BOARDS`). Their
+  images carry no modem driver. `pulzr-radios` reports a modem plugged into
+  one (`modems`, see [usb-radios.md](/PulzrOS/usb-radios.html)), and Pulzar Net offers the
+  add-on: ModemManager with glib, libqmi and libmbim, `usb-modeswitch`,
+  `usbmuxd` and the kmods for MBIM, QMI, AT ports, a Huawei stick and the
+  USB Ethernet modems, about 4 MB installed.
+- **Neither** on the boards with no modem and no USB port for one, which
+  set `PULZR_WAN_CELL_ENABLED=0`.
 
-The Pis and the Opal take it. The RAK images do not: their modem is QMI and
-soldered to their one USB port, and their flash is the tightest.
-`pulzr_check_features` refuses `pulzr-usb-cellular` in `PACKAGES_BOARD`
-without `cellular`, because it depends on pulzr-cellular and apk would
-otherwise install the feature the board said it lacked.
+What it brings per architecture is in `feed/pulzr-cellular/arches`. A board
+that takes it as an add-on gets its kmods from the add-on repository, built
+for exactly the kernel of the release (`build-addons.sh`).
 
 ## Packages that are not a feature's own
 
 Some scripts are called from everywhere and live in pulzr-base, not in a
 feature's package: `pulzr-backhaul-check` (adoption, the health gate, the
 motd, the reset button, the console) moved there from pulzr-cellular so a
-board without `cellular` still has it. `pulzr-gateway-facts` moved there
+board without cellular still has it. `pulzr-gateway-facts` moved there
 from pulzr-concentrator: `pulzr-claim report` sends its facts from every
 gateway, and a board without `lorawan` that sent none was one Pulzar Cloud
 could not tell ran PulzarOS. On such a board it reports

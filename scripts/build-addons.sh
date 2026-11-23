@@ -92,17 +92,6 @@ UPSTREAM="${WORK}/upstream.jsonl"; : > "${UPSTREAM}"
 OPENWRT_KEYS="$(find "${IB}" -maxdepth 3 -type d -name keys -exec sh -c 'ls "$1"/*.pem >/dev/null 2>&1' _ {} \; -print | head -n1)"
 [ -n "${OPENWRT_KEYS}" ] || die "this ImageBuilder has no keys directory with OpenWrt's public keys"
 
-# The OpenWrt target a package architecture is built on, from the boards.
-target_of() {
-  local conf
-  for conf in "${BOARDS_DIR}"/*/board.conf; do
-    [ "${conf}" = "${BOARDS_DIR}/common/board.conf" ] && continue
-    ( BOARDS_DIR="${BOARDS_DIR}"; . "${conf}"
-      [ "${OPENWRT_ARCH:-}" = "$1" ] && echo "${OPENWRT_TARGET}/${OPENWRT_SUBTARGET}" ) && return 0
-  done
-  return 1
-}
-
 # A target OpenWrt does not build (a board whose device support grafts it,
 # boards/<board>/openwrt/graft) has no feeds of its own on
 # downloads.openwrt.org: its kernel, kmods and toolchain libraries are built
@@ -132,6 +121,23 @@ target_packages_of() {
     fi
     echo "${dir}"
     return 0
+  done
+}
+
+# The boards that may install <add-on> on <arch> as an add-on: on that arch,
+# with an image, allowed by its ADDON_BOARDS and not carrying it built in.
+# One line each: <board> <target/subtarget>.
+installable_on() {
+  local name="$1" arch="$2" allowed conf
+  allowed="$(. "${FEED_DIR}/${name}/addon"; echo "${ADDON_BOARDS:-}")"
+  for conf in "${BOARDS_DIR}"/*/board.conf; do
+    [ "${conf}" = "${BOARDS_DIR}/common/board.conf" ] && continue
+    ( BOARDS_DIR="${BOARDS_DIR}"; . "${conf}"
+      [ "${OPENWRT_ARCH:-}" = "${arch}" ] || exit 0
+      [ "${BOARD_STATUS:-supported}" = supported ] || exit 0
+      [ "${allowed}" = "*" ] || case " ${allowed} " in *" ${BOARD_ID} "*) ;; *) exit 0 ;; esac
+      case " ${PULZR_ADDONS_BUILTIN:-} " in *" ${name} "*) exit 0 ;; esac
+      echo "${BOARD_ID} ${OPENWRT_TARGET}/${OPENWRT_SUBTARGET}" )
   done
 }
 
@@ -174,6 +180,13 @@ for pkgdir in "${FEED_DIR}"/*/; do
   # On fd 3: apk and tar below read stdin, and would eat the rest of the list.
   while read -r arch _ <&3; do
     case "${arch}" in ''|'#'*) continue ;; esac
+    # An arch where every board that may have it carries it in the image (the
+    # RAKs' pulzr-cellular) has nobody to install it, so nothing to publish.
+    installable="$(installable_on "${name}" "${arch}")"
+    if [ -z "${installable}" ]; then
+      echo "  ${name} (${arch}): built in wherever it is allowed; not published"
+      continue
+    fi
     tar="${STAGE}/${name}_${arch}.tar"
     [ -f "${tar}" ] || die "no staged ${name} for ${arch} in ${STAGE}; run ./build.sh --stage feed"
 
@@ -210,17 +223,24 @@ for pkgdir in "${FEED_DIR}"/*/; do
     # (scripts/addon-upstream.sh). Several add-ons may bring the same one, and
     # each arch's repository holds it once.
     if [ -f "${pkgdir}/upstream" ]; then
-      target="$(target_of "${arch}")" || die "no board runs ${arch}, so ${name}'s upstream packages have no target"
+      # The kmods it needs are published with it only when every board that
+      # may install it here runs one target: apk holds a kmod to the kernel
+      # it was built for, so another target's would never install, and the
+      # repository has one directory per arch.
+      targets="$(awk '{ print $2 }' <<<"${installable}" | sort -u)"
+      keep_kmods=0; [ "$(wc -l <<<"${targets}")" = 1 ] && keep_kmods=1
+      target="$(head -n1 <<<"${targets}")"
       target_packages="$(target_packages_of "${arch}")"
       kmods="${WORK}/kmods-${name}-${arch}"
-      upstream_names="$(TARGET_PACKAGES="${target_packages}" \
+      upstream_names="$(KEEP_KMODS="${keep_kmods}" TARGET_PACKAGES="${target_packages}" \
           "${ROOT_DIR}/scripts/addon-upstream.sh" "${APK}" "${OPENWRT_KEYS}" "${arch}" "${target}" \
           "${OUT}/${arch}" $(grep -v '^[[:space:]]*\(#\|$\)' "${pkgdir}/upstream") 2>"${kmods}")" \
         || { cat "${kmods}" >&2; die "could not fetch ${name}'s upstream packages for ${arch}"; }
-      # A kernel module comes with the image, never with an add-on.
-      for kmod in $(sed -n 's/^kmod //p' "${kmods}"); do
-        common_package "${kmod}" || die "${name} needs ${kmod}, which is not in PACKAGES_COMMON"
-      done
+      if [ "${keep_kmods}" = 0 ]; then
+        for kmod in $(sed -n 's/^kmod //p' "${kmods}"); do
+          common_package "${kmod}" || die "${name} needs ${kmod} on ${arch}, whose boards run $(echo ${targets}), and it is not in PACKAGES_COMMON"
+        done
+      fi
       for dep in ${upstream_names}; do
         f="$(cd "${OUT}/${arch}" && ls "${dep}"-[0-9]*.apk 2>/dev/null | head -n1)"
         [ -n "${f}" ] || die "addon-upstream.sh named ${dep} for ${arch} and wrote no file for it"

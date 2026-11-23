@@ -243,7 +243,11 @@ NO_OLD_NAME="pulzr-probe pulzr-thread pulzr-modbus pulzr-zigbee pulzr-zwave pulz
 for dir in "${ROOT_DIR}"/feed/pulzr-*/; do
     n="$(basename "${dir}")"; old="parkeze-${n#pulzr-}"
     case " ${NO_OLD_NAME} " in *" ${n} "*) continue ;; esac
-    info="$(tar -xOf "${STAGE}/${n}_noarch.tar" ./info 2>/dev/null)"
+    # Per architecture for one with an arches file (pulzr-cellular, built
+    # into the RAKs' images): every build carries the same names.
+    tar="${STAGE}/${n}_noarch.tar"
+    [ -f "${tar}" ] || tar="$(ls "${STAGE}/${n}"_*.tar 2>/dev/null | head -n1)"
+    info="$(tar -xOf "${tar}" ./info 2>/dev/null)"
     check "${n} provides ${old}"  grep -q "^provides:${old}=" <<<"${info}"
     check "${n} replaces ${old}"  grep -q "^replaces:${old}\$" <<<"${info}"
     check "${n} conflicts with ${old}" grep -q "^depends:.*!${old}\( \|\$\)" <<<"${info}"

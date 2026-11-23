@@ -76,7 +76,7 @@ docs/       this site
 | `pulzr-concentrator` | LoRa radio detection, forwarders, GNSS |
 | `pulzr-mqtt` | the MQTT agent |
 | `pulzr-wireguard` | the management tunnel |
-| `pulzr-cellular`, `pulzr-usb-cellular` | modems, dongles and tethered phones |
+| `pulzr-cellular` | modems, dongles and tethered phones; built in or an add-on |
 | `pulzr-ap` | the setup access point |
 | `pulzr-lan`, `pulzr-dns`, `pulzr-uplinks` | the router set |
 | `pulzr-speedtest` | speed tests |

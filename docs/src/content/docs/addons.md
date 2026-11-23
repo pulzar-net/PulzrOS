@@ -7,9 +7,10 @@ An add-on is a feed package with an `addon` file: something a gateway runs
 that is not in its image, installed on request from a signed repository
 built for exactly the release the gateway runs: pulzr-modbus (Modbus),
 pulzr-zigbee (Zigbee), pulzr-zwave (Z-Wave), pulzr-matter (Matter),
-pulzr-thread (Thread) and pulzr-ble (Bluetooth). The
-RAK7289CV2 carries pulzr-modbus in its image instead (`PULZR_ADDONS_BUILTIN`),
-because its power board is already on a Modbus bus.
+pulzr-thread (Thread), pulzr-ble (Bluetooth) and pulzr-cellular (Cellular).
+The RAK7289CV2 carries pulzr-modbus in its image instead
+(`PULZR_ADDONS_BUILTIN`), because its power board is already on a Modbus
+bus, and the RAKs with a soldered LTE modem carry pulzr-cellular.
 
 ## One capability per add-on
 
@@ -26,8 +27,10 @@ installer's 2 MB to spare, while one module's binary is a few MB.
 | pulzr-zwave | `zwave` | `pulzr-edge-zwave` |
 | pulzr-matter | `matter` | `pulzr-edge-matter` |
 | pulzr-ble | `ble` | `pulzr-edge-ble` (little-endian only: not on big-endian mips) |
+| pulzr-thread | `thread` | OpenWrt's `openthread-br` |
+| pulzr-cellular | `cellular` | OpenWrt's `modemmanager`, `usb-modeswitch`, `usbmuxd` and the modem kmods |
 
-Each is pulzr-edge built with that module's feature alone (the SDK recipe
+The first five are pulzr-edge built with that module's feature alone (the SDK recipe
 `sdk/packages/pulzr-edge`, which `ADDON_UPSTREAM` names). A radio runs where
 its protocol's binary is installed: `pulzr-radios runnable` lists the radios
 whose module is there and pulzr-edge-radios (in pulzr-probe, every image)
@@ -39,6 +42,11 @@ is kept by pulzr-probe. `scripts/check-addons.sh` refuses an add-on with other
 than one capability. A gateway that wanted pulzr-edge when it was the Modbus
 add-on wants pulzr-modbus after the upgrade
 (`/etc/uci-defaults/41-pulzr-addons-split`), so its buses keep running.
+
+pulzr-cellular is offered, not just listed: a modem plugged into a gateway
+that can take it is reported with its radios (`radios.modems`), and Pulzar
+Net offers the add-on for it. See [backhaul.md](/PulzrOS/backhaul.html), "Cellular is
+an add-on".
 
 The design and the decisions behind it are in the logbook's
 `docs/plans/pulzros-addons.md`. This page is what is built.
@@ -75,7 +83,8 @@ pulzr-addon status [--brief]
 pulzr-addon start install|remove <name> <issuer> [--purge]
 pulzr-addon install <name> <issuer>
 pulzr-addon remove <name> <issuer> [--purge]
-pulzr-addon restore [--retry]
+pulzr-addon restore [--retry|--carried]
+pulzr-addon carry <version>
 pulzr-addon deny <issuer> <reason> <cap>...
 pulzr-addon undeny <cap>...
 ```
@@ -121,8 +130,8 @@ stay unless `--purge`.
   pulzr-base by `scripts/addon-index.sh`, so settings survive an upgrade that
   finds the add-on missing.
 - `/usr/share/pulzr/addons.caps`: the release's add-ons, their capabilities,
-  feature words, upstream versions, titles and keep paths, from the same
-  generator. pulzr-addon decides with this file, never with the downloaded
+  feature words, upstream versions, titles, keep paths and whether each is
+  carried, from the same generator. pulzr-addon decides with this file, never with the downloaded
   catalog.
 
 sysupgrade drops installed packages with the old overlay. `pulzr-firmware
@@ -132,6 +141,31 @@ never before: an add-on is never what the firmware gate judges.
 covers a rollback and a gateway that was offline at confirm. A restore that
 cannot finish tries again after 15 minutes, doubling to six hours. An add-on
 the running release does not have stays wanted, as `unavailable`.
+
+### Carried across an upgrade
+
+An add-on with `ADDON_CARRY="1"` may be the gateway's backhaul: pulzr-cellular
+on a board whose modem is plugged in. It cannot wait for confirm, because a
+gateway on that SIM alone comes back from the upgrade with no modem driver,
+cannot reach Pulzar Cloud to be confirmed, and on a board with no card has no
+image to roll back to. So:
+
+- Before the upgrade, the console's firmware apply runs `pulzr-addon carry
+  <version>`, the version from the image's signed manifest. Each installed
+  carried add-on, that release's build of it, its signed index and every
+  package the catalog says it brings are fetched into
+  `/etc/pulzr/addons/carry/v<version>/<arch>/`, which `keep.d/pulzr` keeps.
+  A gateway with no such add-on fetches nothing. If it cannot be fetched,
+  or does not fit the overlay with the 2 MB to spare, the upgrade is refused.
+- On the first boot, while the firmware is pending, the init script runs
+  `restore --carried`: the copy is installed with apk against the same key,
+  without the add-on gate (whose check needs the backhaul this may be), so
+  the firmware gate judges the firmware and its backhaul together. The copy
+  is deleted after, and on any boot of a release it was not fetched for.
+
+It costs the add-on's size twice for the length of an upgrade, on the overlay
+and in sysupgrade's backup in RAM, and the link nothing the restore would not
+spend after the upgrade anyway.
 
 ### States
 
@@ -243,7 +277,9 @@ the package. See [features.md](/PulzrOS/features.html).
 
 1. A feed package with an `arches` file covering every board its
    `ADDON_BOARDS` allows, and an `addon` file: `ADDON_TITLE`, `ADDON_CAPS`,
-   `ADDON_FEATURE` (or empty), `ADDON_BOARDS`.
+   `ADDON_FEATURE` (or empty), `ADDON_BOARDS`, and `ADDON_CARRY="1"` if a
+   gateway's backhaul may depend on it. An architecture on which every
+   allowed board carries it built in is not published.
 2. `Provides: pulzr-cap-<cap>` in its control file for each cap.
 3. `files/usr/libexec/pulzr/addon-health/<name>`, executable.
 4. Its settings in `files/lib/upgrade/keep.d/<name>`.
@@ -260,10 +296,20 @@ apk checking each against OpenWrt's signed index, and `build-addons.sh` puts the
 repository unchanged: built by OpenWrt's buildbots from OpenWrt's recipe, never
 by us. The catalog lists them under `upstream`, each with the add-ons that bring
 it (`by`), and `pulzr-addon` installs a package that is not an add-on only when
-the catalog says the add-on being installed brings it, and never a `pulzr-` or
-`kmod-` one. A kernel module is built for one kernel, so one an upstream package
-needs must be in every image (`PACKAGES_COMMON`); `build-addons.sh` refuses
-otherwise. Removing the add-on lets apk remove what only it needed. A target
+the catalog says the add-on being installed brings it, and never a `pulzr-`
+one. Removing the add-on lets apk remove what only it needed.
+
+A kernel module is built for one kernel, and the repository has one directory
+per architecture. So `build-addons.sh` publishes the kmods an add-on brings
+only where every board that may install it on that architecture runs one
+target: they are that target's own, from the kmods feed named for the
+release's kernel, which the images' ImageBuilder installs from too, and apk
+holds each to the kernel package the gateway has installed. pulzr-cellular's
+QMI, MBIM, option, Huawei NCM, CDC Ethernet, NCM, RNDIS and ipheth modules
+come this way. On an architecture whose boards run more than one target, a
+module an add-on needs must be in every image (`PACKAGES_COMMON`), and
+`build-addons.sh` refuses otherwise. After an install pulzr-addon runs
+`kmodloader` once, before anything else the add-on brought starts. A target
 OpenWrt does not build (the GL-SFT1200's siflower) has no feeds of its own, so
 its side comes from that board's ImageBuilder, the one its image is built
 from: kernel, kmods and toolchain libraries. A toolchain library an upstream

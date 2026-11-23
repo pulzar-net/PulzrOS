@@ -9,6 +9,10 @@
 
 . /etc/pulzr/board.conf
 
+# A board whose modem is soldered on (pulzr-cellular built in: the RAKs) has
+# no USB socket free for another, and none of these drivers.
+case " ${PULZR_ADDONS_BUILTIN} " in *" pulzr-cellular "*) exit 0 ;; esac
+
 # Metric 21: behind a cable (10) and an open WiFi (15) like any cellular
 # link, and one behind wwan (20), so where a gateway has a modem and a phone
 # both, the SIM Pulzar provisioned carries the traffic.
@@ -38,7 +42,24 @@ case " ${zone} " in
        uci commit firewall ;;
 esac
 
-# Something may already be plugged in. Backgrounded: first boot should not
-# wait on sysfs walks or an ifup.
-( /usr/sbin/pulzr-usb-cellular scan >/dev/null 2>&1 ) &
+# Installed as an add-on, netifd and the firewall are running and have not
+# heard of usbwan.
+if pidof netifd >/dev/null; then
+    ubus call network reload >/dev/null 2>&1
+    /etc/init.d/firewall reload >/dev/null 2>&1
+fi
+
+# Something may already be plugged in, and was: this runs when the add-on is
+# installed, for a modem pulzr-radios found before any driver for it was on
+# the gateway. Loading the new kmods binds each driver to what is there; a
+# dongle still in its CD-ROM mode needs usb-modeswitch, which acts on a
+# hotplug add, so the USB devices' add events are sent again. Backgrounded:
+# the install should not wait on sysfs walks or an ifup.
+(
+    /sbin/kmodloader >/dev/null 2>&1
+    for u in /sys/bus/usb/devices/*/uevent; do
+        [ -e "${u}" ] && echo add > "${u}" 2>/dev/null
+    done
+    /usr/sbin/pulzr-usb-cellular scan
+) >/dev/null 2>&1 &
 exit 0

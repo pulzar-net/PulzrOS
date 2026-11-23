@@ -235,9 +235,12 @@ check "the border router's status rides the report" \
 rm -f "${STUBS}/pulzr-thread"
 rm -f "${STUBS}/pulzr-radios" "${STUBS}/pulzr-timeout"
 
-# The list alone, from hotplug: what pulzr-probe wrote, under the claim's proof.
+# The list alone, from hotplug: what pulzr-radios lists (pulzr-probe's radios
+# and the modems), under the claim's proof. Its stand-in prints the file.
 export PULZR_PROBE_RUN="${SANDBOX}/probe"
 mkdir -p "${PULZR_PROBE_RUN}"
+printf '#!/bin/sh\n[ "$1" = list ] && cat "%s/radios.json"\n' "${PULZR_PROBE_RUN}" > "${STUBS}/pulzr-radios"
+chmod +x "${STUBS}/pulzr-radios"
 echo '{"detected":[{"id":"usb-10c4_ea60-1","bus":"usb","state":"free"}]}' > "${PULZR_PROBE_RUN}/radios.json"
 answer radios 200 '{"changes":[]}'
 claim radios; rc=$?

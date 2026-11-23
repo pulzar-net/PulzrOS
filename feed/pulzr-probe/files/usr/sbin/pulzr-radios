@@ -5,8 +5,11 @@
 #   pulzr-radios scan [--quiet]       scan now; unless --quiet, tell Pulzar
 #                                     Cloud when the list changed
 #   pulzr-radios hotplug              scan once hotplug has settled (background)
-#   pulzr-radios facts                {"detected":[...]} for the claim report,
-#                                     or null when there is nothing to say
+#   pulzr-radios facts                {"detected":[...],"modems":[...],"networks":[...]}
+#                                     for the claim report, or null when there
+#                                     is nothing to say
+#   pulzr-radios list                 {"detected":[...],"modems":[...]}: what
+#                                     the last scan found, without networks
 #   pulzr-radios identify <id>        a person's Identify, from the console
 #   pulzr-radios assign <id> modbus|none
 #   pulzr-radios use <id> zigbee|zwave  start the radio's module (the console's
@@ -32,6 +35,11 @@
 
 RUN="${PULZR_PROBE_RUN:-/var/run/pulzr-probe}"
 REPORT="${RUN}/radios.json"
+# The cellular modems plugged in, beside the radios: pulzr-probe's report is
+# its own (it reads it back, and knows only radio protocols), so they are a
+# file of their own, spliced in wherever the list is sent. See usb-modems.
+MODEMS="${RUN}/modems.json"
+USB_MODEMS="${PULZR_USB_MODEMS:-/usr/libexec/pulzr/usb-modems}"
 MDNS="${RUN}/mdns.json"
 PENDING="${RUN}/pending"
 # Several events per adapter (interface, usb-serial port, tty), and a hub
@@ -58,16 +66,41 @@ tell() {
     ( pulzr-mqtt-agent --publish-state >/dev/null 2>&1 & ) 2>/dev/null
 }
 
+# What both files say, for telling whether a scan changed anything.
+digest() {
+    cat "${REPORT}" "${MODEMS}" 2>/dev/null | md5sum | cut -d' ' -f1
+}
+
+modems() {
+    local out
+    out="$(pulzr-timeout 10 "${USB_MODEMS}" 2>/dev/null)"
+    case "${out}" in '['*']') ;; *) out='[]' ;; esac
+    echo "${out}" > "${MODEMS}.tmp" && mv "${MODEMS}.tmp" "${MODEMS}"
+}
+
 scan() {
     local quiet="$1" before after
     mkdir -p "${RUN}"
     mdns
-    before="$(md5sum "${REPORT}" 2>/dev/null | cut -d' ' -f1)"
+    before="$(digest)"
     pulzr-timeout 60 pulzr-probe --report "${REPORT}" --lan "${MDNS}" >/dev/null || { log "pulzr-probe failed"; return 1; }
-    after="$(md5sum "${REPORT}" 2>/dev/null | cut -d' ' -f1)"
+    modems
+    after="$(digest)"
     [ "${before}" = "${after}" ] && return 0
     log "radios: $(jsonfilter -i "${REPORT}" -e '@.detected[*].label' 2>/dev/null | tr '\n' ',' | sed 's/,$//')"
+    [ "$(cat "${MODEMS}")" = '[]' ] || log "modems: $(jsonfilter -i "${MODEMS}" -e '@[*].label' 2>/dev/null | tr '\n' ',' | sed 's/,$//')"
     [ "${quiet}" = "--quiet" ] || tell
+}
+
+# pulzr-probe's object with the modems spliced in before its close, or
+# nothing when there is no list to splice into.
+listed() {
+    local m
+    [ -s "${REPORT}" ] && jsonfilter -i "${REPORT}" -e '@' >/dev/null 2>&1 \
+        && [ "$(head -c 13 "${REPORT}")" = '{"detected":[' ] || return 1
+    m="$(cat "${MODEMS}" 2>/dev/null)"
+    case "${m}" in '['*']') ;; *) m='[]' ;; esac
+    printf '%s,"modems":%s' "$(sed 's/}[[:space:]]*$//' "${REPORT}")" "${m}"
 }
 
 # Each event writes its own token and waits; only the one whose token is still
@@ -195,10 +228,9 @@ facts() {
     if [ "$(( $(date +%s) - made ))" -ge 60 ]; then
         pulzr-timeout 30 "$0" scan --quiet >/dev/null 2>&1
     fi
-    if [ -s "${REPORT}" ] && jsonfilter -i "${REPORT}" -e '@' >/dev/null 2>&1 \
-        && [ "$(head -c 13 "${REPORT}")" = '{"detected":[' ]; then
-        # pulzr-probe's object, with the networks spliced in before its close.
-        printf '%s,"networks":%s}\n' "$(sed 's/}[[:space:]]*$//' "${REPORT}")" "$(networks)"
+    local l
+    if l="$(listed)"; then
+        printf '%s,"networks":%s}\n' "${l}" "$(networks)"
     else
         echo null
     fi
@@ -219,13 +251,14 @@ case "$1" in
     scan) scan "$2" ;;
     hotplug) hotplug ;;
     facts) facts ;;
+    list) l="$(listed)" && printf '%s}\n' "${l}" || echo '{"detected":[],"modems":[]}' ;;
     identify)
         valid_id "$2" || { echo "not a radio id" >&2; exit 1; }
         log "identify ${2}"
         out="$(pulzr-timeout 60 pulzr-probe --report "${REPORT}" --lan "${MDNS}" identify "$2" 2>&1)" \
             || { echo "${out}" | tail -n1 >&2; exit 1; }
         tell
-        cat "${REPORT}"
+        "$0" list
         ;;
     assign)
         valid_id "$2" || { echo "not a radio id" >&2; exit 1; }
@@ -234,7 +267,7 @@ case "$1" in
         out="$(pulzr-probe --report "${REPORT}" --lan "${MDNS}" assign "$2" "$3" 2>&1)" \
             || { echo "${out}" | tail -n1 >&2; exit 1; }
         tell
-        cat "${REPORT}"
+        "$0" list
         ;;
     use)
         valid_id "$2" || { echo "not a radio id" >&2; exit 2; }
@@ -260,5 +293,5 @@ case "$1" in
         # the platform asks for one when it finds its copy old.
         pulzr-claim radio-backup "$2" "${f}" && rm -f "${f}"
         ;;
-    *) echo "usage: pulzr-radios {scan [--quiet]|hotplug|facts|identify <id>|assign <id> modbus|none|use <id> zigbee|zwave|release <id>|backup <id>}" >&2; exit 1 ;;
+    *) echo "usage: pulzr-radios {scan [--quiet]|hotplug|facts|list|identify <id>|assign <id> modbus|none|use <id> zigbee|zwave|release <id>|backup <id>}" >&2; exit 1 ;;
 esac

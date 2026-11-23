@@ -424,5 +424,128 @@ addon restore; rc=$?
 check "restore: an unreachable repository is tried again later" "75 failed" "${rc} $(item pulzr-modbus state)"
 check "restore: still wanted" '["pulzr-modbus"]' "$(wanted)"
 
+# ── an add-on that may be the backhaul: kmods, and carried across an upgrade ─
+
+# pulzr-cell stands for pulzr-cellular: ADDON_CARRY, and it brings an OpenWrt
+# daemon and a kmod the catalog lists under upstream for it. kmod-other is in
+# the index, brought by nobody.
+FEED_CELL="${T}/feed-cell"
+rm -rf "${FEED_CELL}"; cp -R "${FEED}" "${FEED_CELL}"; mkdir -p "${FEED_CELL}/pulzr-cell"
+printf 'ADDON_TITLE="Cellular"\nADDON_CAPS="cellular"\nADDON_FEATURE="cellular"\nADDON_BOARDS="*"\nADDON_CARRY="1"\n' \
+  > "${FEED_CELL}/pulzr-cell/addon"
+
+kpayload() {
+  local dir="${T}/payload-$1"
+  rm -rf "${dir}"; mkdir -p "${dir}/lib/modules"
+  echo "$1" > "${dir}/lib/modules/$1.ko"
+  ( cd "${dir}" && tar -cf "$2" . )
+}
+
+# The CDN for release $1 (package version $2), with pulzr-cell beside the rest.
+serve_cell() {
+  local v="$1" pv="$2" repo="${SERVE}/v$1/${ARCH}" n f entries=() up=()
+  mkdir -p "${repo}"
+  payload pulzr-cell "${repo}/pulzr-cell-${pv}.apk"
+  kpayload kmod-usb-net-modem "${repo}/kmod-usb-net-modem-6.12-r1.apk"
+  kpayload modemd "${repo}/modemd-1.0-r1.apk"
+  kpayload kmod-other "${repo}/kmod-other-6.12-r1.apk"
+  { echo "pulzr-cell ${pv} modemd kmod-usb-net-modem pulzr-base=${pv}"
+    # The trailing space is "no dependencies" to the stand-in apk.
+    echo "modemd 1.0-r1 "
+    echo "kmod-usb-net-modem 6.12-r1 "
+    echo "kmod-other 6.12-r1 "; } > "${repo}/packages.adb"
+  f="${repo}/pulzr-cell-${pv}.apk"
+  entries+=("$(jq -nc --arg a "${ARCH}" --arg file "pulzr-cell-${pv}.apk" --arg sha "$(sha "${f}")" \
+                --argjson bytes "$(wc -c < "${f}")" \
+                '{name:"pulzr-cell", arches:{($a):{file:$file, bytes:$bytes, installedBytes:$bytes, sha256:$sha}}}')")
+  for n in modemd-1.0-r1 kmod-usb-net-modem-6.12-r1 kmod-other-6.12-r1; do
+    f="${repo}/${n}.apk"
+    up+=("$(jq -nc --arg n "${n%-*-*}" --arg a "${ARCH}" --arg file "${n}.apk" --arg sha "$(sha "${f}")" \
+              --argjson bytes "$(wc -c < "${f}")" \
+              '{name:$n, by:(if $n == "kmod-other" then [] else ["pulzr-cell"] end),
+                arches:{($a):{file:$file, bytes:$bytes, installedBytes:$bytes, sha256:$sha}}}')")
+  done
+  printf '%s\n' "${entries[@]}" | jq -sc --arg tag "v$1" --argjson up "$(printf '%s\n' "${up[@]}" | jq -sc .)" \
+    '{tag:$tag, addons:., upstream:$up}' > "${SERVE}/v$1/addons.json"
+}
+
+reset_cell() {
+  reset
+  "${ROOT_DIR}/scripts/addon-index.sh" "${FEED_CELL}" "${R}" || { echo "FAIL addon-index.sh"; exit 1; }
+  mkdir -p "${R}/sbin"
+  printf '#!/bin/sh\necho kmodloader >> "${T}/kmodloader.log"\n' > "${R}/sbin/kmodloader"; chmod +x "${R}/sbin/kmodloader"
+  serve_cell "${VERSION}" "${PKGVER}"
+}
+
+reset_cell
+addon install pulzr-cell alice; rc=$?
+check "kmods: an add-on's own kmods install with it" "0 installed" "${rc} $(item pulzr-cell state)"
+check "kmods: and what it brings" "kmod-usb-net-modem modemd pulzr-cell" \
+  "$(cut -d' ' -f1 "${T}/apk/installed" | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')"
+check "kmods: loaded once, before its scripts" "1" "$(wc -l < "${T}/kmodloader.log" | tr -d ' ')"
+
+reset_cell
+sed -i.bak 's/^pulzr-cell \(.*\) modemd /pulzr-cell \1 modemd kmod-other /' "${SERVE}/v${VERSION}/${ARCH}/packages.adb"
+addon install pulzr-cell alice
+check "kmods: a kmod the catalog does not say it brings is refused" \
+  "failed Cellular needs kmod-other, which is not an add-on of this release." \
+  "$(item pulzr-cell state) $(item pulzr-cell error)"
+
+NEXT=0.6.0 NEXTPKG=0.6.0-r1
+CARRY="${R}/etc/pulzr/addons/carry/v${NEXT}/${ARCH}"
+
+reset_cell
+addon carry "${NEXT}"; rc=$?
+check "carry: nothing to carry without the add-on" "0 no" "${rc} $([ -e "${R}/etc/pulzr/addons/carry" ] && echo yes || echo no)"
+
+reset_cell
+addon install pulzr-cell alice
+addon carry "${NEXT}"; rc=$?
+check "carry: a release with no repository refuses" "1 no" "${rc} $([ -e "${R}/etc/pulzr/addons/carry" ] && echo yes || echo no)"
+check "carry: and says why" "Could not download addons.json (curl 22)." "$(err)"
+serve_cell "${NEXT}" "${NEXTPKG}"
+echo 100 > "${T}/free_kb"
+addon carry "${NEXT}"; rc=$?
+check "carry: refused when the overlay cannot hold it" "1 yes" "${rc} $(err | grep -q 'KB free' && echo yes)"
+echo 500000 > "${T}/free_kb"
+out="$(pulzr-addon carry "${NEXT}")"; rc=$?
+check "carry: the next release's add-on and what it brings" \
+  "0 kmod-usb-net-modem-6.12-r1.apk modemd-1.0-r1.apk pulzr-cell-${NEXTPKG}.apk" \
+  "${rc} $(cd "${CARRY}" && ls ./*.apk | sed 's#^\./##' | sort | tr '\n' ' ' | sed 's/ $//')"
+check "carry: not a kmod it does not bring" no "$([ -e "${CARRY}/kmod-other-6.12-r1.apk" ] && echo yes || echo no)"
+check "carry: with that release's signed index" yes "$(cmp -s "${CARRY}/packages.adb" "${SERVE}/v${NEXT}/${ARCH}/packages.adb" && echo yes)"
+check "carry: says what it carried" '["pulzr-cell"]' "$(jq -c .carried <<<"${out}")"
+check "carry: under /etc/pulzr/addons, which sysupgrade keeps" yes \
+  "$(grep -qx '/etc/pulzr/addons/' "${ROOT_DIR}/feed/pulzr-base/files/lib/upgrade/keep.d/pulzr" && echo yes)"
+
+# The upgrade: the overlay's packages are gone, /etc/pulzr/addons and UCI are
+# kept, the new firmware is pending, and the gateway has no backhaul.
+upgrade() {
+  : > "${T}/apk/installed"; rm -rf "${T}/apk/files"; mkdir -p "${T}/apk/files"
+  rm -rf "${R}/usr/libexec/pulzr/addon-health/pulzr-cell" "${R}/etc/init.d/pulzr-cell"
+  sed -i.bak "s/^PULZR_VERSION=.*/PULZR_VERSION='${NEXT}'/" "${R}/etc/pulzr/board.conf"
+  echo "${NEXTPKG}" > "${T}/base_version"
+  echo pending > "${T}/firmware"
+  echo fail > "${T}/gate"
+  : > "${T}/curl.log"; : > "${T}/gate.log"; : > "${T}/services.log"
+}
+upgrade
+addon restore --carried; rc=$?
+check "carried: installed on the first boot, firmware pending" "0 installed" "${rc} $(item pulzr-cell state)"
+check "carried: the next release's build" "${NEXTPKG}" "$(item pulzr-cell version)"
+check "carried: nothing downloaded" "" "$(cat "${T}/curl.log")"
+check "carried: the add-on gate never asked" "" "$(cat "${T}/gate.log")"
+check "carried: its service started" "pulzr-cell enable pulzr-cell start" "$(tr '\n' ' ' < "${T}/services.log" | sed 's/ $//')"
+check "carried: the copy is gone" no "$([ -e "${R}/etc/pulzr/addons/carry" ] && echo yes || echo no)"
+check "carried: journaled" "installed carried" "$(tail -n1 "${R}/etc/pulzr/addons/journal" | jq -r '"\(.result) \(.by)"')"
+
+reset_cell
+addon install pulzr-cell alice
+serve_cell "${NEXT}" "${NEXTPKG}"
+addon carry "${NEXT}"
+addon restore --carried
+check "carried: a boot of another release deletes the copy" "no ${PKGVER}" \
+  "$([ -e "${R}/etc/pulzr/addons/carry" ] && echo yes || echo no) $(item pulzr-cell version)"
+
 [ "${fail}" = 0 ] && echo "pulzr-addon ok"
 exit "${fail}"

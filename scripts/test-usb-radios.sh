@@ -112,6 +112,12 @@ export PULZR_PROBE_RUN="${SANDBOX}/run" PULZR_PROBE_SETTLE=1 FAKE_LIST="${SANDBO
 export PULZR_EDGE_RADIOS="${SANDBOX}/edge-radios" PULZR_EDGE_RUN="${SANDBOX}/edge-run" PULZR_EDGE_INIT="${SANDBOX}/init"
 # Every protocol's module installed, until the test of a gateway locked off one.
 export PULZR_EDGE_BIN="${EDGE_BIN}"
+# The cellular modems, as usb-modems would list them: ${SANDBOX}/modems.out,
+# none until a test writes one. usb-modems itself is tested below, against a
+# sysfs of its own.
+printf '#!/bin/sh\ncat "${SANDBOX}/modems.out" 2>/dev/null || echo "[]"\n' > "${SANDBOX}/usb-modems"
+chmod +x "${SANDBOX}/usb-modems"
+export PULZR_USB_MODEMS="${SANDBOX}/usb-modems"
 
 fail=0
 pass=0
@@ -167,10 +173,10 @@ check "and one list sent" [ "$(calls claim radios)" = 1 ]
 # ── facts, for the claim report ─────────────────────────────────────────────
 age() { touch -t 202001010000 "${PULZR_PROBE_RUN}/radios.json"; }
 fresh
-check "facts prints the list, and no networks" [ "$(radios facts)" = "${BOTH%\}},\"networks\":[]}" ]
+check "facts prints the list, and no networks" [ "$(radios facts)" = "${BOTH%\}},\"modems\":[],\"networks\":[]}" ]
 check "a list scanned this minute is not scanned again" [ "$(calls probe --report)" = 0 ]
 age; echo '{"detected":[]}' > "${FAKE_LIST}"
-check "an empty list is still a list" [ "$(radios facts)" = '{"detected":[],"networks":[]}' ]
+check "an empty list is still a list" [ "$(radios facts)" = '{"detected":[],"modems":[],"networks":[]}' ]
 age; echo '{"detected":[{' > "${FAKE_LIST}"
 check "an unreadable list is null" [ "$(radios facts)" = null ]
 
@@ -265,6 +271,68 @@ check "each radio add-on ships its own binary" eval \
     '( for m in zigbee zwave matter; do grep -q "usr/sbin/pulzr-edge-${m}" "${ROOT_DIR}/feed/pulzr-${m}/fetch" || exit 1; done )'
 check "pulzr-edge-radios starts each radio with the binary runnable names" \
     grep -q 'procd_set_param command "${bin}" radio serve' "${ROOT_DIR}/feed/pulzr-probe/files/etc/init.d/pulzr-edge-radios"
+
+# ── cellular modems, beside the radios ──────────────────────────────────────
+EC25='[{"id":"usb-2c7c_0125-1-1.2","port":"1-1.2","label":"Quectel EC25","kind":"vendor","driver":null,"usb":{"vid":"2c7c","pid":"0125","manufacturer":"Quectel","product":"EC25","serial":""}}]'
+echo "${ZBT}" > "${FAKE_LIST}"
+rm -f "${SANDBOX}/modems.out"
+radios scan --quiet
+fresh
+echo "${EC25}" > "${SANDBOX}/modems.out"
+radios scan; until_calls claim radios 1
+check "a modem plugged in, radios unchanged, sends the list" [ "$(calls claim radios)" = 1 ]
+check "list has the radios and the modem" [ "$(radios list)" = "${ZBT%\}},\"modems\":${EC25}}" ]
+age
+# The Z-Wave network above is still running, so networks is not empty.
+facts_out="$(radios facts)"
+check "facts carries the modems, before the networks" [ "${facts_out#"${ZBT%\}},\"modems\":${EC25},\"networks\":"}" != "${facts_out}" ]
+echo 'Segmentation fault' > "${SANDBOX}/modems.out"
+radios scan --quiet
+check "anything but a list from usb-modems is no modems" [ "$(radios list)" = "${ZBT%\}},\"modems\":[]}" ]
+rm -f "${SANDBOX}/modems.out"
+rm -f "${PULZR_PROBE_RUN}/radios.json"
+check "list without a scan is an empty list" [ "$(radios list)" = '{"detected":[],"modems":[]}' ]
+
+# usb-modems against a sysfs: what each kind of device reads as, and what is
+# never a modem though its interfaces look like one.
+SYSFS="${SANDBOX}/sys"
+usbdev() {
+    local d="${SYSFS}/bus/usb/devices/$1"
+    mkdir -p "${d}"; echo "$2" > "${d}/idVendor"; echo "$3" > "${d}/idProduct"
+    echo "$4" > "${d}/manufacturer"; echo "$5" > "${d}/product"; [ -z "${6:-}" ] || echo "$6" > "${d}/serial"
+}
+usbif() {
+    local d="${SYSFS}/bus/usb/devices/$1"
+    mkdir -p "${d}"; echo "$2" > "${d}/bInterfaceClass"; echo "$3" > "${d}/bInterfaceSubClass"; echo "$4" > "${d}/bInterfaceProtocol"
+}
+usbdev usb1 1d6b 0002 Linux "xHCI Host Controller"; usbif usb1 09 00 00
+usbdev 1-1 2109 3431 VIA "USB2.0 Hub"; usbif 1-1:1.0 09 00 00
+usbdev 1-1.1 2c7c 0125 Quectel EC25; usbif 1-1.1:1.0 ff ff ff; usbif 1-1.1:1.4 ff ff ff
+usbdev 1-1.2 0403 6001 FTDI FT232R A10K; usbif 1-1.2:1.0 ff ff ff
+usbdev 1-1.3 12d1 1f01 HUAWEI HUAWEI_MOBILE; usbif 1-1.3:1.0 08 06 50
+usbdev 1-1.4 0bda 8153 Realtek "USB 10/100/1000 LAN" 000001; usbif 1-1.4:1.0 02 06 00
+usbdev 1-2 05ac 12a8 "Apple Inc." iPhone 00008030ABC; usbif 1-2:1.0 06 01 01
+usbdev 2-1 1199 9071 "Sierra Wireless" EM7455 LF1; usbif 2-1:1.12 02 0e 00
+usbdev 2-2 18d1 4eeb Google Pixel 8 ZY22; usbif 2-2:1.0 02 0d 00
+usbdev 2-3 1546 01a8 "u-blox AG" "u-blox GNSS receiver"; usbif 2-3:1.0 02 02 01
+usbdev 2-4 1cf1 0030 dresden "ConBee II" DE1; usbif 2-4:1.0 02 02 01
+usbdev 2-5 19d2 1405 ZTE "ZTE Mobile Broadband"; usbif 2-5:1.0 e0 01 03
+mkdir -p "${SYSFS}/drivers/qmi_wwan"; ln -s "${SYSFS}/drivers/qmi_wwan" "${SYSFS}/bus/usb/devices/1-1.1:1.4/driver"
+found="$(PULZR_SYSFS="${SYSFS}" sh "${ROOT_DIR}/feed/pulzr-probe/files/usr/libexec/pulzr/usb-modems")"
+kinds="$(python3 -c 'import json,sys; print(" ".join("%s=%s" % (m["port"], m["kind"]) for m in json.loads(sys.argv[1])))' "${found}")"
+check "usb-modems is a JSON list" python3 -c 'import json,sys; assert isinstance(json.loads(sys.argv[1]), list)' "${found}"
+check "usb-modems names each modem's kind, and nothing else" \
+    [ "${kinds}" = "1-1.1=vendor 1-1.3=mode-switch 1-2=iphone 2-1=mbim 2-2=ethernet 2-5=ethernet" ]
+check "a modem with its driver bound says which" python3 -c '
+import json, sys
+m = {x["port"]: x for x in json.loads(sys.argv[1])}
+assert m["1-1.1"]["driver"] == "qmi_wwan" and m["2-1"]["driver"] is None
+assert m["2-1"]["id"] == "usb-1199_9071-lf1" and m["1-1.1"]["id"] == "usb-2c7c_0125-1-1.1"
+assert m["2-1"]["label"] == "Sierra Wireless EM7455"' "${found}"
+
+# The USB hotplug hook: a device, never its interfaces.
+HOOK="${ROOT_DIR}/feed/pulzr-probe/files/etc/hotplug.d/usb/40-pulzr-probe"
+check "the USB hook scans on a device" grep -q 'DEVTYPE}" = usb_device' "${HOOK}"
 
 echo "${pass} passed"
 exit "${fail}"

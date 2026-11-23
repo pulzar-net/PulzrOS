@@ -1,0 +1,17 @@
+# OpenWrt packages this add-on brings, with their dependencies, from the
+# release's own feeds (scripts/addon-upstream.sh): ModemManager with glib,
+# libqmi and libmbim, usb-modeswitch and usbmuxd as OpenWrt builds them. The
+# kmods come from the target's own kmods for the release's kernel (the
+# GL-SFT1200's from its own ImageBuilder), and build-addons.sh refuses them on
+# an architecture whose boards run more than one target.
+modemmanager
+kmod-usb-net-qmi-wwan
+kmod-usb-net-cdc-mbim
+kmod-usb-serial-option
+kmod-usb-net-huawei-cdc-ncm
+usb-modeswitch
+kmod-usb-net-cdc-ether
+kmod-usb-net-cdc-ncm
+kmod-usb-net-rndis
+kmod-usb-net-ipheth
+usbmuxd

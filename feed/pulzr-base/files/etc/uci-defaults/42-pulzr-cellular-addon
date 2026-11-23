@@ -1,0 +1,49 @@
+#!/bin/sh
+#
+# Cellular was in every image of the Opal, the Pis and the RAK7391 before it
+# was the pulzr-cellular add-on. A gateway of those that upgrades into a
+# release without it in the image, and had a modem, wants the add-on now:
+# its restore puts cellular back once the firmware is confirmed. One with no
+# modem ever seen (campo's Opal) gets nothing, which is the point.
+#
+# A modem it had is one pulzr-modem-detect bound wwan to, or a USB Ethernet
+# modem pulzr-usb-cellular bound usbwan to: both write the device into
+# /etc/config/network, which the upgrade kept. Once only, so an add-on
+# somebody removed later is not brought back by the next upgrade: removing it
+# leaves those devices in the config.
+#
+# A gateway whose only backhaul was that modem cannot download the add-on
+# after this upgrade, because nothing carried it (carrying started with this
+# release: pulzr-addon carry). Pulzar Net does not offer this upgrade to one
+# whose report says it is on cellular alone.
+
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+
+. /etc/pulzr/board.conf
+
+[ "$(uci -q get pulzr_addons.main.cellular_split)" = 1 ] && exit 0
+case " ${PULZR_ADDONS_BUILTIN} " in *" pulzr-cellular "*) exit 0 ;; esac
+grep -q "^pulzr-cellular	" /usr/share/pulzr/addons.caps 2>/dev/null || exit 0
+
+uci -q set pulzr_addons.main.cellular_split=1
+if [ -n "$(uci -q get network.wwan.device)$(uci -q get network.usbwan.device)" ]; then
+    case " $(uci -q get pulzr_addons.main.deny) " in *" cellular "*) ;; *)
+        case " $(uci -q get pulzr_addons.main.wanted) " in *" pulzr-cellular "*) ;; *)
+            uci -q add_list pulzr_addons.main.wanted=pulzr-cellular ;;
+        esac ;;
+    esac
+else
+    # No modem: the interfaces the old image defined for one go, as a new
+    # image of this release has none, rather than sit in netifd with no
+    # ModemManager to drive them. The add-on defines them again if a modem is
+    # plugged in later and it is installed.
+    uci -q delete network.wwan
+    uci -q delete network.usbwan
+    # 26-pulzr-usb-cellular wrote the zone's networks as one option.
+    zone="$(uci -q get firewall.wan.network | tr ' ' '\n' | grep -vx usbwan | tr '\n' ' ' | sed 's/ $//')"
+    [ -n "${zone}" ] && uci -q set firewall.wan.network="${zone}"
+    uci -q commit network
+    uci -q commit firewall
+fi
+uci -q commit pulzr_addons
+exit 0

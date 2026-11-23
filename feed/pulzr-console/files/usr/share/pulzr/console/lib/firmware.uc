@@ -308,7 +308,7 @@ apply = function(IMAGE, manifest, issuer, owned, staff) {
     if (!manifest && !match(_m_fs.readfile('/etc/pulzr/board.conf') ?? '',
                             /PULZR_VERSION='[^']*-dev'/))
         return refuse('That image has no signature. Upload the .pulzr.json released beside it.');
-    let signed = false;
+    let signed = false, version = null;
     if (manifest) {
         const mf = _m_fs.open(MANIFEST, 'w');
         if (mf) { mf.write(manifest); mf.close(); }
@@ -324,7 +324,6 @@ apply = function(IMAGE, manifest, issuer, owned, staff) {
         // stays signed, and the ones before 0.4 take unsigned images: going
         // back to one, then flashing an image of one's own, would be root by
         // two steps. The signed manifest says which release this is.
-        let version = null;
         try {
             const p = _m_fs.popen(sprintf("printf %%s %s | openssl base64 -d -A",
                                           shellQuote(json(manifest).manifest ?? '')), 'r');
@@ -337,6 +336,22 @@ apply = function(IMAGE, manifest, issuer, owned, staff) {
                 ? 'That image does not say which release it is.'
                 : sprintf('%s is older than this gateway\'s %s. Going back is for Pulzar staff.',
                           version, runningVersion()));
+    }
+
+    // An add-on the gateway may be running its backhaul on (pulzr-cellular on
+    // a USB modem) goes across the upgrade with it: sysupgrade drops it with
+    // the old overlay, and a gateway on that SIM alone would come back with
+    // nothing to download it over. So that release's build of it is fetched
+    // now, while there is a link (see pulzr-addon, "CARRIED ACROSS AN
+    // UPGRADE"), and an upgrade it cannot be fetched for is refused. Only for
+    // a signed image, the one kind that says which release it is; a gateway
+    // with no such add-on fetches nothing.
+    if (version && _m_fs.access('/usr/sbin/pulzr-addon')) {
+        const c = _m_fs.popen(sprintf('pulzr-addon carry %s 2>&1', shellQuote(version)), 'r');
+        const out = c ? trim(c.read('all') ?? '') : '';
+        if (!c || c.close() != 0)
+            return refuse(sprintf('Could not fetch this gateway\'s backhaul add-on for %s first: %s',
+                                  version, length(out) ? out : 'pulzr-addon failed.'));
     }
 
     // Record what is about to happen while the system that knows it is still

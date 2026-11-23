@@ -1,0 +1,18 @@
+#!/bin/sh
+#
+# Whether cellular is working, for pulzr-addon's report.
+#
+#   exit 0  ok: a modem or a USB Ethernet modem is there, and ModemManager runs
+#   exit 2  idle: nothing plugged in
+#   exit 1  failing: a modem is plugged in and ModemManager is not running
+#
+# Reported, never acted on: the log says why (pulzr-logs modem).
+if [ -x /usr/sbin/pulzr-usb-cellular ] && /usr/sbin/pulzr-usb-cellular status --present >/dev/null 2>&1; then
+    exit 0
+fi
+pgrep -x ModemManager >/dev/null || {
+    [ -n "$(uci -q get network.wwan.device)" ] && exit 1
+    exit 2
+}
+[ -n "$(pulzr-timeout 5 mmcli -L 2>/dev/null | grep -o '/Modem/[0-9]*')" ] && exit 0
+exit 2

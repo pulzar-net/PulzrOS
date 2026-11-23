@@ -74,10 +74,46 @@ The table is `crates/pulzr-probe/radios.json` in
 its product string there; `pulzr-probe check` refuses an entry that would
 match a bare bridge chip.
 
+## Cellular modems
+
+A cellular modem is not a radio pulzr-probe names: it is listed beside them,
+as `modems`, by `/usr/libexec/pulzr/usb-modems` (pulzr-probe's package, every
+image), so a gateway can say it has one before anything on it can drive one.
+That is what Pulzar Net offers the Cellular add-on on; see
+[backhaul.md](/PulzrOS/backhaul.html), "Cellular is an add-on".
+
+It reads the USB descriptors sysfs has for every device, no driver needed,
+and a USB hotplug hook (`/etc/hotplug.d/usb/40-pulzr-probe`) scans when a
+device is plugged in or pulled out:
+
+| `kind` | Device |
+|---|---|
+| `mbim` | an MBIM interface (02/0e), from any maker |
+| `vendor` | vendor-specific interfaces (QMI, AT ports) from a modem maker |
+| `acm` | a CDC-ACM AT port from a modem maker |
+| `mode-switch` | mass storage from a maker whose dongles start as a CD-ROM |
+| `ethernet` | RNDIS, or CDC-ECM/NCM from a modem or phone maker: a HiLink dongle, Android tethering |
+| `iphone` | an iPhone, or an iPad with cellular |
+
+Vendor-specific and ACM interfaces are also an FTDI's, a CH341's, a ConBee's
+and a u-blox GNSS receiver's, and ECM is a Realtek Ethernet adapter's, so
+those count only from a modem or phone maker (the tables at the top of
+`usb-modems`). A modem it misses can still have the add-on installed from
+the Add-ons list; one it lists wrongly only offers an install nobody needs.
+
+```json
+{"id":"usb-2c7c_0125-1-1.2","port":"1-1.2","label":"Quectel EC25","kind":"vendor",
+ "driver":null,"usb":{"vid":"2c7c","pid":"0125","manufacturer":"Quectel","product":"EC25","serial":""}}
+```
+
+`driver` is the first driver bound to one of its interfaces: null until the
+add-on's kmods are loaded.
+
 ## On the gateway
 
 ```sh
-cat /var/run/pulzr-probe/radios.json     # what was found last
+pulzr-radios list                        # the radios and modems found last
+cat /var/run/pulzr-probe/radios.json     # pulzr-probe's own report
 pulzr-radios scan                        # scan again now
 pulzr-radios identify usb-10c4_ea60-0001 # a person's Identify
 pulzr-radios assign usb-1a86_7523-1-1.3 modbus

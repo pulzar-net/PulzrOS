@@ -1,0 +1,32 @@
+# <package arch> <Depends, comma-separated or ->
+#
+# Scripts only; built per architecture because what a modem needs is per
+# board. mipsel_24kc is the RAKs', where it is built into the image with the
+# soldered QMI modem's driver alone (no USB socket is free there). Everywhere
+# else the modem is whatever somebody plugs in, so every driver for one:
+#
+#   through ModemManager, as wwan:
+#     kmod-usb-net-qmi-wwan          QMI, most LTE modules
+#     kmod-usb-net-cdc-mbim          MBIM, most current M.2 and USB modems
+#     kmod-usb-serial-option         AT ports, and PPP for a modem with no
+#                                    network function (modemmanager pulls ppp)
+#     kmod-usb-net-huawei-cdc-ncm    a Huawei stick in modem, not HiLink, mode
+#     usb-modeswitch                 a dongle that first appears as a CD-ROM
+#
+#   as a USB Ethernet adapter, as usbwan (pulzr-usb-cellular):
+#     kmod-usb-net-cdc-ether         HiLink dongles
+#     kmod-usb-net-cdc-ncm           Android tethering on newer phones
+#     kmod-usb-net-rndis             ZTE dongles, Android tethering
+#     kmod-usb-net-ipheth, usbmuxd   iPhone tethering; usbmuxd does the
+#                                    "Trust this computer" pairing, without
+#                                    which the link never gets carrier
+#
+# As an add-on these come from the add-on repository: the kmods built for
+# exactly the kernel of the release (build-addons.sh), the rest OpenWrt's
+# packages unchanged (feed/pulzr-cellular/upstream). ModemManager with glib,
+# libqmi and libmbim is about 4 MB installed.
+mipsel_24kc          modemmanager, kmod-usb-net-qmi-wwan, ucode, curl
+mipsel_24kc_24kf     modemmanager, kmod-usb-net-qmi-wwan, kmod-usb-net-cdc-mbim, kmod-usb-serial-option, kmod-usb-net-huawei-cdc-ncm, usb-modeswitch, kmod-usb-net-cdc-ether, kmod-usb-net-cdc-ncm, kmod-usb-net-rndis, kmod-usb-net-ipheth, usbmuxd, ucode, curl
+aarch64_cortex-a53   modemmanager, kmod-usb-net-qmi-wwan, kmod-usb-net-cdc-mbim, kmod-usb-serial-option, kmod-usb-net-huawei-cdc-ncm, usb-modeswitch, kmod-usb-net-cdc-ether, kmod-usb-net-cdc-ncm, kmod-usb-net-rndis, kmod-usb-net-ipheth, usbmuxd, ucode, curl
+aarch64_cortex-a72   modemmanager, kmod-usb-net-qmi-wwan, kmod-usb-net-cdc-mbim, kmod-usb-serial-option, kmod-usb-net-huawei-cdc-ncm, usb-modeswitch, kmod-usb-net-cdc-ether, kmod-usb-net-cdc-ncm, kmod-usb-net-rndis, kmod-usb-net-ipheth, usbmuxd, ucode, curl
+aarch64_cortex-a76   modemmanager, kmod-usb-net-qmi-wwan, kmod-usb-net-cdc-mbim, kmod-usb-serial-option, kmod-usb-net-huawei-cdc-ncm, usb-modeswitch, kmod-usb-net-cdc-ether, kmod-usb-net-cdc-ncm, kmod-usb-net-rndis, kmod-usb-net-ipheth, usbmuxd, ucode, curl

@@ -15,8 +15,12 @@ between them is money.
 | Operator-configurable in the console | **no** | yes (APN, on/off) |
 | Route metric | 10 | 20 (`wwan`), 21 (`usbwan`) |
 
-Both are defined in `feed/pulzr-base/files/etc/uci-defaults/20-pulzr-network`,
-except `usbwan`, which `pulzr-usb-cellular` adds on boards that have it.
+Ethernet is defined in `feed/pulzr-base/files/etc/uci-defaults/20-pulzr-network`.
+Cellular, `wwan` and `usbwan`, comes with pulzr-cellular
+(`25-pulzr-cellular`, `26-pulzr-usb-cellular`), which is in the image of a
+board with a soldered modem and an add-on everywhere else; see "Cellular is
+an add-on" below. The cellular firewall zone is in 20-pulzr-network either
+way.
 
 On a board with the `failover` feature these metrics are pulzr-uplinks',
 from the order the site chooses; see "Failover" below.
@@ -51,10 +55,56 @@ as a WWAN function, read as HiLink; anything else as a phone. Only the label
 depends on that guess.
 
 What is supported where: the RAK images carry `qmi_wwan` only, for the modem
-soldered to their one USB port. The Pis and the Opal carry every row above
-(`PACKAGES_USB_CELLULAR` in `boards/common/board.conf`), with `usb-modeswitch`
-for a dongle that first appears as a CD-ROM. An iPhone needs `usbmuxd` to pair:
-unlock it and tap Trust when it asks, with Personal Hotspot on.
+soldered to their one USB port, and no `usbwan`. On the Pis, the RAK7391 and
+the Opal the add-on brings every row above (`feed/pulzr-cellular/arches`),
+with `usb-modeswitch` for a dongle that first appears as a CD-ROM. An iPhone
+needs `usbmuxd` to pair: unlock it and tap Trust when it asks, with Personal
+Hotspot on.
+
+### Cellular is an add-on
+
+On a board whose modem is whatever is plugged into a USB port (the Opal, the
+Pis, the RAK7391) the image carries none of the above. Plugging one in is
+what brings it:
+
+1. The USB hotplug hook (`/etc/hotplug.d/usb/40-pulzr-probe`) starts a radio
+   scan, and `usb-modems` reads the device's descriptors: no driver is
+   needed to see an MBIM interface, a modem maker's vendor or AT ports, a
+   dongle in its CD-ROM mode, an RNDIS, ECM or NCM modem, or an iPhone.
+2. The modem is reported with the radios (`radios.modems`, at once over
+   `pulzr-claim radios`, and in every report and the MQTT state).
+3. Pulzar Net offers the Cellular add-on on the gateway's page to an org
+   admin or Pulzar staff, who installs it there. It is never installed on
+   its own.
+4. pulzr-addon installs it from the release's add-on repository, about
+   3 MB to download: ModemManager with glib, libqmi and libmbim,
+   usb-modeswitch, usbmuxd, and the kmods built for exactly this release's
+   kernel. On a gateway whose only uplink is that modem's SIM nothing can be
+   downloaded until a cable or WiFi is there: cellular is the add-on.
+5. Its uci-defaults define `wwan` and `usbwan`, load the kmods and replay the
+   USB add events, so the modem already plugged in is bound (and switched out
+   of its CD-ROM mode) without unplugging it. The console's Cellular card
+   appears, and the modem's `driver` in `radios.modems` is no longer null.
+
+Removing the add-on removes ModemManager and the drivers; `wwan` and
+`usbwan` stay in the config, as an add-on's settings do, and come back to
+life if it is installed again.
+
+**Upgrades.** sysupgrade drops an installed add-on with the old overlay, and
+a gateway on a SIM alone would come back with no driver and nothing to
+download one over. So the console's firmware apply runs `pulzr-addon carry
+<version>` first: the new release's build of the add-on and everything it
+brings go into `/etc/pulzr/addons/carry/`, which sysupgrade keeps, and the
+first boot installs them from there before the firmware is judged. The cost
+is the add-on's size again, on the overlay and in the upgrade's RAM backup;
+the download is the one the restore would make after the upgrade anyway.
+An upgrade the copy cannot be fetched for is refused.
+
+A gateway upgrading into this release from one with cellular in the image
+wants the add-on if it ever had a modem bound (`42-pulzr-cellular-addon`),
+and its restore installs it after the firmware is confirmed, over the cable
+or WiFi. Nothing older carried it, so one on cellular alone cannot make that
+upgrade: Pulzar Net does not offer it.
 
 None of the `usbwan` rows has been tried on hardware, and neither have MBIM or
 AT modems; QMI is the RAK's and the one that has.

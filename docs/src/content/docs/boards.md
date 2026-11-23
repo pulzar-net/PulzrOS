@@ -162,17 +162,20 @@ feeds.
 new boards in the `uboot-envtools` and `02_network` lists moved the context
 lines. The DTS and the image recipe applied unchanged.
 
-## USB cellular
+## Cellular
 
-A board with a free USB host port adds `PACKAGES_USB_CELLULAR` to
-`PACKAGES_BOARD`, for a modem, dongle or phone plugged into it; see
-[backhaul.md](/PulzrOS/backhaul.html), "Cellular adapters", for what works.
+Cellular is the pulzr-cellular add-on: built into the image of a board with a
+soldered modem (`PULZR_ADDONS_BUILTIN`), offered on a board with a free USB
+host port once a modem is plugged in (`ADDON_BOARDS` in
+`feed/pulzr-cellular/addon`); see [backhaul.md](/PulzrOS/backhaul.html), "Cellular
+adapters", for what works.
 
-| Board | USB cellular |
+| Board | Cellular |
 |---|---|
-| `rpi3`, `rpi4`, `rpi5` | yes |
-| `gl-sft1200` | yes; the kmods come from openwrt-gl-sft1200's ImageBuilder, which builds every kmod |
-| RAK | no: the one USB port is the soldered QMI modem's |
+| `rak7268c`, `rak7268cv2`, `rak7289cv2` | built in: the one USB port is the soldered QMI modem's |
+| `rpi3`, `rpi4`, `rpi5`, `rak7391` | the add-on |
+| `gl-sft1200` | the add-on; its kmods come from openwrt-gl-sft1200's ImageBuilder, which builds every kmod |
+| every other | none |
 
 ## Where the terminal UI runs
 

@@ -626,7 +626,8 @@ addon_facts() {
 
 # The radios plugged in (pulzr-radios, from pulzr-probe): {"detected": [...]},
 # which Pulzar Cloud compares with the last report to say a radio was plugged
-# in, pulled out or came back. null when it cannot say; a report without the
+# in, pulled out or came back, and the cellular modems ("modems"), for which it
+# offers the cellular add-on. null when it cannot say; a report without the
 # key is firmware that cannot detect radios, and nothing is concluded from it.
 radio_facts() {
     local out
@@ -807,12 +808,13 @@ tunnel_test() {
 # is plugged in by somebody standing at the gateway with its page open, and
 # the whole report spends tens of seconds gathering statistics first. This is
 # one small POST with what pulzr-probe wrote. The six-hourly report still
-# carries the list, so one of these lost is put right then.
+# carries the list, so one of these lost is put right then. With the
+# cellular modems plugged in beside the radios (pulzr-radios list).
 radios() {
     ensure_identity
     adopted || return 0
     local list raw status
-    list="$(cat "${PULZR_PROBE_RUN:-/var/run/pulzr-probe}/radios.json" 2>/dev/null)"
+    list="$(pulzr-radios list 2>/dev/null)"
     echo "${list}" | jsonfilter -e '@' >/dev/null 2>&1 || { log "no radio list to send"; return 1; }
     raw="$(call /api/v1/gateway-ops/radios \
         "$(printf '{"claimId":"%s","secret":"%s","radios":%s}' \

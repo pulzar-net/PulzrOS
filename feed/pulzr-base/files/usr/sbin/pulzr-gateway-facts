@@ -62,7 +62,19 @@ fi
 # built for LoRaWAN whose concentrator has died is still one.
 # Comma-separated: a report keeps only a safe character set, and spaces are
 # not in it.
-echo "features=$(echo ${PULZR_FEATURES} | tr ' ' ',')"
+#
+# With each installed add-on's word after the board's, as the console's
+# system.features() has them: cellular is an add-on on a board whose modem is
+# plugged in, and built in (still an add-on, in the image) where it is
+# soldered on, and Pulzar Cloud shows its Cellular settings on the word.
+words="${PULZR_FEATURES}"
+[ -f /usr/share/pulzr/addons.caps ] && while IFS='	' read -r name feature _; do
+    case "${name}" in ''|'#'*) continue ;; esac
+    [ -n "${feature}" ] && [ "${feature}" != - ] || continue
+    [ -e "/usr/libexec/pulzr/addon-health/${name}" ] || continue
+    case " ${words} " in *" ${feature} "*) ;; *) words="${words} ${feature}" ;; esac
+done < /usr/share/pulzr/addons.caps
+echo "features=$(echo ${words} | tr ' ' ',')"
 
 # The Wi-Fi bands its radios have, as 2g,5g,6g: what the gateway's page lists
 # beside the other standards. From `iw phy` (nl80211's band numbers: 1 is

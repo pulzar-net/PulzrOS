@@ -145,7 +145,7 @@ op_drivers() {
 }
 # What pulzr-probe last found, not a new scan: hotplug keeps the file current,
 # and a scan may probe a port, which is not what a read should do.
-op_radios()    { cat /var/run/pulzr-probe/radios.json 2>/dev/null || echo '{"detected":[]}'; }
+op_radios()    { /usr/sbin/pulzr-radios list 2>/dev/null || echo '{"detected":[],"modems":[]}'; }
 
 # A field of the request being answered, for the operations that take more
 # than one argument.

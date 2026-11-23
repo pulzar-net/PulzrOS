@@ -14,6 +14,12 @@
 # starts the restore itself once the gate passes. Every other boot, including
 # the one after a rollback, starts it here.
 #
+# Except for what the upgrade carried: an add-on that may be the backhaul
+# (pulzr-cellular on a USB modem) was fetched for this release before the
+# upgrade, and goes back on this first boot, from that copy, so the gate has a
+# backhaul to judge. `restore --carried` also deletes a copy for any other
+# release. See pulzr-addon, "CARRIED ACROSS AN UPGRADE".
+#
 # START=99, after everything an install's own health gate judges. Backgrounded:
 # a restore downloads, and retries with backoff while it cannot (pulzr-addon).
 # Almost every boot finds nothing missing and it exits at once.
@@ -22,6 +28,9 @@ START=99
 
 start() {
     state="$(/usr/sbin/pulzr-firmware status 2>/dev/null | jsonfilter -e '@.state' 2>/dev/null)"
-    [ "${state}" = "pending" ] && return 0
-    ( /usr/sbin/pulzr-addon restore --retry >/dev/null 2>&1 & )
+    if [ "${state}" = "pending" ]; then
+        ( /usr/sbin/pulzr-addon restore --carried >/dev/null 2>&1 & )
+        return 0
+    fi
+    ( { /usr/sbin/pulzr-addon restore --carried; /usr/sbin/pulzr-addon restore --retry; } >/dev/null 2>&1 & )
 }

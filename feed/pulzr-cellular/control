@@ -1,11 +1,13 @@
 Package: pulzr-cellular
-Provides: parkeze-cellular
+Provides: parkeze-cellular, pulzr-cap-cellular
 Replaces: parkeze-cellular
 Conflicts: parkeze-cellular
-Depends: pulzr-base, modemmanager, kmod-usb-net-qmi-wwan, ucode, curl
 Maintainer: Joseph Telaak <joseph@pulzr.net>
 License: Apache-2.0
-Architecture: all
-Description: Cellular backhaul management and data frugality.
- Brings up the modem, and keeps the gateway's own traffic on the metered link
- to the minimum that still allows it to be managed.
+Architecture: @ARCH@
+Description: Cellular backhaul: a modem, a HiLink dongle or a tethered phone.
+ Brings up the modem through ModemManager as wwan, or a USB Ethernet modem as
+ usbwan, and keeps the gateway's own traffic on the metered link to the
+ minimum that still allows it to be managed. Built into the image of a board
+ whose modem is soldered on; an add-on everywhere else, offered once a modem
+ is plugged in. See https://oss.pulzr.net/PulzrOS/backhaul.html.

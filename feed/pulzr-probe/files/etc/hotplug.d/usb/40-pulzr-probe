@@ -1,0 +1,10 @@
+#!/bin/sh
+#
+# A USB device plugged in or pulled out. A cellular modem with no driver for
+# it on the gateway makes no tty and no network device, only this, and its
+# being plugged in is what Pulzar Net offers the cellular add-on on
+# (pulzr-radios, usb-modems). Once per device, not per interface; the scan
+# waits for the burst to settle.
+[ "${DEVTYPE}" = usb_device ] || exit 0
+case "${ACTION}" in add|remove) /usr/sbin/pulzr-radios hotplug ;; esac
+exit 0

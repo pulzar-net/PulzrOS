@@ -13,11 +13,15 @@
 # never rebuilt or repacked by us. A gateway installs them from our signed
 # index, which carries each one's hash.
 #
-# Prints, one per line, the names written to <out-dir>. Kernel modules and
-# the toolchain's libc are resolved but not kept: a kmod is built for one
-# kernel, and a gateway's comes with its image, so a module an upstream
-# package needs must be in every image (PACKAGES_COMMON); the names of those
-# are printed to stderr as `kmod <name>` for the caller to check.
+# Prints, one per line, the names written to <out-dir>. The toolchain's libc
+# is resolved but never kept: it is the image's. Each kernel module is printed
+# to stderr as `kmod <name>` as well, for the caller to check: a kmod is built
+# for one kernel, so it is kept only with KEEP_KMODS=1, which the caller sets
+# when every board that may install the add-on on this architecture runs the
+# one target fetched from here. Its kmods are then that target's own, built
+# with the release's kernel (the kmods feed is named for it), and apk holds
+# each to the gateway's installed kernel package. Otherwise a module an
+# upstream package needs must be in every image (PACKAGES_COMMON).
 #
 # TARGET_PACKAGES, when set, is the directory of a source-only target's own
 # packages (the GL-SFT1200's siflower, which OpenWrt does not build): its
@@ -98,7 +102,7 @@ for f in "${WORK}/fetched"/*.apk; do
   name="$("${APK}" adbdump "${f}" | sed -n 's/^  name: //p' | head -n1)"
   [ -n "${name}" ] || { echo "cannot read the name of $(basename "${f}")" >&2; exit 1; }
   case "${name}" in
-    kmod-*) echo "kmod ${name}" >&2; continue ;;
+    kmod-*) echo "kmod ${name}" >&2; [ "${KEEP_KMODS:-0}" = 1 ] || continue ;;
     kernel|libc|libgcc|libgcc1|libatomic|libatomic1|libpthread|librt) continue ;;
   esac
   cp "${f}" "${OUT}/"

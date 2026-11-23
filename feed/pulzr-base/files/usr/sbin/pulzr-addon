@@ -11,6 +11,11 @@
 //   pulzr-addon remove <name> <issuer> [--purge]
 //   pulzr-addon restore [--retry]      install whatever is wanted and missing;
 //                                        --retry backs off while it cannot
+//   pulzr-addon restore --carried      only what an upgrade carried; the one
+//                                        restore while firmware is judged
+//   pulzr-addon carry <version>        fetch <version>'s build of each
+//                                        installed add-on that may be the
+//                                        backhaul, to take across an upgrade
 //   pulzr-addon deny <issuer> <reason> <cap>...
 //                                      refuse these capabilities from now on
 //   pulzr-addon undeny <cap>...        take a refusal back; a root shell only
@@ -52,7 +57,24 @@
 // a wrong baud rate is a setting to fix, not a reason to uninstall.
 //
 // The firmware's own gate never looks at add-ons. A restore runs only after
-// pulzr-firmware confirm, so a broken add-on cannot roll back good firmware.
+// pulzr-firmware confirm, so a broken add-on cannot roll back good firmware,
+// with one exception, below.
+//
+// ── CARRIED ACROSS AN UPGRADE ──────────────────────────────────────────────
+//
+// An add-on that may be the gateway's backhaul (ADDON_CARRY: pulzr-cellular,
+// on a board whose modem is plugged into a USB port) cannot wait for confirm.
+// A gateway on a SIM alone comes up from the upgrade with no modem driver and
+// nothing to download one over, never confirms, and on a board with no card
+// has no image to roll back to. So before the upgrade (the console's firmware
+// apply, which knows the release from its signed manifest) `carry` fetches
+// that release's build of it, its signed index and everything the catalog
+// says it brings, into /etc/pulzr/addons/carry/, which sysupgrade keeps. On
+// the first boot `restore --carried` installs it from there, checked against
+// the same key, before the firmware gate's verdict: the firmware and its
+// backhaul are judged together. A rollback, or any boot of another release,
+// deletes the copy. It costs the overlay and the upgrade's backup in RAM the
+// add-on's size, a few MB, and the link nothing it would not spend after.
 //
 // ── COST ───────────────────────────────────────────────────────────────────
 //
@@ -77,6 +99,7 @@ const RUN_DIR = ROOT + '/var/run/pulzr';
 const LOCK = RUN_DIR + '/addon.lock';
 const LOOP = RUN_DIR + '/addon-restore.pid';
 const HEALTH_DIR = ROOT + '/usr/libexec/pulzr/addon-health';
+const CARRY_DIR = JOURNAL_DIR + '/carry';
 const PKG = 'pulzr_addons';
 
 const NAME = /^[a-z0-9-]{1,40}$/;
@@ -169,6 +192,7 @@ let release = () => {
             caps: filter(split(f[3], ' '), (c) => length(c) > 0),
             title: f[4],
             keep: filter(split(f[5] ?? '', ' '), (p) => length(p) > 0),
+            carry: f[6] == '1',
         };
     }
     return out;
@@ -184,11 +208,12 @@ let arch = () => {
 let tag = (b) => 'v' + (b.PULZR_VERSION ?? 'unknown');
 
 // The repository for this firmware: PULZR_ADDONS_URL, or the url staff set on
-// a bench unit, then the tag. A bench build (-dev) has no published one.
-let repoUrl = (b) => {
+// a bench unit, then the tag (or another release's, for carry). A bench build
+// (-dev) has no published one.
+let repoUrl = (b, t) => {
     let base = uci.cursor().get(PKG, 'main', 'url') ?? b.PULZR_ADDONS_URL ?? '';
     base = replace(base, /\/+$/, '');
-    return match(base, /^https?:\/\/[A-Za-z0-9._~:\/%-]+$/) ? base + '/' + tag(b) : null;
+    return match(base, /^https?:\/\/[A-Za-z0-9._~:\/%-]+$/) ? base + '/' + (t ?? tag(b)) : null;
 };
 
 let firmwarePending = () => {
@@ -388,6 +413,15 @@ let activate = (name) => {
     }
 };
 
+// Everything one install added, kernel modules first: a modem's driver has to
+// be loaded before the scripts that look for the modem run. A kmod's own
+// install script loads it already; kmodloader, which is what boot does with
+// /etc/modules.d, makes sure, once.
+let activateAll = (pkgs) => {
+    if (length(filter(pkgs, (p) => match(p, /^kmod-/)))) run([ROOT + '/sbin/kmodloader']);
+    for (let p in pkgs) if (!match(p, /^kmod-/)) activate(p);
+};
+
 let deactivate = (name) => {
     for (let s in services(owned(name))) {
         run([ROOT + '/etc/init.d/' + s, 'stop']);
@@ -522,8 +556,11 @@ let install = (name, by, action) => {
     // An OpenWrt package this add-on brings unchanged (scripts/addon-upstream.sh):
     // in the signed index only because the build put it there for this add-on,
     // and never one of ours, which would have to be an add-on in its own right.
+    // A kmod is one only where the build had the kernel of every board that
+    // may install it here (build-addons.sh), and apk refuses one built for
+    // another kernel than the installed one.
     let brought = (n) => {
-        if (match(n, /^(pulzr-|kmod-)/)) return false;
+        if (match(n, /^pulzr-/)) return false;
         for (let x in catalog.upstream ?? []) if (x?.name == n) return name in (x.by ?? []);
         return false;
     };
@@ -586,7 +623,7 @@ let install = (name, by, action) => {
     record(name, 'installing');
     let add = run(['apk', 'add', ...repo(index), name]);
     if (add.code != 0) return fail(name, by, action, apkError(add.out));
-    for (let p in pkgs) activate(p);
+    activateAll(pkgs);
 
     if (!judged()) {
         for (let p in pkgs) deactivate(p);
@@ -676,6 +713,108 @@ let restore = () => {
     unlock();
     if (changed) report();
     return { transient };
+};
+
+// ── carry ────────────────────────────────────────────────────────────────
+//
+// See CARRIED ACROSS AN UPGRADE at the top. <version> is the release about to
+// be installed, from its signed manifest; the copy is for that release and
+// this architecture, and is everything an install would download.
+
+let carryDir = (t, a) => sprintf('%s/%s/%s', CARRY_DIR, t, a);
+
+let carried = (rel) => {
+    let built = builtins();
+    return filter(sort(keys(rel)), (n) => rel[n].carry && !(n in built) && installed(n));
+};
+
+let carry = (version) => {
+    match(version ?? '', /^[0-9][0-9A-Za-z.+~-]{0,40}$/) || die('usage: pulzr-addon carry <version>', 2);
+    let rel = release(), b = board(), a = arch(), deny = denied();
+    run(['rm', '-rf', CARRY_DIR]);
+    let names = filter(carried(rel), (n) => !lockedOff(rel, n, deny));
+    if (!length(names)) return { carried: [], bytes: 0 };
+    if (!a) return { error: 'apk cannot say this gateway\'s architecture.' };
+    let t = 'v' + version, url = repoUrl(b, t);
+    if (!url) return { error: 'This gateway has no add-on repository to fetch from.' };
+
+    let dir = carryDir(t, a);
+    run(['mkdir', '-p', dir]);
+    let undo = (error) => { run(['rm', '-rf', CARRY_DIR]); return { error }; };
+    let err = fetchSmall(url + '/addons.json', dir + '/addons.json');
+    if (err) return undo(err);
+    let catalog = readJson(dir + '/addons.json', null);
+    if (catalog?.tag != t) return undo(sprintf('The add-on catalog there is not for %s.', t));
+    err = fetchSmall(sprintf('%s/%s/packages.adb', url, a), dir + '/packages.adb');
+    if (err) return undo(err);
+
+    let files = [], bytes = 0;
+    for (let n in names) {
+        let own = null;
+        for (let x in catalog.addons ?? []) if (x?.name == n) own = x.arches?.[a];
+        if (!own) return undo(sprintf('PulzrOS %s has no %s for this gateway.', version, title(rel, n)));
+        push(files, own);
+        for (let x in catalog.upstream ?? [])
+            if (n in (x?.by ?? []) && x.arches?.[a]) push(files, x.arches[a]);
+    }
+    for (let e in files) bytes += e.bytes ?? 0;
+    let free = freeBytes();
+    if (free != null && free < bytes + SPARE)
+        return undo(sprintf('Taking %s across the upgrade needs %d KB and this gateway has %d KB free.',
+                            join(', ', map(names, (n) => title(rel, n))), (bytes + SPARE) / 1024, free / 1024));
+    for (let e in files) {
+        if (!match(e.file ?? '', /^[A-Za-z0-9._+-]+\.apk$/) || !match(e.sha256 ?? '', /^[0-9a-f]{64}$/))
+            return undo(sprintf('The catalog entry for %s is malformed.', e.file ?? '?'));
+        err = fetchPackage(sprintf('%s/%s/%s', url, a, e.file), dir + '/' + e.file, e.sha256);
+        if (err) return undo(err);
+    }
+    fs.writefile(dir + '/names', join('\n', names) + '\n');
+    journal({ action: 'carry', name: join(' ', names), by: 'firmware', result: 'carried', version, bytes });
+    log(sprintf('carry %s for %s, %d KB', join(' ', names), t, bytes / 1024));
+    return { carried: names, bytes };
+};
+
+// The first boot of the release carry fetched for: install what it carried,
+// without the add-on gate (the firmware gate is judging this boot, and an
+// install's own check needs the backhaul this may be). Any other copy is
+// another release's, from an upgrade that did not happen or was rolled back,
+// and is deleted.
+let restoreCarried = () => {
+    let b = board(), a = arch(), t = tag(b);
+    let dir = a ? carryDir(t, a) : null;
+    let names = dir ? filter(split(fs.readfile(dir + '/names') ?? '', '\n'), (n) => match(n, NAME)) : [];
+    if (!length(names) || !fs.access(dir + '/packages.adb')) {
+        run(['rm', '-rf', CARRY_DIR]);
+        return;
+    }
+    if (!lock({ action: 'restore', name: join(' ', names), by: 'carried' })) return;
+    let rel = release(), deny = denied(), w = wanted(), changed = false;
+    for (let n in names) {
+        if (!(n in w) || installed(n) || !rel[n] || lockedOff(rel, n, deny)) continue;
+        record(n, 'installing');
+        let sim = run(['apk', 'add', '--simulate', ...repo(dir + '/packages.adb'), n]);
+        let add = sim.code == 0 ? run(['apk', 'add', ...repo(dir + '/packages.adb'), n]) : sim;
+        if (add.code != 0) {
+            let why = apkError(add.out);
+            record(n, 'pending-restore', why);
+            journal({ action: 'restore', name: n, by: 'carried', result: 'failed', error: why });
+            log(sprintf('restore %s from the carried copy failed: %s', n, why));
+            continue;
+        }
+        let pkgs = [];
+        for (let line in split(sim.out, '\n')) {
+            let m = match(line, /^\([0-9]+\/[0-9]+\) (Installing|Upgrading|Downgrading|Replacing|Reinstalling) ([^ ]+) /);
+            if (m) push(pkgs, m[2]);
+        }
+        activateAll(pkgs);
+        record(n, 'installed');
+        journal({ action: 'restore', name: n, by: 'carried', result: 'installed', version: installed(n) });
+        log(sprintf('restore %s from the copy carried across the upgrade', n));
+        changed = true;
+    }
+    unlock();
+    run(['rm', '-rf', CARRY_DIR]);
+    if (changed) report();
 };
 
 // One loop at a time: pulzr-firmware confirm and the init script can both
@@ -854,8 +993,14 @@ if (cmd == 'status') {
     system(['start-stop-daemon', '-S', '-b', '-x', '/usr/sbin/pulzr-addon', '--',
             action, name, by, '--locked', ...('purge' in flags ? ['--purge'] : [])]);
     printf('%J\n', { started: true, name, action });
+} else if (cmd == 'carry') {
+    let r = carry(args[0]);
+    if (r.error) die(r.error, 1);
+    printf('%J\n', r);
 } else if (cmd == 'restore') {
-    if (args[0] == '--retry') {
+    if (args[0] == '--carried') {
+        restoreCarried();
+    } else if (args[0] == '--retry') {
         restoreLoop();
     } else {
         let r = restore();
@@ -867,5 +1012,5 @@ if (cmd == 'status') {
     length(args) || die('usage: pulzr-addon undeny <cap>...', 2);
     printf('%J\n', undeny(args));
 } else {
-    die('usage: pulzr-addon {status [--brief]|start|install|remove|restore [--retry]|deny|undeny}', 2);
+    die('usage: pulzr-addon {status [--brief]|start|install|remove|restore [--retry|--carried]|carry <version>|deny|undeny}', 2);
 }

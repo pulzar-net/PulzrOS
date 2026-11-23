@@ -1,0 +1,131 @@
+#!/bin/sh
+#
+# The cellular modems plugged into this gateway's USB ports, as a JSON array,
+# whether or not anything on the gateway can drive them yet.
+#
+#   usb-modems                 [{"id","port","label","kind","driver","usb":{...}}]
+#
+# This is what makes cellular an add-on on a board whose modem is whatever is
+# plugged in (pulzr-cellular, boards/common/board.conf): pulzr-radios reports
+# the list beside the radios, and Pulzar Net offers the add-on for a gateway
+# that has a modem and not the add-on. So it reads only what the USB core
+# gives every device with no driver loaded, its descriptors in sysfs:
+#
+#   mbim         an interface of class 02 subclass 0e, MBIM: any maker
+#   vendor       vendor-specific interfaces (QMI, AT ports) on a device from a
+#                modem maker; the same class is an FTDI's or a CH341's, so
+#                only the maker tells them apart
+#   acm          a CDC-ACM AT port (02/02/01) from a modem maker; a Zigbee
+#                stick is often ACM with the same protocol, which is why it
+#                must be a maker's
+#   mode-switch  mass storage from a maker whose dongles start as a CD-ROM
+#                and need usb-modeswitch to show the modem
+#   ethernet     RNDIS (a phone or a ZTE dongle), or CDC-ECM/NCM from a modem
+#                or phone maker: a HiLink dongle, Android tethering. A
+#                Realtek or ASIX Ethernet adapter speaks ECM too and is not
+#                one
+#   iphone       Apple, an iPhone's or a cellular iPad's product ids
+#
+# The makers are a table here because nothing in the image has one:
+# ModemManager's probing and usb-modeswitch's device list arrive with the
+# add-on. A modem this misses is still one somebody can install the add-on
+# for by hand; one it lists wrongly only offers an install nobody needs.
+#
+# driver: the first driver bound to one of its interfaces, which is null on a
+# gateway without the add-on, and how the console tells a modem waiting for
+# its drivers from one cellular is already using.
+
+SYS="${PULZR_SYSFS:-/sys}/bus/usb/devices"
+
+# Quectel, Sierra, Telit, Huawei, ZTE, SIMCom, Fibocom, Thales (Cinterion),
+# Qualcomm, Novatel, MeiG, u-blox, Dell (its DW modules), TCL (Alcatel),
+# Option, Longcheer, Teracom.
+MODEM_MAKERS=" 2c7c 1199 1bc7 12d1 19d2 1e0e 2cb7 1e2d 05c6 1410 2dee 1546 413c 1bbb 0af0 1c9e 230d "
+# Not u-blox for an ACM port: its GNSS receivers are ACM with the AT protocol.
+ACM_MAKERS=" 2c7c 1199 1bc7 12d1 19d2 1e0e 2cb7 1e2d 05c6 1410 2dee 413c 1bbb 0af0 1c9e 230d "
+SWITCH_MAKERS=" 12d1 19d2 1bbb 0af0 1c9e 1e0e 230d 2cb7 "
+# Google, Samsung, Motorola, Xiaomi, OnePlus, Sony, LG, MediaTek, Meizu, and
+# the modem makers that also make phones.
+PHONE_MAKERS=" 18d1 04e8 22b8 2717 2a70 0fce 1004 0e8d 2a45 12d1 19d2 1bbb 05c6 "
+
+maker_in() { case "$2" in *" $1 "*) return 0 ;; esac; return 1; }
+
+# What the USB device calls itself, cut down to what is safe inside a JSON
+# string and short enough for a console fact.
+usb_string() {
+    [ -f "$1" ] || return 0
+    tr -cd 'A-Za-z0-9 ._()/+-' < "$1" 2>/dev/null | tr -s ' ' | cut -c1-48 | sed 's/^ *//; s/ *$//'
+}
+
+# "<class><subclass><protocol>" of each of the device's interfaces, one per
+# line, as six lower-case hex digits.
+interfaces() {
+    local i c
+    for i in "$1":*; do
+        [ -f "${i}/bInterfaceClass" ] || continue
+        c="$(cat "${i}/bInterfaceClass" "${i}/bInterfaceSubClass" "${i}/bInterfaceProtocol" 2>/dev/null | tr -d '\n ')"
+        echo "${c}" | tr 'A-F' 'a-f'
+    done
+}
+
+kind_of() {
+    local dev="$1" vid="$2" pid="$3" ifs
+    ifs="$(interfaces "${dev}")"
+    if [ "${vid}" = 05ac ]; then
+        case "${pid}" in 12[0-9a-f][0-9a-f]) echo iphone; return 0 ;; esac
+        return 1
+    fi
+    echo "${ifs}" | grep -q '^020e' && { echo mbim; return 0; }
+    if maker_in "${vid}" "${MODEM_MAKERS}"; then
+        echo "${ifs}" | grep -q '^ff' && { echo vendor; return 0; }
+    fi
+    if maker_in "${vid}" "${ACM_MAKERS}"; then
+        echo "${ifs}" | grep -q '^020201' && { echo acm; return 0; }
+    fi
+    if echo "${ifs}" | grep -q -e '^e00103' -e '^ef0401' -e '^0202ff'; then
+        echo ethernet; return 0
+    fi
+    if echo "${ifs}" | grep -q -e '^0206' -e '^020d'; then
+        if maker_in "${vid}" "${MODEM_MAKERS}" || maker_in "${vid}" "${PHONE_MAKERS}"; then
+            echo ethernet; return 0
+        fi
+    fi
+    if maker_in "${vid}" "${SWITCH_MAKERS}" && echo "${ifs}" | grep -q '^08'; then
+        echo mode-switch; return 0
+    fi
+    return 1
+}
+
+driver_of() {
+    local i
+    for i in "$1":*/driver; do
+        [ -e "${i}" ] || continue
+        basename "$(readlink "${i}")"
+        return 0
+    done
+    return 1
+}
+
+sep=''
+printf '['
+for dev in "${SYS}"/*; do
+    name="${dev##*/}"
+    # Root hubs are usbN; interfaces have a colon. A device has idVendor.
+    case "${name}" in usb*|*:*) continue ;; esac
+    [ -f "${dev}/idVendor" ] || continue
+    vid="$(tr 'A-F' 'a-f' < "${dev}/idVendor")"
+    pid="$(tr 'A-F' 'a-f' < "${dev}/idProduct")"
+    case "${vid}${pid}" in *[!0-9a-f]*|'') continue ;; esac
+    kind="$(kind_of "${dev}" "${vid}" "${pid}")" || continue
+    manufacturer="$(usb_string "${dev}/manufacturer")"
+    product="$(usb_string "${dev}/product")"
+    serial="$(usb_string "${dev}/serial" | tr -cd 'A-Za-z0-9._-' | tr 'A-Z' 'a-z' | cut -c1-40)"
+    label="$(echo "${manufacturer} ${product}" | sed 's/^ *//; s/ *$//')"
+    [ -n "${label}" ] || label="USB modem ${vid}:${pid}"
+    driver="$(driver_of "${dev}")" && driver="\"${driver}\"" || driver=null
+    printf '%s{"id":"usb-%s_%s-%s","port":"%s","label":"%s","kind":"%s","driver":%s,"usb":{"vid":"%s","pid":"%s","manufacturer":"%s","product":"%s","serial":"%s"}}' \
+        "${sep}" "${vid}" "${pid}" "${serial:-$(echo "${name}" | tr -cd '0-9.-')}" "${name}" "${label}" "${kind}" "${driver}" \
+        "${vid}" "${pid}" "${manufacturer}" "${product}" "${serial}"
+    sep=','
+done
+printf ']\n'
