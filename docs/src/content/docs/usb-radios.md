@@ -152,7 +152,7 @@ LoRaWAN ones are pulzr-probe's own.
 ## Concentrators
 
 A LoRaWAN concentrator is offered the way a Zigbee stick is: pulzr-probe lists
-it (`protocol: lorawan`), and Pulzar Net offers the pulzr-lorawan add-on
+it (`protocol: lorawan`), and Pulzr Net offers the pulzr-lorawan add-on
 ([concentrators.md](/PulzrOS/concentrators.html)). On USB it is named by its
 table entry like any radio. On SPI, which has no hotplug and no discovery,
 the boot scan alone reads the board's one slot (`PULZR_SPI_DEV`, with

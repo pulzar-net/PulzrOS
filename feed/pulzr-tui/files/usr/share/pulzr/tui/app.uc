@@ -182,7 +182,7 @@ loadPage = function(page, quiet) {
     // Adoption can happen under any page — from a phone, from Pulzr Cloud —
     // and the banner has to follow it.
     try { app.unadopted = !api.claim.isAdopted(); app.reclaiming = api.claim.reclaiming(); } catch (e) {}
-    // An add-on installed or removed meanwhile (from Pulzar Net) moves a page
+    // An add-on installed or removed meanwhile (from Pulzr Net) moves a page
     // in or out, so with every page rather than once.
     try { const f = api.system.features(); if (type(f) == 'array') app.features = f; } catch (e) {}
     if (!quiet) flash(null);
