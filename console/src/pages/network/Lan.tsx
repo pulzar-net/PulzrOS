@@ -241,7 +241,7 @@ export default function Lan() {
               }
             />
           ))}
-          <Fact label="Over cellular" value={`${bytes(cellular)} since boot`} />
+          <Fact label="Over cellular" value={bytes(cellular)} />
         </FactList>
       </Section>
 

@@ -647,8 +647,9 @@ export interface ProcessList {
 
 // ── lan ─────────────────────────────────────────────────────────────────────
 
-/** Bytes since boot, by the netifd interface that carried them (wan, wwifi,
-    wwan, usbwan), and `tunnel` for a forward's traffic. */
+/** Bytes by the netifd interface that carried them (wan, wwifi, wwan,
+    usbwan), and `tunnel` for a forward's traffic: running totals within the
+    report's usageEpoch, kept across clean reboots (docs/lan.md, Metering). */
 export type LanTraffic = Record<string, { txBytes: number; rxBytes: number }>;
 
 export interface LanClient {
