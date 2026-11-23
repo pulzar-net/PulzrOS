@@ -1,6 +1,6 @@
 // The PulzrOS docs: Starlight with the shared Pulzr theme
 // (github.com/pulzar-net/docs-theme). Pages are in src/content/docs; the
-// Hardware pages come from boards/*/board.conf (src/boards.mjs). Built and
+// Hardware pages come from boards/<maker>/<folder>/board.conf (src/boards.mjs). Built and
 // published by .github/workflows/docs.yml.
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';

@@ -2,7 +2,7 @@
 #
 # Build an OpenWrt release's ImageBuilder with one board's device support added.
 #
-# Called with a board, the one whose boards/<board>/openwrt/ holds its device
+# Called with a board, the one whose boards/<maker>/<board>/openwrt/ holds its device
 # support:
 #
 #   scripts/device-imagebuilder.sh <board> <out-dir>
@@ -11,7 +11,7 @@
 # so a release bump is OPENWRT_VERSION and nothing else. CI runs it once per
 # board with device support and caches the result by those files (build.yml).
 #
-# boards/<board>/openwrt/ holds a DTS (and any dtsi it includes), a patch
+# boards/<maker>/<board>/openwrt/ holds a DTS (and any dtsi it includes), a patch
 # against the OpenWrt tree, and optionally package/, OpenWrt packages the
 # device needs that the release does not have. They are applied to the release
 # tag, only that device is enabled, and <out-dir> receives the ImageBuilder (with
@@ -36,11 +36,13 @@ set -euo pipefail
 BOARD="${1:?usage: device-imagebuilder.sh <board> <out-dir>}"
 OUT="$(mkdir -p "${2:?usage: device-imagebuilder.sh <board> <out-dir>}" && cd "$2" && pwd)"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DEVICE_DIR="${REPO_ROOT}/boards/${BOARD}/openwrt"
-[ -f "${DEVICE_DIR}/openwrt.patch" ] || { echo "boards/${BOARD} has no device support (openwrt/)" >&2; exit 1; }
-VERSION="$(BOARDS_DIR="${REPO_ROOT}/boards" bash -c ". '${REPO_ROOT}/boards/${BOARD}/board.conf'; echo \"\${OPENWRT_VERSION}\"")"
-TARGET="$(BOARDS_DIR="${REPO_ROOT}/boards" bash -c ". '${REPO_ROOT}/boards/${BOARD}/board.conf'; echo \"\${OPENWRT_TARGET}\"")"
-SUBTARGET="$(BOARDS_DIR="${REPO_ROOT}/boards" bash -c ". '${REPO_ROOT}/boards/${BOARD}/board.conf'; echo \"\${OPENWRT_SUBTARGET}\"")"
+# The board's directory from its id: boards/<maker>/<folder>/ (boards/common/board-dir).
+BOARD_DIR="$("${REPO_ROOT}/boards/common/board-dir" "${BOARD}")" || exit 1
+DEVICE_DIR="${BOARD_DIR}/openwrt"
+[ -f "${DEVICE_DIR}/openwrt.patch" ] || { echo "${BOARD_DIR#"${REPO_ROOT}/"} has no device support (openwrt/)" >&2; exit 1; }
+VERSION="$(BOARDS_DIR="${REPO_ROOT}/boards" bash -c ". '${BOARD_DIR}/board.conf'; echo \"\${OPENWRT_VERSION}\"")"
+TARGET="$(BOARDS_DIR="${REPO_ROOT}/boards" bash -c ". '${BOARD_DIR}/board.conf'; echo \"\${OPENWRT_TARGET}\"")"
+SUBTARGET="$(BOARDS_DIR="${REPO_ROOT}/boards" bash -c ". '${BOARD_DIR}/board.conf'; echo \"\${OPENWRT_SUBTARGET}\"")"
 ROOT="${REPO_ROOT}/.build/device/${BOARD}"
 mkdir -p "${ROOT}"
 # A board whose target OpenWrt cannot build as released grafts a newer one in.

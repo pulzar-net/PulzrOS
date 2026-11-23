@@ -30,7 +30,7 @@ forwarder init both just loop.
 
 ## Declaring slots
 
-In `boards/<id>/board.conf`:
+In `boards/<maker>/<board>/board.conf`:
 
 ```sh
 # A kit — probe every bus.

@@ -1,0 +1,33 @@
+#!/bin/sh
+#
+# Where a board lives: boards/<maker>/<folder>/, found by its BOARD_ID.
+#
+#   board-dir <id>     the board's directory (absolute), or exit 1
+#   board-dir --all    "<id> <directory>" for every board, by id
+#
+# The id is what gateways, Pulzr Cloud and every image and asset name match
+# on, and it never changes (rpi3 is boards/raspberrypi/pi3). The folder is
+# only where it sits, so nothing builds a path from an id: everything asks
+# here. A script rather than a shell function, so a board.conf that includes
+# another board's (rak7266 is a rak7268v2) and a `bash -c` line can both use
+# it.
+
+BOARDS="$(cd "$(dirname "$0")/.." && pwd)"
+
+all() {
+    for conf in "${BOARDS}"/*/*/board.conf; do
+        [ -f "${conf}" ] || continue
+        # Each board's own literal: one that includes another overrides it.
+        id="$(sed -n 's/^BOARD_ID="\([^"]*\)"$/\1/p' "${conf}" | tail -n1)"
+        [ -n "${id}" ] && echo "${id} $(dirname "${conf}")"
+    done | LC_ALL=C sort
+}
+
+case "${1:-}" in
+    --all) all ;;
+    ''|-*) echo "usage: board-dir <id> | --all" >&2; exit 2 ;;
+    *)
+        dir="$(all | awk -v id="$1" '$1 == id { print $2; exit }')"
+        [ -n "${dir}" ] || { echo "no board ${1} under ${BOARDS}" >&2; exit 1; }
+        echo "${dir}" ;;
+esac

@@ -104,7 +104,7 @@ looks again whenever the node goes away. On the bench Pro the CH340 was
 
 **Only boards that declare it.** `PULZR_RAK_POWER_USB` and
 `PULZR_RAK_POWER_ID` live in `boards/common/rakwireless.conf`, empty by
-default, and only `boards/rak7289cv2/board.conf` sets them and adds
+default, and only `boards/rakwireless/rak7289cv2/board.conf` sets them and adds
 `PACKAGES_RAK_POWER`. No other board carries the package, and the init script
 starts nothing on a board that does not set the port.
 

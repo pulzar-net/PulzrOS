@@ -94,7 +94,7 @@ Forgot? `git rebase --signoff main`.
 
 ## Adding a board
 
-A board is `boards/<id>/board.conf`, a page of deltas over `boards/common/board.conf`. Its Hardware page on this site is generated from that file. The steps, the concentrator slot syntax and LED mapping are in [Adding a board](/PulzrOS/boards.html); what a feature word brings is in [Board features](/PulzrOS/features.html).
+A board is `boards/<maker>/<board>/board.conf`, a page of deltas over `boards/common/board.conf`. Its Hardware page on this site is generated from that file. The steps, the concentrator slot syntax and LED mapping are in [Adding a board](/PulzrOS/boards.html); what a feature word brings is in [Board features](/PulzrOS/features.html).
 
 On hardware, check setup mode with [Setup mode on a real gateway](/PulzrOS/setup-mode-validation.html) and say which board you ran it on in the pull request.
 

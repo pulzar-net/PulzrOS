@@ -30,7 +30,7 @@
 # ImageBuilder is pointed at.
 #
 # Nothing here is board-aware. Everything a board needs lives in
-# boards/<id>/board.conf; if this script grows an `if [ "$BOARD" = ... ]` then
+# boards/<maker>/<board>/board.conf; if this script grows an `if [ "$BOARD" = ... ]` then
 # the board abstraction has sprung a leak and the fix belongs there, not here.
 
 set -euo pipefail
@@ -68,14 +68,23 @@ log()  { printf '\033[36m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[33m warn\033[0m %s\n' "$*" >&2; }
 die()  { printf '\033[31merror\033[0m %s\n' "$*" >&2; exit 1; }
 
-# Every board directory, buildable or not.
+# A board's directory, boards/<maker>/<folder>/, from its id. Always through
+# here: the folder is not the id (rpi3 is boards/raspberrypi/pi3), and the id
+# is what images, Pulzr Cloud and the gateways match on.
+board_dir() { "${BOARDS_DIR}/common/board-dir" "$1"; }
+
+# Every board's id, buildable or not.
 all_boards() {
-  find "${BOARDS_DIR}" -mindepth 1 -maxdepth 1 -type d ! -name common \
-    -exec basename {} \; | sort
+  "${BOARDS_DIR}/common/board-dir" --all | awk '{ print $1 }'
+}
+
+# Every board's board.conf, one per line.
+board_confs() {
+  "${BOARDS_DIR}/common/board-dir" --all | awk '{ print $2 "/board.conf" }'
 }
 
 board_status() {
-  ( . "${BOARDS_DIR}/${1}/board.conf" >/dev/null 2>&1
+  ( . "$(board_dir "$1")/board.conf" >/dev/null 2>&1
     echo "${BOARD_STATUS:-supported}" )
 }
 
@@ -96,7 +105,7 @@ list_boards() {
 # changes updates its own cache key without anybody editing the workflow.
 # The OpenWrt targets sdk/build.sh builds for, one <target>/<subtarget> per
 # line: every board's, except a target only a board's own device support
-# builds (boards/<board>/openwrt/graft: the GL-SFT1200's siflower), for which
+# builds (boards/<maker>/<board>/openwrt/graft: the GL-SFT1200's siflower), for which
 # OpenWrt publishes no SDK. CI builds one SDK job per line (prebuilt.yml).
 #
 # These two lookups are here, not in sdk/: sdk/key hashes every file there,
@@ -104,11 +113,10 @@ list_boards() {
 # that takes an add-on, costs no SDK rebuild.
 sdk_targets() {
   local conf
-  for conf in "${BOARDS_DIR}"/*/board.conf; do
-    [ "${conf}" = "${BOARDS_DIR}/common/board.conf" ] && continue
+  board_confs | while IFS= read -r conf; do
     # shellcheck disable=SC1090
     ( . "${conf}"
-      [ -n "${OPENWRT_DEVICE_SUPPORT:-}" ] && [ -f "${BOARDS_DIR}/${OPENWRT_DEVICE_SUPPORT}/openwrt/graft" ] && exit 0
+      [ -n "${OPENWRT_DEVICE_SUPPORT:-}" ] && [ -f "$(board_dir "${OPENWRT_DEVICE_SUPPORT}")/openwrt/graft" ] && exit 0
       echo "${OPENWRT_TARGET}/${OPENWRT_SUBTARGET}" )
   done | sort -u
 }
@@ -121,13 +129,12 @@ sdk_target_for() {
   local arch="$1" t conf
   case "${arch}" in mipsel_24kc_24kf) arch=mipsel_24kc ;; esac
   for t in $(sdk_targets); do
-    for conf in "${BOARDS_DIR}"/*/board.conf; do
-      [ "${conf}" = "${BOARDS_DIR}/common/board.conf" ] && continue
+    while IFS= read -r conf; do
       # shellcheck disable=SC1090
       if ( . "${conf}"; [ "${OPENWRT_TARGET}/${OPENWRT_SUBTARGET}" = "${t}" ] && [ "${OPENWRT_ARCH}" = "${arch}" ] ); then
         echo "${t}"; return 0
       fi
-    done
+    done < <(board_confs)
   done
   return 1
 }
@@ -138,7 +145,7 @@ list_boards_json() {
   for board in $(all_boards); do
     (
       # shellcheck disable=SC1090
-      . "${BOARDS_DIR}/${board}/board.conf"
+      . "$(board_dir "${board}")/board.conf"
       # sdk: the SDK build its binaries come from (sdk_target_for), and
       # that build's cache key (sdk/key).
       local sdk; sdk="$(sdk_target_for "${OPENWRT_ARCH}")" || die "no SDK target builds ${OPENWRT_ARCH} (sdk_targets)"
@@ -172,16 +179,19 @@ imagebuilder_base() {
 }
 
 # What a board's device-support ImageBuilder is built from: the release, its
-# boards/<board>/openwrt/ and the scripts that build it. The CI cache key for
-# that build, and part of the id below, so a change to any of them is a new
-# ImageBuilder everywhere.
+# openwrt/ and the scripts that build it, busybox's configuration included.
+# The CI cache key for that build, and part of the id below, so a change to
+# any of them is a new ImageBuilder everywhere. The openwrt/ files are hashed
+# by their names inside it, not by where the board sits, so moving a board's
+# folder is not a cold build of hours.
 device_key() {
-  local dir="${BOARDS_DIR}/${OPENWRT_DEVICE_SUPPORT}/openwrt"
-  { echo "${OPENWRT_VERSION}"
-    ( cd "${ROOT_DIR}" && find "boards/${OPENWRT_DEVICE_SUPPORT}/openwrt" scripts/device-imagebuilder.sh \
-        scripts/device-imagebuilder-graft.sh -type f | LC_ALL=C sort | xargs sha256sum ); } \
-    | sha256sum | cut -c1-12
+  local dir; dir="$(board_dir "${OPENWRT_DEVICE_SUPPORT}")/openwrt"
   [ -d "${dir}" ] || return 1
+  { echo "${OPENWRT_VERSION}"
+    ( cd "${dir}" && find . -type f | LC_ALL=C sort | xargs sha256sum )
+    ( cd "${ROOT_DIR}" && sha256sum scripts/device-imagebuilder.sh scripts/device-imagebuilder-graft.sh \
+        scripts/busybox-quiet-config.sh ); } \
+    | sha256sum | cut -c1-12
 }
 
 # Distinct per source, so the stock and a device-support ImageBuilder for the
@@ -836,13 +846,15 @@ render_board_files() {
 
   # A board may ship literal files of its own; they win over anything shared.
   [ -d "${BOARDS_DIR}/common/files" ] && cp -a "${BOARDS_DIR}/common/files/." "${files}/"
-  [ -d "${BOARDS_DIR}/${BOARD_ID}/files" ] && cp -a "${BOARDS_DIR}/${BOARD_ID}/files/." "${files}/"
+  local own; own="$(board_dir "${BOARD_ID}")/files"
+  [ -d "${own}" ] && cp -a "${own}/." "${files}/"
   return 0
 }
 
 build_board() {
   local board="$1"
-  local conf="${BOARDS_DIR}/${board}/board.conf"
+  local conf
+  conf="$(board_dir "${board}" 2>/dev/null)/board.conf"
   [ -f "${conf}" ] || die "unknown board '${board}' (try --list)"
 
   # Each board is read in a subshell so one board's overrides cannot leak into

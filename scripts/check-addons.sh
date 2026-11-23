@@ -46,23 +46,23 @@ export BOARDS_DIR
 fail=0
 bad() { echo "error: $*" >&2; fail=1; }
 
+# Every board's id, and its directory from it (boards/common/board-dir): the
+# folder is not the id (rpi3 is boards/raspberrypi/pi3).
 boards=()
-for conf in "${BOARDS_DIR}"/*/board.conf; do
-  id="$(basename "$(dirname "${conf}")")"
-  [ "${id}" = common ] || boards+=("${id}")
-done
+while read -r id _; do boards+=("${id}"); done < <("${BOARDS_DIR}/common/board-dir" --all)
+board_dir() { "${BOARDS_DIR}/common/board-dir" "$1"; }
 
 # One line per board: its id, its OPENWRT_ARCH, its resolved package list, its
 # status and its concentrator slots.
 board_facts() {
-  ( . "${BOARDS_DIR}/$1/board.conf"
+  ( . "$(board_dir "$1")/board.conf"
     printf '%s\t%s\t%s\t%s\t%s\n' "${BOARD_ID}" "${OPENWRT_ARCH:-}" \
       "$(pulzr_packages | sed 's/#.*//' | tr -s '[:space:]' ' ')" "${BOARD_STATUS:-supported}" \
       "${PULZR_CONCENTRATOR_SLOTS:-auto}" )
 }
 
 facts="$(mktemp)"; trap 'rm -f "${facts}"' EXIT
-for b in "${boards[@]}"; do board_facts "${b}" >> "${facts}" || bad "cannot read boards/${b}/board.conf"; done
+for b in "${boards[@]}"; do board_facts "${b}" >> "${facts}" || bad "cannot read ${b}'s board.conf"; done
 
 count=0
 for pkgdir in "${FEED_DIR}"/*/; do

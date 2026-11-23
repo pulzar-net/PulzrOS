@@ -23,7 +23,7 @@ confinement, the LoRa stack — is shared and must not be duplicated.
 
 ## Steps
 
-1. `mkdir boards/<id>` and write `board.conf`, sourcing common first:
+1. `mkdir -p boards/<maker>/<board>` and write `board.conf`, sourcing common first. The folder is only where the board sits; its `BOARD_ID` is what images, Pulzr Cloud and gateways match on, and it never changes (`rpi3` lives in `boards/raspberrypi/pi3`). Everything finds a board's folder from its id with `boards/common/board-dir <id>`, so nothing builds a path from the id:
 
    ```sh
    . "${BOARDS_DIR}/common/board.conf"
@@ -64,7 +64,7 @@ confinement, the LoRa stack — is shared and must not be duplicated.
    console's Panel page shows exactly these, with what each is doing now; a
    board that leaves it empty gets `/sys/class/leds` listed instead.
 
-5. Optionally add `boards/<id>/files/` for literal files to overlay. These win
+5. Optionally add `boards/<maker>/<board>/files/` for literal files to overlay. These win
    over `boards/common/files/`.
 
 6. `./build.sh <id>`.
@@ -108,13 +108,13 @@ lines of genuine difference.
 
 `rak7268cv2` was harvested from a stock unit. Its OpenWrt device support
 (a DTS and a patch against OpenWrt, the hardware record in its README) is
-`boards/rak7268cv2/openwrt/`; `scripts/device-imagebuilder.sh` builds an
+`boards/rakwireless/rak7268cv2/openwrt/`; `scripts/device-imagebuilder.sh` builds an
 ImageBuilder from it, which CI does once per change to those files, and the
 board names it in `OPENWRT_DEVICE_SUPPORT`. Every board OpenWrt does not
 support yet works the same way, until OpenWrt carries it and the folder goes.
 
 `rak7289cv2` shares the RAK636 board, so its device support was written from
-that same shipping firmware rather than a fresh harvest — `boards/rak7289cv2/openwrt/`.
+that same shipping firmware rather than a fresh harvest — `boards/rakwireless/rak7289cv2/openwrt/`.
 Its two radios are RAK5146 (SX1303) cards on **USB** (`/dev/lora0` and
 `/dev/lora1`, linked by hub port to whichever ttyACM each card gets), not SPI — the one hardware difference from the Lite. A bench
 run of the full `24.10.0-1` PulzrOS image confirmed it boots as
@@ -126,7 +126,7 @@ silkscreen LoRa1/LoRa2 order left to confirm on a Pro with both cards.
 `gl-sft1200` is the GL.iNet Opal, the first board that is a router rather
 than a LoRa gateway: one WAN port and two LAN ports on a MaxLinear GSW150
 switch, and Siflower's two radios on their GPLv2 driver (`kmod-siwifi`). Its target is source-only in 25.12 and has no GSW150
-driver on 6.12, so `boards/gl-sft1200/openwrt/`, with `scripts/device-imagebuilder-graft.sh`,
+driver on 6.12, so `boards/glinet/gl-sft1200/openwrt/`, with `scripts/device-imagebuilder-graft.sh`,
 builds the 25.12.6 tree with siflower's 6.18 kernel grafted in, and an
 ImageBuilder that carries the kernel, every kmod and the target's own
 packages while installing the release's userland. `check-deps.sh` lists what

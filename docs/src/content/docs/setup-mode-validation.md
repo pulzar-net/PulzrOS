@@ -76,7 +76,7 @@ the PulzrOS branch that points at its build.
 5. Run Four presses above; both outcomes must be visible across a room.
 6. Then: correct the names, remove channel 2, merge, push to main (which
    publishes the release), and map the LED in
-   `boards/gl-sft1200/board.conf`.
+   `boards/glinet/gl-sft1200/board.conf`.
 
 ## What each board shows
 

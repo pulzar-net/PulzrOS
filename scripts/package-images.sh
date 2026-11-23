@@ -45,7 +45,7 @@ die() { printf '\033[31merror\033[0m %s\n' "$*" >&2; exit 1; }
 mkdir -p "${DEST}"
 
 # shellcheck disable=SC1090
-. "${BOARDS_DIR}/${BOARD}/board.conf"
+. "$("${BOARDS_DIR}/common/board-dir" "${BOARD}")/board.conf"
 
 sha() {
   if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1

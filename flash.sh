@@ -35,16 +35,15 @@ die()  { printf '\033[31merror\033[0m %s\n' "$*" >&2; exit 1; }
 # ── boards ──────────────────────────────────────────────────────────────────
 
 board_field() {
-  ( . "${BOARDS_DIR}/${1}/board.conf" >/dev/null 2>&1; eval "printf '%s' \"\${$2:-}\"" )
+  ( . "$("${BOARDS_DIR}/common/board-dir" "$1")/board.conf" >/dev/null 2>&1; eval "printf '%s' \"\${$2:-}\"" )
 }
 
 sdcard_boards() {
-  for dir in "${BOARDS_DIR}"/*/; do
-    local board; board="$(basename "${dir}")"
-    [ "${board}" = "common" ] && continue
+  local board
+  while read -r board _; do
     [ "$(board_field "${board}" BOARD_INSTALL)" = "sdcard" ] || continue
     echo "${board}"
-  done
+  done < <("${BOARDS_DIR}/common/board-dir" --all)
 }
 
 # ── finding an image ────────────────────────────────────────────────────────
@@ -265,7 +264,7 @@ if [ -z "${BOARD}" ]; then
   BOARD="$(choose "Which board" "${boards[@]}")"
 fi
 
-[ -d "${BOARDS_DIR}/${BOARD}" ] || die "unknown board '${BOARD}'"
+"${BOARDS_DIR}/common/board-dir" "${BOARD}" >/dev/null 2>&1 || die "unknown board '${BOARD}'"
 
 install_method="$(board_field "${BOARD}" BOARD_INSTALL)"
 if [ "${install_method}" != sdcard ]; then

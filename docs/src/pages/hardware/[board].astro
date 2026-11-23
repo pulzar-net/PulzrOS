@@ -1,5 +1,5 @@
 ---
-// One page per boards/<id>/, from its board.conf (../../boards.mjs). The
+// One page per board (boards/<maker>/<folder>/), from its board.conf (../../boards.mjs). The
 // page's "Edit" link opens the board.conf it came from.
 import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
 import { Code } from '@astrojs/starlight/components';
@@ -24,7 +24,7 @@ const headings = [
 	frontmatter={{
 		title: b.name,
 		description: summary,
-		editUrl: `${REPO}/edit/main/boards/${b.id}/board.conf`,
+		editUrl: `${REPO}/edit/main/${b.dir}/board.conf`,
 	}}
 	headings={headings}
 >
@@ -98,7 +98,7 @@ const headings = [
 	)}
 
 	<p>
-		Source: <a href={`${REPO}/blob/main/boards/${b.id}/board.conf`}><code>boards/{b.id}/board.conf</code></a>
+		Source: <a href={`${REPO}/blob/main/${b.dir}/board.conf`}><code>{b.dir}/board.conf</code></a>
 	</p>
 </StarlightPage>
 

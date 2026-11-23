@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Every board's facts, as JSON, read from boards/<id>/board.conf.
+# Every board's facts, as JSON, read from boards/<maker>/<board>/board.conf.
 #
 #   scripts/board-facts.sh            # a JSON array, one object per board
 #
@@ -20,9 +20,10 @@ export BOARDS_DIR
 
 command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
 
-for dir in "${BOARDS_DIR}"/*/; do
-  board="$(basename "${dir}")"
-  [ "${board}" = common ] && continue
+# Each board's id and directory from boards/common/board-dir: the folder is
+# not the id (rpi3 is boards/raspberrypi/pi3).
+while read -r board dir; do
+  dir="${dir}/"
   (
     # shellcheck disable=SC1090
     . "${dir}board.conf" >/dev/null 2>&1
@@ -32,7 +33,8 @@ for dir in "${BOARDS_DIR}"/*/; do
     header="$(awk '/^#/ { sub(/^# ?/, ""); print; next } { exit }' "${dir}board.conf")"
 
     readme=""
-    [ -f "${dir}openwrt/README.md" ] && readme="boards/${board}/openwrt/README.md"
+    rel="${dir#"${ROOT_DIR}/"}"
+    [ -f "${dir}openwrt/README.md" ] && readme="${rel}openwrt/README.md"
 
     jq -n \
       --arg id "${BOARD_ID}" \
@@ -60,6 +62,7 @@ for dir in "${BOARDS_DIR}"/*/; do
       --arg leds "${PULZR_LEDS:-}" \
       --arg header "${header}" \
       --arg readme "${readme}" \
+      --arg dir "${rel%/}" \
       'def words: split(" ") | map(select(. != ""));
        {
          id: $id, name: $name, status: $status, install: $install,
@@ -74,7 +77,7 @@ for dir in "${BOARDS_DIR}"/*/; do
          builtinAddons: ($addons | words),
          leds: ($leds | split("\n") | map(gsub("^\\s+|\\s+$"; "")) | map(select(. != ""))
                 | map(capture("^(?<sysfs>\\S+)\\s+(?<colour>\\S+)\\s+(?<role>\\S+)\\s+(?<label>.*)$"))),
-         header: $header, readme: $readme
+         header: $header, readme: $readme, dir: $dir
        }'
   )
-done | jq -s 'sort_by(.id)'
+done < <("${BOARDS_DIR}/common/board-dir" --all) | jq -s 'sort_by(.id)'

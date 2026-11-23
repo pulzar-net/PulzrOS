@@ -28,7 +28,7 @@ on:
     paths:
       - 'sdk/**'
       - 'boards/common/board.conf'
-      - 'boards/*/openwrt/**'
+      - 'boards/*/*/openwrt/**'
       - 'scripts/device-imagebuilder.sh'
       - 'scripts/device-imagebuilder-graft.sh'
       - 'scripts/busybox-quiet-config.sh'

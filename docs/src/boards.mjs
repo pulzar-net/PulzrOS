@@ -1,6 +1,6 @@
 // The Hardware pages, from the board files themselves.
 //
-// scripts/board-facts.sh sources each boards/<id>/board.conf the way build.sh
+// scripts/board-facts.sh sources each board.conf (boards/<maker>/<folder>/) the way build.sh
 // does and prints what it found. Everything a Hardware page says comes from
 // there, so a board's page cannot disagree with the image built for it. Used
 // by the sidebar (astro.config.mjs), the board table (hardware.mdx) and each

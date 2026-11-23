@@ -38,6 +38,10 @@ TAG="${4:?tag}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 FEED_DIR="${ROOT_DIR}/feed"
 BOARDS_DIR="${ROOT_DIR}/boards"
+# A board's directory from its id, and every board's "<id> <directory>":
+# boards/common/board-dir, the one place that knows where boards sit.
+board_dir() { "${BOARDS_DIR}/common/board-dir" "$1"; }
+all_boards() { "${BOARDS_DIR}/common/board-dir" --all; }
 PUBKEY="${FEED_DIR}/pulzr-base/files/etc/apk/keys/pulzr-addons.pem"
 
 die() { echo "error: $*" >&2; exit 1; }
@@ -93,7 +97,7 @@ OPENWRT_KEYS="$(find "${IB}" -maxdepth 3 -type d -name keys -exec sh -c 'ls "$1"
 [ -n "${OPENWRT_KEYS}" ] || die "this ImageBuilder has no keys directory with OpenWrt's public keys"
 
 # A target OpenWrt does not build (a board whose device support grafts it,
-# boards/<board>/openwrt/graft) has no feeds of its own on
+# boards/<maker>/<board>/openwrt/graft) has no feeds of its own on
 # downloads.openwrt.org: its kernel, kmods and toolchain libraries are built
 # with that board's ImageBuilder and carried in its packages/
 # (device-imagebuilder-graft.sh). For such an arch, prints the packages
@@ -102,11 +106,11 @@ OPENWRT_KEYS="$(find "${IB}" -maxdepth 3 -type d -name keys -exec sh -c 'ls "$1"
 DEVICE_IB_DIR="${DEVICE_IB_DIR:-${ROOT_DIR}/.build/device-ib}"
 target_packages_of() {
   local conf dev
-  for conf in "${BOARDS_DIR}"/*/board.conf; do
-    [ "${conf}" = "${BOARDS_DIR}/common/board.conf" ] && continue
+  while read -r _ conf; do
+    conf="${conf}/board.conf"
     dev="$( BOARDS_DIR="${BOARDS_DIR}"; . "${conf}"
             [ "${OPENWRT_ARCH:-}" = "$1" ] && echo "${OPENWRT_DEVICE_SUPPORT:-}" )" || true
-    [ -n "${dev}" ] && [ -f "${BOARDS_DIR}/${dev}/openwrt/graft" ] || continue
+    [ -n "${dev}" ] && [ -f "$(board_dir "${dev}")/openwrt/graft" ] || continue
     local ib dir="${WORK}/target-packages/${dev}"
     if [ ! -d "${dir}" ]; then
       ib="$(ls "${DEVICE_IB_DIR}/${dev}"/openwrt-imagebuilder-*.tar.zst 2>/dev/null | head -n1)"
@@ -121,7 +125,7 @@ target_packages_of() {
     fi
     echo "${dir}"
     return 0
-  done
+  done < <(all_boards)
 }
 
 # This release's SDK build of <arch> (sdk/build.sh, which build.sh's sdk stage
@@ -141,15 +145,15 @@ sdk_packages_of() {
 installable_on() {
   local name="$1" arch="$2" allowed conf
   allowed="$(. "${FEED_DIR}/${name}/addon"; echo "${ADDON_BOARDS:-}")"
-  for conf in "${BOARDS_DIR}"/*/board.conf; do
-    [ "${conf}" = "${BOARDS_DIR}/common/board.conf" ] && continue
+  while read -r _ conf; do
+    conf="${conf}/board.conf"
     ( BOARDS_DIR="${BOARDS_DIR}"; . "${conf}"
       [ "${OPENWRT_ARCH:-}" = "${arch}" ] || exit 0
       [ "${BOARD_STATUS:-supported}" = supported ] || exit 0
       [ "${allowed}" = "*" ] || case " ${allowed} " in *" ${BOARD_ID} "*) ;; *) exit 0 ;; esac
       case " ${PULZR_ADDONS_BUILTIN:-} " in *" ${name} "*) exit 0 ;; esac
       echo "${BOARD_ID} ${OPENWRT_TARGET}/${OPENWRT_SUBTARGET}" )
-  done
+  done < <(all_boards)
 }
 
 common_package() {
@@ -180,13 +184,13 @@ for pkgdir in "${FEED_DIR}"/*/; do
 
   # Boards that carry it in the image, from their own config.
   builtin="[]"
-  for conf in "${BOARDS_DIR}"/*/board.conf; do
-    id="$(basename "$(dirname "${conf}")")"; [ "${id}" = common ] && continue
+  while read -r id conf; do
+    conf="${conf}/board.conf"
     if ( BOARDS_DIR="${BOARDS_DIR}"; . "${conf}"
          case " ${PULZR_ADDONS_BUILTIN:-} " in *" ${name} "*) exit 0 ;; esac; exit 1 ); then
       builtin="$(jq -c --arg b "${id}" '. + [$b]' <<<"${builtin}")"
     fi
-  done
+  done < <(all_boards)
 
   # On fd 3: apk and tar below read stdin, and would eat the rest of the list.
   while read -r arch _ <&3; do

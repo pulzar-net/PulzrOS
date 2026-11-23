@@ -3,7 +3,7 @@
 #
 # Built on every pull request that touches it, so a dead link (checked by the
 # theme's link validator) or a page that does not compile fails there;
-# published only from main. The Hardware pages read boards/*/board.conf
+# published only from main. The Hardware pages read boards/<maker>/<folder>/board.conf
 # through scripts/board-facts.sh, so a change to a board republishes its page.
 
 name: docs

@@ -103,9 +103,7 @@ our_packages() {
 boards=()
 for arg in "$@"; do boards+=("${arg}"); done
 if [ "${#boards[@]}" -eq 0 ]; then
-  while IFS= read -r b; do boards+=("${b}"); done < <(
-    find "${BOARDS_DIR}" -mindepth 1 -maxdepth 1 -type d \
-      ! -name common -exec basename {} \; | sort)
+  while read -r b _; do boards+=("${b}"); done < <("${BOARDS_DIR}/common/board-dir" --all)
 fi
 
 OURS=()
@@ -119,7 +117,7 @@ is_ours() {
 total_missing=0
 
 for board in "${boards[@]}"; do
-  conf="${BOARDS_DIR}/${board}/board.conf"
+  conf="$("${BOARDS_DIR}/common/board-dir" "${board}" 2>/dev/null)/board.conf"
   [ -f "${conf}" ] || { echo "unknown board ${board}" >&2; exit 2; }
 
   # shellcheck disable=SC1090

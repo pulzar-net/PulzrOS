@@ -19,13 +19,13 @@
 #
 # So the tree is the release tag, with the kernel side (target/linux/siflower,
 # the generic 6.18 patches and config, and the kernel packages) grafted from
-# the pinned commits in boards/<board>/openwrt/graft. Userland is the release's
+# the pinned commits in boards/<maker>/<board>/openwrt/graft. Userland is the release's
 # exactly: the ImageBuilder installs it from the release's feeds, so a
 # ParkezeOS image for this board runs the same ucode, netifd and fw4 as every
 # other. The kernel and every kmod are built here and carried in the
 # ImageBuilder's own packages/, since nothing upstream has them.
 #
-# boards/<board>/openwrt/ holds the graft, and optionally a DTS and a patch
+# boards/<maker>/<board>/openwrt/ holds the graft, and optionally a DTS and a patch
 # against the grafted tree for anything the grafted target does not have. The
 # board's OPENWRT_PROFILE is the device's name in the image recipe.
 #
@@ -36,12 +36,14 @@ set -euo pipefail
 BOARD="${1:?usage: device-imagebuilder-graft.sh <board> <out-dir>}"
 OUT="$(mkdir -p "${2:?usage: device-imagebuilder-graft.sh <board> <out-dir>}" && cd "$2" && pwd)"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DEVICE_DIR="${REPO_ROOT}/boards/${BOARD}/openwrt"
-[ -f "${DEVICE_DIR}/openwrt.patch" ] || { echo "boards/${BOARD} has no device support (openwrt/)" >&2; exit 1; }
-VERSION="$(BOARDS_DIR="${REPO_ROOT}/boards" bash -c ". '${REPO_ROOT}/boards/${BOARD}/board.conf'; echo \"\${OPENWRT_VERSION}\"")"
-TARGET="$(BOARDS_DIR="${REPO_ROOT}/boards" bash -c ". '${REPO_ROOT}/boards/${BOARD}/board.conf'; echo \"\${OPENWRT_TARGET}\"")"
-SUBTARGET="$(BOARDS_DIR="${REPO_ROOT}/boards" bash -c ". '${REPO_ROOT}/boards/${BOARD}/board.conf'; echo \"\${OPENWRT_SUBTARGET}\"")"
-PROFILE="$(BOARDS_DIR="${REPO_ROOT}/boards" bash -c ". '${REPO_ROOT}/boards/${BOARD}/board.conf'; echo \"\${OPENWRT_PROFILE}\"")"
+# The board's directory from its id: boards/<maker>/<folder>/ (boards/common/board-dir).
+BOARD_DIR="$("${REPO_ROOT}/boards/common/board-dir" "${BOARD}")" || exit 1
+DEVICE_DIR="${BOARD_DIR}/openwrt"
+[ -f "${DEVICE_DIR}/openwrt.patch" ] || { echo "${BOARD_DIR#"${REPO_ROOT}/"} has no device support (openwrt/)" >&2; exit 1; }
+VERSION="$(BOARDS_DIR="${REPO_ROOT}/boards" bash -c ". '${BOARD_DIR}/board.conf'; echo \"\${OPENWRT_VERSION}\"")"
+TARGET="$(BOARDS_DIR="${REPO_ROOT}/boards" bash -c ". '${BOARD_DIR}/board.conf'; echo \"\${OPENWRT_TARGET}\"")"
+SUBTARGET="$(BOARDS_DIR="${REPO_ROOT}/boards" bash -c ". '${BOARD_DIR}/board.conf'; echo \"\${OPENWRT_SUBTARGET}\"")"
+PROFILE="$(BOARDS_DIR="${REPO_ROOT}/boards" bash -c ". '${BOARD_DIR}/board.conf'; echo \"\${OPENWRT_PROFILE}\"")"
 ROOT="${REPO_ROOT}/.build/device/${BOARD}"
 mkdir -p "${ROOT}"
 

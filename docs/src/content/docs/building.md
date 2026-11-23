@@ -28,7 +28,7 @@ PulzrOS is assembled with OpenWrt's ImageBuilder from a pinned release (`OPENWRT
 ./build.sh --stage addons
 ```
 
-A board whose status is `needs-device-support` needs its ImageBuilder built from `boards/<board>/openwrt/` first (`scripts/device-imagebuilder.sh`): Linux and a couple of hours. CI does this once per change to those files.
+A board whose status is `needs-device-support` needs its ImageBuilder built from `boards/<maker>/<board>/openwrt/` first (`scripts/device-imagebuilder.sh`): Linux and a couple of hours. CI does this once per change to those files.
 
 ## Development images
 

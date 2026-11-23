@@ -10,7 +10,7 @@ ADDON_FEATURE="lorawan"
 # a LoRaWAN gateway must never come up from an upgrade without it. Offered on
 # a kit (the Pis) when pulzr-probe finds a concentrator on SPI or USB.
 #
-# Not the GL-SFT1200: its target is source-only (boards/gl-sft1200/openwrt),
+# Not the GL-SFT1200: its target is source-only (boards/glinet/gl-sft1200/openwrt),
 # so no OpenWrt SDK builds ChirpStack for its mipsel_24kc_24kf, and a build
 # for the soft-float mipsel_24kc is a package apk would refuse there.
 # A gateway whose configuration says a concentrator answered there (detection
