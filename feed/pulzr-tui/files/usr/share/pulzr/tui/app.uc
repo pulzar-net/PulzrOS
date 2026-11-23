@@ -51,32 +51,45 @@ let api = load('api');
 let logo = loadfile(LIB + '/../logo.uc', { raw_mode: true })();
 let diag = load('diag');
 
-// The sidebar, in console/src/nav.ts's order and with its labels.
+// The sidebar, in console/src/nav.ts's order, under its headings and with its
+// labels. A group whose entries the gateway has none of shows no heading.
 // `feature`: shown only while the gateway has it, the web console's nav.ts
 // words (system.features(): the board's, and each installed add-on's), so
 // LoRaWAN appears once pulzr-lorawan is installed, as Cellular does with
 // pulzr-cellular.
-const NAV = [
-    { path: '/', label: 'Overview' },
-    { path: '/backhaul', label: 'Backhaul', children: [
-        { path: '/backhaul/ethernet', label: 'Ethernet' },
-        { path: '/backhaul/cellular', label: 'Cellular', feature: 'cellular' },
-        { path: '/backhaul/wifi', label: 'WiFi', feature: 'wifi' },
+const NAV_GROUPS = [
+    { entries: [
+        { path: '/', label: 'Overview' },
+        { path: '/logs', label: 'Logs' },
     ] },
-    { path: '/lorawan', label: 'LoRaWAN', feature: 'lorawan', children: [
-        { path: '/lorawan/forwarders', label: 'Forwarders' },
-        { path: '/lorawan/settings', label: 'Settings' },
+    { label: 'Connectivity', entries: [
+        { path: '/backhaul', label: 'Backhaul', children: [
+            { path: '/backhaul/ethernet', label: 'Ethernet' },
+            { path: '/backhaul/cellular', label: 'Cellular', feature: 'cellular' },
+            { path: '/backhaul/wifi', label: 'WiFi', feature: 'wifi' },
+        ] },
+        { path: '/access', label: 'Access' },
     ] },
-    { path: '/gnss', label: 'GNSS', feature: 'gnss' },
-    { path: '/bluetooth', label: 'Bluetooth', feature: 'bluetooth' },
-    { path: '/access', label: 'Access' },
-    { path: '/io', label: 'Panel' },
-    { path: '/logs', label: 'Logs' },
-    { path: '/system', label: 'System', children: [
-        { path: '/system/resources', label: 'Resources' },
-        { path: '/system/maintenance', label: 'Maintenance' },
+    { label: 'Radios', entries: [
+        { path: '/lorawan', label: 'LoRaWAN', feature: 'lorawan', children: [
+            { path: '/lorawan/forwarders', label: 'Forwarders' },
+            { path: '/lorawan/settings', label: 'Settings' },
+        ] },
+        { path: '/bluetooth', label: 'Bluetooth', feature: 'bluetooth' },
+        { path: '/gnss', label: 'GNSS', feature: 'gnss' },
+    ] },
+    { label: 'Gateway', entries: [
+        { path: '/io', label: 'Panel' },
+        { path: '/system', label: 'System', children: [
+            { path: '/system/resources', label: 'Resources' },
+            { path: '/system/maintenance', label: 'Maintenance' },
+        ] },
     ] },
 ];
+
+// Every entry, for what does not care about the headings.
+const NAV = [];
+for (let g in NAV_GROUPS) push(NAV, ...g.entries);
 
 const PAGES = {
     '/': 'overview',
@@ -726,14 +739,22 @@ handleDialog = function(key) {
 
 // ── drawing ─────────────────────────────────────────────────────────────────
 
-// The sidebar as it stands: a group's children show while it is open.
+// The sidebar as it stands: a group's children show while it is open. Only
+// what the cursor can land on; the first entry under a heading carries it,
+// for drawNav, so a heading with nothing shown under it never appears.
 navEntries = function() {
     const out = [];
-    for (let e in NAV) {
-        if (!shown(e)) continue;
-        push(out, { path: e.path, label: e.label, depth: 0 });
-        if (e.children && index(app.path, e.path) == 0 && e.path != '/')
-            for (let c in filter(e.children, shown)) push(out, { path: c.path, label: c.label, depth: 1 });
+    for (let g in NAV_GROUPS) {
+        let heading = g.label;
+        for (let e in g.entries) {
+            if (!shown(e)) continue;
+            const kids = e.children ? filter(e.children, shown) : null;
+            if (kids && !length(kids)) continue;
+            push(out, { path: e.path, label: e.label, depth: 0, heading: heading });
+            heading = null;
+            if (kids && index(app.path, e.path) == 0 && e.path != '/')
+                for (let c in kids) push(out, { path: c.path, label: c.label, depth: 1 });
+        }
     }
     return out;
 };
@@ -763,9 +784,20 @@ drawHeader = function(width) {
 
 drawNav = function(height) {
     const entries = navEntries();
+    // A blank row above each heading, as app.pulzr.net spaces its groups,
+    // while the list still fits; a short terminal keeps the headings only,
+    // and one too short for those drops them rather than an entry.
+    let headings = 0;
+    for (let e in entries) if (e.heading) headings++;
+    const spaced = length(entries) + 2 * headings <= height;
+    const headed = length(entries) + headings <= height;
     const out = [];
     for (let i = 0; i < length(entries); i++) {
         const e = entries[i];
+        if (e.heading && headed) {
+            if (spaced) push(out, term.pad('', NAV_WIDTH));
+            push(out, ui.style(term.pad(' ' + uc(e.heading), NAV_WIDTH), 'dim'));
+        }
         const active = e.path == app.path || (e.depth == 0 && e.path != '/' && index(app.path, e.path) == 0
                        && !length(filter(entries, (c) => c.depth == 1 && c.path == app.path)));
         const here = e.path == app.path;
