@@ -1,5 +1,5 @@
 #!/usr/bin/ucode -R
-// Draw the Pulzar mark.
+// Draw the Pulzr mark.
 //
 //   pulzr-logo                  the mark, for this terminal
 //   pulzr-logo --beside         the mark with stdin laid out to its right

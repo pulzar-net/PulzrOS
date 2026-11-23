@@ -4,12 +4,12 @@
 #
 #   pulzr-ssh-setup              write /etc/ssh: config, host keys, CA, principal
 #   pulzr-ssh-setup --host-key   the host key to report, "ssh-ed25519 AAAA..."
-#   pulzr-ssh-setup --trusts-ca  exit 0 if the running sshd accepts a Pulzar
+#   pulzr-ssh-setup --trusts-ca  exit 0 if the running sshd accepts a Pulzr
 #                                  certificate naming this gateway
 #
 # ── WHY OPENSSH, AND ONLY OPENSSH ─────────────────────────────────────────
 #
-# Pulzar Cloud reaches a gateway's shell with an SSH certificate made for that
+# Pulzr Cloud reaches a gateway's shell with an SSH certificate made for that
 # one gateway, good for five minutes, rather than with one fleet key that opens
 # every gateway. dropbear cannot check a certificate, so sshd replaces it.
 #
@@ -18,11 +18,11 @@
 # SIM's; the ethernet port alone holds a lease, the console address and a
 # link-local address at once. Two daemons on 22 split by address would be a
 # binding to keep right on every one of those changes, a second host key for
-# Pulzar Cloud to pin, and two daemons' RAM on a 128MB gateway instead of one.
+# Pulzr Cloud to pin, and two daemons' RAM on a 128MB gateway instead of one.
 #
 # ── HOST KEYS ──────────────────────────────────────────────────────────────
 #
-# Pulzar Cloud pins the host key a gateway reports. dropbear's keys are
+# Pulzr Cloud pins the host key a gateway reports. dropbear's keys are
 # converted once, on the first boot without dropbear, so sshd presents the key
 # already pinned. dropbear's files are left where they are: a rollback to a
 # dropbear image presents the same key again. keep.d carries both sets.
@@ -30,7 +30,7 @@
 # ── THE CERTIFICATE AUTHORITY AND THE PRINCIPAL ───────────────────────────
 #
 # The CA's public line ships on /usr, which sysupgrade replaces whole, so a
-# rotated CA arrives with the firmware; it is copied to the path Pulzar Cloud's
+# rotated CA arrives with the firmware; it is copied to the path Pulzr Cloud's
 # docs name. A certificate is accepted for root only if it names this
 # gateway's EUI — 16 lowercase hex, one line — so a certificate leaked from one
 # session opens one gateway for five minutes. An image built without a CA, or
@@ -91,7 +91,7 @@ drop() {
     changed=1
 }
 
-# The certificate principal: this gateway's EUI, exactly as Pulzar Cloud names
+# The certificate principal: this gateway's EUI, exactly as Pulzr Cloud names
 # it, or nothing.
 principal() {
     local eui
@@ -205,7 +205,7 @@ AuthorizedPrincipalsFile ${PRINCIPALS}/%u"
     return 0
 }
 
-# The key reported to Pulzar Cloud for pinning. ed25519 first, as dropbear's
+# The key reported to Pulzr Cloud for pinning. ed25519 first, as dropbear's
 # was read before, so a converted gateway reports the key it reported then.
 host_key() {
     local type f key

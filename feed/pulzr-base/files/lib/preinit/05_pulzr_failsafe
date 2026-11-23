@@ -2,8 +2,8 @@
 #
 # OpenWrt's failsafe — a key on the serial console, the reset button or
 # `failsafe=` on the kernel command line, early in boot — is a root shell with
-# no password and the overlay left unmounted. A root shell on PulzarOS is a
-# copy of PulzarOS, and the serial console and the button are both within
+# no password and the overlay left unmounted. A root shell on PulzrOS is a
+# copy of PulzrOS, and the serial console and the button are both within
 # reach of anybody standing at a gateway. A broken gateway is reflashed
 # instead; a development build keeps failsafe for the bench.
 #

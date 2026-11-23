@@ -24,9 +24,9 @@ import styles from '../Pages.module.css';
  * local names, rebind protection. Each section applies on its own, as
  * GL.iNet's cards do.
  *
- * pulzr-dns refuses a name under a Pulzar domain and a server list that
- * cannot resolve Pulzar; its message is shown as it comes. Everything here is
- * in UCI dhcp, which is what Pulzar Cloud's `dns` op reads.
+ * pulzr-dns refuses a name under a Pulzr domain and a server list that
+ * cannot resolve Pulzr; its message is shown as it comes. Everything here is
+ * in UCI dhcp, which is what Pulzr Cloud's `dns` op reads.
  *
  * Dynamic DNS is the customer's own name in their own Cloudflare zone, for
  * ports exposed on the LAN page. The token is write-only here: the gateway

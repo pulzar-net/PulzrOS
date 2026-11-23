@@ -27,7 +27,7 @@
 # was wanted. See pulzr-firmware.
 /etc/pulzr/upgrade/
 /etc/parkeze/upgrade/
-# Keys a technician provisioned on this unit. Pulzar's own key is NOT here:
+# Keys a technician provisioned on this unit. Pulzr's own key is NOT here:
 # it comes from the image, so that rotating it is a firmware upgrade rather
 # than a visit. See pulzr-fleet-keys.
 /etc/pulzr/site-keys
@@ -42,7 +42,7 @@
 # own settings are in keep.d/pulzr-addons, generated with the image. Not
 # mirrored under /etc/parkeze: no ParkezeOS image has add-ons.
 /etc/pulzr/addons/
-# SSH host keys. Pulzar Cloud pins the one a gateway reports, so a new key after
+# SSH host keys. Pulzr Cloud pins the one a gateway reports, so a new key after
 # an upgrade is a gateway nobody can open a shell on until it reports again.
 # dropbear's as well as sshd's: they are the same keys (see pulzr-ssh-setup),
 # and a rollback to a dropbear image should present the one that is pinned.

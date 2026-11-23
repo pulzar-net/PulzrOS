@@ -1,8 +1,8 @@
 // Sign-in — console/src/pages/Login.tsx, with its Recovery screen.
 //
-// "Sign in with Pulzar" is the web console's in shape but not in route. The
+// "Sign in with Pulzr" is the web console's in shape but not in route. The
 // browser handoff lands a token on a browser origin, and a terminal has none,
-// so here the gateway shows a code and a QR of Pulzar Cloud's approval page,
+// so here the gateway shows a code and a QR of Pulzr Cloud's approval page,
 // somebody approves it from a phone, and the gateway collects the token for
 // itself (auth.uc's terminalStart and terminalCollect). Online only, as the
 // browser handoff is; recovery is the offline way in.
@@ -13,7 +13,7 @@ return function(ctx) {
                  pulzr: null, pulzrError: null };
 
     // As the web console chooses: the password while local sign-in is on,
-    // then Pulzar, then recovery.
+    // then Pulzr, then recovery.
     const mode = () => {
         if (st.mode) return st.mode;
         const m = st.methods ?? {};
@@ -23,7 +23,7 @@ return function(ctx) {
     const startPulzar = () => {
         st.mode = 'pulzr';
         st.pulzrError = null;
-        ctx.flash('Asking Pulzar', 'neutral');
+        ctx.flash('Asking Pulzr', 'neutral');
         const r = api.auth.terminalStart();
         ctx.flash(null);
         if (r.error) { st.pulzrError = r.error; st.pulzr = null; return; }
@@ -44,7 +44,7 @@ return function(ctx) {
 
     const pulzrView = (out) => {
         const m = st.methods ?? {};
-        if (!st.pulzr) push(out, { t: 'section', title: 'Sign in with Pulzar' });
+        if (!st.pulzr) push(out, { t: 'section', title: 'Sign in with Pulzr' });
         const p = st.pulzr;
         if (p) {
             // All of it on one screen, because half a QR does not scan: on a
@@ -62,7 +62,7 @@ return function(ctx) {
             return;
         }
         if (st.pulzrError) push(out, { t: 'notice', tone: 'error', text: st.pulzrError });
-        const buttons = [ { label: 'Sign in with Pulzar', key: 'pulzr-start', primary: true, run: startPulzar } ];
+        const buttons = [ { label: 'Sign in with Pulzr', key: 'pulzr-start', primary: true, run: startPulzar } ];
         if (m.recovery) push(buttons, { label: 'Recovery access', run: startRecovery });
         if (m.local) push(buttons, { label: 'Sign in with a password', run: () => { st.mode = 'password'; ctx.focus('password'); } });
         push(out, { t: 'buttons', items: buttons });
@@ -97,7 +97,7 @@ return function(ctx) {
         st.check = r;
         if (r.checking !== false) { ctx.later(3, pollCheck); return; }
         st.checking = false;
-        // Released by Pulzar: back to an unadopted gateway, which shows the
+        // Released by Pulzr: back to an unadopted gateway, which shows the
         // claim screen.
         if (r.adopted === false && r.released === true) { st.mode = null; st.recovery = null; ctx.refresh(); }
     };
@@ -110,22 +110,22 @@ return function(ctx) {
         if (r.error) { push(out, { t: 'notice', tone: 'error', text: r.error }); }
         else {
             const minutes = int((r.challenge.expiresIn + 30) / 60);
-            push(out, { t: 'text', text: '1. Give this code to Pulzar' });
+            push(out, { t: 'text', text: '1. Give this code to Pulzr' });
             push(out, { t: 'text', tone: 'bold', text: r.challenge.code });
             push(out, { t: 'text', tone: 'dim', text: sprintf('Expires in %d minutes.', minutes > 0 ? minutes : 0) });
             push(out, { t: 'blank' });
             push(out, { t: 'text', text: '2. Paste the signature it gives you back' });
-            push(out, { t: 'field', label: 'Signature', key: 'signature', value: st.signature, placeholder: 'Base64 signature from Pulzar',
+            push(out, { t: 'field', label: 'Signature', key: 'signature', value: st.signature, placeholder: 'Base64 signature from Pulzr',
                         max: 512, set: (v) => { st.signature = v; }, submit: () => { if (length(trim(st.signature))) unlock(); } });
             if (st.verifyError) push(out, { t: 'notice', tone: 'error', text: st.verifyError });
             const buttons = [ { label: 'Unlock', primary: true, disabled: !length(trim(st.signature)), run: unlock } ];
             if (m.local) push(buttons, { label: 'Back to sign in', run: () => { st.mode = 'password'; ctx.focus('password'); } });
-            else if (m.sso) push(buttons, { label: 'Sign in with Pulzar', run: () => { st.mode = 'pulzr'; ctx.focus('pulzr-start'); } });
+            else if (m.sso) push(buttons, { label: 'Sign in with Pulzr', run: () => { st.mode = 'pulzr'; ctx.focus('pulzr-start'); } });
             push(out, { t: 'buttons', items: buttons });
         }
 
         push(out, { t: 'blank' });
-        push(out, { t: 'buttons', items: [ { label: st.checking ? 'Checking with Pulzar' : 'Check with Pulzar',
+        push(out, { t: 'buttons', items: [ { label: st.checking ? 'Checking with Pulzr' : 'Check with Pulzr',
             disabled: st.checking, run: () => {
                 ctx.act('checkAdoption');
                 st.checking = true;
@@ -135,7 +135,7 @@ return function(ctx) {
         const c = st.check;
         if (c && c.checked === false && c.reason)
             push(out, { t: 'text', tone: 'dim', text: c.reason == 'unreachable'
-                ? 'Could not reach Pulzar. Nothing changed.' : sprintf('No answer: %s. Nothing changed.', c.reason) });
+                ? 'Could not reach Pulzr. Nothing changed.' : sprintf('No answer: %s. Nothing changed.', c.reason) });
         else if (c && c.checked && c.adopted)
             push(out, { t: 'text', tone: 'dim', text: 'Still adopted.' });
     };
@@ -143,7 +143,7 @@ return function(ctx) {
     return {
         interval: () => {
             if (!st.adopted && !ctx.browsing() && !api.unprivileged) return st.claim ? st.claim.interval() : 3;
-            // While a code is on screen: as often as Pulzar Cloud asked.
+            // While a code is on screen: as often as Pulzr Cloud asked.
             return st.pulzr ? st.pulzr.interval : null;
         },
         enter: function() { st.mode = null; st.error = null; st.focused = false; },
@@ -188,7 +188,7 @@ return function(ctx) {
                         set: (v) => { st.password = v; }, submit: signIn });
             if (st.error) push(out, { t: 'notice', tone: 'error', text: st.error });
             const buttons = [ { label: 'Sign in', primary: true, run: signIn } ];
-            if (m.sso) push(buttons, { label: 'Sign in with Pulzar', run: () => { st.mode = 'pulzr'; ctx.focus('pulzr-start'); } });
+            if (m.sso) push(buttons, { label: 'Sign in with Pulzr', run: () => { st.mode = 'pulzr'; ctx.focus('pulzr-start'); } });
             if (m.recovery) push(buttons, { label: 'Recovery access', run: startRecovery });
             push(out, { t: 'buttons', items: buttons });
             return out;

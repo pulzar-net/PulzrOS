@@ -17,7 +17,7 @@
 #
 # A link nobody brings back. A connectivity reset that 1NCE makes while the
 # network is refusing the SIM strands a gateway in two layers, reproduced on
-# the bench Pro (PulzarOS 0.1.0):
+# the bench Pro (PulzrOS 0.1.0):
 #
 #   netifd   ModemManager's 10-report-down bounces wwan once. If registration
 #            fails in that one setup, the modemmanager proto calls
@@ -49,7 +49,7 @@
 #                      Repeated at 5, 10, 20, 30 minutes
 #
 # Down for half an hour, with the gateway up six hours and nothing reaching
-# Pulzar Cloud, it reboots, as the ladder does.
+# Pulzr Cloud, it reboots, as the ladder does.
 #
 # ── THE TRAFFIC LADDER ─────────────────────────────────────────────────────
 #
@@ -179,7 +179,7 @@ reboot_if_stranded() {
     up="$(cut -d. -f1 "${UPTIME_FILE}")"
     [ "${up}" -ge "${MIN_UPTIME}" ] || return 0
     pulzr-backhaul-check >/dev/null 2>&1 && return 0
-    log "$1 and nothing else reaches Pulzar Cloud; rebooting"
+    log "$1 and nothing else reaches Pulzr Cloud; rebooting"
     # The uplink buffer is holding this outage's uplinks. Have it write them
     # to the card first; with no card they are lost, which is the price of a
     # gateway that can be reached again.
@@ -219,7 +219,7 @@ judge_traffic() {
     rung=$((rung + 1))
     case "${rung}" in
         1)
-            log "cellular has carried nothing for ${STALL}s and cannot reach Pulzar Cloud; restarting wwan"
+            log "cellular has carried nothing for ${STALL}s and cannot reach Pulzr Cloud; restarting wwan"
             ifup wwan
             ;;
         2)

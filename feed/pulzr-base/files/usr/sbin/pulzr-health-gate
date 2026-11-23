@@ -21,7 +21,7 @@
 #
 # ── WHAT COUNTS AS HEALTHY ─────────────────────────────────────────────────
 #
-# "Pulzar Cloud is reachable and still accepts us as this gateway."
+# "Pulzr Cloud is reachable and still accepts us as this gateway."
 #
 # Not the LoRaWAN radio. A concentrator can be legitimately absent — a Pi kit
 # with nothing fitted yet is a normal gateway — and rolling back working
@@ -92,7 +92,7 @@ verdict() {
         return 1
     fi
 
-    # Nothing to authenticate as yet. A gateway that reaches Pulzar Cloud
+    # Nothing to authenticate as yet. A gateway that reaches Pulzr Cloud
     # before anyone has adopted it is as healthy as it can be, and there is no
     # secret to have lost.
     adopted || { echo "reachable, not adopted"; return 0; }
@@ -102,7 +102,7 @@ verdict() {
             echo "reachable, waiting to be claimed again"
             return 0
         fi
-        echo "reachable but Pulzar Cloud will not answer the waiting claim"
+        echo "reachable but Pulzr Cloud will not answer the waiting claim"
         return 1
     fi
 
@@ -116,7 +116,7 @@ verdict() {
         sleep 5
     done
 
-    echo "reachable but Pulzar Cloud will not accept our reports"
+    echo "reachable but Pulzr Cloud will not accept our reports"
     return 1
 }
 

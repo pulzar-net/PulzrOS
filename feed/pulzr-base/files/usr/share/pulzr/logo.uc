@@ -1,4 +1,4 @@
-// The Pulzar mark, drawn in a terminal.
+// The Pulzr mark, drawn in a terminal.
 //
 // Eight rows of half-block cells, read from logo.txt — a pixel grid that
 // scripts/render-logo.py derives from the console's own icon.svg. The motd

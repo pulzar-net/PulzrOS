@@ -19,7 +19,7 @@ import own from './SpeedTest.module.css';
 
 /**
  * Speed tests (pulzr-speedtest): each free uplink straight to the nearest
- * LibreSpeed server, and the management tunnel as Pulzar Cloud measures it,
+ * LibreSpeed server, and the management tunnel as Pulzr Cloud measures it,
  * side by side. Never over cellular.
  */
 
@@ -98,7 +98,7 @@ export default function SpeedTest() {
       cell: (info) => {
         const r = info.row.original;
         if (r.error) return <Badge tone="error">{r.error}</Badge>;
-        return r.test === 'tunnel' ? 'Pulzar Cloud' : r.server ?? '—';
+        return r.test === 'tunnel' ? 'Pulzr Cloud' : r.server ?? '—';
       },
     }),
   ], []);

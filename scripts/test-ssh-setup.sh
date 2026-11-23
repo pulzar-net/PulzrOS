@@ -4,9 +4,9 @@
 #
 #   scripts/test-ssh-setup.sh
 #
-# What it writes decides whether Pulzar Cloud can open a shell on a gateway at
+# What it writes decides whether Pulzr Cloud can open a shell on a gateway at
 # all: the principal a certificate must name, the CA sshd trusts, and the host
-# key Pulzar Cloud has pinned. A wrong principal is a gateway that refuses every
+# key Pulzr Cloud has pinned. A wrong principal is a gateway that refuses every
 # certificate, and one marked as trusting the CA is never tried with the fleet
 # key; a new host key is a gateway refused as an impostor. None of it can be
 # checked without a gateway except like this, with dropbearconvert, ssh-keygen,
@@ -144,7 +144,7 @@ check "sshd_config is the shipped one" cmp -s "${SHARE}/sshd_config" "${SSH}/ssh
 check "the principal is the EUI, lowercased" [ "$(cat "${SSH}/auth_principals/root")" = "ac1f09fffe0a1b2c" ]
 check "the principal is one line" [ "$(wc -l < "${SSH}/auth_principals/root" | tr -d ' ')" = 1 ]
 check "the principals file is 0644" [ "$(mode "${SSH}/auth_principals/root")" = 644 ]
-check "the CA is where Pulzar Cloud's docs say" cmp -s "${SHIPPED_CA}" "${SSH}/pulzr_user_ca.pub"
+check "the CA is where Pulzr Cloud's docs say" cmp -s "${SHIPPED_CA}" "${SSH}/pulzr_user_ca.pub"
 check "the CA config is exactly the documented two lines" [ "$(cat "${SSH}/sshd_config.d/pulzr-ca.conf")" = "TrustedUserCAKeys ${SSH}/pulzr_user_ca.pub
 AuthorizedPrincipalsFile ${SSH}/auth_principals/%u" ]
 check "dropbear's ed25519 key is carried over" grep -q "dropbear ed25519 key" "${SSH}/ssh_host_ed25519_key"

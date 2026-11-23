@@ -18,7 +18,7 @@ return function(ctx) {
         load: function() {
             st.status = api.claim.status();
             if (st.status.error) die(st.status.error);
-            // The QR changes once Pulzar Cloud knows the claim (a short URL
+            // The QR changes once Pulzr Cloud knows the claim (a short URL
             // instead of the identity inline), so it follows the URL.
             const u = url();
             if (u != st.qrFor) { st.qrFor = u; st.qr = length(u) ? ctx.qr(u) : null; }
@@ -36,9 +36,9 @@ return function(ctx) {
             if (st.qr && ctx.term.cols(st.qr[0]) <= width) push(out, { t: 'pre', lines: st.qr });
             else if (!st.qr) push(out, { t: 'notice', tone: 'error', text: 'Could not render the QR. Use the code below.' });
             push(out, { t: 'fact', label: 'Code', value: { text: c.claimId, tone: 'bold' } });
-            if (c.url) push(out, { t: 'fact', label: 'Open in Pulzar', value: c.url });
+            if (c.url) push(out, { t: 'fact', label: 'Open in Pulzr', value: c.url });
             if (!c.online) push(out, { t: 'notice', tone: 'warning', text: 'No internet. The code still works from a phone with signal.' });
-            else if (!c.registered) push(out, { t: 'notice', tone: 'info', text: 'Registering with Pulzar.' });
+            else if (!c.registered) push(out, { t: 'notice', tone: 'info', text: 'Registering with Pulzr.' });
 
             push(out, { t: 'blank' }, { t: 'text', tone: 'dim', text: 'Waiting to be claimed' });
             push(out, { t: 'buttons', items: [ { label: 'Check now', run: () => {
@@ -56,7 +56,7 @@ return function(ctx) {
                 return out;
             }
             push(out, { t: 'blank' });
-            push(out, { t: 'field', label: 'Adoption bundle', value: st.bundle, placeholder: 'Paste the signed bundle from Pulzar',
+            push(out, { t: 'field', label: 'Adoption bundle', value: st.bundle, placeholder: 'Paste the signed bundle from Pulzr',
                         max: 8192, set: (v) => { st.bundle = v; st.applyError = null; } });
             if (st.applyError) push(out, { t: 'notice', tone: 'error', text: st.applyError });
             push(out, { t: 'buttons', items: [ { label: 'Adopt this gateway', primary: true, disabled: !length(trim(st.bundle)),

@@ -6,7 +6,7 @@
 # afternoon, both times the same way: a field was added to `pulzr-claim`'s
 # facts format and the matching argument was not. sh does not complain — the
 # missing %s takes whatever came next, so `{"sshHostKey":"{...system json..."}`
-# went out over HTTPS and Pulzar Cloud answered 400. Nothing on the gateway
+# went out over HTTPS and Pulzr Cloud answered 400. Nothing on the gateway
 # notices; the reports simply stop counting, which is the worst kind of broken.
 #
 # Deliberately crude: it reads the format string's specifiers and counts the

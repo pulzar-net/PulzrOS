@@ -1,4 +1,4 @@
-# Pulzar gateway state. Written by uci-defaults on first boot and by the
+# Pulzr gateway state. Written by uci-defaults on first boot and by the
 # console thereafter; this file is the shipped skeleton.
 #
 # What lives here versus /etc/pulzr/board.conf: board.conf is what the image
@@ -36,7 +36,7 @@ config mqtt 'mqtt'
 	option port '8883'
 
 config logship 'logship'
-	# System log lines at this level and worse go to Pulzar Cloud
+	# System log lines at this level and worse go to Pulzr Cloud
 	# (pulzr-logship): emerg, alert, crit, err, warning, notice, info, debug.
 	option level 'notice'
 	option enabled '1'

@@ -39,8 +39,8 @@ interface SigninTicket {
 }
 
 // The sign-in proxy is another origin on purpose (lib/signin.uc on the
-// gateway). Here that is this address on its own port; through Pulzar Cloud it
-// is another device host, which Pulzar Cloud mints when asked at /__signin.
+// gateway). Here that is this address on its own port; through Pulzr Cloud it
+// is another device host, which Pulzr Cloud mints when asked at /__signin.
 function signinUrl(ticket: SigninTicket) {
   if (ticket.via === 'Pulzar Cloud') return `/__signin?next=${encodeURIComponent(ticket.path)}`;
   return `https://${window.location.hostname}:${ticket.port}${ticket.path}`;

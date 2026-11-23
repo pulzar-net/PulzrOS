@@ -42,7 +42,7 @@
 // bring it back either. What each add-on brings is read from
 // /usr/share/pulzr/addons.caps, which came with this firmware, never from the
 // downloaded catalog. This is the gateway's half of a denied capability
-// staying off; Pulzar Net holds the other half and writes this list back
+// staying off; Pulzr Net holds the other half and writes this list back
 // if a factory reset wipes it. Nothing reachable remotely takes a deny away:
 // `undeny` is for somebody with a root shell.
 //
@@ -525,7 +525,7 @@ let refusal = (action, name, ignoreLock) => {
 //
 // Returns { ok } or { error, transient }. A transient failure is one the same
 // request could get past later (a download, a gateway that cannot reach
-// Pulzar Cloud right now); restore tries those again, and nothing else.
+// Pulzr Cloud right now); restore tries those again, and nothing else.
 
 let fail = (name, by, action, error, transient, state) => {
     record(name, state ?? 'failed', error);
@@ -579,7 +579,7 @@ let install = (name, by, action) => {
         let why = apkError(sim.out);
         if (match(why, /UNTRUSTED/)) {
             fs.unlink(index);
-            return fail(name, by, action, 'The add-on index is not signed by Pulzar.');
+            return fail(name, by, action, 'The add-on index is not signed by Pulzr.');
         }
         if (match(sim.out, /pulzr-base/))
             return fail(name, by, action, sprintf('%s was not built for the firmware this gateway runs.', title(rel, name)));
@@ -610,7 +610,7 @@ let install = (name, by, action) => {
                                               title(rel, name), need / 1024, free / 1024));
 
     if (!healthy())
-        return fail(name, by, action, 'The gateway cannot reach Pulzar Cloud now, so an add-on could not be judged.', true);
+        return fail(name, by, action, 'The gateway cannot reach Pulzr Cloud now, so an add-on could not be judged.', true);
 
     for (let p in pkgs) {
         let e = entry(p);
@@ -629,7 +629,7 @@ let install = (name, by, action) => {
         for (let p in pkgs) deactivate(p);
         run(['apk', 'del', '--no-interactive', '--repositories-file', '/dev/null', name]);
         unwant(name);
-        let why = 'After the install the gateway could not reach Pulzar Cloud.';
+        let why = 'After the install the gateway could not reach Pulzr Cloud.';
         record(name, 'reverted', why);
         journal({ action, name, by, result: 'reverted', error: why });
         log(sprintf('%s %s undone: %s', action, name, why));
@@ -840,7 +840,7 @@ let restoreLoop = () => {
 //   downloading, installing, removing
 //                    a job is doing it now
 //   reverted         installed, then undone because the gateway stopped
-//                    reaching Pulzar Cloud
+//                    reaching Pulzr Cloud
 //   failed           the last attempt did not install it; `error` says why
 //   pending-restore  wanted, missing, and a restore has yet to put it back
 //   unavailable      wanted, and this release does not build it here
@@ -890,7 +890,7 @@ let status = (brief) => {
         let it = state(n, rel, w, built, recorded(n), busy);
         if (it) items[n] = it;
     }
-    // free: the overlay's free bytes, so Pulzar Net can say an add-on will
+    // free: the overlay's free bytes, so Pulzr Net can say an add-on will
     // not fit (with the 2 MB this keeps spare) before anybody asks for it.
     let out = { wanted: w, deny: list(cf.deny), items, free: freeBytes() };
     if (brief) return out;

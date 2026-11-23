@@ -1,11 +1,11 @@
 #!/bin/sh
 #
-# Is Pulzar Cloud reachable, and by which path?
+# Is Pulzr Cloud reachable, and by which path?
 #
 #   pulzr-backhaul-check          exit 0 if manageable, 1 if not
 #   pulzr-backhaul-check --json   report both paths
 #   pulzr-backhaul-check --tunnel print the tunnel state: none|waiting|up
-#   pulzr-backhaul-check --cellular  exit 0 if Pulzar Cloud answers out of
+#   pulzr-backhaul-check --cellular  exit 0 if Pulzr Cloud answers out of
 #                                   the cellular device itself, whatever
 #                                   the wired path is doing
 #   pulzr-backhaul-check --any    exit 0 and print which uplink, if any of
@@ -17,7 +17,7 @@
 #
 # This runs periodically and one of the two paths it tests is billed by the
 # megabyte. So the cellular test only asks whether a TCP connection to
-# Pulzar Cloud completes: no TLS, no certificate chain. An HTTPS GET to a health
+# Pulzr Cloud completes: no TLS, no certificate chain. An HTTPS GET to a health
 # endpoint is closer to 6KB once the chain is counted, for an answer no better.
 #
 # It costs about 700 bytes, not the 200 a bare handshake would. The image has
@@ -94,7 +94,7 @@ fi
 # ── any uplink at all ───────────────────────────────────────────────────────
 # Asked when somebody presses the reset button for setup mode, and once a
 # minute while that AP stands. The default answer below is the wrong one for
-# that. It is about whether Pulzar Cloud can manage this gateway, so a wired
+# that. It is about whether Pulzr Cloud can manage this gateway, so a wired
 # lease from a network that goes nowhere counts as up until there is a tunnel,
 # and WiFi with a dead tunnel counts as down. Those are the two cases a moved
 # gateway is most likely to be in.

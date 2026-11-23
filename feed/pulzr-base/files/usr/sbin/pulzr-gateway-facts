@@ -4,7 +4,7 @@
 #
 # Run by the MQTT forwarder on every stats interval ([metadata.commands]), which
 # attaches the output to the stats message it already sends to the LNS. The LNS
-# stores it on the gateway record, and Pulzar Cloud reads that record — so the
+# stores it on the gateway record, and Pulzr Cloud reads that record — so the
 # gateway page learns the firmware version and addresses over the connection
 # and credentials the gateway already uses for LoRaWAN, with no extra topic and
 # no broker change.
@@ -12,8 +12,8 @@
 # Also used by `pulzr-claim report`, so a gateway with no working radio —
 # which sends no stats — still says what it is. In pulzr-base, not the
 # lorawan feature's package, for the same reason: a router such as the Opal
-# has no radio at all, and without these facts Pulzar Cloud cannot tell it
-# runs PulzarOS, so never asks for its LAN or lists the devices behind it.
+# has no radio at all, and without these facts Pulzr Cloud cannot tell it
+# runs PulzrOS, so never asks for its LAN or lists the devices behind it.
 #
 # Small on purpose: this rides every stats message, and on a SIM those are
 # billed. Keys are short and nothing here is slow.
@@ -42,7 +42,7 @@ for iface in $(wired_ifaces); do
     [ -n "${wan}" ] && { echo "wan_ip=${wan}"; break; }
 done
 # wwan only. usbwan's address is the one a HiLink dongle or a phone handed out
-# behind its own NAT, which reaches nothing; Pulzar Cloud reaching it would be
+# behind its own NAT, which reaches nothing; Pulzr Cloud reaching it would be
 # a wrong turn, not a missing fact.
 wwan="$(addr wwan)"; [ -n "${wwan}" ]  && echo "cellular_ip=${wwan}"
 
@@ -56,7 +56,7 @@ else
     echo "concentrator=absent"
 fi
 
-# What this image was built to be. Pulzar Cloud used to infer a router from a
+# What this image was built to be. Pulzr Cloud used to infer a router from a
 # missing concentrator and an LNS that had never heard the gateway, so until
 # that inference had its facts an Opal was listed as a LoRaWAN gateway. A Pi
 # built for LoRaWAN whose concentrator has died is still one.
@@ -66,7 +66,7 @@ fi
 # With each installed add-on's word after the board's, as the console's
 # system.features() has them: cellular is an add-on on a board whose modem is
 # plugged in, and built in (still an add-on, in the image) where it is
-# soldered on, and Pulzar Cloud shows its Cellular settings on the word.
+# soldered on, and Pulzr Cloud shows its Cellular settings on the word.
 words="${PULZR_FEATURES}"
 [ -f /usr/share/pulzr/addons.caps ] && while IFS='	' read -r name feature _; do
     case "${name}" in ''|'#'*) continue ;; esac
@@ -93,7 +93,7 @@ if hw="$(pulzr-hwdesc get DEV_NAME 2>/dev/null)" && [ -n "${hw}" ]; then
     echo "hw_caps=$(pulzr-hwdesc caps)"
 fi
 
-# on, off or absent; Pulzar Cloud lists a gateway with Bluetooth as carrying
+# on, off or absent; Pulzr Cloud lists a gateway with Bluetooth as carrying
 # both radios, and shows the switch for it.
 [ -x /usr/sbin/pulzr-ble ] && echo "bluetooth=$(/usr/sbin/pulzr-ble state)"
 exit 0

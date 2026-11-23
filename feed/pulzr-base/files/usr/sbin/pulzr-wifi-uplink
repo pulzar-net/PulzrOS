@@ -298,7 +298,7 @@ check() {
     log "WiFi uplink ${net}: ${previous:-unchecked} -> ${verdict}${reason:+ (${reason})}${url:+ ${url}}"
     [ -x /usr/sbin/pulzr-wireguard-route ] && /usr/sbin/pulzr-wireguard-route apply >/dev/null 2>&1
     [ -x /usr/sbin/pulzr-lora-route ] && /usr/sbin/pulzr-lora-route apply >/dev/null 2>&1
-    # Pulzar Cloud shows the answer beside the gateway. No-ops when unadopted.
+    # Pulzr Cloud shows the answer beside the gateway. No-ops when unadopted.
     ( pulzr-claim report >/dev/null 2>&1 & ) 2>/dev/null
     return 0
 }

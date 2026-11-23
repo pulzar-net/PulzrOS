@@ -26,7 +26,7 @@ or grab the artifact from the Actions run in the browser.
 Leave Imager's OS customization alone — the gear icon that offers to preset a
 hostname, WiFi and SSH keys. It writes a Raspberry Pi OS-shaped config that
 OpenWrt does not read, so nothing you set there applies and the image looks
-broken. PulzarOS configures itself on first boot instead.
+broken. PulzrOS configures itself on first boot instead.
 
 ### Just download a file
 
@@ -37,7 +37,7 @@ in the browser — or from a tagged release if one has been cut:
 |---|---|
 | `PulzrOS-<version>-rpi4.img.xz` | writing to a blank card. Smaller download. |
 | `PulzrOS-<version>-rpi4.img.gz` | the same image, for a tool that dislikes xz. |
-| `PulzrOS-<version>-rpi4-sysupgrade.img.gz` | **upgrading** a gateway already running PulzarOS, from its console. Not for a blank card. |
+| `PulzrOS-<version>-rpi4-sysupgrade.img.gz` | **upgrading** a gateway already running PulzrOS, from its console. Not for a blank card. |
 | `sha256sums.txt` | verify before writing. |
 
 Open the `.img.xz` in Etcher or Imager's *Use custom* and write it. No need to
@@ -87,7 +87,7 @@ anybody wants, renamed. For the record, the four are:
 | | what it is |
 |---|---|
 | `squashfs-factory` | **the default.** Read-only rootfs plus a writeable overlay — the OpenWrt layout that failsafe mode and `jffs2reset` need. The reset button's factory-reset path depends on it. |
-| `squashfs-sysupgrade` | for upgrading a gateway already running PulzarOS, from its own console. Not for a blank card. |
+| `squashfs-sysupgrade` | for upgrading a gateway already running PulzrOS, from its own console. Not for a blank card. |
 | `ext4-factory` | writable rootfs, no overlay. A factory reset has nothing to discard. Only for development. |
 | `ext4-sysupgrade` | as above, for upgrades. |
 
@@ -97,7 +97,7 @@ A minute or two while the gateway generates its identity, its console
 certificate and its one-time password.
 
 Most of the time nobody connects to it at all: plugged into anything with a
-route out, it registers itself with Pulzar Cloud and appears in the pending list
+route out, it registers itself with Pulzr Cloud and appears in the pending list
 there, where the installer adopts it by matching the EUI on the label. The ways
 below are for when that has not happened.
 
@@ -105,7 +105,7 @@ below are for when that has not happened.
 |---|---|
 | **Password** | On the boot partition as `pulzr-initial-password.txt` — the card mounts on any laptop. Or set your own before first boot by writing `pulzr-password.txt` there; it is applied and then deleted. |
 | **Ethernet** | `https://pulzr-<serial>.local/`, or `https://192.168.61.1/` if mDNS is blocked. The gateway never hands out an address — your laptop will self-assign `169.254.x.x` and say it has no internet, which is expected. See [`access.md`](/PulzrOS/access.html). |
-| **WiFi** | off by default. `pulzr_<mac>`, open while the gateway is unadopted, once somebody enables it from the console or Pulzar Cloud. |
+| **WiFi** | off by default. `pulzr_<mac>`, open while the gateway is unadopted, once somebody enables it from the console or Pulzr Cloud. |
 | **Serial** | 115200 8N1 on the GPIO header. The banner prints the console address and the initial password. |
 
 All three show the same claim code. Scan it or enter it at
@@ -131,7 +131,7 @@ from U-Boot over TFTP — not by writing a whole-disk image, which is why
 `BOARD_INSTALL` exists rather than `flash.sh` guessing from the file extension.
 
 
-## Re-flashing a card that has run PulzarOS before
+## Re-flashing a card that has run PulzrOS before
 
 It works, and it gives you a genuinely clean device. That was not always true.
 
@@ -168,7 +168,7 @@ would have on a first boot.
 
 ### Where the image waits
 
-An upgrade from the console or from Pulzar Cloud is written somewhere before
+An upgrade from the console or from Pulzr Cloud is written somewhere before
 it is checked and flashed: on the SD card when the gateway has one; else in
 RAM, when it fits with 16 MB to spare; else on the gateway's own flash (the
 overlay), when that has room with 8 MB to spare. sysupgrade overwrites the
@@ -182,10 +182,10 @@ image) upgrades this way.
 
 ### By hand
 
-Root over SSH takes the fleet key or a Pulzar Cloud certificate, or on a
+Root over SSH takes the fleet key or a Pulzr Cloud certificate, or on a
 development image a key in `boards/common/ssh/dev/`; root has no password
 ([`auth.md`](/PulzrOS/auth.html), "Who gets root"). Anywhere else, upgrade from the
-console or from Pulzar Cloud.
+console or from Pulzr Cloud.
 
 ```
 scp PulzrOS-<ver>-<board>-sysupgrade.img.gz root@<gateway>:/tmp/fw.img.gz

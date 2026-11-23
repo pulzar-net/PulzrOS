@@ -7,7 +7,7 @@
 //                                    pending change
 //   pulzr-ports routers            each wired uplink's router MAC, for the
 //                                    report
-//   pulzr-ports identify <file>    keep what Pulzar Cloud answered about them
+//   pulzr-ports identify <file>    keep what Pulzr Cloud answered about them
 //   pulzr-ports set <file>|-       a whole layout, as JSON; applied at once
 //                                    and undone unless confirmed in time
 //   pulzr-ports confirm            keep the layout `set` applied (pulzr-apply)
@@ -53,7 +53,7 @@
 //
 // A port change can cut off whoever makes it: the laptop on the LAN jack that
 // becomes an uplink, or the tunnel on the uplink that becomes a LAN port when
-// the change came through Pulzar Cloud. So `set` keeps the configuration it
+// the change came through Pulzr Cloud. So `set` keeps the configuration it
 // replaces, on flash, and starts a timer; the console confirms by reaching
 // the gateway again after the change, and if nothing does within the window
 // the old configuration comes back. A reboot inside the window undoes it at
@@ -67,7 +67,7 @@
 let fs = require('fs');
 let uci = require('uci');
 
-// Pulzar Cloud's answer to the report about the routers and the public side:
+// Pulzr Cloud's answer to the report about the routers and the public side:
 // tmpfs, because it is asked again on every boot's report.
 const IDENTITY = '/var/run/pulzr/network.json';
 const MAC = /^[0-9a-f]{2}(:[0-9a-f]{2}){5}$/;
@@ -618,7 +618,7 @@ let status = () => {
             out.router = out.state.gateway
                 ? { address: out.state.gateway, mac: mac ?? null, maker: (mac && known?.routers?.[mac]) || null }
                 : null;
-            // What the internet sees, as Pulzar Cloud saw this gateway's last
+            // What the internet sees, as Pulzr Cloud saw this gateway's last
             // report: only for the uplink that report left on.
             out.internet = known?.via == l.iface
                 ? { address: known.publicAddress ?? null, provider: known.provider ?? null } : null;
@@ -688,7 +688,7 @@ let commands = {
 
     revert: () => exit(system([APPLY, 'revert'])),
 
-    // Each wired uplink's router, for the report: Pulzar Cloud names the maker.
+    // Each wired uplink's router, for the report: Pulzr Cloud names the maker.
     routers: () => {
         let cur = uci.cursor(), b = board(), macs = arp(), out = [];
         for (let l in links(layout(cur, b), b)) {

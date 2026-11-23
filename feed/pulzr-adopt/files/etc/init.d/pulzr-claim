@@ -1,6 +1,6 @@
 #!/bin/sh /etc/rc.common
 #
-# Poll Pulzar Cloud for "has somebody claimed this gateway yet".
+# Poll Pulzr Cloud for "has somebody claimed this gateway yet".
 #
 # Runs only while unadopted, and stops itself the moment adoption completes.
 #

@@ -1,4 +1,4 @@
-# Print the Pulzar banner on an interactive login.
+# Print the Pulzr banner on an interactive login.
 #
 # Via profile.d rather than /etc/banner because the banner is generated: it
 # renders the wordmark with figlet and reports live state, and /etc/banner is a

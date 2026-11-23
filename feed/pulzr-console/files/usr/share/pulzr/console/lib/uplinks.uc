@@ -2,7 +2,7 @@
 //
 // The order and tracking settings land in UCI (pulzr.uplinks), which
 // `pulzr-uplinks status` reads back, and that is what the MQTT agent's
-// `uplinks` op sends Pulzar Cloud.
+// `uplinks` op sends Pulzr Cloud.
 
 let _m_util = loadfile('/usr/share/pulzr/console/lib/util.uc', { raw_mode: true })();
 

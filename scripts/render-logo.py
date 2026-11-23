@@ -6,7 +6,7 @@ terminal logo draws.
     python3 scripts/render-logo.py --check    # fail if the grid is stale
 
 The terminal logo is eight rows of half-block cells: sixteen pixels high. The
-Pulzar mark is five nodes, the links between them, a core and an orbit ring,
+Pulzr mark is five nodes, the links between them, a core and an orbit ring,
 and at sixteen pixels a downsample turns the links and the ring into a smear
 of half-covered cells. So the SHAPE below is drawn by hand, against the SVG
 rendered at that size with each part in a flat colour, and only the COLOURS

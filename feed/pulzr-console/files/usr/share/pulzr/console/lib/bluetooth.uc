@@ -18,7 +18,7 @@ const REBOOT_REQUIRED = '/var/run/pulzr/reboot-required';
 status = function() {
     const uci = cursor();
     // on, off or absent: what the facts report says, so the console and
-    // Pulzar Cloud cannot read the same gateway two ways.
+    // Pulzr Cloud cannot read the same gateway two ways.
     const state = run('/usr/sbin/pulzr-ble state') ?? 'absent';
     const enabled = uci.get('pulzr', 'ble', 'enabled') == '1';
     const running = run('pgrep -f "pulzr-edge-ble ble"') != null;

@@ -5,7 +5,7 @@
 #   scripts/test-hwdesc.sh
 #
 # The descriptor reader decides, per unit, how many LoRa cards a RAK left the
-# factory with and what it reports to Pulzar Cloud, and it must never let the
+# factory with and what it reports to Pulzr Cloud, and it must never let the
 # unit's default passwords out; the line driver is what resets a modem, a card
 # or a receiver. None of it can be checked on a bench without the one unit
 # that has each fault, so it runs here: a factory partition laid out the way

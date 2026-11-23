@@ -60,7 +60,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 
   // Every state-changing request echoes the session's CSRF token. The cookie
   // is SameSite=Strict, but the console is also reachable through the
-  // Pulzar Cloud proxy under a different origin, where that reasoning gets
+  // Pulzr Cloud proxy under a different origin, where that reasoning gets
   // subtle enough that the header check earns its keep.
   if (method !== 'GET' && csrfToken) headers['X-Pulzr-CSRF'] = csrfToken;
 

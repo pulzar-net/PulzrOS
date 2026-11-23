@@ -6,7 +6,7 @@
 //              is on.
 //
 //   cellular   configurable here, because an APN is a site-by-site fact and
-//              waiting on Pulzar Cloud to push one to a gateway that has no
+//              waiting on Pulzr Cloud to push one to a gateway that has no
 //              working backhaul is circular.
 
 let _m_fs = require('fs');
@@ -146,7 +146,7 @@ modem = function() {
 
 // Which management paths are actually working right now.
 //
-// This is the view Pulzar Cloud cares about most and the one an operator on
+// This is the view Pulzr Cloud cares about most and the one an operator on
 // site checks first: not "is there internet" but "can we be managed, and over
 // which path". The two paths fail independently and for different reasons, and
 // conflating them into a single "online" light is how a gateway ends up

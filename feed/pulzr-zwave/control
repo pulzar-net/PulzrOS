@@ -5,4 +5,4 @@ Architecture: @ARCH@
 Provides: pulzr-cap-zwave
 Description: Z-Wave networks on the gateway's Z-Wave controllers, on pulzr-edge.
  A Serial API controller per radio, set up, paired (S2 and SmartStart) and
- backed up from Pulzar Net (https://oss.pulzr.net/PulzrOS/radio-modules.html).
+ backed up from Pulzr Net (https://oss.pulzr.net/PulzrOS/radio-modules.html).

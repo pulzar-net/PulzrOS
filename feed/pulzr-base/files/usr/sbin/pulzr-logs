@@ -6,7 +6,7 @@
 #   pulzr-logs <topic> [lines]   that topic's recent lines, oldest first
 #   pulzr-logs <topic> --follow  that topic as it is written, until Ctrl-C
 #
-# What support reads when a customer's gateway misbehaves: Pulzar Cloud's log
+# What support reads when a customer's gateway misbehaves: Pulzr Cloud's log
 # tool runs this over SSH, and the console's diagnostic shell on a serial or
 # USB port offers it. It reads and prints and does nothing else, and takes no
 # argument that reaches a shell, which is what lets both of those offer it to

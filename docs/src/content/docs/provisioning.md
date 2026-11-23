@@ -9,7 +9,7 @@ password on its label, scan the code, pick the site.
 ## The happy path
 
 ```
-  gateway                    installer's phone              Pulzar Cloud
+  gateway                    installer's phone              Pulzr Cloud
   ───────                    ─────────────────              ───────────
   first boot
    └ mint claim identity
@@ -46,9 +46,9 @@ consoles. It used to be open to anybody on the site's network, and a new
 gateway on a shared network was anybody's to take. The secret is what keeps
 the claim from being enough to *be* the gateway: its broker credentials and
 tunnel key both need the preimage of the commitment, and the commitment is
-all Pulzar Cloud ever stores.
+all Pulzr Cloud ever stores.
 
-A gateway's EUI is random (`10-pulzr-identity`), not its MAC's: Pulzar Cloud
+A gateway's EUI is random (`10-pulzr-identity`), not its MAC's: Pulzr Cloud
 takes a claim for any EUI from anyone, and an EUI read off a label or a
 network could have a stranger's claim adopted for it first. One from before
 0.4 keeps the EUI it has.
@@ -64,13 +64,13 @@ The QR carries the gateway's identity inline instead of just a claim id:
 https://app.pulzr.net/adopt#o1.<claim_id>.<eui>.<commitment[:24]>.<board>
 ```
 
-Pulzar Cloud builds the pending claim from the scan alone. From there:
+Pulzr Cloud builds the pending claim from the scan alone. From there:
 
 - **If the gateway later gets an uplink**, it polls, presents the full secret,
   the stored 24-character prefix is checked and upgraded to the full
   commitment, and adoption finishes on its own. Nothing else is needed.
 
-- **If it never will**, Pulzar Cloud produces a *signed adoption bundle* the
+- **If it never will**, Pulzr Cloud produces a *signed adoption bundle* the
   installer pastes into the gateway's own console. The gateway verifies it
   against the fleet public key baked into the image at build time.
 
@@ -83,7 +83,7 @@ online.
 
 ## When the claim is revoked
 
-Pulzar Cloud revokes every claim a gateway was adopted with when it is
+Pulzr Cloud revokes every claim a gateway was adopted with when it is
 released, or adopted again by code. A transfer to another organization does
 not: the claim is the gateway's identity, and the previous owner has no root
 to have read the secret with. From then on its reports and tunnel enrolments
@@ -98,9 +98,9 @@ owns the gateway can adopt it. When it does, the new claim replaces the old
 one, the bundle is installed as at first adoption (a new broker password), and
 the gateway enrols again, which moves the tunnel to the new owner's hub.
 
-One waiting claim at a time. It is registered once; if Pulzar Cloud later says
+One waiting claim at a time. It is registered once; if Pulzr Cloud later says
 it has never heard of it, it is registered again under the same code, and if
-Pulzar Cloud refuses it outright, a new one replaces it. A report that is
+Pulzr Cloud refuses it outright, a new one replaces it. A report that is
 accepted again drops it.
 
 `pulzr-claim reclaiming` says whether one is waiting; `pulzr-claim status`
@@ -130,7 +130,7 @@ route:
 | `POST /adopt` | a single-use adoption code minted by a net-admin |
 
 On the device side, only `POST /api/claim/apply` is open: an offline bundle is
-Pulzar Cloud's signature over this gateway's EUI, which nobody gets without
+Pulzr Cloud's signature over this gateway's EUI, which nobody gets without
 having adopted it. The rest of `/api/claim/*` needs a session, and every claim
 route **stops answering the moment the gateway is adopted** (`PROVISIONING_ONLY`
 in `api/index.uc`).

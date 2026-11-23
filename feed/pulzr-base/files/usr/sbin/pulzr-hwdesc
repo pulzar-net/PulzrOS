@@ -24,7 +24,7 @@
 #
 # The payload also holds the unit's default root and WiFi passwords. They are
 # dropped before anything is cached or printed, so nothing that reads this,
-# the console and the report to Pulzar Cloud included, ever has them.
+# the console and the report to Pulzr Cloud included, ever has them.
 
 MTD="${PULZR_HWDESC_MTD:-}"
 CACHE="${PULZR_HWDESC_CACHE:-/var/run/pulzr/hwdesc.json}"

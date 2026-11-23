@@ -1,4 +1,4 @@
-// Authentication for the Pulzar gateway console.
+// Authentication for the Pulzr gateway console.
 //
 // ── THE PROBLEM ─────────────────────────────────────────────────────────────
 //
@@ -28,7 +28,7 @@
 //               `pulzr/pulzr`, which is what the previous build shipped
 //               and which is a fleet-wide skeleton key.
 //
-//   ADOPTED,    Pulzar Cloud is reachable. SSO is the way in: the console
+//   ADOPTED,    Pulzr Cloud is reachable. SSO is the way in: the console
 //   ONLINE      accepts the signed one-time handoff token the cloud
 //               device_ui flow already mints, so an operator who is already
 //               authenticated centrally lands logged in. The local password is
@@ -43,8 +43,8 @@
 //
 //   1. The gateway prints a challenge — its device id, a fresh random nonce,
 //      and the time — as a short code and a QR.
-//   2. The operator carries it to Pulzar Cloud on their phone (a phone has
-//      cellular even when the gateway's uplink is dead). Pulzar Cloud checks
+//   2. The operator carries it to Pulzr Cloud on their phone (a phone has
+//      cellular even when the gateway's uplink is dead). Pulzr Cloud checks
 //      they are a net-admin, writes an audit row, and signs the challenge with
 //      the fleet recovery key.
 //   3. The operator brings the signature back and types or scans it in.
@@ -287,7 +287,7 @@ createSession = function(subject, kind, ttl, extra) {
     const session = {
         subject,
         kind,                       // 'local' | 'sso' | 'recovery' | 'lan'
-        // Pulzar staff, proved by Pulzar Cloud's signature: the one session a
+        // Pulzr staff, proved by Pulzr Cloud's signature: the one session a
         // terminal's `!` drops to a root shell for (tui/app.uc). Org admins
         // sign in by SSO and recovery as well, so the kind cannot say it.
         shell: false,
@@ -295,7 +295,7 @@ createSession = function(subject, kind, ttl, extra) {
         expires: now() + (ttl ? ttl : SESSION_TTL),
         // A CSRF token bound to the session. The session cookie is
         // SameSite=Strict, which handles most of this, but a gateway console
-        // is reached through the Pulzar Cloud proxy under a different origin
+        // is reached through the Pulzr Cloud proxy under a different origin
         // where SameSite reasoning gets subtle — so the header check is
         // belt-and-braces rather than redundant.
         csrf: randomHex(16),
@@ -354,7 +354,7 @@ config = function() {
     };
 };
 
-// Whether Pulzar Cloud is reachable right now. Used only to explain *why* the
+// Whether Pulzr Cloud is reachable right now. Used only to explain *why* the
 // login page is offering what it is offering — never to decide whether local
 // login is permitted. An attacker who can cut the uplink must not be able to
 // unlock local login by doing so, so the decision below keys on adoption
@@ -400,7 +400,7 @@ loginMethods = function(addr) {
         recovery: true,
         state: 'adopted',
         online: backhaulUp(),
-        // Where "Sign in with Pulzar" sends the browser, and which gateway it
+        // Where "Sign in with Pulzr" sends the browser, and which gateway it
         // asks about. Neither is a secret: the EUI is printed on the unit, and
         // the platform address is in board.conf for anyone who can read it.
         platform: platformUrl(),
@@ -423,7 +423,7 @@ loginLocal = function(username, password, addr) {
     const cfg = config();
     if (cfg.adopted && !cfg.localEnabled)
         return { error: 'Local sign-in is disabled on this gateway. Sign in '
-                      + 'through Pulzar, or use recovery access if it is '
+                      + 'through Pulzr, or use recovery access if it is '
                       + 'unreachable.', status: 403 };
 
     const stored = trim(readfile(STATE_DIR + '/password') ?? '');
@@ -475,7 +475,7 @@ setPassword = function(username, password) {
 
 // ── offline recovery ────────────────────────────────────────────────────────
 
-// Start a recovery: mint a challenge for the operator to carry to Pulzar Cloud.
+// Start a recovery: mint a challenge for the operator to carry to Pulzr Cloud.
 recoveryChallenge = function() {
     const cfg = config();
     if (!cfg.adopted)
@@ -507,7 +507,7 @@ recoveryChallenge = function() {
             nonce: challenge.nonce,
             issued: challenge.issued,
             expiresIn: challenge.expires - now(),
-            // What the operator types into Pulzar Cloud. One field, so there is
+            // What the operator types into Pulzr Cloud. One field, so there is
             // one thing to transcribe and one thing to get wrong.
             code: sprintf('%s.%s.%d', challenge.device, challenge.nonce,
                           challenge.issued),
@@ -516,7 +516,7 @@ recoveryChallenge = function() {
     };
 };
 
-// Complete a recovery: verify Pulzar Cloud's signature over our challenge.
+// Complete a recovery: verify Pulzr Cloud's signature over our challenge.
 recoveryVerify = function(signature, addr) {
     const remaining = isLockedOut(addr);
     if (remaining)
@@ -535,7 +535,7 @@ recoveryVerify = function(signature, addr) {
     const signed = sprintf('%s.%s.%d', challenge.device, challenge.nonce,
                            challenge.issued);
 
-    // Pulzar Cloud signs `<challenge>.shell` for staff and the bare challenge
+    // Pulzr Cloud signs `<challenge>.shell` for staff and the bare challenge
     // for an organization's admin. Either opens the console; only the first
     // lets the terminal drop to a shell.
     const plain = verifySignature(signed, signature);
@@ -564,7 +564,7 @@ recoveryVerify = function(signature, addr) {
 // ucode has no asymmetric crypto and this is not the place to write some. The
 // gateway holds only the public key, so the worst an attacker who tampers with
 // this path can do is make recovery fail — they cannot forge a signature
-// without the private half, which never leaves Pulzar Cloud.
+// without the private half, which never leaves Pulzr Cloud.
 verifySignature = function(message, signatureB64) {
     if (!match(signatureB64 ?? '', /^[A-Za-z0-9+\/=]{80,120}$/)) return false;
 
@@ -583,7 +583,7 @@ verifySignature = function(message, signatureB64) {
     // openssl, not `busybox base64`: the image's BusyBox has no base64 applet.
     // The old command wrote nothing, openssl was handed an empty signature
     // file, and verification failed for every signature — so recovery access
-    // and SSO handoff had never worked on a PulzarOS gateway.
+    // and SSO handoff had never worked on a PulzrOS gateway.
     const decode = popen(sprintf('openssl base64 -d -A > %s', sigFile), 'w');
     if (!decode) return false;
     decode.write(signatureB64);
@@ -601,19 +601,19 @@ verifySignature = function(message, signatureB64) {
 
 // ── SSO handoff ─────────────────────────────────────────────────────────────
 //
-// Pulzar Cloud's device_ui flow already mints a one-time token for a device's
+// Pulzr Cloud's device_ui flow already mints a one-time token for a device's
 // own web interface. Rather than invent a second scheme, we verify that one:
 // it is signed with the same fleet key as recovery, so a gateway needs no
 // additional trust anchor.
 
 // `expect`, from terminalCollect only: the terminal sign-in this token must
 // have been minted for, as { aud, req }. Without it — the web console's
-// handoff, and Pulzar Cloud's own calls — a token that names any audience is
+// handoff, and Pulzr Cloud's own calls — a token that names any audience is
 // refused. So a token collected for a terminal cannot be pasted into a
 // browser, and a browser's cannot satisfy a terminal waiting on a code.
 loginSso = function(token, addr, expect) {
     if (!readfile(RECOVERY_PUBKEY))
-        return { error: 'This gateway has no Pulzar trust anchor.',
+        return { error: 'This gateway has no Pulzr trust anchor.',
                  status: 501 };
 
     // token is "<payload-b64>.<signature-b64>", payload being JSON with the
@@ -691,10 +691,10 @@ loginSso = function(token, addr, expect) {
     return { session };
 };
 
-// ── signing in to the terminal with a Pulzar account ──────────────────────
+// ── signing in to the terminal with a Pulzr account ──────────────────────
 //
-// The terminal's "Sign in with Pulzar". There is no browser to land a handoff
-// in, so the terminal shows a code, somebody approves it on Pulzar Cloud —
+// The terminal's "Sign in with Pulzr". There is no browser to land a handoff
+// in, so the terminal shows a code, somebody approves it on Pulzr Cloud —
 // from a phone, usually — and the gateway collects the token itself:
 // pulzr-console-signin does the asking. The token is checked here, by
 // loginSso, and goes no further: the terminal gets a session or a reason.
@@ -706,7 +706,7 @@ terminalStart = function() {
     let reply = null;
     try { reply = json(proc.read('all')); } catch (e) {}
     proc.close();
-    if (!reply) return { error: 'Could not reach Pulzar.' };
+    if (!reply) return { error: 'Could not reach Pulzr.' };
     if (reply.error) return { error: reply.error };
     return { code: reply.code, url: reply.url, expiresIn: reply.expiresIn,
              interval: reply.interval ?? 3 };
@@ -723,9 +723,9 @@ terminalCollect = function(code, addr) {
     if (!reply) return { pending: true };     // a dropped poll; ask again
     if (reply.error) return { error: reply.error };
     if (reply.state == 'pending') return { pending: true };
-    if (reply.state == 'refused') return { error: 'Refused on Pulzar.' };
+    if (reply.state == 'refused') return { error: 'Refused on Pulzr.' };
     if (reply.state == 'expired') return { error: 'That code has expired.' };
-    if (reply.state != 'approved' || !reply.token) return { error: 'Pulzar did not answer.' };
+    if (reply.state != 'approved' || !reply.token) return { error: 'Pulzr did not answer.' };
     return loginSso(reply.token, addr, { aud: 'terminal', req: code });
 };
 
@@ -776,7 +776,7 @@ loginTicket = function(ticket, addr) {
 //
 // Written locally and uploaded when the backhaul returns. A recovery that
 // happened while the gateway was offline is precisely the event that must
-// still reach Pulzar Cloud eventually.
+// still reach Pulzr Cloud eventually.
 
 audit = function(action, detail) {
     const entry = { at: now(), action: action };

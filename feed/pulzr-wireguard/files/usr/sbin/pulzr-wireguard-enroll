@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# Enrol this gateway's WireGuard key with Pulzar Cloud and fetch its tunnel.
+# Enrol this gateway's WireGuard key with Pulzr Cloud and fetch its tunnel.
 #
 #   pulzr-wireguard-enroll                once, in the foreground
 #   pulzr-wireguard-enroll --background   retry until it works, detached

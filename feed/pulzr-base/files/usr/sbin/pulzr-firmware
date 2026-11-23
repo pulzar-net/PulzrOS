@@ -231,7 +231,7 @@ cannot check whether an image is ours." >&2; exit 1; }
     if ! openssl pkeyutl -verify -pubin -inkey "${pubkey}" -rawin \
              -in "${work}/body" -sigfile "${work}/sig" >/dev/null 2>&1; then
         rm -rf "${work}"
-        echo "That image is not signed by Pulzar." >&2
+        echo "That image is not signed by Pulzr." >&2
         exit 1
     fi
     rm -rf "${work}"
@@ -330,7 +330,7 @@ rollback-target)
 # ── put the previous firmware back ──────────────────────────────────────────
 #
 # Called by the health gate when a gateway has come up unable to reach
-# Pulzar Cloud after an upgrade. Does not decide anything: whether this is
+# Pulzr Cloud after an upgrade. Does not decide anything: whether this is
 # warranted is the gate's judgement, and everything here is about doing it
 # safely once that judgement is made.
 rollback)

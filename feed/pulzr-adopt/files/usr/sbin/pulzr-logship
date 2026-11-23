@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# Send this gateway's system log to Pulzar Cloud, where its page keeps it.
+# Send this gateway's system log to Pulzr Cloud, where its page keeps it.
 #
 #   pulzr-logship           follow the log and send it, until killed (procd)
 #   pulzr-logship filter    `logread -t` lines on stdin into the spool
@@ -22,7 +22,7 @@
 #
 # Each line is stamped from logd's own clock (`logread -t`), not parsed out of
 # the local-time date in front of it. A gateway before NTP has a 1970 clock;
-# Pulzar Cloud files those at the time they arrive.
+# Pulzr Cloud files those at the time they arrive.
 #
 # ── WHAT IT COSTS ──────────────────────────────────────────────────────────
 #
@@ -30,7 +30,7 @@
 # A daemon in a crash loop costs that and one line saying how many more there
 # were. Sent every minute, or every five on a metered uplink, or sooner once
 # 100 lines are waiting: one HTTPS POST each, which on a SIM is the cost that
-# counts. Pulzar Cloud has its own ceiling as well, whatever firmware sends.
+# counts. Pulzr Cloud has its own ceiling as well, whatever firmware sends.
 #
 # Proved the way a report is, by the claim secret (pulzr-claim syslog), over
 # the same HTTPS: no second credential, no second connection held open.
@@ -158,7 +158,7 @@ flush() {
     set -- "${RUN}"/batch.*
     [ -e "$1" ] || return 0
 
-    # Over KEEP waiting (Pulzar Cloud unreachable for a long while): the
+    # Over KEEP waiting (Pulzr Cloud unreachable for a long while): the
     # oldest batches go, counted, so what is sent last is the latest.
     local total=0 count lost=0 f
     for f in $(ls -r "${RUN}"/batch.*); do

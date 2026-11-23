@@ -2,7 +2,7 @@
 // resolves locally, and rebind protection.
 //
 // Everything changed here lands in UCI dhcp, which `pulzr-dns status` reads
-// back, and that is what the MQTT agent's `dns` op sends Pulzar Cloud.
+// back, and that is what the MQTT agent's `dns` op sends Pulzr Cloud.
 
 let _m_fs = require('fs');
 let _m_util = loadfile('/usr/share/pulzr/console/lib/util.uc', { raw_mode: true })();

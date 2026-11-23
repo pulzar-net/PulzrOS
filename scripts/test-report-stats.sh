@@ -4,7 +4,7 @@
 #
 #   scripts/test-report-stats.sh
 #
-# The stats section rides the report, so its mistakes are a report Pulzar Cloud
+# The stats section rides the report, so its mistakes are a report Pulzr Cloud
 # rejects whole (bad JSON), a report held up by a hung modem, or a CPU figure
 # that is a lie after a reboot. None shows on a bench. Each case builds the
 # files and command answers one board family would have and checks the object

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Write a PulzarOS image to an SD card.
+# Write a PulzrOS image to an SD card.
 #
 #   ./flash.sh                     pick a board and a card, interactively
 #   ./flash.sh rpi4                pick a card for this board

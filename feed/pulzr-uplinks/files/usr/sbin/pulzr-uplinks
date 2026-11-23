@@ -49,8 +49,8 @@
 // it calls `apply` when the answer changes.
 //
 // The order and the tracking settings are in UCI (pulzr.uplinks), and
-// `status` is what the MQTT agent's `uplinks` op sends Pulzar Cloud, so an
-// order set at the gateway is one Pulzar Cloud sees.
+// `status` is what the MQTT agent's `uplinks` op sends Pulzr Cloud, so an
+// order set at the gateway is one Pulzr Cloud sees.
 
 let fs = require('fs');
 let uci = require('uci');

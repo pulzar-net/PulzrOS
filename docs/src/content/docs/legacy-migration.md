@@ -1,9 +1,9 @@
 ---
 title: "Upgrading from ParkezeOS"
-description: "PulzarOS is the earlier ParkezeOS under a new name, and its version numbers continue from it."
+description: "PulzrOS is the earlier ParkezeOS under a new name, and its version numbers continue from it."
 ---
 
-PulzarOS is the earlier ParkezeOS under a new name, and its version numbers
+PulzrOS is the earlier ParkezeOS under a new name, and its version numbers
 continue from it. A gateway running ParkezeOS upgrades with `sysupgrade`
 keeping settings, and comes up as the same gateway: same identity, same claim,
 same tunnel key, same broker, still adopted. Nothing is re-adopted and nobody

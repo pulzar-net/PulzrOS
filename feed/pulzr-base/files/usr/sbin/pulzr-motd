@@ -23,7 +23,7 @@
 
 WIDTH="${COLUMNS:-80}"
 FONT="${PULZR_MOTD_FONT:-/usr/share/pulzr/fonts/slant.flf}"
-WORDMARK="${PULZR_MOTD_WORDMARK:-Pulzar}"
+WORDMARK="${PULZR_MOTD_WORDMARK:-Pulzr}"
 LOGO=1
 [ "$1" = "--no-logo" ] && LOGO=0
 
@@ -55,7 +55,7 @@ logo() {
     # wraps, which is exactly why the widths are checked: a wrapped logo on a
     # 40-column serial terminal is unreadable confetti.
     #
-    # slant is 39 columns for "Pulzar"; the mark is its own width plus the
+    # slant is 39 columns for "Pulzr"; the mark is its own width plus the
     # indent and the gap pulzr-logo puts around it. pulzr-logo reports 0
     # when this terminal will not draw it, and the wordmark carries on alone.
     local mark=0
@@ -67,7 +67,7 @@ logo() {
     elif [ "${WIDTH}" -ge 46 ] && wordmark >/dev/null; then
         wordmark
     elif [ "${mark}" -gt 0 ] && [ "${WIDTH}" -ge $((mark + 7)) ]; then
-        printf "${B}Pulzar${OFF}\n" | /usr/sbin/pulzr-logo --beside
+        printf "${B}Pulzr${OFF}\n" | /usr/sbin/pulzr-logo --beside
     else
         return 1
     fi
@@ -139,7 +139,7 @@ echo
 if [ "${LOGO}" = 1 ] && logo; then
     :
 else
-    say "  ${B}Pulzar${OFF}\n"
+    say "  ${B}Pulzr${OFF}\n"
 fi
 
 say "  ${DIM}%s${OFF}\n\n" \

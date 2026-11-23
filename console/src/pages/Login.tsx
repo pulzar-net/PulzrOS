@@ -19,7 +19,7 @@ import styles from './Login.module.css';
  * gateway decides — not this component. An unadopted gateway offers a local
  * password because that is the only thing that could work; an adopted one
  * offers recovery, because the credential a thief could pull out of its flash
- * must not be a way in. See PulzarOS docs/src/content/docs/auth.md.
+ * must not be a way in. See PulzrOS docs/src/content/docs/auth.md.
  *
  * Note that the *reason* text comes from the API too. It changes with adoption
  * state and there is no version of it that belongs in the frontend.
@@ -27,7 +27,7 @@ import styles from './Login.module.css';
 /**
  * A handoff token in the fragment.
  *
- * Pulzar Cloud returns the browser here with `#sso=<token>`, and
+ * Pulzr Cloud returns the browser here with `#sso=<token>`, and
  * `pulzr-local-access open` prints a link ending `#ticket=<hex>`. Either is
  * removed from the URL as soon as it is presented, success or not: a fragment
  * is never sent to a server, but it does stay in history, and the back button
@@ -130,7 +130,7 @@ export default function Login() {
   const available = methods.data!;
   // An adopted gateway with local sign-in off has exactly one way in, so land
   // on it rather than making somebody click past a form they cannot use.
-  // Adopted: Pulzar sign-in first. Recovery is for when the browser has no
+  // Adopted: Pulzr sign-in first. Recovery is for when the browser has no
   // internet either, which is the rarer case and one click away.
   const effective =
     mode ?? (available.local ? 'password' : available.sso ? 'pulzr' : 'recovery');
@@ -154,7 +154,7 @@ export default function Login() {
           <Recovery
             canGoBack={available.local || available.sso}
             onBack={() => setMode(available.local ? 'password' : 'pulzr')}
-            notice={unreachable ? 'This browser cannot reach Pulzar.' : null}
+            notice={unreachable ? 'This browser cannot reach Pulzr.' : null}
           />
         ) : effective === 'pulzr' ? (
           <PulzarSignIn
@@ -175,7 +175,7 @@ export default function Login() {
 }
 
 /**
- * Sign in with a Pulzar account.
+ * Sign in with a Pulzr account.
  *
  * Sends the browser to the platform, which names this gateway, asks the person
  * to confirm, and returns a short-lived token this gateway verifies offline.
@@ -242,7 +242,7 @@ function PulzarSignIn({
           onClick={() => void go()}
         >
           <LogIn size={14} strokeWidth={2} />
-          Sign in with Pulzar
+          Sign in with Pulzr
         </Button>
         <div className={styles.spacer} />
         {methods.recovery && (

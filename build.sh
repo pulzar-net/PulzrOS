@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Build a PulzarOS image for one board.
+# Build a PulzrOS image for one board.
 #
 #   ./build.sh rpi4                 # one board
 #   ./build.sh rpi3 rpi4            # several
@@ -47,7 +47,7 @@ PULZR_VERSION="$(cat "${ROOT_DIR}/VERSION" 2>/dev/null || echo 0.0.0-dev)"
 # standing at the gateway, left open for whoever is building it. The serial
 # console's root shell, failsafe mode, the TUI's `!` for any signed-in
 # session, site keys from the card, and every key in boards/common/ssh/dev/.
-# Its version says -dev everywhere it is shown, Pulzar Cloud included, and CI
+# Its version says -dev everywhere it is shown, Pulzr Cloud included, and CI
 # refuses to build one, so a release can never be one. render_board_files
 # records it in board.conf, which is what the gateway reads.
 if [ "${PULZR_DEV:-0}" = 1 ]; then
@@ -485,7 +485,7 @@ install_fleet_key() {
 install_firmware_key() {
   # The firmware signing *public* key, baked into the image.
   #
-  # What makes a gateway able to answer "did Pulzar build this image" before
+  # What makes a gateway able to answer "did Pulzr build this image" before
   # it writes one over itself. The private half lives in Actions secrets and
   # signs a manifest beside each released image — tools/sign-firmware.sh —
   # and pulzr-firmware verifies it on the device.
@@ -548,7 +548,7 @@ install_ops_keys() {
   # ── THE TRADE, STATED PLAINLY ──────────────────────────────────────────────
   #
   # This is a fleet-wide credential, which is the same shape of risk as the
-  # pulzr/pulzr default the previous PulzarOS shipped: whoever holds a
+  # pulzr/pulzr default the previous PulzrOS shipped: whoever holds a
   # private half is root on every gateway built with its public half.
   #
   # It is a much better version of that trade, not an escape from it. A private
@@ -597,7 +597,7 @@ install_ops_keys() {
     fi
     # The SSH CA is not a login key. In authorized_keys its private half would
     # open every gateway directly, which is the one thing certificates exist
-    # to stop; Pulzar Cloud's generator once said to copy it here.
+    # to stop; Pulzr Cloud's generator once said to copy it here.
     if [ -n "${ca_blob}" ] && awk '{ print $2 }' "${pub}" | grep -qxF "${ca_blob}"; then
       die "${pub} is the SSH CA, not a login key. It belongs in ${ROOT_DIR}/boards/common/ssh/."
     fi
@@ -621,7 +621,7 @@ install_ops_keys() {
 install_dev_keys() {
   # A development image's own keys: every boards/common/ssh/dev/*.pub, for the
   # people at the bench. Added to the fleet keys, so root's authorized_keys
-  # takes them as it takes Pulzar's. Ignored in .gitignore, because they are people's,
+  # takes them as it takes Pulzr's. Ignored in .gitignore, because they are people's,
   # and never read for a production image.
   [ "${PULZR_DEV:-0}" = 1 ] || return 0
   local fleet="${ROOT_DIR}/boards/common/files/usr/share/pulzr/fleet-keys" found=0 pub ca_blob
@@ -644,7 +644,7 @@ install_dev_keys() {
 install_ssh_ca() {
   # The SSH certificate authority's *public* line, baked into the image.
   #
-  # Pulzar Cloud reaches a gateway's shell with a certificate it signs for that
+  # Pulzr Cloud reaches a gateway's shell with a certificate it signs for that
   # one gateway, for five minutes; a gateway accepts it because it trusts this
   # line (pulzr-ssh-setup). Public, and committed beside the fleet key for
   # the same reason the fleet key is: which key opens a gateway is part of
@@ -762,7 +762,7 @@ build_feed() {
       || die "no host ucode to compile the feed with (needs cmake and json-c)"
   fi
 
-  log "Staging Pulzar feed${PULZR_FEED_ARCHES:+ (${PULZR_FEED_ARCHES})}"
+  log "Staging Pulzr feed${PULZR_FEED_ARCHES:+ (${PULZR_FEED_ARCHES})}"
   UCODE="${ucode}" "${ROOT_DIR}/scripts/build-feed.sh" "${FEED_DIR}" "${stage}" \
     "${PULZR_VERSION}" "${PULZR_BUILD}"
   echo "${PULZR_BUILD}" > "${stage}/BUILD"
@@ -907,7 +907,7 @@ EOF
 # This exists because they once did not. Our hand-built opkg packages were ar
 # archives where opkg only reads gzipped tar; it recorded all eight as
 # installed and extracted nothing. The build succeeded, the image booted, and
-# it contained no part of PulzarOS. apk is less forgiving of a bad package,
+# it contained no part of PulzrOS. apk is less forgiving of a bad package,
 # but the packing is still ours rather than OpenWrt's.
 #
 # Nothing in the build reported a problem, so the check is here: look in the
@@ -979,7 +979,7 @@ EOF
 
   local count
   count="$(find "${root}" -path '*pulzr*' -type f | wc -l | tr -d ' ')"
-  log "Payload check: ${count} Pulzar files in the rootfs"
+  log "Payload check: ${count} Pulzr files in the rootfs"
 }
 
 # ── Entry point ─────────────────────────────────────────────────────────────
@@ -1078,7 +1078,7 @@ main() {
 
   for board in "${boards[@]}"; do build_board "${board}"; done
 
-  log "Done. PulzarOS ${PULZR_VERSION} (${PULZR_COMMIT})"
+  log "Done. PulzrOS ${PULZR_VERSION} (${PULZR_COMMIT})"
 }
 
 main "$@"

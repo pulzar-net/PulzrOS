@@ -3,7 +3,7 @@
 # implied by their absence; see pulzr-ble for what each one does.
 #
 #   oui       MAC prefixes to send, space-separated. BC5729 is KKM's, whose
-#             beacons are the parking sensors Pulzar Net decodes today.
+#             beacons are the parking sensors Pulzr Net decodes today.
 #   min_rssi  weaker than this is not sent. -100 is the radio's floor.
 #   interval  seconds between a beacon's uplinks.
 #

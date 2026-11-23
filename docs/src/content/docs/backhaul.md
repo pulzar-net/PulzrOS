@@ -1,9 +1,9 @@
 ---
 title: "Backhaul and management paths"
-description: "A Pulzar gateway has two uplinks and two management paths, and the difference between them is money."
+description: "A Pulzr gateway has two uplinks and two management paths, and the difference between them is money."
 ---
 
-A Pulzar gateway has two uplinks and two management paths, and the difference
+A Pulzr gateway has two uplinks and two management paths, and the difference
 between them is money.
 
 ## The uplinks
@@ -73,8 +73,8 @@ what brings it:
    dongle in its CD-ROM mode, an RNDIS, ECM or NCM modem, or an iPhone.
 2. The modem is reported with the radios (`radios.modems`, at once over
    `pulzr-claim radios`, and in every report and the MQTT state).
-3. Pulzar Net offers the Cellular add-on on the gateway's page to an org
-   admin or Pulzar staff, who installs it there. It is never installed on
+3. Pulzr Net offers the Cellular add-on on the gateway's page to an org
+   admin or Pulzr staff, who installs it there. It is never installed on
    its own.
 4. pulzr-addon installs it from the release's add-on repository, about
    3 MB to download: ModemManager with glib, libqmi and libmbim,
@@ -104,7 +104,7 @@ A gateway upgrading into this release from one with cellular in the image
 wants the add-on if it ever had a modem bound (`42-pulzr-cellular-addon`),
 and its restore installs it after the firmware is confirmed, over the cable
 or WiFi. Nothing older carried it, so one on cellular alone cannot make that
-upgrade: Pulzar Net does not offer it.
+upgrade: Pulzr Net does not offer it.
 
 None of the `usbwan` rows has been tried on hardware, and neither have MBIM or
 AT modems; QMI is the RAK's and the one that has.
@@ -175,9 +175,9 @@ the first usable one (`/usr/share/pulzr/wired.sh`).
 
 Backhaul > Ethernet sets each one to DHCP or to a static address, gateway and
 DNS. This used to be read-only, on the reasoning that the uplink was
-Pulzar Cloud's to decide. That broke the one case it mattered for: a site whose
+Pulzr Cloud's to decide. That broke the one case it mattered for: a site whose
 network needs a static address is a site where the gateway cannot reach
-Pulzar Cloud at all until somebody standing there says so, and that person had
+Pulzr Cloud at all until somebody standing there says so, and that person had
 no way to.
 
 Two properties make it safe to offer:
@@ -185,13 +185,13 @@ Two properties make it safe to offer:
 - **A change that cuts somebody off comes back.** Addressing is applied the
   way a port change is, through `pulzr-ports set`: kept only once the page
   reaches the gateway again, undone after 90 seconds otherwise. Somebody
-  working through Pulzar Cloud on the uplink the tunnel rides is the one a wrong
+  working through Pulzr Cloud on the uplink the tunnel rides is the one a wrong
   static address would have stranded. A static address inside the console's,
   link-local, the LAN's, the setup AP's or the USB port's subnet is refused,
   as are two uplinks on one subnet.
 - **The tunnel follows on its own.** Bringing a wired uplink up fires the
   tunnel's hotplug handler, which restarts it over the new route, and the
-  report, which tells Pulzar Cloud the gateway is wired.
+  report, which tells Pulzr Cloud the gateway is wired.
 
 The addressing is kept with the port in `/etc/config/pulzr`, not only in
 `network.<iface>`, so a sysupgrade, which rebuilds `network.wan` as DHCP,
@@ -253,7 +253,7 @@ is the SIM's, which is how a campus guest network's OpenDNS was first asked over
 And not a host route to those servers, which would move every lookup the
 gateway makes onto a captive WiFi and send MQTT and reports to the portal. A change of
 answer re-applies the tunnel and LoRa routing and sends a report, so
-Pulzar Cloud shows `wifiUplink` beside the gateway. `roam()` treats `portal` and
+Pulzr Cloud shows `wifiUplink` beside the gateway. `roam()` treats `portal` and
 `offline` as down, except while somebody is signing in (see access.md). A join
 from the console restarts its clock and holds it off for five minutes, as a
 switch does: the clock used to carry on from the network before, so a gateway
@@ -301,7 +301,7 @@ acts when:
 | 30 min | `wwan` down | reboot |
 
 A reboot happens only when the gateway has been up six hours and nothing
-reaches Pulzar Cloud, and the uplink buffer writes its queue to the card first.
+reaches Pulzr Cloud, and the uplink buffer writes its queue to the card first.
 The traffic row is skipped while the wired tunnel is up, because a SIM behind
 ethernet is silent by design. Nothing happens while cellular is turned off in
 the console (`network.wwan.disabled`) or there is no modem. A HiLink dongle or
@@ -402,14 +402,14 @@ cannot reach the management plane from the internet", staying silent under a
 scan is worth the slightly worse debuggability.
 
 Management works the other way round. The gateway *originates* a WireGuard
-tunnel to the Pulzar Cloud hub, and the cloud reaches it back down that
+tunnel to the Pulzr Cloud hub, and the cloud reaches it back down that
 tunnel. No inbound port on the uplink is ever needed or opened.
 
 ## The management paths
 
 ```
                     ┌──────────────────┐
-                    │   Pulzar Cloud    │
+                    │   Pulzr Cloud    │
                     └────────┬─────────┘
                              │
                  ┌───────────┴───────────┐
@@ -450,7 +450,7 @@ leaves it. Once adopted, `pulzr-wireguard-enroll` posts that key to
 `/api/v1/gateway-ops/wireguard/enroll`, proving which gateway it is with the
 claim secret exactly as `/claim/poll` does, and gets back its tunnel address,
 the hub's endpoint and the hub's public key. It retries in the background until
-Pulzar Cloud answers, so it works the same for a gateway adopted online, one
+Pulzr Cloud answers, so it works the same for a gateway adopted online, one
 adopted from a signed offline bundle that later gets internet, and one whose
 key has changed. The keypair survives firmware upgrades (`keep.d`).
 
@@ -502,7 +502,7 @@ The service refuses to bring the tunnel up if the rules did not install.
 
 **What it means operationally.** When ethernet drops, the hub stops hearing
 the gateway and its handshake goes stale. That is the designed behavior, not a
-fault: Pulzar Cloud sees it and manages the gateway over the SIM instead. A
+fault: Pulzr Cloud sees it and manages the gateway over the SIM instead. A
 cellular-only gateway simply never completes a handshake, at no cost — its
 packets have no route. The one thing that can escape is the DNS lookup for the
 hub's name when the tunnel starts, a few bytes.
@@ -521,7 +521,7 @@ endpoint, extend it from an API that already knows.
 `pulzr-backhaul-check` on the device follows the same rule: the wired path is
 tested from the kernel's last WireGuard handshake (free), and the cellular path
 only asks
-whether a TCP connection to Pulzar Cloud completes — no TLS, no certificate
+whether a TCP connection to Pulzr Cloud completes — no TLS, no certificate
 chain. That is about 700 bytes, against roughly 6KB for an HTTPS GET to a health
 endpoint. It is not the 200 of a bare handshake because nothing on the image can
 stop there: BusyBox `nc` is the minimal build without `-z`, and there is no
@@ -530,7 +530,7 @@ answer is whether the connection was made. It only tests cellular at all when
 the wired path is already known to be down.
 
 The probe host comes from `PULZR_NET_URL`. It used to be a literal
-`Pulzar Cloud`, which no longer resolves, and the `nc -z` it ran never worked on
+`Pulzr Cloud`, which no longer resolves, and the `nc -z` it ran never worked on
 this image either — so until this was fixed the cellular path could not test as
 up on any gateway.
 
@@ -539,6 +539,6 @@ up on any gateway.
 Before adoption there is no tunnel, so "manageable" is false for every gateway
 and says nothing about whether it can reach us. `pulzr-claim status` answers
 the unadopted case from its own polling instead: each register and poll attempt
-records whether Pulzar Cloud answered, and `online` is true if one did within the
+records whether Pulzr Cloud answered, and `online` is true if one did within the
 last two hours. No extra bytes — the claim loop was making those requests anyway.
 Once adopted, `online` goes back to `pulzr-backhaul-check`.

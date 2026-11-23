@@ -1,5 +1,5 @@
 {%
-// The Pulzar console API.
+// The Pulzr console API.
 //
 // ── THE uhttpd ucode HANDLER CONTRACT ───────────────────────────────────────
 //
@@ -92,7 +92,7 @@ const PUBLIC = {
     // physical consoles. It was open to anybody on the LAN, which made a new
     // gateway on a shared network anybody's to take.
     //
-    // An offline bundle is open: it is Pulzar Cloud's signature over this
+    // An offline bundle is open: it is Pulzr Cloud's signature over this
     // gateway's EUI, which nobody gets without having adopted it already.
     // It stops working the moment the gateway is adopted (PROVISIONING_ONLY).
     'POST /api/claim/apply': true,
@@ -101,7 +101,7 @@ const PUBLIC = {
     // screen is reached without a session — that is the whole point of it —
     // and a gateway that was decommissioned needs to be able to say so from
     // there. Asking is all a caller can do: pulzr-adopt decides, from an
-    // answer only Pulzar Cloud can give, and a wrong one costs a return to
+    // answer only Pulzr Cloud can give, and a wrong one costs a return to
     // local management rather than access to anything.
     'POST /api/claim/check-adoption': true,
     'GET  /api/claim/check-adoption': true,
@@ -117,7 +117,7 @@ const PROVISIONING_ONLY = {
 };
 
 // Again while a claim waits to replace a revoked one, for the owner to scan
-// (signed in, as the owner is, by Pulzar). Not `apply`: an offline bundle
+// (signed in, as the owner is, by Pulzr). Not `apply`: an offline bundle
 // carries no claim, and this gateway is adopted.
 const RECLAIM_OPEN = {
     'GET  /api/claim/status': true,
@@ -343,7 +343,7 @@ const ROUTES = {
 
     // ── add-ons, see lib/addons.uc ──────────────────────────────────────────
     //
-    // Read by anybody signed in; changed only by Pulzar Net (an sso session).
+    // Read by anybody signed in; changed only by Pulzr Net (an sso session).
     // Like every POST here, these need the CSRF header.
     'GET  /api/system/addons':    () => respond(200, addons.status()),
     'POST /api/system/addons':    (env, req, s) => {
@@ -361,7 +361,7 @@ const ROUTES = {
 
     // ── Thread, see lib/thread.uc ───────────────────────────────────────────
     //
-    // Read by anybody signed in; changed only by Pulzar Net (an sso session).
+    // Read by anybody signed in; changed only by Pulzr Net (an sso session).
     'GET  /api/system/thread': () => {
         const result = thread.status();
         return result.error ? error(result.status ?? 409, result.error) : respond(200, result);
@@ -378,7 +378,7 @@ const ROUTES = {
 
     // ── radio networks, see lib/radio.uc ────────────────────────────────────
     //
-    // Read by anybody signed in; changed only by Pulzar Net (an sso session).
+    // Read by anybody signed in; changed only by Pulzr Net (an sso session).
     'GET  /api/system/radio': () => respond(200, radio.status()),
     'POST /api/system/radio/use':          radioPost('use'),
     'POST /api/system/radio/release':      radioPost('release'),
@@ -677,7 +677,7 @@ function fromHub(env) {
     return !!(tunnel && tunnel.hubAddress && env.REMOTE_ADDR == tunnel.hubAddress);
 }
 
-// ── the tunnel's speed, measured from Pulzar Cloud's end ──────────────────────
+// ── the tunnel's speed, measured from Pulzr Cloud's end ──────────────────────
 //
 // the cloud takes bytes from `source` and sends them to `sink` over the
 // WireGuard tunnel, and times both (pulzr-speedtest's tunnel test). On the

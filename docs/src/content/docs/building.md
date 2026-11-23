@@ -48,11 +48,11 @@ Three public keys decide what an image trusts. None is secret.
 | `PULZR_FIRMWARE_PUBKEY` | Ed25519 key firmware is signed with | the gateway refuses to verify any image |
 | `PULZR_SSH_CA_PUBKEY` | SSH user CA root accepts (default `boards/common/ssh/pulzr_user_ca.pub`) | root reached by the fleet key only |
 
-`boards/common/ssh/fleet/pulzr-fleet.pub` goes into root's `authorized_keys`. The CA and fleet key in this tree are Pulzar's: **replace both with your own before building for your own fleet**, or build with `PULZR_OPS_KEYS=0` for no fleet key at all. See [Authentication and SSH](/PulzrOS/auth.html#the-keys-in-this-repo).
+`boards/common/ssh/fleet/pulzr-fleet.pub` goes into root's `authorized_keys`. The CA and fleet key in this tree are Pulzr's: **replace both with your own before building for your own fleet**, or build with `PULZR_OPS_KEYS=0` for no fleet key at all. See [Authentication and SSH](/PulzrOS/auth.html#the-keys-in-this-repo).
 
 ## Adopting into your own cloud
 
-By default a gateway adopts into Pulzar Cloud at `https://app.pulzr.net`. To use your own, set `PULZR_NET_URL` and `PULZR_MQTT_HOST` in `boards/common/board.conf` to a server that implements the gateway API under `/api/v1/gateway-ops/`: claim registration and polling, adoption, reporting and WireGuard enrolment. [One-touch provisioning](/PulzrOS/provisioning.html) walks the protocol.
+By default a gateway adopts into Pulzr Cloud at `https://app.pulzr.net`. To use your own, set `PULZR_NET_URL` and `PULZR_MQTT_HOST` in `boards/common/board.conf` to a server that implements the gateway API under `/api/v1/gateway-ops/`: claim registration and polling, adoption, reporting and WireGuard enrolment. [One-touch provisioning](/PulzrOS/provisioning.html) walks the protocol.
 
 ## Repository layout
 
@@ -94,7 +94,7 @@ The hours-long builds run in `prebuilt.yml`: each SDK target's packages (`sdk/bu
 
 ## The docs site
 
-This site is [Starlight](https://starlight.astro.build) with the shared [Pulzar docs theme](https://github.com/pulzar-net/docs-theme), in `docs/`. The pages are `docs/src/content/docs/*.md`. The Hardware pages are generated from `boards/*/board.conf` through `scripts/board-facts.sh` (`docs/src/boards.mjs`): a board's page and its row in the Hardware table come from the same facts, and its "Edit page" link opens its `board.conf`.
+This site is [Starlight](https://starlight.astro.build) with the shared [Pulzr docs theme](https://github.com/pulzar-net/docs-theme), in `docs/`. The pages are `docs/src/content/docs/*.md`. The Hardware pages are generated from `boards/*/board.conf` through `scripts/board-facts.sh` (`docs/src/boards.mjs`): a board's page and its row in the Hardware table come from the same facts, and its "Edit page" link opens its `board.conf`.
 
 ```bash
 cd docs

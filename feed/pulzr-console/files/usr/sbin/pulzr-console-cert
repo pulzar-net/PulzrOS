@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# The console's certificate from Pulzar Cloud's console CA.
+# The console's certificate from Pulzr Cloud's console CA.
 #
 #   pulzr-console-cert csr            a request to sign, base64 DER, when one
 #                                       is needed; nothing when it is not

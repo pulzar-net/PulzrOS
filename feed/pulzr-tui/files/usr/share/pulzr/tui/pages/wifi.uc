@@ -150,7 +150,7 @@ return function(ctx) {
             // ── the network it is on ─────────────────────────────────────
             if (st.signin && time() >= st.signin.until) st.signin = null;
             if (wifi.configured && st.signin) {
-                // All of it on one screen, as the Pulzar sign-in's code is.
+                // All of it on one screen, as the Pulzr sign-in's code is.
                 const qr = (st.signin.qr && ctx.term.cols(st.signin.qr[0]) <= width) ? st.signin.qr : null;
                 if (qr) push(out, { t: 'pre', lines: qr });
                 push(out, { t: 'fact', label: 'Open', value: { text: sprintf('%s  %s', st.signin.url,
@@ -170,7 +170,7 @@ return function(ctx) {
                 push(out, { t: 'buttons', items: actions });
                 push(out, { t: 'fact', label: 'Network', value: wifi.ssid });
                 // Signing in to a portal takes a browser: the console's Sign in,
-                // locally or through Pulzar Cloud. Here it is a state and a MAC.
+                // locally or through Pulzr Cloud. Here it is a state and a MAC.
                 const warn = { portal: 'Sign-in required', offline: 'No internet', unchecked: 'Checking' };
                 push(out, { t: 'fact', label: 'State', value: ui.status(wifi.up, 'Connected', 'Not connected',
                                                                          wifi.up ? warn[wifi.uplink] : null) });

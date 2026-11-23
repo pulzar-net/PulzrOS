@@ -15,7 +15,7 @@
 # So authorized_keys is no longer shipped. It is composed at every boot from
 # two inputs that cannot be confused for each other:
 #
-#   /usr/share/pulzr/fleet-keys   Pulzar's own key(s), from the image. On
+#   /usr/share/pulzr/fleet-keys   Pulzr's own key(s), from the image. On
 #                                   /usr, which sysupgrade replaces whole, so
 #                                   a rotated key arrives with the firmware.
 #   /etc/pulzr/site-keys          keys a technician provisioned on this unit
@@ -24,7 +24,7 @@
 #
 # Site keys used to work on every build, refused only once a gateway was
 # adopted — and a key planted before adoption stayed afterwards. Root on
-# PulzarOS is a copy of PulzarOS, so on a production build root is Pulzar's
+# PulzrOS is a copy of PulzrOS, so on a production build root is Pulzr's
 # alone; a technician reaches the console as `pulzr` (pulzr-ssh-setup).
 #
 # A key in neither file is not in authorized_keys after a reboot. That is the
@@ -49,7 +49,7 @@ BOARD_CONF="${PULZR_BOARD_CONF:-/etc/pulzr/board.conf}"
 if [ -f "${BOARD_CONF}" ]; then . "${BOARD_CONF}"; fi
 if [ "${PULZR_DEV:-0}" != 1 ] && [ -e "${SITE}" ]; then
     rm -f "${SITE}"
-    logger -t pulzr -p daemon.notice "site SSH keys removed: production builds take Pulzar's only"
+    logger -t pulzr -p daemon.notice "site SSH keys removed: production builds take Pulzr's only"
 fi
 
 composed="$( { [ -f "${FLEET}" ] && valid "${FLEET}"

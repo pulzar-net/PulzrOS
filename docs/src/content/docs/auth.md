@@ -37,7 +37,7 @@ key to the gateway, and the console is on the site's network. See
 The password is **unique per unit**, generated on first boot from
 `/dev/urandom`, and on the label, the boot partition of a Pi
 (`pulzr-initial-password.txt`) and the root login banner. It is not
-`pulzr/pulzr` — which is what the previous PulzarOS shipped on every
+`pulzr/pulzr` — which is what the previous PulzrOS shipped on every
 image, and which means one published README is root on the entire fleet. It is
 the console's password and nothing else: root has none (below).
 
@@ -47,7 +47,7 @@ until it is changed, and deletes the cleartext the moment it is.
 
 ### 2. Adopted and online
 
-Pulzar Cloud is the identity provider. The console accepts a signed one-time
+Pulzr Cloud is the identity provider. The console accepts a signed one-time
 handoff token minted by `recovery-service`, so an operator already
 authenticated centrally lands signed in without a second password.
 
@@ -55,7 +55,7 @@ authenticated centrally lands signed in without a second password.
 goes to `0` — not merely discouraged.
 
 The terminal UI has no browser to receive that handoff, so it collects the same
-token itself: it shows a code, somebody approves it on Pulzar Cloud from a
+token itself: it shows a code, somebody approves it on Pulzr Cloud from a
 phone, and the gateway picks the token up. The token is marked for the terminal
 and for that one request, and the web console refuses tokens marked for
 anything. See [`tui.md`](/PulzrOS/tui.html).
@@ -69,7 +69,7 @@ gateway to reach anything:
 
 | The browser | Way in |
 |---|---|
-| reaches the platform | **Sign in with Pulzar**, exactly as online. The browser carries the token. |
+| reaches the platform | **Sign in with Pulzr**, exactly as online. The browser carries the token. |
 | does not | **Recovery access**, with the code carried on a second device. |
 
 The sign-in button asks first whether the browser can reach the platform, and
@@ -83,7 +83,7 @@ The same holds from a LAN port and from the setup AP. See
 ### On the bench: a LAN window
 
 The ethernet port's firewall admits only `169.254.0.0/16` and the console
-subnet, so a gateway on a bench LAN is reachable only through Pulzar Cloud.
+subnet, so a gateway on a bench LAN is reachable only through Pulzr Cloud.
 From a root shell (SSH as root, or the serial console of a development image):
 
 ```
@@ -110,10 +110,10 @@ the window and the link live in `/var/run`, so a reboot closes all of it.
    a84041ffff1234ab.9f3c2b1a8e7d6c5b4a39281f.1789330979
    ```
 
-2. The operator carries it to Pulzar Cloud on a second device. A phone has
+2. The operator carries it to Pulzr Cloud on a second device. A phone has
    cellular even when the gateway's uplink is dead.
 
-3. Pulzar Cloud checks they are a net-admin, claims the nonce in
+3. Pulzr Cloud checks they are a net-admin, claims the nonce in
    `gateway_recovery_events` (a unique index, so a nonce can be signed exactly
    once), writes an audit row, and has `recovery-service` sign those exact
    bytes with the fleet Ed25519 key.
@@ -184,7 +184,7 @@ until they are re-adopted.
 - **Cookies** — HttpOnly, Secure, SameSite=Strict, Path=/.
 - **CSRF** — every non-GET must echo the session's CSRF token in
   `X-Pulzar-CSRF`. Belt-and-braces over SameSite, because the console is also
-  reachable through the Pulzar Cloud proxy under a different origin where
+  reachable through the Pulzr Cloud proxy under a different origin where
   SameSite reasoning gets subtle.
 - **Lockout** — 5 failures per source address, then 15 minutes. Per-address and
   not per-account: there is one account, so a per-account counter is a denial
@@ -209,10 +209,10 @@ cannot change from outside.
 
 OpenSSH's `sshd` on port 22, on every board. dropbear, which every image
 before it ran, cannot check a certificate, and certificates are how
-Pulzar Cloud reaches a gateway's shell: one signed for this gateway's EUI and
+Pulzr Cloud reaches a gateway's shell: one signed for this gateway's EUI and
 nothing else, valid for five minutes, `permit-pty` only for the browser
 terminal. A certificate leaked from one session opens one gateway for five
-minutes. Pulzar Cloud's `docs/gateway-ssh-certificates.md` is the other half.
+minutes. Pulzr Cloud's `docs/gateway-ssh-certificates.md` is the other half.
 
 What sshd trusts is written at every boot by `pulzr-ssh-setup`:
 
@@ -227,13 +227,13 @@ What sshd trusts is written at every boot by `pulzr-ssh-setup`:
 Rewritten from the image each boot rather than kept, because sysupgrade keeps
 conffiles and `/etc/ssh/sshd_config` is one: a change shipped in a release
 would otherwise never reach a gateway that had been upgraded once. The fleet
-key stays in `authorized_keys` until every gateway trusts the CA. Pulzar Cloud
+key stays in `authorized_keys` until every gateway trusts the CA. Pulzr Cloud
 uses a certificate only for a gateway marked as trusting the CA, and only with
 `GATEWAY_SSH_CERTIFICATES` set. Staff mark it today; the report carries
 `sshCa: true` once the running sshd trusts the CA, for the cloud to mark it
 itself.
 
-**Host keys.** Pulzar Cloud pins the key a gateway reports, so the first boot
+**Host keys.** Pulzr Cloud pins the key a gateway reports, so the first boot
 without dropbear converts dropbear's keys (`dropbearconvert`) and sshd presents
 the key already pinned. dropbear's files stay, and keep.d carries both, so a
 rollback to a dropbear image presents the same key again.
@@ -286,11 +286,11 @@ all, reached only by certificate.
 
 ## Who gets root
 
-A root shell on PulzarOS is a copy of PulzarOS, so on a production image it
-is Pulzar's: the fleet key, the certificates Pulzar Cloud signs for staff, and
-a console session Pulzar Cloud has signed as staff's. An organization's admin
+A root shell on PulzrOS is a copy of PulzrOS, so on a production image it
+is Pulzr's: the fleet key, the certificates Pulzr Cloud signs for staff, and
+a console session Pulzr Cloud has signed as staff's. An organization's admin
 runs their gateway through the console — the web console, the TUI on a port,
-and Pulzar Cloud's **Console** (`pulzr-tui --remote`, see
+and Pulzr Cloud's **Console** (`pulzr-tui --remote`, see
 [`tui.md`](/PulzrOS/tui.html)) — and never gets the shell under it. Before 0.3.1 root's
 password was the console's, so anybody with the label was root.
 
@@ -312,7 +312,7 @@ is uid 1000 with no password of its own (`pulzr-ssh-setup` writes it every
 boot), and sshd's `Match User pulzr` block runs `pulzr-tui --console`
 whatever the client asks for — no command, sftp, forwarding or `~/.ssh/rc`.
 So the account is the console's sign-in and nothing else: the local password
-while it is allowed, Pulzar or recovery once adopted. Sign-in failures count
+while it is allowed, Pulzr or recovery once adopted. Sign-in failures count
 against the client's address, and Ctrl-C ends the session.
 
 It is not root, because anybody on the site's network reaches it before
@@ -325,8 +325,8 @@ actions, each looked up by the broker from the session's token. There is no
 works offline too, and `!` gives everybody else the diagnostic prompt.
 
 **Staff sessions.** Organization admins sign in to a gateway's console with
-Pulzar and with recovery as well as staff do, so the kind of session cannot
-say who it is. Pulzar Cloud says it, signed with the recovery key the gateway
+Pulzr and with recovery as well as staff do, so the kind of session cannot
+say who it is. Pulzr Cloud says it, signed with the recovery key the gateway
 already trusts: a terminal sign-in approved by staff carries `shell: true` in
 its token, and staff recovering a gateway are given a signature over
 `<challenge>.shell` instead of over the challenge. `auth.uc` records either as
@@ -340,7 +340,7 @@ serial console moves to the TUI from the boot after that, because procd reads
 ask for root's password, which no longer exists.
 
 **A development image** is `PULZR_DEV=1 ./build.sh <board>`. Its version
-ends in `-dev`, which Pulzar Cloud shows, and CI refuses to build one, so a
+ends in `-dev`, which Pulzr Cloud shows, and CI refuses to build one, so a
 release never is. Put your public key in `boards/common/ssh/dev/` (ignored by git).
 
 **What this does not cover** is the hardware. A Pi's root filesystem is a

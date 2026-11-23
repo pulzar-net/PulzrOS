@@ -281,7 +281,7 @@ olderThan = function(a, b) {
 
 // Check a staged image and, if it passes, hand it to sysupgrade. `owned` says
 // whether the file is ours to delete when it is refused; `staff`, whether the
-// session asking is Pulzar staff's (a session's `shell`, which only Pulzar
+// session asking is Pulzr staff's (a session's `shell`, which only Pulzr
 // Cloud's signature sets).
 apply = function(IMAGE, manifest, issuer, owned, staff) {
     const refuse = (error) => {
@@ -310,11 +310,11 @@ apply = function(IMAGE, manifest, issuer, owned, staff) {
     // reads it from a file beside the image. The release workflow produces
     // it.
     //
-    // Required. Root on a gateway is Pulzar's alone (docs/src/content/docs/auth.md), and an
+    // Required. Root on a gateway is Pulzr's alone (docs/src/content/docs/auth.md), and an
     // image somebody built themselves is root on it, so an unsigned image
     // installed from the console would hand root to anybody who can sign in
     // to it. Every release since 0.3.x carries a .pulzr.json beside each
-    // image and Pulzar Cloud sends it with every upgrade. A development image
+    // image and Pulzr Cloud sends it with every upgrade. A development image
     // (its version ends in -dev, and CI never builds one) takes any image: it
     // is open on the bench by design.
     if (!manifest && !match(_m_fs.readfile('/etc/pulzr/board.conf') ?? '',
@@ -329,10 +329,10 @@ apply = function(IMAGE, manifest, issuer, owned, staff) {
         const ok = check ? check.close() == 0 : false;
         _m_fs.unlink(MANIFEST);
         if (!ok)
-            return refuse(length(why) ? why : 'That image is not signed by Pulzar.');
+            return refuse(length(why) ? why : 'That image is not signed by Pulzr.');
         signed = true;
 
-        // Forward only, except for staff. Every release Pulzar ever signed
+        // Forward only, except for staff. Every release Pulzr ever signed
         // stays signed, and the ones before 0.4 take unsigned images: going
         // back to one, then flashing an image of one's own, would be root by
         // two steps. The signed manifest says which release this is.
@@ -351,7 +351,7 @@ apply = function(IMAGE, manifest, issuer, owned, staff) {
         if (older !== false && !staff && !match(runningVersion() ?? '', /-dev$/))
             return refuse(older == null
                 ? 'That image does not say which release it is.'
-                : sprintf('%s is older than this gateway\'s %s. Going back is for Pulzar staff.',
+                : sprintf('%s is older than this gateway\'s %s. Going back is for Pulzr staff.',
                           version, runningVersion()));
     }
 

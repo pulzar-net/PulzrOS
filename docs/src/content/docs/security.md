@@ -36,4 +36,4 @@ No secret belongs in the repository. Everything in `boards/common/ssh/` is a pub
 | `PULZR_FIRMWARE_PUBKEY` | Ed25519 key that signs firmware |
 | `PULZR_SSH_CA_PUBKEY` | SSH user CA whose certificates root accepts |
 
-The CA and fleet key in this tree are Pulzar's. Replace them before building for your own fleet: [Building from source](/PulzrOS/building.html#keys).
+The CA and fleet key in this tree are Pulzr's. Replace them before building for your own fleet: [Building from source](/PulzrOS/building.html#keys).

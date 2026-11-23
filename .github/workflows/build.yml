@@ -94,7 +94,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Pulzar Cloud offers a release to a gateway when the release's version
+      # Pulzr Cloud offers a release to a gateway when the release's version
       # is newer than the one the gateway reports, and a gateway reports
       # VERSION — not the tag. Tag v0.3.0 on a tree whose VERSION still says
       # 0.2.0 and every gateway that installs it goes on reporting 0.2.0 and
@@ -465,7 +465,7 @@ jobs:
           fi
 
       # The firmware signing PUBLIC key, which is what lets a gateway tell
-      # whether Pulzar built an image before it writes it over itself. Same
+      # whether Pulzr built an image before it writes it over itself. Same
       # shape and same warn-rather-than-fail reasoning as the anchor above.
       # Only needed here: the image stage receives the overlay as an artifact
       # with this already in it.

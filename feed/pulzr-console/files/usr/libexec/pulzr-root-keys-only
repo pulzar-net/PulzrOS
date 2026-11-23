@@ -5,10 +5,10 @@
 #
 # Root's password used to be the console's, so that the password on the label
 # opened SSH as well. That made every organization admin who knew the console
-# password root on the gateway, and a root shell on PulzarOS is a copy of
-# PulzarOS. A technician now reaches the console over SSH as `pulzr`
+# password root on the gateway, and a root shell on PulzrOS is a copy of
+# PulzrOS. A technician now reaches the console over SSH as `pulzr`
 # (pulzr-ssh-setup), behind the same sign-in as everywhere else; root is
-# Pulzar's fleet key and the certificates Pulzar Cloud signs for staff.
+# Pulzr's fleet key and the certificates Pulzr Cloud signs for staff.
 #
 # `*`, not `!`. OpenWrt builds sshd without PAM, and sshd without PAM refuses
 # every login — keys and certificates included — to an account whose password

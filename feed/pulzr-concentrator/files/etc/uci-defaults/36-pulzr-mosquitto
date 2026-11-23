@@ -16,7 +16,7 @@
 #
 #   Our broker cannot bind, so the forwarder — which was pointed at 1883 —
 #   connected to the stock one instead. That broker has no bridge to
-#   Pulzar Cloud, so it accepted every uplink and dropped it. Observed on a
+#   Pulzr Cloud, so it accepted every uplink and dropped it. Observed on a
 #   Pi 3: the gateway's own status said buffering was enabled and the bridge
 #   was connected, while the uplinks went nowhere at all.
 #

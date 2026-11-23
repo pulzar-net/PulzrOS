@@ -9,5 +9,5 @@ Architecture: all
 Description: How fast each free uplink is, direct and through the tunnel.
  librespeed-cli against the nearest LibreSpeed public server on each wired
  and WiFi uplink, bound to its device so a test never leaves over cellular,
- and the cloud's measurement of the WireGuard tunnel to Pulzar Cloud, so the
+ and the cloud's measurement of the WireGuard tunnel to Pulzr Cloud, so the
  two can be compared. Daily at the gateway's own time of night by default.

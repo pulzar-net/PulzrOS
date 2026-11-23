@@ -13,7 +13,7 @@
 # console carve-outs: 169.254.0.0/16 and the fixed console subnet. That is right
 # for a gateway on a customer network. It is wrong for one on our own bench,
 # where the laptop is on the same LAN as the gateway's DHCP lease and the only
-# other ways in are a cable swap or a round trip through Pulzar Cloud.
+# other ways in are a cable swap or a round trip through Pulzr Cloud.
 #
 # Adoption also turns local sign-in off and deletes the first-boot password, so
 # opening the firewall alone would reach a login page nobody can pass. The

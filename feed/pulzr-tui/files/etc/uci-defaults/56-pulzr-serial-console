@@ -5,9 +5,9 @@
 # OpenWrt's inittab runs /usr/libexec/login.sh on the console, and login.sh
 # with OpenWrt's defaults (system.ttylogin unset) is a root shell without a
 # password for anybody with a USB-serial adapter and three wires. A root shell
-# on PulzarOS is a copy of PulzarOS. So the serial line gets what HDMI and
+# on PulzrOS is a copy of PulzrOS. So the serial line gets what HDMI and
 # the USB port already have: the TUI, behind the web console's sign-in, whose
-# `!` drops to a shell only for Pulzar staff.
+# `!` drops to a shell only for Pulzr staff.
 #
 # tty1 is left alone: 55-pulzr-display takes it, and only when a screen is
 # attached. A development build keeps the stock shell on serial, which is what

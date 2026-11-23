@@ -4,7 +4,7 @@
 // through lib/actions.uc and nowhere else (act), so an action taken here is
 // validated and audited exactly as the same action taken in a browser.
 //
-// As root (a serial, HDMI or USB console, or Pulzar Cloud's) the modules are
+// As root (a serial, HDMI or USB console, or Pulzr Cloud's) the modules are
 // loaded here. As anybody else — `ssh pulzr@<gateway>`, which runs as the
 // unprivileged `pulzr` account — each call goes to pulzr-console-broker over
 // ubus, which runs it as root after its own checks. The same names either

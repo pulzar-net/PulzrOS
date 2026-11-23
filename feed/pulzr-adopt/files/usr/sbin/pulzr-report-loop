@@ -20,17 +20,17 @@ INTERVAL=21600
 
 # Not immediately: adoption restarts this service, and the management tunnel is
 # enrolling in the same moment. Reporting a tunnel that has not handshaken yet
-# as the first thing Pulzar Cloud ever hears is a worse answer than waiting half
+# as the first thing Pulzr Cloud ever hears is a worse answer than waiting half
 # a minute for the real one.
 sleep 30
 
-# After Pulzar Cloud says the claim is revoked: asked once more this much later
+# After Pulzr Cloud says the claim is revoked: asked once more this much later
 # before anything is done about it. See pulzr-claim's header.
 CONFIRM=60
 
 # A report that does not get through is tried again after five minutes,
 # doubling to the interval. The first one goes out while the tunnel is still
-# enrolling, and when it failed Pulzar Cloud heard nothing for six hours: an
+# enrolling, and when it failed Pulzr Cloud heard nothing for six hours: an
 # Opal adopted that way was listed as a LoRaWAN gateway until the next one.
 RETRY=300
 retry="${RETRY}"
@@ -49,7 +49,7 @@ while :; do
     # rather than by pulzr-claim's own service, which runs only while
     # unadopted: this gateway is still adopted, still forwarding and still on
     # its tunnel. The old claim is still reported with every six hours, in
-    # case Pulzar Cloud accepts it again.
+    # case Pulzr Cloud accepts it again.
     if pulzr-claim reclaiming >/dev/null 2>&1; then
         if [ "$((now - last))" -ge "${INTERVAL}" ]; then
             last="${now}"

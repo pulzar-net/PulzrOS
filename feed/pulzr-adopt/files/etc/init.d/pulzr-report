@@ -1,6 +1,6 @@
 #!/bin/sh /etc/rc.common
 #
-# Tell Pulzar Cloud what this gateway is.
+# Tell Pulzr Cloud what this gateway is.
 #
 # The mirror of pulzr-claim: that one runs only while unadopted, this one
 # only once adopted. Between them a gateway is never silent — which it was,
@@ -9,7 +9,7 @@
 # device that already knew the answer.
 #
 # It sends facts, never conclusions. Which backhaul this gateway has is
-# decided by Pulzar Cloud from those facts and handed back; see pulzr-claim's
+# decided by Pulzr Cloud from those facts and handed back; see pulzr-claim's
 # `report` for why that direction matters.
 
 START=97

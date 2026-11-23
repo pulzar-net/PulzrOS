@@ -10,7 +10,7 @@
 #
 # We take the fallback, because the attacker gains nothing by forcing it: on an
 # adopted gateway the AP is WPA2 with a per-unit key, and the portal behind it
-# still demands a signature from Pulzar Cloud. See pulzr-ap's header.
+# still demands a signature from Pulzr Cloud. See pulzr-ap's header.
 #
 # What the fallback is careful about is *duration*. A gateway does not sit
 # broadcasting forever after a bad afternoon:
@@ -19,7 +19,7 @@
 #     so a thirty-second blip does not raise a radio;
 #   * it stays up for `window` seconds, then drops;
 #   * it comes down immediately if the backhaul returns;
-#   * and every raise is recorded, and reported to Pulzar Cloud when the
+#   * and every raise is recorded, and reported to Pulzr Cloud when the
 #     gateway is next online — a gateway whose AP keeps appearing is telling
 #     you something, whether that is a flaky SIM or somebody standing in the
 #     car park with a jammer.

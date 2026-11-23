@@ -6,7 +6,7 @@ description: "A board with ports for devices, a router's LAN ports or a Pi's USB
 A board with ports for devices, a router's LAN ports or a Pi's USB Ethernet
 adapter, serves those devices as a small network of its own: `devlan`. The
 first device is a PLC that keeps its own identity and its own connection to
-Pulzar; the gateway is only its path.
+Pulzr; the gateway is only its path.
 
 A board without them is unchanged. Its one port has no role and never serves
 DHCP; see [backhaul.md](/PulzrOS/backhaul.html).
@@ -52,7 +52,7 @@ switch; the gateway never sees that traffic.
 
 | Destination | `internet` (default) | `parkeze` |
 |---|---|---|
-| Pulzar, TCP 443 and 8883 | yes | yes |
+| Pulzr, TCP 443 and 8883 | yes | yes |
 | NTP, UDP 123 | yes | yes |
 | DNS, on the gateway | yes | yes |
 | Anything else out an uplink | yes | no |
@@ -61,11 +61,11 @@ switch; the gateway never sees that traffic.
 | Other LAN devices | no | no |
 | The management tunnel | no | no |
 
-"Pulzar" is the domains of `PULZR_NET_URL` and `PULZR_MQTT_HOST`
+"Pulzr" is the domains of `PULZR_NET_URL` and `PULZR_MQTT_HOST`
 (`parkeze.com` today). dnsmasq adds each address it answers for those names to
 an nftables set, so the rule follows a move without anybody changing it. A
 device that ignores the gateway's DNS and asks its own resolver reaches none
-of Pulzar.
+of Pulzr.
 
 The console is open here so a laptop on a LAN port can configure the gateway,
 at `https://<the gateway's address here>`, or `https://pulzr.local` over mDNS.
@@ -78,7 +78,7 @@ gives up in a second where one dropped retries for a minute.
 straight out the active uplink, as it would behind any router, and the gateway
 meters it. `parkeze` narrows one device to the rows above, which is what
 every device got before metering. In fw4 it is a `REJECT`
-per device per uplink zone, between the Pulzar and NTP accepts and the zone's
+per device per uplink zone, between the Pulzr and NTP accepts and the zone's
 `Allow-LAN-internet-<zone>`; `pulzr-lan apply` keeps it there, since an
 upgrade re-adds the zone's rules at the end.
 
@@ -188,10 +188,10 @@ to stay under the agent's 8KB answer.
 - `firstSeen` and `lastSeen` are DHCP contact, kept across reboots and
   upgrades. A device answering ARP right now is `online`, and its `lastSeen`
   is now. A client with no contact for a week is forgotten (`SEEN_KEEP`),
-  unless it is reserved; Pulzar Cloud keeps its own record of it.
+  unless it is reserved; Pulzr Cloud keeps its own record of it.
 - Network > LAN lists clients heard from in the last hour (online, on the
   bridge, learned from their ARP) and configured ones, which stay while off:
-  reserved, or an exposed port's target. **All** shows the rest. Pulzar
+  reserved, or an exposed port's target. **All** shows the rest. Pulzr
   Cloud's Devices on LAN uses the same hour.
 - `traffic` is per uplink, by the netifd interface that carried it (`wan`,
   `wan_<port>`, `wwifi`, `wwan`, `usbwan`), and `tunnel` for a forward's
@@ -216,7 +216,7 @@ the gateway adds bytes up by hand. nlbwmon counts per device but not per
 uplink, and which uplink carried the bytes is half the question.
 
 `traffic` in the report is a running total per device within `usageEpoch`.
-Pulzar Cloud adds up the differences between one report and the next, so
+Pulzr Cloud adds up the differences between one report and the next, so
 the gateway sends no extra message for metering: it is the `lan` report the
 cloud already asks for. A total never goes backwards inside an epoch:
 
@@ -312,15 +312,15 @@ one for it first`.
 
 ## Devices a codec drives (pulzr-ip)
 
-A device that speaks its own protocol over IP instead of Pulzar's (an IP
+A device that speaks its own protocol over IP instead of Pulzr's (an IP
 camera's settings API) is driven by its device type's codec, which runs in
-Pulzar, not here: it turns each command into `ip.http`, `ip.tcp` or `ip.udp`
+Pulzr, not here: it turns each command into `ip.http`, `ip.tcp` or `ip.udp`
 requests (pulzr-protocol, "IP requests"), and pulzr-edge-ip, in every image
 with LAN ports, makes them. Nothing on the gateway knows the device.
 
 | | |
 |---|---|
-| Where | Only an address on a subnet `br-devlan` holds (the LAN, and any added for a device with a static address), never the gateway's own, the network or the broadcast address; the address is Pulzar's record of the device, never the codec's |
+| Where | Only an address on a subnet `br-devlan` holds (the LAN, and any added for a device with a static address), never the gateway's own, the network or the broadcast address; the address is Pulzr's record of the device, never the codec's |
 | Config | `/var/run/pulzr-edge/ip.toml`, generated at every start from `br-devlan`'s addresses; a change to `devlan` or `devlan_extra` restarts it |
 | Limits | 30 s and 48 KiB a request; no redirects, no proxy; one device's requests in order |
 | Log | The device and the request's name, never its contents: a device's login rides in them |
@@ -335,7 +335,7 @@ over 10 MB raw.
 
 The one forward a gateway makes: from the WireGuard management tunnel to one
 device's TCP port, for between a minute and a day. It is how somebody on
-Pulzar Cloud opens a PLC's own interface without the PLC holding a second
+Pulzr Cloud opens a PLC's own interface without the PLC holding a second
 connection or the site opening anything.
 
 `lan-forward` answers with a tunnel port, from 40000 to 40015, and `expires`,

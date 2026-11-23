@@ -11,7 +11,7 @@ import { api } from '@/services/api';
  * has had time to take effect: if it gets through, whoever made the change can
  * still reach the gateway and it is kept; if the change cut them off, nothing
  * gets through and the gateway puts the old configuration back on its own. The
- * same holds through Pulzar Cloud, where the request rides the tunnel the
+ * same holds through Pulzr Cloud, where the request rides the tunnel the
  * change may have moved.
  *
  * `apply` posts the change and confirms it. A page that posts its own

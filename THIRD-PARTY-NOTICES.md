@@ -1,6 +1,6 @@
 # Third-party notices
 
-PulzarOS is an OpenWrt distribution. This repository holds PulzarOS's own code
+PulzrOS is an OpenWrt distribution. This repository holds PulzrOS's own code
 (Apache-2.0, see [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE)); building it
 downloads and assembles the components below into a firmware image. The licence
 of each component applies to that component, and to the image as a whole in the

@@ -63,7 +63,7 @@ edge_common() {
 
 # Prints [firmware] from pulzr.edge.firmware_hosts: the hosts a radio module
 # may fetch device firmware from (Zigbee OTA images, Z-Wave updates), https
-# only, as Pulzar Net names them. None set, none fetched: an OTA asks for a
+# only, as Pulzr Net names them. None set, none fetched: an OTA asks for a
 # URL, and a gateway that would fetch from any host would fetch from anyone's.
 edge_firmware() {
     local h list=""
@@ -76,7 +76,7 @@ edge_firmware() {
     printf '[firmware]\nhosts = [%s]\n\n' "${list}"
 }
 
-# Prints [ble] from pulzr.ble, the settings the console and Pulzar Net write:
+# Prints [ble] from pulzr.ble, the settings the console and Pulzr Net write:
 #
 #   oui       admit: the MAC prefixes to send. Empty sends every device,
 #             which pulzr-edge takes only as admit_all.

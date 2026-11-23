@@ -2,7 +2,7 @@
 //
 // Somebody at a gateway's serial or USB port, signed in as an organization's
 // admin, needs the logs and the state of the links to say what is wrong. A
-// shell would give them that and a copy of PulzarOS with it (app.uc's
+// shell would give them that and a copy of PulzrOS with it (app.uc's
 // mayShell). This gives them the first and not the second.
 //
 // What each command runs is the console's lib/diag.uc: fixed programs, the

@@ -1,6 +1,6 @@
 #!/bin/sh /etc/rc.common
 #
-# The management tunnel: WireGuard to the Pulzar Cloud hub, wired preferred and
+# The management tunnel: WireGuard to the Pulzr Cloud hub, wired preferred and
 # cellular as a fast fallback. See pulzr-wireguard-route for how the choice
 # is made and confined.
 #
@@ -19,7 +19,7 @@
 # STATES
 #
 #   not adopted          no tunnel, and any old one is torn down
-#   adopted, no config   enrolment runs in the background until Pulzar Cloud
+#   adopted, no config   enrolment runs in the background until Pulzr Cloud
 #                        answers, then this service restarts itself
 #   adopted, configured  wg0 up, routed over whichever backhaul is chosen
 #

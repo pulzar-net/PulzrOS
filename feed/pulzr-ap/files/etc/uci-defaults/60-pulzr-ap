@@ -6,12 +6,12 @@
 #
 # Field setup does not use WiFi. A gateway is reached over its ethernet port
 # (see /etc/uci-defaults/20-pulzr-network) or, in the normal case, not
-# reached locally at all — it registers its claim with Pulzar Cloud over
+# reached locally at all — it registers its claim with Pulzr Cloud over
 # whichever backhaul comes up and is adopted from there.
 #
 # The AP remains as a recovery path for a unit that has no working backhaul and
 # is somewhere its ethernet port cannot conveniently be reached. Turning it on
-# is a deliberate act, from the console or from Pulzar Cloud, because an AP on a
+# is a deliberate act, from the console or from Pulzr Cloud, because an AP on a
 # customer site is a radio we are responsible for and a second way in to
 # defend.
 
@@ -50,7 +50,7 @@ add_list dhcp.setup.dhcp_option='6'
 EOF
 # An address, and no router and no DNS server, as the USB port hands out. A
 # phone on this AP keeps its cellular data for everything but the console, and
-# that is what lets one phone do all of it: "Sign in with Pulzar" needs the
+# that is what lets one phone do all of it: "Sign in with Pulzr" needs the
 # browser to reach the platform while the gateway cannot. A default route here
 # would point it at a gateway with no uplink. See docs/src/content/docs/access.md for why that
 # beat the captive portal this used to attempt.

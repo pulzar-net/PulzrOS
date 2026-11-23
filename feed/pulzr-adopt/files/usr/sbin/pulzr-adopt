@@ -1,14 +1,14 @@
 #!/bin/sh
 #
-# Claim this gateway into a Pulzar Cloud organisation.
+# Claim this gateway into a Pulzr Cloud organisation.
 #
 #   pulzr-adopt <adoption-code>
 #   pulzr-adopt --status
-#   pulzr-adopt --release        (local only; Pulzar Cloud keeps its record)
+#   pulzr-adopt --release        (local only; Pulzr Cloud keeps its record)
 #
 # WHAT ADOPTION CHANGES
 #
-#   * The gateway enrols its WireGuard key with Pulzar Cloud and brings up the
+#   * The gateway enrols its WireGuard key with Pulzr Cloud and brings up the
 #     management tunnel to the hub, over the wired path.
 #   * It receives MQTT credentials for its own EUI.
 #   * It installs the fleet recovery public key, which is what makes offline
@@ -18,7 +18,7 @@
 #     online and signed challenge-response while offline. See
 #     console/lib/auth.uc for the reasoning.
 #
-# The adoption code is short-lived and single-use, minted by Pulzar Cloud when
+# The adoption code is short-lived and single-use, minted by Pulzr Cloud when
 # an operator starts onboarding. It is not a credential — it authorises exactly
 # one gateway to claim exactly one pending record.
 
@@ -38,7 +38,7 @@ status() {
 }
 
 release() {
-    # Local-side only. Pulzar Cloud still holds the gateway record and the
+    # Local-side only. Pulzr Cloud still holds the gateway record and the
     # tunnel peer; releasing here just returns this box to local management so
     # it can be re-adopted or repurposed. Deliberately does not call the API —
     # a gateway must not be able to remove itself from the fleet, or a
@@ -51,7 +51,7 @@ set pulzr.console.local_login='1'
 EOF
     uci commit pulzr
     rm -f "${STATE}/recovery.pub" "${STATE}/wireguard/tunnel.json"
-    # The claim goes too. Its secret is either revoked, which Pulzar Cloud will
+    # The claim goes too. Its secret is either revoked, which Pulzr Cloud will
     # never register again, or adopted and collected, which it registers and
     # then refuses to hand a bundle for: kept, it left a released gateway
     # showing a code nobody could use. pulzr-claim mints a new one.
@@ -66,7 +66,7 @@ EOF
 
 # ── is this gateway still adopted? ──────────────────────────────────────────
 #
-# The recovery screen exists for an adopted gateway that cannot reach Pulzar.
+# The recovery screen exists for an adopted gateway that cannot reach Pulzr.
 # If the unit was decommissioned from the console, recovery is the wrong screen
 # entirely: there is nobody left to sign the challenge, and the operator should
 # be claiming it again instead. This is how it finds that out.
@@ -78,7 +78,7 @@ EOF
 # that can convince a working gateway it is unadopted can steal it. The rules,
 # and none of them are negotiable:
 #
-#   - Only Pulzar Cloud's own answer counts. Not a button, not a local file, not
+#   - Only Pulzr Cloud's own answer counts. Not a button, not a local file, not
 #     a UCI value, and not anything the console can set.
 #   - The answer must arrive over TLS that verified. curl is run without -k and
 #     a non-zero exit is treated as no answer at all.
@@ -95,7 +95,7 @@ EOF
 # about itself. Note that a 404 cannot distinguish "decommissioned" from "this
 # secret is wrong": verifying the secret needs the claim row, and decommission
 # deletes it. Unwinding on both is safe because `release` is local-only — it
-# hands the box back to local management and destroys nothing at Pulzar.
+# hands the box back to local management and destroys nothing at Pulzr.
 #
 # A transfer to another organization answers the same 404, because it revokes
 # the claim too. Releasing then costs the tunnel until the new owner adopts the
@@ -179,7 +179,7 @@ check() {
         return 0
     fi
 
-    logger -t adopt "Pulzar Cloud has no record of this gateway; returning to adoption"
+    logger -t adopt "Pulzr Cloud has no record of this gateway; returning to adoption"
     release >/dev/null
     answer '{"adopted":false,"checked":true,"released":true}'
 }
@@ -229,7 +229,7 @@ EOF
     rm -f "${STATE}/console/initial-password" "${STATE}/console/password-is-initial"
 
     # Enrols this gateway's WireGuard key and brings the management tunnel up.
-    # Backgrounded inside: Pulzar Cloud may not answer straight away.
+    # Backgrounded inside: Pulzr Cloud may not answer straight away.
     /etc/init.d/pulzr-wireguard restart >/dev/null 2>&1
     # Starts the MQTT forwarder alongside concentratord: it only runs once
     # adopted and holding broker credentials, which is this moment.
@@ -250,7 +250,7 @@ EOF
     /etc/init.d/pulzr-logship start >/dev/null 2>&1
 
     logger -t adopt "adopted into ${org}"
-    echo "Adopted into ${org}. Local sign-in is now disabled; manage this gateway from Pulzar Cloud."
+    echo "Adopted into ${org}. Local sign-in is now disabled; manage this gateway from Pulzr Cloud."
     status
 }
 
@@ -350,7 +350,7 @@ SERIAL="$(uci -q get pulzr.identity.serial)"
 
 uci -q set pulzr.adoption.state='adopting'; uci commit pulzr
 
-# The request carries what Pulzar Cloud needs to create the gateway record, and
+# The request carries what Pulzr Cloud needs to create the gateway record, and
 # nothing that would let a bystander impersonate the gateway later. There is no
 # device secret in this direction: the adoption code is the only bearer, which
 # is why it is one-use and short-lived.

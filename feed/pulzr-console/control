@@ -6,7 +6,7 @@ Depends: uhttpd, uhttpd-mod-ucode, ucode, ucode-mod-fs, ucode-mod-uci, ucode-mod
 Maintainer: Joseph Telaak <joseph@pulzr.net>
 License: Apache-2.0
 Architecture: all
-Description: The Pulzar gateway console.
+Description: The Pulzr gateway console.
  A single-page web interface and its ucode API, replacing LuCI. Local
- authentication, Pulzar Cloud SSO handoff, and offline recovery via signed
+ authentication, Pulzr Cloud SSO handoff, and offline recovery via signed
  challenge-response.

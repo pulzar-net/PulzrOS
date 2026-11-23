@@ -1,5 +1,5 @@
 // Speed tests, through pulzr-speedtest: the history, running one now, and
-// the schedule. The tunnel half is measured from Pulzar Cloud's end, against the
+// the schedule. The tunnel half is measured from Pulzr Cloud's end, against the
 // two endpoints api/index.uc answers on the tunnel port (tunnelSource,
 // tunnelSink).
 

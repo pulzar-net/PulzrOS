@@ -14,7 +14,7 @@
 #
 # A gateway whose only backhaul was that modem cannot download the add-on
 # after this upgrade, because nothing carried it (carrying started with this
-# release: pulzr-addon carry). Pulzar Net does not offer this upgrade to one
+# release: pulzr-addon carry). Pulzr Net does not offer this upgrade to one
 # whose report says it is on cellular alone.
 
 [ -n "${IPKG_INSTROOT}" ] && exit 0

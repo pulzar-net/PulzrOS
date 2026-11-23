@@ -7,7 +7,7 @@
 # The part of the claim that decides things — when an answer counts as a
 # revocation, when a second claim is minted, which claim is shown, polled and
 # promoted — is shell that otherwise only runs on a gateway, against
-# Pulzar Cloud. Getting it wrong costs either a gateway nobody can adopt again
+# Pulzr Cloud. Getting it wrong costs either a gateway nobody can adopt again
 # or one that shows a claim code to whoever reports during a bad deploy, and
 # neither is found on a bench. So it runs here, with curl, uci, jsonfilter and
 # the scripts it calls replaced by stubs that answer what each case needs.

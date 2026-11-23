@@ -44,7 +44,7 @@ add-on wants pulzr-modbus after the upgrade
 (`/etc/uci-defaults/41-pulzr-addons-split`), so its buses keep running.
 
 pulzr-cellular is offered, not just listed: a modem plugged into a gateway
-that can take it is reported with its radios (`radios.modems`), and Pulzar
+that can take it is reported with its radios (`radios.modems`), and Pulzr
 Net offers the add-on for it. See [backhaul.md](/PulzrOS/backhaul.html), "Cellular is
 an add-on".
 
@@ -147,7 +147,7 @@ the running release does not have stays wanted, as `unavailable`.
 An add-on with `ADDON_CARRY="1"` may be the gateway's backhaul: pulzr-cellular
 on a board whose modem is plugged in. It cannot wait for confirm, because a
 gateway on that SIM alone comes back from the upgrade with no modem driver,
-cannot reach Pulzar Cloud to be confirmed, and on a board with no card has no
+cannot reach Pulzr Cloud to be confirmed, and on a board with no card has no
 image to roll back to. So:
 
 - Before the upgrade, the console's firmware apply runs `pulzr-addon carry
@@ -173,7 +173,7 @@ spend after the upgrade anyway.
 |---|---|
 | `installed` | the package is on the gateway, built in or not |
 | `downloading`, `installing`, `removing` | a job is doing it now |
-| `reverted` | installed, then undone because the gateway stopped reaching Pulzar Cloud; no longer wanted |
+| `reverted` | installed, then undone because the gateway stopped reaching Pulzr Cloud; no longer wanted |
 | `failed` | the last attempt did not install it; `error` says why |
 | `pending-restore` | wanted and missing, and a restore has yet to put it back |
 | `unavailable` | wanted, or asked for, and this release does not build it here |
@@ -191,7 +191,7 @@ A gateway with Modbus denied (a production RAK7268CV2, say) never gets it. Three
   so a `wanted` edited by hand does not bring it back. pulzr-modbus also
   `Provides: pulzr-cap-modbus`, and depends on nothing another capability
   brings, so denying Modbus leaves Zigbee and Z-Wave installable.
-- Pulzar Net holds its own lock, and writes it back to the gateway through
+- Pulzr Net holds its own lock, and writes it back to the gateway through
   `POST /api/system/addons/deny` when a report's `addons.deny` lacks it (a
   factory reset wipes `/etc/config`).
 
@@ -200,12 +200,12 @@ is for somebody with a root shell.
 
 ## Who can ask
 
-Installs and removals come from Pulzar Net, as a person: org admins and
-Pulzar staff, never an API key, an agent or a bulk action. The gateway's half
+Installs and removals come from Pulzr Net, as a person: org admins and
+Pulzr staff, never an API key, an agent or a bulk action. The gateway's half
 of that is the session kind: its console API takes a write only from an `sso`
-session, which only Pulzar Net mints, and audits it with the person's
+session, which only Pulzr Net mints, and audits it with the person's
 subject. A local password or recovery session can read the list (System >
-Maintenance > Add-ons) and gets `403 Add-ons are installed from Pulzar Net.`
+Maintenance > Add-ons) and gets `403 Add-ons are installed from Pulzr Net.`
 for a write.
 
 ## The console API
@@ -237,7 +237,7 @@ last 20 entries.
   job is running; its outcome is in `GET` and in the next report, which the
   job sends itself when it finishes.
 - `400 {"error":…}`: not an add-on name, or not install or remove.
-- `403 {"error":"Add-ons are installed from Pulzar Net."}`: not an `sso` session.
+- `403 {"error":"Add-ons are installed from Pulzr Net."}`: not an `sso` session.
 - `409 {"error":…}`: refused before starting. Built in, locked off
   (`Modbus is locked off on this gateway.`), already installed, not
   installed, not in this release, a firmware upgrade being judged, another

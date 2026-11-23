@@ -110,7 +110,7 @@ word:
 - **Offered** where it is plugged in: the Opal, the Pis and the RAK7391,
   whose LTE is an optional mPCIe card on USB (its `ADDON_BOARDS`). Their
   images carry no modem driver. `pulzr-radios` reports a modem plugged into
-  one (`modems`, see [usb-radios.md](/PulzrOS/usb-radios.html)), and Pulzar Net offers the
+  one (`modems`, see [usb-radios.md](/PulzrOS/usb-radios.html)), and Pulzr Net offers the
   add-on: ModemManager with glib, libqmi and libmbim, `usb-modeswitch`,
   `usbmuxd` and the kmods for MBIM, QMI, AT ports, a Huawei stick and the
   USB Ethernet modems, about 4 MB installed.
@@ -128,8 +128,8 @@ feature's package: `pulzr-backhaul-check` (adoption, the health gate, the
 motd, the reset button, the console) moved there from pulzr-cellular so a
 board without cellular still has it. `pulzr-gateway-facts` moved there
 from pulzr-concentrator: `pulzr-claim report` sends its facts from every
-gateway, and a board without `lorawan` that sent none was one Pulzar Cloud
-could not tell ran PulzarOS. On such a board it reports
+gateway, and a board without `lorawan` that sent none was one Pulzr Cloud
+could not tell ran PulzrOS. On such a board it reports
 `concentrator=absent`. Everything else that reaches into a feature's package
 already copes with it being absent: `pulzr-wifi-uplink` tests for
 `pulzr-lora-route`, and the MQTT agent's ops fall back to `{}`.
@@ -150,7 +150,7 @@ partition the console's UART setting already reads it as absent.
 
 ## What a router board may not do
 
-The Opal is a Pulzar Cloud gateway like any other, and the devices on its LAN
+The Opal is a Pulzr Cloud gateway like any other, and the devices on its LAN
 are listed under it.
 Three rules follow, and every router page keeps them:
 
@@ -165,12 +165,12 @@ Three rules follow, and every router page keeps them:
   or our SIM. See [lan.md](/PulzrOS/lan.html). Still no DMZ, no site VPN that reaches
   the LAN, and no firewall rule editor.
 - **Policy is per MAC**: `internet` (the default, metered per device) or
-  `parkeze` (Pulzar, NTP and DNS only), through `pulzr-lan policy`,
+  `parkeze` (Pulzr, NTP and DNS only), through `pulzr-lan policy`,
   and a cellular rule beside it: allowed, blocked, or allowed but for some
   ports (`pulzr-lan cellular`). No blocklist, no allowlist, no per-client
   speed limit.
 - **Local is reported.** A setting changed at the gateway (a reservation, an
-  upstream DNS server, the uplink order) is in the gateway's report to Pulzar
+  upstream DNS server, the uplink order) is in the gateway's report to Pulzr
   Net, as the LAN's state already is (`pulzr-lan status`).
 
 ## DNS and Uplinks
@@ -182,11 +182,11 @@ MQTT op (`dns`, `uplinks`) that answers with the tool's `status`, as `lan`
 answers with `pulzr-lan status`.
 
 **DNS** is dnsmasq's UCI. Upstream is the uplinks' own servers, or up to three
-named ones that replace them (`noresolv`); a list where none resolves Pulzar's
+named ones that replace them (`noresolv`); a list where none resolves Pulzr's
 MQTT host is refused, because the gateway resolves through the same dnsmasq.
-Local names are `domain` sections the LAN resolves. A name under a Pulzar
+Local names are `domain` sections the LAN resolves. A name under a Pulzr
 domain is refused: a client whose policy is `parkeze` may reach the addresses
-dnsmasq answered for Pulzar's names (`pulzr_dst`), so such a name would hand
+dnsmasq answered for Pulzr's names (`pulzr_dst`), so such a name would hand
 that client any address. So is a reservation's name, which pulzr-lan already
 serves. Rebind protection stays on unless somebody turns it off, with the
 domains allowed past it listed.
@@ -212,7 +212,7 @@ Neither opens anything: a name and a metric reach nothing that was not
 reachable before. Dynamic DNS names an address; the exposed ports behind it
 are the LAN page's.
 
-### On Pulzar Cloud
+### On Pulzr Cloud
 
 the cloud asks a gateway with a LAN for `uplinks` and `dns` on each lan-paths
 run, and again when somebody opens its Backhaul, and keeps the last answer
@@ -227,12 +227,12 @@ follow tracking on their own.
 
 The Opal ships with GL.iNet's admin panel (firmware 4.8.3). Its feature
 inventory, read off a stock unit, is in the router-features session's notes;
-the parts PulzarOS takes are `lan`, `dns` and `failover`. What is taken is the
+the parts PulzrOS takes are `lan`, `dns` and `failover`. What is taken is the
 layout, not the prose: one page per concern, cards with their own Apply, a
 status badge on the uplink carrying traffic. Every GL card opens with a
 paragraph explaining itself, which this console does not do.
 
-| GL.iNet | PulzarOS |
+| GL.iNet | PulzrOS |
 |---|---|
 | Internet: the Ethernet card (DHCP / static / PPPoE, VLAN, MTU) | Backhaul > Ethernet, one card per wired uplink, on every board |
 | Port roles, VLANs, a second WAN | Network > Ports, on every board ([ports.md](/PulzrOS/ports.html)): each port an uplink, a LAN port or unused, tagged VLANs with roles of their own, applied and undone unless confirmed |
@@ -251,7 +251,7 @@ servers and clients, LuCI's firewall rules. Port forwarding came in later as
 exposed ports, and GL's DDNS as the customer's own (above). Left out
 because nothing here needs them: guest network, network mode, drop-in
 gateway, IGMP snooping, hardware acceleration, NAT mode, tethering, plug-ins,
-NAS, GoodCloud and AstroWarp (Pulzar Cloud is the fleet manager).
+NAS, GoodCloud and AstroWarp (Pulzr Cloud is the fleet manager).
 
 The management tunnel is the organization's when the organization has a hub
 of its own; see [backhaul.md](/PulzrOS/backhaul.html), "Which hub". An Opal enrols the

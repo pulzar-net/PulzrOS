@@ -55,7 +55,7 @@ const OPEN = {
 };
 
 // Reachable without a session only while the gateway is unadopted: an offline
-// bundle, which is Pulzar Cloud's signature over this gateway's EUI.
+// bundle, which is Pulzr Cloud's signature over this gateway's EUI.
 const PROVISIONING = { actions: [ 'claimApply' ] };
 
 // Reachable with a session.

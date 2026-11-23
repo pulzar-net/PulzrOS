@@ -1,4 +1,4 @@
-# The docs site's npm dependencies (the Pulzar docs theme, Astro and
+# The docs site's npm dependencies (the Pulzr docs theme, Astro and
 # Starlight), weekly in one pull request; the docs workflow gates each bump.
 version: 2
 updates:

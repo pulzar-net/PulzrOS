@@ -363,8 +363,8 @@ check "undeny: from a shell, and restore then installs" installed "$(item pulzr-
 reset
 printf 'pass\nfail\n' > "${T}/gate"
 addon install pulzr-modbus alice; rc=$?
-check "gate: a gateway that stops reaching Pulzar Cloud undoes the add-on" \
-  "1 reverted After the install the gateway could not reach Pulzar Cloud." \
+check "gate: a gateway that stops reaching Pulzr Cloud undoes the add-on" \
+  "1 reverted After the install the gateway could not reach Pulzr Cloud." \
   "${rc} $(item pulzr-modbus state) $(item pulzr-modbus error)"
 check "gate: removed" "" "$(cat "${T}/apk/installed")"
 check "gate: not wanted" '[]' "$(wanted)"

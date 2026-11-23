@@ -201,7 +201,7 @@ const ADDON_STATE: Record<AddonItem['state'], [string, Tone]> = {
 /**
  * The add-ons this release offers and what each is doing, read-only.
  *
- * Installs and removals come from Pulzar Net, where who may install and
+ * Installs and removals come from Pulzr Net, where who may install and
  * whether a metered link can take it are decided (lib/addons.uc). A gateway
  * whose firmware has no add-ons has nothing to list, and the card is left out.
  */

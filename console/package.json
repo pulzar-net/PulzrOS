@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "The on-device console for a Pulzar gateway. Built to static files and served by uhttpd; there is no Node on the gateway.",
+  "description": "The on-device console for a Pulzr gateway. Built to static files and served by uhttpd; there is no Node on the gateway.",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

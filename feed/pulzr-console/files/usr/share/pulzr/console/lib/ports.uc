@@ -7,7 +7,7 @@
 // change, so a layout that cuts off the person making it comes back on its
 // own. Addressing for one uplink is a layout too: the uplink carrying the
 // tunnel is the one a wrong static address takes away from somebody working
-// through Pulzar Cloud.
+// through Pulzr Cloud.
 
 let _m_fs = require('fs');
 let popen = _m_fs.popen;

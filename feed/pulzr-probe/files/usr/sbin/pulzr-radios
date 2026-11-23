@@ -2,7 +2,7 @@
 #
 # The radios plugged into this gateway, around pulzr-probe.
 #
-#   pulzr-radios scan [--quiet]       scan now; unless --quiet, tell Pulzar
+#   pulzr-radios scan [--quiet]       scan now; unless --quiet, tell Pulzr
 #                                     Cloud when the list changed
 #   pulzr-radios hotplug              scan once hotplug has settled (background)
 #   pulzr-radios facts                {"detected":[...],"modems":[...],"networks":[...]}
@@ -13,7 +13,7 @@
 #   pulzr-radios identify <id>        a person's Identify, from the console
 #   pulzr-radios assign <id> modbus|none
 #   pulzr-radios use <id> zigbee|zwave  start the radio's module (the console's
-#                                     `use`, a person's, from Pulzar Net)
+#                                     `use`, a person's, from Pulzr Net)
 #   pulzr-radios release <id>         stop it; refused while a network is on it
 #   pulzr-radios backup <id>          post the backup its module just wrote
 #   pulzr-radios runnable             "<id> <binary>" for each radio whose

@@ -33,7 +33,7 @@ chmod 0700 "${STATE}"
 # The stock `main` instance is replaced wholesale rather than added to: it
 # serves /www with the LuCI CGI handler on plain HTTP, and leaving it alongside
 # ours would mean two ways in with two different auth stories.
-# The console's certificate: the one Pulzar Cloud's console CA signed, when this
+# The console's certificate: the one Pulzr Cloud's console CA signed, when this
 # gateway has it (pulzr-console-cert, kept across upgrades with the rest of
 # ${STATE}), or the one it made for itself below until then.
 if [ -s "${STATE}/signed.pem" ] && [ -s "${STATE}/signed.key" ]; then
@@ -189,7 +189,7 @@ uci commit uhttpd
 # private address — the alternative is shipping a real certificate and its
 # private key in a public firmware image, which is worse in every way.
 #
-# The Pulzar Cloud proxy terminates its own TLS and does not rely on this being
+# The Pulzr Cloud proxy terminates its own TLS and does not rely on this being
 # trusted; this exists so that a laptop plugged directly into the LAN port is
 # not sending a password in the clear.
 #
@@ -220,7 +220,7 @@ fi
 # site network the gateway is plugged into, and answering multicast discovery
 # there would put the gateway in the service browser of every machine on it —
 # an inventory of our hardware handed to a network we do not control, for no
-# benefit, since management from Pulzar Cloud arrives over the tunnel.
+# benefit, since management from Pulzr Cloud arrives over the tunnel.
 #
 # It also answers to pulzr.local (/etc/umdns/pulzr-local.json), which is
 # the name to read out to somebody with a cable and no label to hand. That is
@@ -251,7 +251,7 @@ esac
 # ── Initial credential ──────────────────────────────────────────────────────
 # A per-unit random password, not a fleet-wide default.
 #
-# The previous PulzarOS shipped pulzr/pulzr on every image, which means
+# The previous PulzrOS shipped pulzr/pulzr on every image, which means
 # one published README is root on the entire fleet. A random password printed
 # where the installer can find it costs one label and closes that entirely.
 #

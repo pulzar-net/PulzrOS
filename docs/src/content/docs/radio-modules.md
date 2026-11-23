@@ -5,7 +5,7 @@ description: "A radio module is the part of pulzr-edge that runs one coordinator
 
 A radio module is the part of `pulzr-edge` that runs one coordinator: a Zigbee
 network on an EmberZNet or Z-Stack dongle, a Z-Wave network on a Serial API
-controller. Every module implements the same contract, so Pulzar Net drives
+controller. Every module implements the same contract, so Pulzr Net drives
 them all with one set of screens: set up, pair, back up, restore, remove,
 replace, change channel, delete.
 
@@ -16,7 +16,7 @@ these is the platform's record of it and the person-only rule below.
 
 ## Who may change a network
 
-Only a person, from Pulzar Net, as an add-on install is. Every operation that
+Only a person, from Pulzr Net, as an add-on install is. Every operation that
 changes a network or carries a key arrives through the gateway's console API
 over gateway-link, as that person's `sso` session, and is audited on the
 platform with who did it and without its secrets. A local console session can
@@ -33,7 +33,7 @@ secret. Backups do carry keys, so they go over HTTPS with the gateway's claim
 proof, never MQTT.
 
 ```
-Pulzar Net ──gateway-link──▶ console API ──stdin──▶ pulzr-edge radio <id> <op> ──socket──▶ pulzr-edge radio serve <id>
+Pulzr Net ──gateway-link──▶ console API ──stdin──▶ pulzr-edge radio <id> <op> ──socket──▶ pulzr-edge radio serve <id>
      ▲                       (sso session)                                                     │
      ├──────────── MQTT: event / state on the coordinator's key ◀──────────────────────────────┤
      └──────────── HTTPS, claim proof: backups (pulzr-radios backup) ◀─────────────────────────┘
@@ -174,8 +174,8 @@ the platform turns them into the live pairing stream. None carries a key.
 The module takes a backup after every join, leave, inclusion, exclusion or
 replace (at most one a minute), and on a schedule: Zigbee hourly, Z-Wave
 daily. It writes it to `/var/run/pulzr-edge/backup/<radio id>.json` (0600) and
-runs `pulzr-radios backup <radio id>`, which posts it to Pulzar Net with the
-gateway's claim proof and removes the file. Pulzar Net seals it and keeps the
+runs `pulzr-radios backup <radio id>`, which posts it to Pulzr Net with the
+gateway's claim proof and removes the file. Pulzr Net seals it and keeps the
 latest ones.
 
 A backup is one JSON object:
@@ -227,7 +227,7 @@ A gateway's controller in its organization's Matter fabric is the radio
 rides on IP, and on Thread through the border router), driven like any other.
 `pulzr-radios use matter matter` starts it.
 
-One fabric per organization. Pulzar Net's device CA holds its root and IPK; a
+One fabric per organization. Pulzr Net's device CA holds its root and IPK; a
 gateway joins with an intermediate certificate (ICAC) for a key it makes and
 keeps, and signs its devices' and its own operational certificates itself,
 from a range of node ids no other gateway in the fabric is given.

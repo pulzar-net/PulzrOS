@@ -1,11 +1,11 @@
 ---
 title: "Bluetooth"
-description: "Bluetooth is the pulzr-ble add-on (addons.md): installed on request from Pulzar Net, on the board's own radio or a USB dongle, and off until it is turned on, from the gateway's page in Pulzar Net..."
+description: "Bluetooth is the pulzr-ble add-on (addons.md): installed on request from Pulzr Net, on the board's own radio or a USB dongle, and off until it is turned on, from the gateway's page in Pulzr Net..."
 ---
 
 Bluetooth is the pulzr-ble add-on ([addons.md](/PulzrOS/addons.html)): installed on
-request from Pulzar Net, on the board's own radio or a USB dongle, and off
-until it is turned on, from the gateway's page in Pulzar Net or the console's
+request from Pulzr Net, on the board's own radio or a USB dongle, and off
+until it is turned on, from the gateway's page in Pulzr Net or the console's
 Bluetooth page, which is there while the add-on is installed. Both write
 `pulzr.ble.enabled`.
 
@@ -14,9 +14,9 @@ Bluetooth page, which is there while the add-on is installed. Both write
 The add-on runs `pulzr-edge-ble`, pulzr-edge built with its `ble` feature
 alone. It scans passively and sends each beacon whose MAC starts with one of
 `pulzr.ble.oui` (KKM's `BC5729` by default; empty sends every device) as its
-own device, `ble:<EUI-64>`, in Pulzar protocol v1: at most one `up` per
+own device, `ble:<EUI-64>`, in Pulzr protocol v1: at most one `up` per
 beacon per `pulzr.ble.interval` seconds, none weaker than `pulzr.ble.min_rssi`,
-on the gateway's own broker login. Pulzar Net decodes the advertising data
+on the gateway's own broker login. Pulzr Net decodes the advertising data
 with the device type's codec, so a new beacon model is a codec there and never
 a firmware change here. GATT reads and writes and advertising come as intents.
 
@@ -54,7 +54,7 @@ expander) and attaches the chip with `hciattach … bcm43xx 460800`. Without
 bluez-utils, in every Pi image: an add-on brings only its own package.
 
 Proven on a Pi 3 on 12 October 2026: attached on the mini UART,
-heard 27 devices in 15 seconds, and Pulzar Cloud stored what it sent. The Pi 4
+heard 27 devices in 15 seconds, and Pulzr Cloud stored what it sent. The Pi 4
 uses the same path and has not been tried. The Pi 5's chip is on a UART of its
 own that the kernel claims for a driver this OpenWrt does not build, so it
 reports no Bluetooth; a USB dongle works on any board.

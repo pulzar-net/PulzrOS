@@ -4,15 +4,15 @@
 #
 #   pulzr-claim status        what state this gateway is in, as JSON
 #   pulzr-claim qr [--ascii]  the QR payload, or a terminal QR
-#   pulzr-claim register      tell Pulzar Cloud this gateway is waiting
+#   pulzr-claim register      tell Pulzr Cloud this gateway is waiting
 #   pulzr-claim poll          has somebody claimed us? if so, adopt
 #   pulzr-claim reset         throw away the claim identity and start over
 #   pulzr-claim apply <blob>  complete an adoption offline, from a signed
 #                               bundle the operator carried back
-#   pulzr-claim report        tell Pulzar Cloud what this gateway is
+#   pulzr-claim report        tell Pulzr Cloud what this gateway is
 #   pulzr-claim radios        tell it what radios are plugged in, alone
 #   pulzr-claim tunnel-test [seconds]
-#                               ask Pulzar Cloud to measure the tunnel's speed
+#                               ask Pulzr Cloud to measure the tunnel's speed
 #   pulzr-claim reclaiming    exit 0 while a new claim waits to replace a
 #                               revoked one
 #   pulzr-claim backoff       seconds until the waiting claim is polled again
@@ -31,17 +31,17 @@
 #                      for the adoption bundle is the gateway somebody
 #                      actually scanned and not a bystander who photographed
 #                      the screen.
-#        commitment    sha256(claim_secret), which is what Pulzar Cloud stores.
+#        commitment    sha256(claim_secret), which is what Pulzr Cloud stores.
 #
 #   2. If the gateway has internet it registers the claim, and the QR is a
-#      short URL: Pulzar Cloud already knows the EUI, the board and the
+#      short URL: Pulzr Cloud already knows the EUI, the board and the
 #      commitment.
 #
 #      If it does not, the QR carries those inline instead. Slightly longer,
 #      still one scan, and it means a gateway in a basement can be claimed
 #      from a phone that has signal.
 #
-#   3. The installer scans, signs in to Pulzar Cloud, and picks an
+#   3. The installer scans, signs in to Pulzr Cloud, and picks an
 #      organisation. That marks the claim adopted.
 #
 #   4. The gateway polls and finds it has been claimed, pulls its bundle —
@@ -53,12 +53,12 @@
 #
 # Without it, the QR alone would be enough to fetch the bundle, and a QR is
 # visible to anyone who walks past a rack. With it, seeing the code lets you
-# *claim* the gateway into your organisation (which requires a Pulzar login
+# *claim* the gateway into your organisation (which requires a Pulzr login
 # and is audited) but not *become* it.
 #
 # ── WHEN THE CLAIM IS REVOKED ──────────────────────────────────────────────
 #
-# Pulzar Cloud revokes every claim a gateway was adopted with when it is
+# Pulzr Cloud revokes every claim a gateway was adopted with when it is
 # released or adopted again by code. A transfer no longer does: the claim is
 # the gateway's identity, and the previous owner has no root to have read the
 # secret with. From then on /report and /wireguard/enroll answer
@@ -80,14 +80,14 @@
 # `pulzr-adopt --check` asks. And only the exact answer: the API's generic
 # 404 for an unknown route says "Not found", which is a proxy or a deploy, not
 # a revocation. One waiting claim at a time; it is registered once, and again
-# only if Pulzar Cloud says it has never heard of it.
+# only if Pulzr Cloud says it has never heard of it.
 
 set -e
 # set -e aborts on a failed command substitution in an assignment, and both
 # `uci -q get` and jsonfilter exit 1 for a key that simply is not there — the
 # normal case for an optional value. Every such read below ends in `|| true`.
 # Without it, `report` died on its first run at an unset optional value and
-# still looked successful from Pulzar Cloud's side.
+# still looked successful from Pulzr Cloud's side.
 
 # Both overridable so scripts/test-claim.sh can run this against a sandbox.
 . "${PULZR_BOARD_CONF:-/etc/pulzr/board.conf}"
@@ -170,12 +170,12 @@ payload() {
     eui="$(uci -q get pulzr.identity.gateway_eui)" || true
 
     if [ -f "${dir}/registered" ]; then
-        # Pulzar Cloud already knows everything about this claim. Short is
+        # Pulzr Cloud already knows everything about this claim. Short is
         # better: a smaller QR scans from further away and in worse light,
         # which matters when the code is on a screen inside a cabinet.
         echo "${NET_URL}/adopt#${id}"
     else
-        # Never reached the internet. Carry what Pulzar Cloud needs to create
+        # Never reached the internet. Carry what Pulzr Cloud needs to create
         # the pending claim from the scan alone. The commitment is truncated
         # to 24 hex characters — 96 bits, far beyond what a collision attack
         # on a single short-lived claim could use, and it keeps the QR in a
@@ -211,9 +211,9 @@ qr() {
     esac
 }
 
-# ── talking to Pulzar Cloud ──────────────────────────────────────────────────
+# ── talking to Pulzr Cloud ──────────────────────────────────────────────────
 
-# Whether the last attempt to reach Pulzar Cloud worked.
+# Whether the last attempt to reach Pulzr Cloud worked.
 #
 # WHY NOT pulzr-backhaul-check
 #
@@ -227,7 +227,7 @@ qr() {
 # standing in front of a working gateway.
 #
 # The honest answer for this state is not a probe at all. This script talks to
-# Pulzar Cloud every few seconds while it waits to be claimed, and each of those
+# Pulzr Cloud every few seconds while it waits to be claimed, and each of those
 # attempts is a definitive statement about reachability that has already been
 # paid for. So it is recorded rather than re-measured, which also keeps the
 # budget rule intact: no extra bytes on a metered SIM to learn something we
@@ -259,7 +259,7 @@ reached_recently() {
     [ "$((now - when))" -lt "${REACHED_MAX_AGE}" ]
 }
 
-# What Pulzar Cloud answers when the claim in a request no longer proves this
+# What Pulzr Cloud answers when the claim in a request no longer proves this
 # gateway: released, adopted again by code, or decommissioned. Matched on the sentence as
 # well as the status, because a 404 alone is also what a proxy in front of a
 # half-deployed API says ("Not found").
@@ -307,7 +307,7 @@ register_dir() {
     case "${status}" in
         2??)
             touch "${dir}/registered"
-            log "claim $(id_in "${dir}") registered with Pulzar Cloud"
+            log "claim $(id_in "${dir}") registered with Pulzr Cloud"
             return 0
             ;;
         409)
@@ -356,7 +356,7 @@ poll_dir() {
     response="$(echo "${raw}" | sed '$d')"
 
     if [ "${status}" = "404" ]; then
-        # Pulzar Cloud does not know this claim. The local `registered` file is
+        # Pulzr Cloud does not know this claim. The local `registered` file is
         # a cache of a fact that lives on the server, and the server has just
         # said otherwise — so the cache is wrong, not the server.
         #
@@ -370,7 +370,7 @@ poll_dir() {
         # it keep working. If the claim was revoked rather than forgotten,
         # registering it is refused, and register_dir mints a new one.
         rm -f "${dir}/registered"
-        log "Pulzar Cloud does not know claim $(id_in "${dir}"); will register again"
+        log "Pulzr Cloud does not know claim $(id_in "${dir}"); will register again"
         return 1
     fi
 
@@ -380,7 +380,7 @@ poll_dir() {
     if [ "${status}" = "409" ] && [ "${state}" = "collected" ] && [ "${dir}" = "${NEXT}" ]; then
         # Adopted, and its bundle collected more than ten minutes ago by a
         # poll whose answer never got here. The broker password in it is gone
-        # with it; the claim is still the one Pulzar Cloud accepts, so it
+        # with it; the claim is still the one Pulzr Cloud accepts, so it
         # replaces the revoked one regardless, and reports resume.
         logger -t claim -p daemon.err "claim $(id_in "${NEXT}") was collected without its bundle arriving; the broker password must be reissued"
         promote
@@ -440,7 +440,7 @@ poll() {
 
 # The waiting claim takes the revoked one's place. Two renames, because the id
 # and the secret are two files: the window between them is a rename, and a
-# gateway caught in it has a claim Pulzar Cloud refuses — which is the state
+# gateway caught in it has a claim Pulzr Cloud refuses — which is the state
 # this whole path recovers from.
 promote() {
     cp "${NEXT}/secret" "${STATE}/secret.new"
@@ -465,7 +465,7 @@ note_revoked() {
     case "${first}" in
         ''|*[!0-9]*)
             echo "${now}" > "${STATE}/revoked"
-            log "Pulzar Cloud no longer accepts claim $(claim_id); asking again before acting on it"
+            log "Pulzr Cloud no longer accepts claim $(claim_id); asking again before acting on it"
             return 0
             ;;
     esac
@@ -496,7 +496,7 @@ backoff() {
 
 apply_offline() {
     # The gateway never got internet, so the operator carried the bundle back
-    # from Pulzar Cloud by hand. It is signed with the fleet key, whose public
+    # from Pulzr Cloud by hand. It is signed with the fleet key, whose public
     # half is baked into the image — see docs/src/content/docs/provisioning.md for why that is
     # both safe and necessary here.
     local blob="${1:?usage: pulzr-claim apply <bundle>}"
@@ -511,17 +511,17 @@ apply_offline() {
 # Everything on the console's Configuration page used to be typed by a person
 # standing next to a device that already knew the answer: whether there is a
 # modem, whether the wired path works, which port the console listens on. After
-# adoption the gateway said nothing to Pulzar Cloud ever again, so `backhaul` in
+# adoption the gateway said nothing to Pulzr Cloud ever again, so `backhaul` in
 # particular was a human guess sitting beside the only thing that could know.
 #
 # What is sent is facts, not conclusions. The gateway does not say "I am an
-# ethernet site" — it says what it can see, and Pulzar Cloud decides. (A metered
+# ethernet site" — it says what it can see, and Pulzr Cloud decides. (A metered
 # SIM never carries the management tunnel regardless: that is enforced by
 # routing on the gateway, not by anything reported here.)
 #
 # Authentication is the same commitment proof `poll` uses. No new credential:
 # the secret it already holds is what says this is that gateway, and it is
-# checked against a hash Pulzar Cloud stored at registration.
+# checked against a hash Pulzr Cloud stored at registration.
 
 facts() {
     local modem wired board_id version modem_present modem_model modem_kind wired_usable tunnel iccid sim_slots host_key tunnel_via ssh_ca wifi_uplink
@@ -534,7 +534,7 @@ facts() {
     iccid="$(echo "${modem}" | jsonfilter -e '@.iccid' 2>/dev/null)" || true
     # qmi, mbim or at through ModemManager; hilink or tether for a USB
     # Ethernet modem, which has no SIM this gateway can read, so simIccid is
-    # empty for it and Pulzar Cloud should not wait for one.
+    # empty for it and Pulzr Cloud should not wait for one.
     modem_kind="$(echo "${modem}" | jsonfilter -e '@.kind' 2>/dev/null)" || true
     # Each SIM holder and which is in use, only from a modem with more than
     # one (pulzr-modem-detect, "SIM SLOTS"); null otherwise, so the cloud
@@ -549,7 +549,7 @@ facts() {
     # The key travels on this report, which is authenticated by the claim
     # secret — a better introduction than trust-on-first-use over the tunnel.
     host_key="$(pulzr-ssh-setup --host-key 2>/dev/null)" || true
-    # Whether sshd accepts a Pulzar certificate naming this gateway. Asked of
+    # Whether sshd accepts a Pulzr certificate naming this gateway. Asked of
     # the running sshd rather than of the files, because a config sshd did not
     # load is not a gateway the cloud can reach with a certificate — and
     # one marked as trusting the CA is never tried with the fleet key.
@@ -574,14 +574,14 @@ facts() {
 
     # jsonfilter prints nothing for a missing key, and an empty string is not
     # valid JSON in the value position. Default every field rather than emit a
-    # body Pulzar Cloud would reject whole.
+    # body Pulzr Cloud would reject whole.
     [ "${modem_present}" = "true" ] || modem_present="false"
     [ "${wired_usable}" = "true" ] || wired_usable="false"
 
     board_id="${BOARD_ID:-unknown}"
     version="${PULZR_VERSION:-0.0.0}"
     # 1 when this gateway arms a rollback window around its network settings
-    # (pulzr-apply), so Pulzar Cloud knows which gateways it may send a path
+    # (pulzr-apply), so Pulzr Cloud knows which gateways it may send a path
     # change to and rely on the gateway undoing it. A field, not a version
     # compare: it is true of the image that has the tool and of no other.
     apply_support=0
@@ -595,7 +595,7 @@ facts() {
 
 # CPU, memory, temperature, storage, buffer depth, signal and bytes per uplink
 # (pulzr-report-stats). Bounded, so a stuck modem or radio cannot hold the
-# report; {} when it says nothing usable, which Pulzar Cloud reads as no stats.
+# report; {} when it says nothing usable, which Pulzr Cloud reads as no stats.
 stats_facts() {
     local out
     command -v pulzr-report-stats >/dev/null 2>&1 || { echo '{}'; return; }
@@ -608,7 +608,7 @@ stats_facts() {
 }
 
 # What add-ons this gateway wants, refuses and has, each with its state and
-# health (pulzr-addon status --brief), so Pulzar Net settles an install or a
+# health (pulzr-addon status --brief), so Pulzr Net settles an install or a
 # removal against what the gateway says rather than against its own request.
 # null when it cannot say. A report without the key at all is firmware older
 # than add-ons, which the platform reads as "needs a newer PulzrOS": a field,
@@ -625,7 +625,7 @@ addon_facts() {
 }
 
 # The radios plugged in (pulzr-radios, from pulzr-probe): {"detected": [...]},
-# which Pulzar Cloud compares with the last report to say a radio was plugged
+# which Pulzr Cloud compares with the last report to say a radio was plugged
 # in, pulled out or came back, and the cellular modems ("modems"), for which it
 # offers the cellular add-on. null when it cannot say; a report without the
 # key is firmware that cannot detect radios, and nothing is concluded from it.
@@ -710,11 +710,11 @@ wifi_facts() {
 # The RAK power board's watchdog and battery pack, as pulzr-rak-power last
 # recorded them, on a board that has one. pulzr-rak-power asks for this
 # report itself when the watchdog stops answering or the battery changes band,
-# so that reaches Pulzar Cloud in minutes rather than at the next six-hourly one.
+# so that reaches Pulzr Cloud in minutes rather than at the next six-hourly one.
 #
 # Already JSON, written by lua-cjson; checked anyway, because one bad byte
-# here would make Pulzar Cloud reject the whole report.
-# Each wired uplink's router by MAC (pulzr-ports routers): Pulzar Cloud names
+# here would make Pulzr Cloud reject the whole report.
+# Each wired uplink's router by MAC (pulzr-ports routers): Pulzr Cloud names
 # its maker on the answer, with the public address this report came from and
 # who that address belongs to. [] on a gateway with no wired uplink up.
 router_facts() {
@@ -727,7 +727,7 @@ router_facts() {
     fi
 }
 
-# The uplink this report leaves on, so Pulzar Cloud knows which one the public
+# The uplink this report leaves on, so Pulzr Cloud knows which one the public
 # address it sees belongs to: pulzr-uplinks' answer where it runs, else the
 # first wired uplink that is up.
 active_uplink() {
@@ -740,7 +740,7 @@ active_uplink() {
 }
 
 # The latest speed test of each kind on each uplink (pulzr-speedtest), so
-# Pulzar Cloud has it without asking; the history is the MQTT op's. null on a
+# Pulzr Cloud has it without asking; the history is the MQTT op's. null on a
 # board without the speedtest feature.
 speedtest_facts() {
     command -v pulzr-speedtest >/dev/null 2>&1 || { echo null; return; }
@@ -799,10 +799,10 @@ listening_facts() {
     printf '[%s]' "$(printf '%s' "${out}" | sort -nu | tr '\n' ',' | sed 's/,$//')"
 }
 
-# The management tunnel's speed, measured from Pulzar Cloud's end: the cloud
+# The management tunnel's speed, measured from Pulzr Cloud's end: the cloud
 # sends to this gateway and takes from it over WireGuard for <seconds> each
 # way (pulzr-speedtest). Asked for here because the request is proved the
-# way a report is, by the claim secret. Prints Pulzar Cloud's answer.
+# way a report is, by the claim secret. Prints Pulzr Cloud's answer.
 tunnel_test() {
     local seconds="${1:-10}"
     case "${seconds}" in ''|*[!0-9]*) echo '{"error":"seconds"}'; return 2 ;; esac
@@ -811,7 +811,7 @@ tunnel_test() {
     curl -sS --max-time "$((seconds * 2 + 45))" -X POST "${NET_URL}/api/v1/gateway-ops/tunnel-test" \
         -H 'Content-Type: application/json' \
         -d "$(printf '{"claimId":"%s","secret":"%s","seconds":%d}' "$(claim_id)" "$(secret_in "${STATE}")" "${seconds}")" 2>/dev/null \
-        || echo '{"error":"Pulzar Cloud did not answer"}'
+        || echo '{"error":"Pulzr Cloud did not answer"}'
 }
 
 # The radios plugged in, on their own (pulzr-radios, from hotplug): a dongle
@@ -863,7 +863,7 @@ radio_backup() {
 # System log lines (pulzr-logship), from a file holding the body's
 # `"lines":[...],"dropped":n`. The claim proof goes in front of it in a
 # root-only file curl reads, as with radio_backup: never on a command line.
-# Exits 0 when Pulzar Cloud kept them, 1 otherwise; logship keeps the batch.
+# Exits 0 when Pulzr Cloud kept them, 1 otherwise; logship keeps the batch.
 syslog_lines() {
     local file="$1" body raw status
     ensure_identity
@@ -882,7 +882,7 @@ syslog_lines() {
     [ "${status}" = "200" ]
 }
 
-# Exits 0 when accepted, 3 when Pulzar Cloud says the claim is revoked, 1 for
+# Exits 0 when accepted, 3 when Pulzr Cloud says the claim is revoked, 1 for
 # anything else, including no answer.
 report() {
     ensure_identity
@@ -910,7 +910,7 @@ report() {
             log "claim $(claim_id) is accepted again; the claim waiting to replace it is dropped"
         fi
         log "reported: backhaul=$(echo "${response}" | jsonfilter -e '@.backhaul' 2>/dev/null || true)"
-        # What Pulzar Cloud made of the routers and the public side, for the
+        # What Pulzr Cloud made of the routers and the public side, for the
         # console's Ports page (pulzr-ports identify checks it).
         local network
         network="$(echo "${response}" | jsonfilter -e '@.network' 2>/dev/null)" || true
@@ -934,11 +934,11 @@ report() {
         return 0
     fi
 
-    # 404 "No such gateway." is Pulzar Cloud saying this claim no longer proves
+    # 404 "No such gateway." is Pulzr Cloud saying this claim no longer proves
     # this gateway. It does not unwind adoption — that is `pulzr-adopt
     # --check`, and only for somebody standing at the gateway — it starts a
     # claim for the new owner beside the old one. Nobody else can adopt that
-    # claim: Pulzar Cloud refuses an adoption into any organization but the one
+    # claim: Pulzr Cloud refuses an adoption into any organization but the one
     # that owns the gateway.
     if revoked_answer "${status}" "${response}" "No such gateway."; then
         note_revoked
@@ -960,7 +960,7 @@ status() {
     # recent handshake, which is the path we would actually be managed over. pulzr-backhaul-check answers that.
     #
     # Unadopted: there is no tunnel to ask about yet, so the question is "did
-    # we reach Pulzar Cloud", which this script already knows from its own
+    # we reach Pulzr Cloud", which this script already knows from its own
     # polling. Asking backhaul-check here returned false for every gateway
     # that had not been adopted, which is the whole fleet at the exact moment
     # an installer is reading the indicator.

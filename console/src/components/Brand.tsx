@@ -1,9 +1,9 @@
 import styles from './Brand.module.css';
 
 /**
- * The Pulzar mark and wordmark, in one place.
+ * The Pulzr mark and wordmark, in one place.
  *
- * The same two files app.pulzr.net draws (icon.svg and wordmark.png), shipped
+ * The same two files app.pulzr.net draws (icon.svg and wordmark.svg), shipped
  * with the firmware rather than fetched: a gateway console has to render with
  * no internet at all, which is most of the point of it existing.
  */
@@ -37,7 +37,7 @@ export default function Brand({
       <div className={styles.text}>
         {/* The wordmark is a mask filled with the text colour, so it follows
             the light and dark themes as the name in text did. */}
-        <div className={styles.name} style={{ fontSize: s.name }} role="img" aria-label="Pulzar" />
+        <div className={styles.name} style={{ fontSize: s.name }} role="img" aria-label="Pulzr" />
         {sub && (
           <div className={styles.sub} style={{ fontSize: s.sub }}>
             {sub}

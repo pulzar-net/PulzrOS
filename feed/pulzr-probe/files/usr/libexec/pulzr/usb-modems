@@ -7,7 +7,7 @@
 #
 # This is what makes cellular an add-on on a board whose modem is whatever is
 # plugged in (pulzr-cellular, boards/common/board.conf): pulzr-radios reports
-# the list beside the radios, and Pulzar Net offers the add-on for a gateway
+# the list beside the radios, and Pulzr Net offers the add-on for a gateway
 # that has a modem and not the add-on. So it reads only what the USB core
 # gives every device with no driver loaded, its descriptors in sysfs:
 #

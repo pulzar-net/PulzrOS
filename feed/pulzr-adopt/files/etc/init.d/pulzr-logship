@@ -1,6 +1,6 @@
 #!/bin/sh /etc/rc.common
 #
-# Send the system log to Pulzar Cloud (pulzr-logship), once adopted. The
+# Send the system log to Pulzr Cloud (pulzr-logship), once adopted. The
 # mirror of pulzr-report: that one says what this gateway is every six hours,
 # this one says what it is doing as it does it.
 

@@ -2,7 +2,7 @@
   "name": "pulzros-docs",
   "private": true,
   "type": "module",
-  "description": "The PulzrOS documentation site: Starlight with the Pulzar docs theme, published to GitHub Pages.",
+  "description": "The PulzrOS documentation site: Starlight with the Pulzr docs theme, published to GitHub Pages.",
   "scripts": {
     "dev": "astro dev",
     "build": "astro build"

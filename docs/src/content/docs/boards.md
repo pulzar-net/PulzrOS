@@ -117,7 +117,7 @@ support yet works the same way, until OpenWrt carries it and the folder goes.
 that same shipping firmware rather than a fresh harvest — `boards/rak7289cv2/openwrt/`.
 Its two radios are RAK5146 (SX1303) cards on **USB** (`/dev/lora0` and
 `/dev/lora1`, linked by hub port to whichever ttyACM each card gets), not SPI — the one hardware difference from the Lite. A bench
-run of the full `24.10.0-1` PulzarOS image confirmed it boots as
+run of the full `24.10.0-1` PulzrOS image confirmed it boots as
 `rakwireless,rak7289cv2` with concentratord driving the SX1303 on
 `/dev/ttyACM0` (8 channels, gateway ID read off the hardware) and GNSS on
 `/dev/ttyS1`; the absent second card was reported as the partial state. It is
@@ -131,7 +131,7 @@ builds the 25.12.6 tree with siflower's 6.18 kernel grafted in, and an
 ImageBuilder that carries the kernel, every kmod and the target's own
 packages while installing the release's userland. `check-deps.sh` lists what
 that ImageBuilder has to supply. Its README is the board's hardware record and
-the harvest and recovery procedure. The harvested unit has booted PulzarOS
+the harvest and recovery procedure. The harvested unit has booted PulzrOS
 0.3.5 on its 25.12.6-2: all three ports at 1 Gbps, DHCP and DNS on devlan,
 the console on the WAN port and the TUI on serial, warm and cold. Adoption,
 cellular and failover have not been seen on it; it had no uplink and no

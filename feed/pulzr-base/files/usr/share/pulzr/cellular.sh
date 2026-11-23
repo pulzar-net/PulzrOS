@@ -14,7 +14,7 @@
 # and every LoRa uplink on somebody's phone bill. So nothing names wwan any
 # more; it asks here.
 #
-# wwan first: where both are up, it is the SIM Pulzar provisioned.
+# wwan first: where both are up, it is the SIM Pulzr provisioned.
 
 . /lib/functions/network.sh
 

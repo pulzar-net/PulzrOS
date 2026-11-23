@@ -31,9 +31,9 @@
 # HOW A GATEWAY IS ACTUALLY SET UP
 #
 # Usually nobody connects to it at all. Plugged into anything with a route out,
-# it takes DHCP, registers its claim with Pulzar Cloud and appears in the
+# it takes DHCP, registers its claim with Pulzr Cloud and appears in the
 # pending list. The installer matches the EUI on the label and adopts it from
-# the Pulzar Cloud console. Local access is the fallback for when that does not
+# the Pulzr Cloud console. Local access is the fallback for when that does not
 # happen, which is why it must work with zero configuration rather than well.
 
 # OpenWrt's prepare_rootfs runs every uci-defaults script during image
@@ -103,7 +103,7 @@ uci -q set dhcp.lan.ignore='1'
 # router".
 #
 # Management arrives the other way round: the gateway *originates* a WireGuard
-# tunnel to the Pulzar Cloud hub, and the cloud reaches it back down that
+# tunnel to the Pulzr Cloud hub, and the cloud reaches it back down that
 # tunnel. An inbound port on the uplink is never needed and is never opened —
 # the hub's replies are return traffic, and the keepalive holds the mapping.
 #

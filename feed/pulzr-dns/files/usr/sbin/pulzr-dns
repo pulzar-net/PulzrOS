@@ -13,8 +13,8 @@
 //
 // ── WHAT A NAME MAY NOT BE ─────────────────────────────────────────────────
 //
-// Nothing under a Pulzar domain. A LAN client whose policy is parkeze may
-// reach exactly the addresses dnsmasq has answered for Pulzar's names
+// Nothing under a Pulzr domain. A LAN client whose policy is parkeze may
+// reach exactly the addresses dnsmasq has answered for Pulzr's names
 // (pulzr_dst, 25-pulzr-lan), so a local name for net.parkeze.com would
 // be a way to give that client any address on the internet. Nor a
 // reservation's name, which pulzr-lan already serves for that client.
@@ -24,9 +24,9 @@
 // Auto is whatever each uplink's lease or bearer handed out, which is what
 // dnsmasq reads from resolv.conf.auto. Servers named here replace those on
 // every uplink (noresolv), as GL.iNet's manual DNS does. A list where no
-// server answers for Pulzar's MQTT host is refused: the gateway resolves
+// server answers for Pulzr's MQTT host is refused: the gateway resolves
 // through dnsmasq too, and a resolver that answers nothing is a gateway
-// Pulzar Cloud cannot reach until somebody drives out to it.
+// Pulzr Cloud cannot reach until somebody drives out to it.
 //
 // Servers dnsmasq is told for one domain (`/domain/ip`) are left alone; only
 // plain addresses are this page's.
@@ -53,10 +53,10 @@
 //
 // The token goes in on stdin, so it is never on a command line, and
 // /etc/config/ddns is root's alone. `status` says whether one is set and nothing more: it is
-// what the MQTT agent's `dns` op sends Pulzar Cloud.
+// what the MQTT agent's `dns` op sends Pulzr Cloud.
 //
 // Everything else is in UCI dhcp, and `status` is what the MQTT agent's `dns`
-// op sends Pulzar Cloud, so a server set at the gateway is one Pulzar Cloud sees.
+// op sends Pulzr Cloud, so a server set at the gateway is one Pulzr Cloud sees.
 
 let fs = require('fs');
 let uci = require('uci');
@@ -120,7 +120,7 @@ let hostOf = (url) => {
     return split(split(h, '/')[0], ':')[0];
 };
 
-// The registrable domain of each Pulzar endpoint, as 25-pulzr-lan works
+// The registrable domain of each Pulzr endpoint, as 25-pulzr-lan works
 // it out for the pulzr_dst set.
 let pulzrDomains = () => uniq(filter(map([hostOf(board('PULZR_NET_URL')), board('PULZR_MQTT_HOST')], (h) => {
     let parts = split(lc(h ?? ''), '.');
@@ -250,7 +250,7 @@ let commands = {
         hostname(name) || die('a name is letters, digits, hyphens and dots', 2);
         ipv4(ip) || die(sprintf('%s is not an IPv4 address', ip ?? ''), 2);
         let theirs = pulzrName(name);
-        theirs && die(sprintf('names under %s are Pulzar\'s', theirs), 2);
+        theirs && die(sprintf('names under %s are Pulzr\'s', theirs), 2);
         let reserved = false;
         cursor.foreach('dhcp', 'host', (h) => {
             if (lc(h.name ?? '') == lc(name)) reserved = true;
@@ -353,7 +353,7 @@ commands['ddns-token'] = () => {
 let cmd = commands[ARGV[0] ?? 'status'];
 cmd ?? die('usage: pulzr-dns {status|upstream|host|unhost|rebind|ddns|ddns-token}', 2);
 call(cmd, null, null, ...slice(ARGV, 1));
-// A change Pulzar Cloud would otherwise have to ask for (pulzr-mqtt-agent
+// A change Pulzr Cloud would otherwise have to ask for (pulzr-mqtt-agent
 // --push). A refused change died above and sends nothing.
 if ((ARGV[0] ?? 'status') != 'status')
     system('( /usr/sbin/pulzr-mqtt-agent --push dns >/dev/null 2>&1 & ) 2>/dev/null');

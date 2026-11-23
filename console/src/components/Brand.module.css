@@ -17,13 +17,13 @@
   min-width: 0;
 }
 
-/* wordmark.png is a 429x96 mask; font-size (set per size) scales it. */
+/* wordmark.svg is a 344x95 mask; font-size (set per size) scales it. */
 .name {
   height: 0.95em;
-  aspect-ratio: 429 / 96;
+  aspect-ratio: 344 / 95;
   background: var(--text-primary);
-  mask: url('/wordmark.png') left center / contain no-repeat;
-  -webkit-mask: url('/wordmark.png') left center / contain no-repeat;
+  mask: url('/wordmark.svg') left center / contain no-repeat;
+  -webkit-mask: url('/wordmark.svg') left center / contain no-repeat;
 }
 
 .sub {

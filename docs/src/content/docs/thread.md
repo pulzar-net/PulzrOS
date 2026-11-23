@@ -7,8 +7,8 @@ The `pulzr-thread` add-on makes a gateway a Thread border router: OpenThread's
 `otbr-agent` (ot-br-posix, BSD-3-Clause), as OpenWrt's `openthread-br` package
 builds it, on a Thread radio co-processor (RCP) plugged into the gateway. There
 is no Thread stack of our own. What PulzrOS adds is the integration: the radio
-`pulzr-probe` found, setup from Pulzar Net, health, and the network's state and
-mesh reported as Pulzar protocol v1.
+`pulzr-probe` found, setup from Pulzr Net, health, and the network's state and
+mesh reported as Pulzr protocol v1.
 
 ## Radios
 
@@ -72,13 +72,13 @@ under Upstream below.
 | `form` / `join` (stdin `{"dataset", "network"}`) | set the active dataset and start; refused while the gateway is in another network |
 | `leave` | stop and erase the network, its key with it |
 | `permit` (stdin `{"eui64", "pskd", "seconds"}`) / `permit-stop` | commissioner: let a device join with its joining code |
-| `dataset` | the active dataset as hex TLVs, for Pulzar Net to seal |
+| `dataset` | the active dataset as hex TLVs, for Pulzr Net to seal |
 | `topology [eui]` | protocol v1 `topology` |
 | `watch` | publish `state` (every 5 minutes and on a change) and `topology` (every 15) |
 
 Secrets come on stdin, never as arguments, which every process listing shows.
 
-## Pulzar Net
+## Pulzr Net
 
 - **Changes** go through the console API, `POST /api/system/thread/<op>` (`lib/thread.uc`),
   from an `sso` session only, as add-ons do, audited without the request. Never

@@ -117,7 +117,7 @@ wifi_gateway() {
   iface_gateway "${WIFI_IFACE}"
 }
 
-# Tell Pulzar Cloud promptly when the tunnel's path actually changes, rather
+# Tell Pulzr Cloud promptly when the tunnel's path actually changes, rather
 # than however long it takes the six-hourly report or a stale handshake to
 # say so. `pulzr-claim report` already no-ops in half a second when this
 # gateway is not adopted, so this is safe to call unconditionally.
@@ -210,7 +210,7 @@ status() {
   fi
   # The same order apply() pins the tunnel in: wired, then WiFi, then
   # cellular. This used to skip WiFi, so a gateway whose tunnel was on WiFi
-  # told Pulzar Cloud it was wired.
+  # told Pulzr Cloud it was wired.
   if wifi_gateway >/dev/null; then
     wifi_usable="true"
     [ "${via}" = "none" ] && via=wifi

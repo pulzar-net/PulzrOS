@@ -45,7 +45,7 @@ short="$(echo "${serial}" | tail -c9)"
 hostname="${PULZR_HOSTNAME_PREFIX:-pulzr}-${short}"
 
 # ── LoRaWAN Gateway EUI ─────────────────────────────────────────────────────
-# Sixteen hex characters, which is what the LNS and Pulzar Cloud key a gateway
+# Sixteen hex characters, which is what the LNS and Pulzr Cloud key a gateway
 # on. Random, in the locally administered range, and NOT derived from the
 # ethernet MAC as it was until 0.4: a MAC is on the label and on the site's
 # network, and claim/register takes any EUI from anyone, so a gateway whose EUI

@@ -1,4 +1,4 @@
 # When each LAN device was first and last seen, and the journal of forwards
-# opened to them, which Pulzar Cloud reads back after an upgrade as before it.
+# opened to them, which Pulzr Cloud reads back after an upgrade as before it.
 /etc/pulzr/lan/
 /etc/parkeze/lan/

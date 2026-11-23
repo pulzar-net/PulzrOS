@@ -1,8 +1,8 @@
 // Thread: the border router the pulzr-thread add-on runs, through
 // /usr/sbin/pulzr-thread.
 //
-// Set up from Pulzar Net only, as add-ons are: a write needs an `sso` session,
-// which only Pulzar Net mints for a person, and is audited with who. Pulzar
+// Set up from Pulzr Net only, as add-ons are: a write needs an `sso` session,
+// which only Pulzr Net mints for a person, and is audited with who. Pulzr
 // Net holds the network's dataset sealed and is where the checks that are not
 // the gateway's to make happen (an org admin acting as themselves, one network
 // per organization's site). A local session reads the status and nothing else.
@@ -10,7 +10,7 @@
 // The dataset and a joiner's PSKd reach pulzr-thread on stdin, from a file
 // only root can read that is gone before the answer is sent; they are never
 // on a command line, in a log or in an audit record. Only `dataset` answers
-// with a secret, the dataset itself, for Pulzar Net to seal.
+// with a secret, the dataset itself, for Pulzr Net to seal.
 
 let _m_fs = require('fs');
 
@@ -61,7 +61,7 @@ status = function() {
 // POST /api/system/thread/<op>. { result } or { error, status }.
 change = function(op, req, session) {
     if (session?.kind != 'sso')
-        return { status: 403, error: 'Thread is set up from Pulzar Net.' };
+        return { status: 403, error: 'Thread is set up from Pulzr Net.' };
     if (!(op in OPS))
         return { status: 404, error: 'No such Thread operation.' };
     let args = [op];

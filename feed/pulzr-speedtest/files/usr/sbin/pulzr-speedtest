@@ -1,6 +1,6 @@
 #!/usr/bin/ucode
 // How fast each free uplink is, straight to the internet and through the
-// management tunnel to Pulzar Cloud, now and then.
+// management tunnel to Pulzr Cloud, now and then.
 //
 //   pulzr-speedtest status            JSON: schedule, running, history
 //   pulzr-speedtest latest            the last of each test on each uplink
@@ -20,7 +20,7 @@
 //            SO_BINDTODEVICE). What the site's line does.
 //   tunnel   the cloud sending to and taking from this gateway over the
 //            WireGuard tunnel (pulzr-claim tunnel-test), which is the path
-//            the console, SSH and management take through Pulzar Cloud. Where
+//            the console, SSH and management take through Pulzr Cloud. Where
 //            the two differ a lot, the tunnel is the problem, not the line.
 //
 // No server of our own: LibreSpeed's list is public servers run by their
@@ -248,11 +248,11 @@ let tunnel = (cfg) => {
             return { ...entry, iface: route.iface || null, device: route.device || null,
                      downloadMbps: r.downloadMbps, uploadMbps: r.uploadMbps, pingMs: r.pingMs,
                      bytesReceived: r.bytesReceived, bytesSent: r.bytesSent };
-        // Pulzar Cloud tests one tunnel at a time.
+        // Pulzr Cloud tests one tunnel at a time.
         if (r?.busy) { sleep((60 + time() % 60) * 1000); continue; }
-        return { ...entry, error: r?.error ?? 'Pulzar Cloud did not answer' };
+        return { ...entry, error: r?.error ?? 'Pulzr Cloud did not answer' };
     }
-    return { ...entry, error: 'Pulzar Cloud was busy testing other gateways' };
+    return { ...entry, error: 'Pulzr Cloud was busy testing other gateways' };
 };
 
 let running = () => {
@@ -302,7 +302,7 @@ let run = (iface, metered) => {
     }
     if (length(out)) record(out);
     fs.unlink(RUNNING);
-    // Pulzar Cloud hears the result now, not at the next six-hourly report.
+    // Pulzr Cloud hears the result now, not at the next six-hourly report.
     if (length(out)) system('( pulzr-claim report >/dev/null 2>&1 & ) 2>/dev/null');
     return out;
 };

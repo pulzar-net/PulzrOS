@@ -45,7 +45,7 @@ rebuilds the defaults; `29-pulzr-ports` writes it back over them.
 
 A port change can cut off whoever makes it: the laptop on the LAN jack that
 becomes an uplink, or the tunnel on the uplink that becomes a LAN port when
-the change came through Pulzar Cloud. So:
+the change came through Pulzr Cloud. So:
 
 1. `set` keeps the configuration it replaces on flash
    (`/etc/pulzr/apply/rollback`, by `pulzr-apply`, which the console's other network setters arm the same way), applies the new one, and starts a timer.
@@ -86,7 +86,7 @@ A layout:
 ```
 
 Over MQTT, `ports` answers with `status`, read-only, as `uplinks` and `dns`
-do: the layout is the site's, and Pulzar Cloud shows it beside the gateway.
+do: the layout is the site's, and Pulzr Cloud shows it beside the gateway.
 
 Each port and VLAN in `status` lists `addresses`: every IPv4 address on its
 device, whichever netifd interface holds it, so the board's uplink port shows

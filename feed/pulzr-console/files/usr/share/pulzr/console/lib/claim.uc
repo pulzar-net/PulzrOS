@@ -36,7 +36,7 @@ status = function() {
         // 'unadopted' | 'adopting' | 'adopted' | 'reclaiming' — the last is
         // adopted, with a revoked claim and a new one to show.
         adoption: state.state,
-        // Whether Pulzar Cloud already knows about this pending claim. When it
+        // Whether Pulzr Cloud already knows about this pending claim. When it
         // does the QR is a short URL; when it does not the QR carries the
         // gateway's identity inline so a scan still works from a basement.
         registered: state.registered,
@@ -55,15 +55,15 @@ status = function() {
     };
 };
 
-// Ask Pulzar Cloud whether this gateway is still adopted.
+// Ask Pulzr Cloud whether this gateway is still adopted.
 //
-// The recovery screen is for an adopted gateway that cannot reach Pulzar. A
+// The recovery screen is for an adopted gateway that cannot reach Pulzr. A
 // gateway that was decommissioned from the console is looking at the wrong
 // screen entirely — there is nobody left to sign its challenge — and this is
 // how it finds out.
 //
 // Only pulzr-adopt may act on the answer, and only on one it got from
-// Pulzar Cloud over verified TLS, twice. Nothing here decides anything: this
+// Pulzr Cloud over verified TLS, twice. Nothing here decides anything: this
 // starts the check and reads the file it leaves behind. A caller on the LAN
 // can ask; it cannot answer.
 checkAdoption = function() {
@@ -100,7 +100,7 @@ qr = function() {
     return { svg: svg, url: run('/usr/sbin/pulzr-claim qr') };
 };
 
-// Ask Pulzar Cloud whether somebody has claimed us yet.
+// Ask Pulzr Cloud whether somebody has claimed us yet.
 //
 // The device polls on its own schedule anyway; this is what the console calls
 // while an installer is watching, so the page updates the moment they finish
@@ -111,11 +111,11 @@ poll = function() {
 };
 
 // Complete an adoption for a gateway that has never had internet, from a
-// signed bundle the operator carried back from Pulzar Cloud.
+// signed bundle the operator carried back from Pulzr Cloud.
 applyBundle = function(req) {
     const bundle = req.bundle;
     if (!bundle || !length(bundle))
-        return { error: 'Paste the adoption bundle from Pulzar.' };
+        return { error: 'Paste the adoption bundle from Pulzr.' };
 
     // The HTTP route is closed once adopted; the terminal UI calls this
     // directly. A bundle carries no claim, so it cannot replace a revoked one.

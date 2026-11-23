@@ -11,4 +11,4 @@ Description: One-touch provisioning and adoption.
  console, and completes adoption on its own once somebody scans it. Receives
  MQTT credentials and the fleet recovery anchor, and enrols the gateway's
  WireGuard key for the management tunnel. Once adopted, reports what the
- gateway is and sends its system log to Pulzar Cloud (pulzr-logship).
+ gateway is and sends its system log to Pulzr Cloud (pulzr-logship).

@@ -30,13 +30,13 @@ import styles from './Onboarding.module.css';
  * WHAT IT LOOKS LIKE FROM THE VAN
  *
  *   1. Power the gateway on, join its LAN, open the console.
- *   2. Scan the code with a phone. That opens Pulzar Cloud.
+ *   2. Scan the code with a phone. That opens Pulzr Cloud.
  *   3. Sign in there, pick the organization.
  *   4. This page notices, on its own, and turns green.
  *
  * Nobody types a credential into the gateway and nobody goes back to it.
  *
- * The gateway polls Pulzar Cloud on its own backoff regardless — this page just
+ * The gateway polls Pulzr Cloud on its own backoff regardless — this page just
  * polls faster, because somebody is standing there watching it.
  */
 export default function Onboarding({ onBrowse }: { onBrowse?: () => void } = {}) {
@@ -115,7 +115,7 @@ export default function Onboarding({ onBrowse }: { onBrowse?: () => void } = {})
               target="_blank"
               rel="noreferrer noopener"
             >
-              Open in Pulzar
+              Open in Pulzr
               <ExternalLink size={13} strokeWidth={2} />
             </a>
           )}
@@ -135,7 +135,7 @@ export default function Onboarding({ onBrowse }: { onBrowse?: () => void } = {})
         )}
 
         {!claim.registered && claim.online && (
-          <Notice tone="info">Registering with Pulzar.</Notice>
+          <Notice tone="info">Registering with Pulzr.</Notice>
         )}
 
         {onBrowse && (
@@ -185,10 +185,10 @@ function Adopted({ claim }: { claim: ClaimStatus }) {
 }
 
 /**
- * The escape hatch for a gateway that genuinely cannot reach Pulzar Cloud —
+ * The escape hatch for a gateway that genuinely cannot reach Pulzr Cloud —
  * a basement, an air-gapped site, a customer network that will not route.
  *
- * Pulzar Cloud produces a signed adoption bundle; the operator carries it back
+ * Pulzr Cloud produces a signed adoption bundle; the operator carries it back
  * and pastes it here. The gateway verifies it against the fleet public key
  * baked into the image, so this is not a way to adopt a gateway into a
  * fleet you do not own.
@@ -205,7 +205,7 @@ function OfflineBundle({ onDone }: { onDone: () => void }) {
     <>
       <TextAreaField
         label="Adoption bundle"
-        placeholder="Paste the signed bundle from Pulzar"
+        placeholder="Paste the signed bundle from Pulzr"
         spellCheck={false}
         autoCapitalize="off"
         autoCorrect="off"

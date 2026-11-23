@@ -5,7 +5,7 @@
 //   pulzr-tui --console [--tty DEV]  as a port's own program, behind the
 //                                      web console's sign-in
 //   pulzr-tui --remote               as an SSH session's only command,
-//                                      opened from Pulzar Cloud; no shell
+//                                      opened from Pulzr Cloud; no shell
 //
 // See /usr/share/pulzr/tui/app.uc for what it is and who it trusts.
 

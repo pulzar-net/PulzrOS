@@ -117,7 +117,7 @@ package_one() {
     -exec chmod 0755 {} +
 
   # An empty payload installs nothing and says nothing about it, which is how
-  # an image once booted with none of PulzarOS in it. Refused here.
+  # an image once booted with none of PulzrOS in it. Refused here.
   [ -n "$(find "${stage}/data" -type f -print -quit)" ] \
     || { echo "error: ${name} (${want_arch:-all}) has no files to ship" >&2; exit 1; }
 

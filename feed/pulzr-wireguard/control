@@ -7,7 +7,7 @@ Maintainer: Joseph Telaak <joseph@pulzr.net>
 License: Apache-2.0
 Architecture: all
 Description: WireGuard management tunnel, pinned to the wired path.
- Dials out to the Pulzar Cloud WireGuard hub so the cloud can reach this
+ Dials out to the Pulzr Cloud WireGuard hub so the cloud can reach this
  gateway's console and SSH directly. The keypair is generated on the gateway
  and its private half never leaves; the tunnel is confined to the ethernet WAN
  so that it can never run over metered cellular.

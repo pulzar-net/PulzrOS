@@ -23,7 +23,7 @@ import styles from '../Pages.module.css';
  *
  * Applied like a port change, because it is one: a wrong static address on
  * the uplink the tunnel rides takes the gateway away from somebody working
- * through Pulzar Cloud, and the change is undone unless this page reaches the
+ * through Pulzr Cloud, and the change is undone unless this page reaches the
  * gateway again afterwards.
  */
 

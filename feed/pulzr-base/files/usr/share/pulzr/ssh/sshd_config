@@ -12,14 +12,14 @@ Include /etc/ssh/sshd_config.d/*.conf
 Port 22
 
 # The two dropbear made. pulzr-ssh-setup converts dropbear's own on the first
-# boot after the switch, so the key Pulzar Cloud pinned is the key presented.
+# boot after the switch, so the key Pulzr Cloud pinned is the key presented.
 # No ECDSA key is offered, so nothing presents a key nobody pinned.
 HostKey /etc/ssh/ssh_host_ed25519_key
 HostKey /etc/ssh/ssh_host_rsa_key
 
 # Root by key or certificate, never by password: root has none
-# (pulzr-root-keys-only), and a root shell on PulzarOS is a copy of it, so
-# root is Pulzar's fleet key and the certificates Pulzar Cloud signs for staff.
+# (pulzr-root-keys-only), and a root shell on PulzrOS is a copy of it, so
+# root is Pulzr's fleet key and the certificates Pulzr Cloud signs for staff.
 # A technician signs in as `pulzr`, at the end of this file.
 PermitRootLogin prohibit-password
 PubkeyAuthentication yes
@@ -56,7 +56,7 @@ Subsystem sftp /usr/lib/sftp-server
 # as root on every port and has to (pulzr-ssh-setup makes the account). What
 # keeps that safe is that this block runs the TUI and nothing else: whatever
 # the client asks for — a command, sftp, a forward — gets the console, and the
-# console's `!` needs a Pulzar staff sign-in. PermitRootLogin is here because
+# console's `!` needs a Pulzr staff sign-in. PermitRootLogin is here because
 # sshd judges uid 0, not the name. Last in the file: everything after a Match
 # belongs to it.
 # parkeze is the ParkezeOS name for the same account; see pulzr-ssh-setup.

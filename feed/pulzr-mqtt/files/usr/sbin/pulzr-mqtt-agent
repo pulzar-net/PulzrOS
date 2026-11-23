@@ -22,8 +22,8 @@
 #
 # ── THE TOPICS ─────────────────────────────────────────────────────────────
 #
-#   parkeze/gateway/<eui>/mgmt/request    Pulzar Cloud asks; we subscribe
-#   parkeze/gateway/<eui>/mgmt/response   we answer; Pulzar Cloud subscribes
+#   parkeze/gateway/<eui>/mgmt/request    Pulzr Cloud asks; we subscribe
+#   parkeze/gateway/<eui>/mgmt/response   we answer; Pulzr Cloud subscribes
 #   parkeze/gateway/<eui>/mgmt/state      retained, published once at start
 #
 # Deliberately outside the region prefix. `us915_0/gateway/<eui>/...` belongs
@@ -374,7 +374,7 @@ dispatch() {
 
 # ── pushed, not asked for ───────────────────────────────────────────────────
 #
-# Pulzar Cloud used to ask every gateway with a LAN for its LAN, uplinks and
+# Pulzr Cloud used to ask every gateway with a LAN for its LAN, uplinks and
 # DNS every five minutes (net-api lan-paths), which on a SIM is a request and
 # an answer for nothing most of the time. They are pushed instead, when they
 # change:

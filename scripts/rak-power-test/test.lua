@@ -187,7 +187,7 @@ local function unit()
   bus.t = bus.t + 101; svc:tick()
   eq("but asked again in half an hour, in case one is fitted", count(bus, 0x6E), 2)
 
-  -- ── telling Pulzar Cloud ──────────────────────────────────────────────────
+  -- ── telling Pulzr Cloud ──────────────────────────────────────────────────
 
   bus = fake_bus()
   bus.slaves[0xC8] = watchdog

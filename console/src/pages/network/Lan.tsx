@@ -35,14 +35,14 @@ import own from './Lan.module.css';
  * (lan-forward). Exposed ports are opened here, because they are the site's:
  * a port on the wired or WiFi uplink to a reserved client, never over the
  * tunnel or cellular (pulzr-lan). Everything set here is in pulzr-lan's
- * state, which is what Pulzar Cloud's `lan` op reads.
+ * state, which is what Pulzr Cloud's `lan` op reads.
  */
 
 const POLICIES: { value: LanClient['policy']; label: string }[] = [
   // Compat: `parkeze` is the policy value the cloud sends and reads; it stays.
-  // It means Pulzar Cloud's own servers (HTTPS and MQTT), NTP and the
+  // It means Pulzr Cloud's own servers (HTTPS and MQTT), NTP and the
   // gateway's DNS, nothing else.
-  { value: 'parkeze', label: 'Pulzar Cloud' },
+  { value: 'parkeze', label: 'Pulzr Cloud' },
   { value: 'internet', label: 'Internet' },
 ];
 
@@ -69,7 +69,7 @@ function VendorCell({ mac }: { mac: string }) {
 }
 
 // How long a client stays listed after the gateway last heard from it,
-// unless it is configured: the same hour as Pulzar Cloud's Devices on LAN
+// unless it is configured: the same hour as Pulzr Cloud's Devices on LAN
 // (net-api gateway_lan.ACTIVE_SECONDS).
 const ACTIVE_SECONDS = 3600;
 
@@ -394,7 +394,7 @@ function isPrivate(address: string) {
 }
 
 // Every forward is one the cloud opened over MQTT (lan-forward); the console
-// has no way to open one, so "Pulzar Cloud" is always who.
+// has no way to open one, so "Pulzr Cloud" is always who.
 function Forwards({ forwards, nameOf }: { forwards: LanForward[]; nameOf: (ip: string) => string | null | undefined }) {
   return (
     <Section title="Tunnel Forwards" icon={ArrowRightLeft}>
@@ -411,7 +411,7 @@ function Forwards({ forwards, nameOf }: { forwards: LanForward[]; nameOf: (ip: s
                   <span className="mono">
                     {[nameOf(f.ip), `${f.ip}:${f.dport}`].filter(Boolean).join(' ')}
                   </span>
-                  <span className={styles.dim}>Pulzar Cloud, closes in {duration(f.expiresIn)}</span>
+                  <span className={styles.dim}>Pulzr Cloud, closes in {duration(f.expiresIn)}</span>
                 </span>
               }
             />

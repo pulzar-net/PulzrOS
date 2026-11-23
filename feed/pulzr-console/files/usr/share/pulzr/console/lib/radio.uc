@@ -4,9 +4,9 @@
 // Matter fabric, as the radio `matter` (docs/src/content/docs/radio-modules.md). Every op goes
 // through `pulzr-radios call`, which picks the radio's binary.
 //
-// Set up from Pulzar Net only, as add-ons and Thread are: a change needs an
-// `sso` session, which only Pulzar Net mints for a person, and is audited
-// with who. Pulzar Net holds the networks' keys and backups sealed and makes
+// Set up from Pulzr Net only, as add-ons and Thread are: a change needs an
+// `sso` session, which only Pulzr Net mints for a person, and is audited
+// with who. Pulzr Net holds the networks' keys and backups sealed and makes
 // the checks that are not the gateway's (an org admin acting as themselves,
 // one network per radio). A local session reads status and nothing else.
 //
@@ -14,7 +14,7 @@
 // read that is gone before the answer is sent: `form` carries a network key,
 // `restore` a backup, `provision` install codes, `dsk` an S2 PIN. Never a
 // command line, a log or an audit record. Only `backup` answers with a
-// secret, for Pulzar Net to seal.
+// secret, for Pulzr Net to seal.
 //
 // The radio is in the body (`radio`), not the path: the router matches whole
 // paths, and the radio id is checked here instead.
@@ -95,7 +95,7 @@ status = function() {
 // POST /api/system/radio/<op>, `radio` in the body. { result } or { error, status }.
 change = function(op, req, session) {
     if (session?.kind != 'sso')
-        return { status: 403, error: 'Radio networks are set up from Pulzar Net.' };
+        return { status: 403, error: 'Radio networks are set up from Pulzr Net.' };
     if (!(op in OPS))
         return { status: 404, error: 'No such radio operation.' };
     if (!valid(req?.radio))

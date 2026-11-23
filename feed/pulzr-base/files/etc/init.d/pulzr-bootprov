@@ -26,7 +26,7 @@
 # WHY NOT A DEFAULT PASSWORD
 #
 # Because one published README would then be root on the entire fleet. That is
-# not hypothetical — the previous PulzarOS shipped pulzr/pulzr on every
+# not hypothetical — the previous PulzrOS shipped pulzr/pulzr on every
 # image. A per-unit secret written to the card costs the installer exactly the
 # same effort and has none of that blast radius: learning one gateway's
 # password tells you nothing about any other.
@@ -170,7 +170,7 @@ start() {
 		if grep -qE '^(ssh-(rsa|ed25519)|ecdsa-sha2-)' "${MNT}/${KEYS}"; then
 			# Site keys, not authorized_keys. That file is composed from
 			# these plus the image's fleet key by pulzr-fleet-keys —
-			# writing it directly here used to delete Pulzar's own access
+			# writing it directly here used to delete Pulzr's own access
 			# on any unit a technician provisioned.
 			mkdir -p /etc/pulzr
 			cat "${MNT}/${KEYS}" > /etc/pulzr/site-keys
@@ -214,7 +214,7 @@ start() {
 		rm -f "${MNT}/${PW_OUT}"
 	elif [ -f "${STATE}/password-is-initial" ] && [ -s "${STATE}/initial-password" ]; then
 		{
-			echo "PulzarOS initial credentials"
+			echo "PulzrOS initial credentials"
 			echo
 			echo "  user      pulzr   (the console: https:// or ssh pulzr@ the gateway)"
 			echo "  password  $(cat "${STATE}/initial-password")"

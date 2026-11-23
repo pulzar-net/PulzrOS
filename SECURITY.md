@@ -16,11 +16,11 @@ you disclose.
 
 ## What is in scope
 
-PulzarOS gateway software: the console and its API, the terminal UI, adoption
+PulzrOS gateway software: the console and its API, the terminal UI, adoption
 and claim handling, the management tunnel, the SSH and recovery trust model
 ([Authentication and SSH](https://oss.pulzr.net/PulzrOS/auth.html)), the firmware update check, and the image
 build. A flaw in OpenWrt or another upstream component is best reported
-upstream; tell us as well if PulzarOS's configuration makes it worse.
+upstream; tell us as well if PulzrOS's configuration makes it worse.
 
 ## Supported versions
 

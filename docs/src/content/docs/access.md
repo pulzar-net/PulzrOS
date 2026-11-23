@@ -40,7 +40,7 @@ useless to anyone who is not already authorized.
 
 An unadopted gateway is a brick with a radio. There is nothing on it worth
 stealing, and the only useful thing anybody can do through the console is claim
-it — which requires a Pulzar login and is audited. Giving that away costs
+it — which requires a Pulzr login and is audited. Giving that away costs
 nothing and is what makes the out-of-box experience one tap.
 
 An adopted gateway is different, and gets two independent factors:
@@ -106,7 +106,7 @@ removing it did:
 - A default route is what makes a phone probe at all, and it is the wrong thing
   to give it. With a route to a gateway that has no uplink, the phone sends
   everything there and loses its own data. Without one it keeps cellular for
-  everything but this subnet, so **Sign in with Pulzar** works from the phone on
+  everything but this subnet, so **Sign in with Pulzr** works from the phone on
   the AP, while the gateway has no internet at all.
 
 That last part is an iPhone's behaviour. An Android phone may ask whether to stay
@@ -198,12 +198,12 @@ That somebody has to be the gateway, since a portal admits the device that
 loaded it, by MAC and address. So the console's **Sign in** on the WiFi page
 opens the network's page *as the gateway*: a proxy on the gateway fetches it out
 of the WiFi radio and hands it to the browser — whether that browser is on the
-cable, on the setup AP, or on Pulzar Cloud with the gateway on cellular.
+cable, on the setup AP, or on Pulzr Cloud with the gateway on cellular.
 
 - **Its own origin.** A portal's page is somebody else's HTML and script, and on
   the console's origin it could use the console session. The proxy is a second
   uhttpd on **8443** (`signin.uc`), opened wherever the console is, and the
-  console's own listener has no `/signin`. Through Pulzar Cloud it is a second
+  console's own listener has no `/signin`. Through Pulzr Cloud it is a second
   device host for the same gateway: the console asks its own host for
   `/__signin`, and the cloud opens one that reaches 8443.
 - **Getting in.** The console, signed in, mints a one-use ticket good for a
@@ -395,9 +395,9 @@ that trade was made.
 ## Most installs never touch any of this
 
 The normal path involves no local connection to the gateway. Plugged into
-anything with a route out, it takes DHCP, registers its claim with Pulzar Cloud
+anything with a route out, it takes DHCP, registers its claim with Pulzr Cloud
 and appears in the pending list. The installer matches the EUI on the label and
-adopts it from the Pulzar Cloud console, on their phone, without opening a
+adopts it from the Pulzr Cloud console, on their phone, without opening a
 laptop.
 
 Everything above is the fallback for when that does not happen — which is
@@ -405,7 +405,7 @@ exactly why it has to work with zero configuration rather than merely work.
 
 ## Turning it all off
 
-Both mechanisms are switchable from the console and from Pulzar Cloud:
+Both mechanisms are switchable from the console and from Pulzr Cloud:
 
 - `pulzr.ap.enabled=0` — never raise a radio unasked, including on fallback.
   **This is the default.** The AP is opt-in: field setup does not use WiFi, and a

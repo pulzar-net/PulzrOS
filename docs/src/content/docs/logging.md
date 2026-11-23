@@ -1,9 +1,9 @@
 ---
 title: "Logging"
-description: "An adopted gateway sends its system log to Pulzar Cloud, where its page keeps it for 90 days."
+description: "An adopted gateway sends its system log to Pulzr Cloud, where its page keeps it for 90 days."
 ---
 
-An adopted gateway sends its system log to Pulzar Cloud, where its page
+An adopted gateway sends its system log to Pulzr Cloud, where its page
 keeps it for 90 days beside what was done to it: firmware updates, commands,
 outages and settings changes. The log on the gateway is in RAM and gone at
 the next boot; this is the copy that is not.
@@ -30,7 +30,7 @@ uci set pulzr.logship.enabled=0 && uci commit pulzr       # none
 | Requests | one HTTPS POST a minute, every five on a metered uplink, sooner at 100 lines |
 | Unreachable | batches are kept and sent with the next, up to 1,000 lines; then the oldest go, counted |
 
-Pulzar Cloud holds every gateway to its own ceiling as well (1,200 lines an
+Pulzr Cloud holds every gateway to its own ceiling as well (1,200 lines an
 hour), whatever firmware sends.
 
 ## How it is sent
@@ -42,7 +42,7 @@ on a command line.
 
 ## Reading it
 
-The gateway's page in Pulzar Cloud, **Log**, with its source, level and
+The gateway's page in Pulzr Cloud, **Log**, with its source, level and
 search filters; every gateway's together under **Logs**, **Gateways**. Lines
 from before a gateway ran `pulzr-logship`, and its `debug` lines, are read
 from the gateway itself with **Read Now** there, or `pulzr-logs` on it.

@@ -8,9 +8,9 @@
 #
 # pulzr-edge-ble owns the whole controller over the HCI user channel: it scans
 # passively and sends each beacon whose MAC starts with one of pulzr.ble.oui
-# as its own device, ble:<EUI-64>, in Pulzar protocol v1 (at most one up per
+# as its own device, ble:<EUI-64>, in Pulzr protocol v1 (at most one up per
 # beacon per pulzr.ble.interval), and answers GATT and advertising intents.
-# Pulzar Net decodes the advertising data with the device type's codec, so a
+# Pulzr Net decodes the advertising data with the device type's codec, so a
 # new beacon model is a codec there and never a firmware change here.
 #
 # Only beacons with one of the prefixes are sent: a car park is full of phones

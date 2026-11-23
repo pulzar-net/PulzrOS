@@ -22,12 +22,12 @@
 #                  one open.
 #   out            everything by default, over whichever uplink the route
 #                  metrics pick, masqueraded, and counted per client
-#                  (pulzr-lan). Pulzar, NTP and DNS only, for a client whose
+#                  (pulzr-lan). Pulzr, NTP and DNS only, for a client whose
 #                  policy is parkeze. Never the tunnel.
 #
-# Pulzar is a set of addresses dnsmasq fills as it answers for Pulzar's
+# Pulzr is a set of addresses dnsmasq fills as it answers for Pulzr's
 # names, so it follows a move with no rule to change. The names come from
-# board.conf's two endpoints, as every other Pulzar host does. A client that
+# board.conf's two endpoints, as every other Pulzr host does. A client that
 # brings its own resolver bypasses that and reaches nothing.
 #
 # The console is here so that a laptop on a LAN port can reach it: somebody who
@@ -52,7 +52,7 @@
 
 [ -n "${PULZR_LAN_PORTS}" ] || exit 0
 
-# The registrable domain of each Pulzar endpoint, and dnsmasq matches a domain's
+# The registrable domain of each Pulzr endpoint, and dnsmasq matches a domain's
 # subdomains too. The image's own endpoints and the broker the gateway was
 # actually given: an upgraded gateway keeps the host adoption handed it, which
 # may be an older name (net.parkeze.com, mqtt.parkeze.com) than the image's.
@@ -163,7 +163,7 @@ set firewall.lan_expose.position='chain-pre'
 set firewall.lan_expose.chain='forward_wan'
 EOF
 
-# The default policy, per uplink zone: Pulzar over HTTPS and MQTT, and NTP.
+# The default policy, per uplink zone: Pulzr over HTTPS and MQTT, and NTP.
 for zone in wan cellular; do
 	uci -q batch <<EOF
 delete firewall.devlan_pulzr_${zone}
@@ -187,7 +187,7 @@ set firewall.devlan_ntp_${zone}.target='ACCEPT'
 EOF
 done
 
-# The internet, for every client but those narrowed to Pulzar, whose REJECTs
+# The internet, for every client but those narrowed to Pulzr, whose REJECTs
 # pulzr-lan apply puts between the accepts above and these. Last, so a re-run
 # on upgrade keeps them after the rules above.
 for zone in wan cellular; do

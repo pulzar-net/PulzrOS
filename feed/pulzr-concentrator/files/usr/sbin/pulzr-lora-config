@@ -302,7 +302,7 @@ event_url="${events}"
 command_url="${commands}"
 
 # What this gateway is, attached to every stats message: firmware version and
-# addresses reach Pulzar Cloud over the connection the gateway already has.
+# addresses reach Pulzr Cloud over the connection the gateway already has.
 [metadata]
 split_delimiter="="
 

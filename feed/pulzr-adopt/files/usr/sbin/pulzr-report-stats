@@ -5,7 +5,7 @@
 #   pulzr-report-stats
 #
 # Run by `pulzr-claim report`, under a timeout, once per report. Every field
-# is optional: a board that cannot read one leaves it out, and Pulzar Cloud
+# is optional: a board that cannot read one leaves it out, and Pulzr Cloud
 # keeps no series for it. Nothing here may block the report, so every command
 # that is not a plain read of /proc or /sys runs under `pulzr-timeout`.
 #

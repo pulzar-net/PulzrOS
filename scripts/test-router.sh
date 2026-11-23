@@ -194,7 +194,7 @@ check "upstream: custom, ahead of the per-domain server" \
     '{"server":["9.9.9.9","149.112.112.112","/lan.example/10.1.1.1"],"noresolv":"1","rebind_protection":"1","rebind_domain":null}' \
     "$(dnsmasq)"
 out="$(dns upstream 10.9.9.9 2>&1)" && r=0 || r=$?
-check "upstream: a server that cannot resolve Pulzar is refused" \
+check "upstream: a server that cannot resolve Pulzr is refused" \
     '3 no answer from 10.9.9.9 for mqtt.parkeze.com' "${r} ${out}"
 for bad in "1.2.3" "1.1.1.1 1.1.1.1" "1.1.1.1 2.2.2.2 3.3.3.3 4.4.4.4"; do
     # shellcheck disable=SC2086
@@ -212,14 +212,14 @@ check "hosts: a-b and a.b stay two names" \
     '["nas","nas-2.site","nas.2.site"]' "$(dns status | jq -c '[.hosts[].name]')"
 for bad in net.parkeze.com x.mqtt.PARKEZE.com parkeze.com; do
     out="$(dns host "${bad}" 1.2.3.4 2>&1)" && r=0 || r=$?
-    check "hosts: ${bad} is Pulzar's" "2 names under parkeze.com are Pulzar's" "${r} ${out}"
+    check "hosts: ${bad} is Pulzr's" "2 names under parkeze.com are Pulzr's" "${r} ${out}"
 done
 out="$(dns host plc-1 1.2.3.4 2>&1)" && r=0 || r=$?
 check "hosts: a reservation's name is refused" "3 plc-1 is a reservation's name" "${r} ${out}"
 dns host -bad 1.2.3.4 >/dev/null 2>&1 && r=0 || r=$?
 check "hosts: a label may not start with a hyphen" '2' "${r}"
 dns host evilparkeze.com 1.2.3.4 >/dev/null && r=0 || r=$?
-check "hosts: a lookalike is not Pulzar's" '0' "${r}"
+check "hosts: a lookalike is not Pulzr's" '0' "${r}"
 dns unhost nas >/dev/null
 dns unhost nas >/dev/null 2>&1 && r=0 || r=$?
 check "unhost: gone, and a second time refused" '3 ["evilparkeze.com","nas-2.site","nas.2.site"]' \
@@ -631,7 +631,7 @@ lan apply
 check "usage: a start without a reboot drops what the stop saved" 'gone' "$([ -e "${T}/lan/usage.json" ] || echo gone)"
 
 lan policy "${B}" parkeze >/dev/null
-check "policy: parkeze is a REJECT between Pulzar's accepts and the internet's" \
+check "policy: parkeze is a REJECT between Pulzr's accepts and the internet's" \
     'devlan_pulzr_wan devlan_ntp_wan devlan_pulzr_cellular devlan_ntp_cellular lan_pulzr_02000000000b_wan devlan_inet_wan lan_pulzr_02000000000b_cellular devlan_inet_cellular' \
     "$(jq -r '.firewall | keys_unsorted | join(" ")' "${UCI_JSON}")"
 check "policy: parkeze, rejected" 'REJECT 02:00:00:00:00:0b' \
@@ -639,7 +639,7 @@ check "policy: parkeze, rejected" 'REJECT 02:00:00:00:00:0b' \
 check "status: parkeze" '"parkeze"' "$(lan status | jq -c --arg m "${B}" '[.clients[] | select(.mac == $m)][0].policy')"
 jq '.firewall = ({"lan_pulzr_02000000000b_wan": .firewall.lan_pulzr_02000000000b_wan} + .firewall)' "${UCI_JSON}" > "${UCI_JSON}.new" && mv "${UCI_JSON}.new" "${UCI_JSON}"
 lan apply
-check "policy: put back after an upgrade moved Pulzar's accepts below it" 'devlan_inet_wan' \
+check "policy: put back after an upgrade moved Pulzr's accepts below it" 'devlan_inet_wan' \
     "$(jq -r '.firewall | keys_unsorted | . as $k | $k[($k | index("lan_pulzr_02000000000b_wan")) + 1]' "${UCI_JSON}")"
 lan policy "${B}" internet >/dev/null
 check "policy: back to the internet drops the rules and the section" 'null null' \

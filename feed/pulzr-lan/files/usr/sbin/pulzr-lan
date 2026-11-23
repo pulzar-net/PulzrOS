@@ -26,7 +26,7 @@
 // ── THE TUNNEL FORWARD ─────────────────────────────────────────────────────
 //
 // From the management tunnel to one client's TCP port, for a bounded time.
-// That is how somebody at Pulzar Cloud opens a PLC's own interface without the
+// That is how somebody at Pulzr Cloud opens a PLC's own interface without the
 // PLC holding a second connection or the site opening anything.
 //
 // It lives in a table of our own, inet pulzr_lan, not in fw4's. fw4 rebuilds
@@ -44,7 +44,7 @@
 // port.
 //
 // Every open and close is journalled to /etc/pulzr/lan/forwards.log, as a
-// setup AP raise is, and `status` carries the recent entries to Pulzar Cloud.
+// setup AP raise is, and `status` carries the recent entries to Pulzr Cloud.
 //
 // ── EXPOSED PORTS ──────────────────────────────────────────────────────────
 //
@@ -137,9 +137,9 @@
 // ── WHAT A CLIENT REACHES ──────────────────────────────────────────────────
 //
 // The internet, by default, straight out whichever uplink is routing,
-// masqueraded: never through the management tunnel or a relay. Pulzar meters
+// masqueraded: never through the management tunnel or a relay. Pulzr meters
 // it (below) and a plan prices it. `pulzr-lan policy <mac> parkeze` narrows
-// one client to Pulzar, NTP and DNS, which is what every client got before
+// one client to Pulzr, NTP and DNS, which is what every client got before
 // metering existed.
 //
 // ── COUNTING ───────────────────────────────────────────────────────────────
@@ -151,7 +151,7 @@
 // spent the SIM's data, and which bytes a plan's allowance is spent on.
 //
 // The kernel counts per address since the table was made; `status` reports
-// per MAC, as running totals within an epoch (`usageEpoch`), and Pulzar Cloud
+// per MAC, as running totals within an epoch (`usageEpoch`), and Pulzr Cloud
 // adds up the differences between reports. Three things keep a total from
 // going backwards inside an epoch, which the cloud would otherwise have to
 // guess about:
@@ -194,7 +194,7 @@ const JOURNAL = STATE + '/forwards.log';
 const SEEN = STATE + '/seen.json';
 // A client's DHCP contact is kept a week after the last, then forgotten, so
 // the visitor of two weeks ago neither stays on every report nor fills the
-// MQTT agent's 8 KB. Pulzar Cloud keeps its own record of it. A reserved
+// MQTT agent's 8 KB. Pulzr Cloud keeps its own record of it. A reserved
 // client keeps its entry: it is configured, not passing through.
 const SEEN_KEEP = 7 * 86400;
 const WIRE_ONLY_MAX = 8;
@@ -474,9 +474,9 @@ let ensureTable = () => {
 //
 // internet is the default and has no rules of its own: 25-pulzr-lan's
 // devlan_inet_<zone> accepts everything from the zone, after the rules that
-// let every client reach Pulzar and NTP. parkeze is one REJECT per client per
+// let every client reach Pulzr and NTP. parkeze is one REJECT per client per
 // uplink zone, matched on its MAC so a new lease does not lose it, and it
-// only works between the two: after Pulzar's accepts and before the zone's.
+// only works between the two: after Pulzr's accepts and before the zone's.
 // fw4 matches in UCI order, and 25-pulzr-lan re-adds its rules at the end on
 // every upgrade, so each apply puts these back where they belong.
 //
@@ -491,7 +491,7 @@ let ruleIndex = () => {
     return out;
 };
 
-// Each Pulzar-only rule below its zone's Pulzar and NTP accepts and above its
+// Each Pulzr-only rule below its zone's Pulzr and NTP accepts and above its
 // zone-wide one. True when anything moved.
 let placeRules = (names) => {
     let moved = false;

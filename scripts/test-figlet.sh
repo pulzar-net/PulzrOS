@@ -36,8 +36,8 @@ command -v "${UCODE}" >/dev/null 2>&1 || {
 MODULES="$(dirname "$(command -v "${UCODE}")")/*.so"
 
 CASES=(
-  'Pulzar'
-  'Pulzar Gateway'
+  'Pulzr'
+  'Pulzr Gateway'
   'pulzr-a1b2c3d4'
   'rpi3'
   'rpi5'

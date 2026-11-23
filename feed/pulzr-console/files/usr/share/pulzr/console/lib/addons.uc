@@ -1,17 +1,17 @@
 // Add-ons: what this gateway has, and installing or removing one, through
 // pulzr-addon.
 //
-// Installs come from Pulzar Net, never from this console's own sign-in. An
+// Installs come from Pulzr Net, never from this console's own sign-in. An
 // add-on is root code on the gateway, and the platform is where the checks
 // that are not the gateway's to make happen: that the person is an org admin
-// or Pulzar staff acting as themselves (not an API key, not an agent), that a
+// or Pulzr staff acting as themselves (not an API key, not an agent), that a
 // metered link was consented to, that no firmware job is open. So a write
-// needs an `sso` session, which only Pulzar Net mints, and names the person in
+// needs an `sso` session, which only Pulzr Net mints, and names the person in
 // the gateway's audit log and add-on journal. A local password or recovery
 // session reads the list and is told where installs come from.
 //
 // A deny (a capability locked off, Modbus on a production gateway) can be added
-// here and never taken away: Pulzar Net writes its lock back after a factory
+// here and never taken away: Pulzr Net writes its lock back after a factory
 // reset wiped the gateway's copy, and nothing that reaches this API should be
 // able to undo that. Unlocking is `pulzr-addon undeny` from a root shell.
 
@@ -48,7 +48,7 @@ status = function() {
 // running; how it ends is in status and in the next report.
 request = function(req, session) {
     if (session?.kind != 'sso')
-        return { status: 403, error: 'Add-ons are installed from Pulzar Net.' };
+        return { status: 403, error: 'Add-ons are installed from Pulzr Net.' };
     const name = req?.name, action = req?.action;
     if (type(name) != 'string' || !match(name, NAME))
         return { status: 400, error: 'That is not an add-on name.' };
@@ -63,7 +63,7 @@ request = function(req, session) {
 // { deny: ['modbus'], reason }. Adds; what is already denied stays denied.
 deny = function(req, session) {
     if (session?.kind != 'sso')
-        return { status: 403, error: 'Add-ons are locked from Pulzar Net.' };
+        return { status: 403, error: 'Add-ons are locked from Pulzr Net.' };
     const caps = req?.deny;
     if (type(caps) != 'array' || !length(caps) || length(caps) > 16)
         return { status: 400, error: 'deny is a list of capability words.' };

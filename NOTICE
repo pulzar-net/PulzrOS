@@ -1,9 +1,9 @@
-PulzarOS
-Copyright 2025-2026 Pulzar LLC and PulzarOS contributors
+PulzrOS
+Copyright 2025-2026 Pulzar LLC and PulzrOS contributors
 
 This product includes software developed at Pulzar LLC (https://pulzr.net).
 
-PulzarOS's own code is licensed under the Apache License, Version 2.0 (see
+PulzrOS's own code is licensed under the Apache License, Version 2.0 (see
 LICENSE), except where a file or package says otherwise:
 
   * boards/common/files/etc/hotplug.d/tty/25-modemmanager-tty is a modified
@@ -13,8 +13,8 @@ LICENSE), except where a file or package says otherwise:
   * feed/pulzr-concentrator/files/usr/share/pulzr/region/*/region.toml and
     channels.toml are ChirpStack Concentratord's example files (MIT).
 
-The Pulzar name, the Pulzar logo and wordmark (console/public/icon.svg,
-console/public/wordmark.png) and the PulzarOS name are trademarks of Pulzar LLC.
+The Pulzr name, the Pulzr logo and wordmark (console/public/icon.svg,
+console/public/wordmark.svg) and the PulzrOS name are trademarks of Pulzar LLC.
 The Apache-2.0 licence covers the code, not the right to use those marks.
 
 The images this repository builds also contain OpenWrt and many packages from

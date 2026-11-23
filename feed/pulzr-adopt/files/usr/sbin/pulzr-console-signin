@@ -1,12 +1,12 @@
 #!/bin/sh
 #
-# Signing in to the terminal UI with a Pulzar account, from a phone.
+# Signing in to the terminal UI with a Pulzr account, from a phone.
 #
 #   pulzr-console-signin start          JSON: {code, url, expiresIn, interval}
 #   pulzr-console-signin poll <code>    JSON: {state[, subject, token]}
 #
 # The browser handoff needs a browser on this side of the cable; a serial
-# console has none. So the terminal shows a code and a QR of Pulzar Cloud's
+# console has none. So the terminal shows a code and a QR of Pulzr Cloud's
 # approval page, somebody already signed in there approves it, and this
 # collects the token — the same signed handoff the browser gets, marked for
 # the terminal and for this one request. auth.uc checks both before it opens
@@ -14,7 +14,7 @@
 # the cloud's plugins/gateway_ops/console_signin.py.
 #
 # Both calls prove they come from this gateway with the claim secret, as
-# `pulzr-claim poll` does: only an adopted gateway has a Pulzar account to
+# `pulzr-claim poll` does: only an adopted gateway has a Pulzr account to
 # sign in with, and only this one may start or collect its own sign-in.
 
 . /etc/pulzr/board.conf
@@ -42,7 +42,7 @@ call() {
     # sentence in it, and that sentence is what the screen should show.
     raw="$(curl -sS --max-time 15 -w '\n%{http_code}' -X POST "${NET_URL}$1" \
                -H 'Content-Type: application/json' -d "$2" 2>/dev/null)" \
-        || fail "Could not reach Pulzar."
+        || fail "Could not reach Pulzr."
     status="$(echo "${raw}" | tail -n1)"
     echo "${raw}" | sed '$d'
     [ "${status}" -lt 400 ] 2>/dev/null

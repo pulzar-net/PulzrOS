@@ -18,7 +18,7 @@ pulzr-tui
 | Serial console | it is already there | the web console's |
 | SSH as root | `pulzr-tui` at the shell | none: you are root |
 | SSH as `pulzr` | `ssh pulzr@<gateway>`, as uid 1000 ([`auth.md`](/PulzrOS/auth.html)); Ctrl-C disconnects | the web console's |
-| Pulzar Cloud **Console** | a gateway's page, as an organization's admin | Pulzar Cloud's; no shell |
+| Pulzr Cloud **Console** | a gateway's page, as an organization's admin | Pulzr Cloud's; no shell |
 | HDMI (Pi) | it is already there, when a screen was attached at boot | the web console's |
 | USB serial (Pi 4, Pi 5) | the port that appears beside the USB network | the web console's |
 
@@ -30,10 +30,10 @@ gateway in a car park are physical access, and [`auth.md`](/PulzrOS/auth.html) i
 that physical access proves nothing. A port signs itself out after fifteen
 minutes without a key.
 
-### From Pulzar Cloud
+### From Pulzr Cloud
 
-An organization's admin on Pulzar Cloud gets this console on their gateway, not
-a shell: a root shell on PulzarOS is a copy of PulzarOS. Pulzar Cloud opens an
+An organization's admin on Pulzr Cloud gets this console on their gateway, not
+a shell: a root shell on PulzrOS is a copy of PulzrOS. Pulzr Cloud opens an
 SSH session whose only command is
 
 ```
@@ -43,19 +43,19 @@ pulzr-tui --remote
 and, on a gateway that trusts its certificate authority, names that command
 as the certificate's `force-command`, so sshd runs nothing else whatever the
 client asks for. In this mode there is no sign-in — the person signed in to
-Pulzar Cloud, which records who opened the session — and no `!`. Changes are
-journalled `by: Pulzar Cloud`; `q` ends the session. Pulzar staff still get a
-shell from Pulzar Cloud.
+Pulzr Cloud, which records who opened the session — and no `!`. Changes are
+journalled `by: Pulzr Cloud`; `q` ends the session. Pulzr staff still get a
+shell from Pulzr Cloud.
 
-### Sign in with Pulzar, without a browser
+### Sign in with Pulzr, without a browser
 
 The web console's handoff lands a token on a browser origin, and a terminal
 has none. So the terminal does it the way a television signs in to a
 streaming service:
 
-1. The gateway starts a sign-in with Pulzar Cloud and shows a code and a QR of
+1. The gateway starts a sign-in with Pulzr Cloud and shows a code and a QR of
    `app.pulzr.net/gateway-access#signin=<code>`.
-2. Somebody signed in to Pulzar Cloud — on a phone, usually — opens it, sees
+2. Somebody signed in to Pulzr Cloud — on a phone, usually — opens it, sees
    which gateway is asking, and approves or refuses. That needs net-admin, as
    the browser handoff does, and is audited against them.
 3. The gateway polls, and collects the same fleet-signed token the browser
@@ -66,7 +66,7 @@ streaming service:
 Only the gateway can start or collect its own sign-in: both calls carry its
 claim secret, as `/report` does. The code on the screen is an address, not a
 key; seeing it lets you ask somebody to approve, and collect nothing. No token
-is stored on Pulzar Cloud while a sign-in waits — it is minted when the gateway
+is stored on Pulzr Cloud while a sign-in waits — it is minted when the gateway
 collects it. Online only; offline, recovery is the way in. A QR that will not
 scan: the code typed at `app.pulzr.net/gateway-access` works the same.
 
@@ -104,9 +104,9 @@ serial terminal its size again.
 
 ## The shell
 
-Only for Pulzar: a TUI started from a root shell, or a session Pulzar Cloud
+Only for Pulzr: a TUI started from a root shell, or a session Pulzr Cloud
 signed as staff's ([`auth.md`](/PulzrOS/auth.html), "Who gets root"). Not for the local
-password, an organization admin's Pulzar or recovery sign-in, or a remote
+password, an organization admin's Pulzr or recovery sign-in, or a remote
 session; a development image lets any signed-in session through. There, `!`
 drops to a login shell on the same terminal; `exit` or Ctrl-D comes back
 to the console, redrawn and refreshed. The TUI steps aside rather than running
@@ -140,7 +140,7 @@ the wordmark, as does the TUI's sign-in screen, and Overview on a screen tall
 enough to spare the rows.
 
 `scripts/render-logo.py` makes the grid from `console/public/icon.svg`, the
-Pulzar mark app.pulzr.net also uses. The shape is drawn by hand there — at
+Pulzr mark app.pulzr.net also uses. The shape is drawn by hand there — at
 sixteen pixels a downsample smears the links and the orbit ring — and only the
 colours come from the SVG. On the Pi's framebuffer
 console the kernel folds 256-colour codes to its own sixteen by thresholding,
@@ -174,4 +174,4 @@ UCODE=/tmp/ucode/build/ucode scripts/run-tui.sh
 Runs the real pages against canned gateway state from
 `scripts/tui-fixture/api.uc`. Add `--console` for the sign-in screens; the
 fixture's password `wrong` fails and `initial` forces a password change. `--remote`
-is the session Pulzar Cloud opens.
+is the session Pulzr Cloud opens.

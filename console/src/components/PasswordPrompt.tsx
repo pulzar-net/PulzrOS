@@ -17,7 +17,7 @@ import styles from '@/pages/Login.module.css';
  * anyone who has been near the device. Until it is replaced, the console is
  * not reachable.
  *
- * This is a gate rather than a banner deliberately. The previous PulzarOS
+ * This is a gate rather than a banner deliberately. The previous PulzrOS
  * shipped one fleet-wide default and relied on people changing it, which is
  * the same as not having a password.
  */

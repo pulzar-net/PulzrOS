@@ -15,7 +15,7 @@ case " ${PULZR_ADDONS_BUILTIN} " in *" pulzr-cellular "*) exit 0 ;; esac
 
 # Metric 21: behind a cable (10) and an open WiFi (15) like any cellular
 # link, and one behind wwan (20), so where a gateway has a modem and a phone
-# both, the SIM Pulzar provisioned carries the traffic.
+# both, the SIM Pulzr provisioned carries the traffic.
 #
 # Off when the board has cellular off, and left as it is on a re-run: the
 # console's "Use cellular as a backhaul" turns this off along with wwan, and a

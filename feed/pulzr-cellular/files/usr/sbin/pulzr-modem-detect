@@ -92,7 +92,7 @@ case "${detail}" in
     *)          kind='at' ;;
 esac
 
-# The SIM the modem is actually holding. Pulzar links a gateway to its 1NCE
+# The SIM the modem is actually holding. Pulzr links a gateway to its 1NCE
 # SIM by ICCID, and until now somebody read it off the card and typed it into
 # the fleet page — next to a device that could simply be asked.
 sim_index="$(echo "${detail}" | sed -n 's|.*primary sim path: */org/freedesktop/ModemManager1/SIM/\([0-9]*\).*|\1|p' | head -n1)"

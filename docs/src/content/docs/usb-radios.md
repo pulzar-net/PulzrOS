@@ -1,10 +1,10 @@
 ---
 title: "Plugged-in radios"
-description: "A PulzrOS gateway notices a Zigbee, Z-Wave, Thread or Bluetooth radio when it is plugged in, says what it is, and tells Pulzar Cloud."
+description: "A PulzrOS gateway notices a Zigbee, Z-Wave, Thread or Bluetooth radio when it is plugged in, says what it is, and tells Pulzr Cloud."
 ---
 
 A PulzrOS gateway notices a Zigbee, Z-Wave, Thread or Bluetooth radio when it is
-plugged in, says what it is, and tells Pulzar Cloud. Nothing has to be installed
+plugged in, says what it is, and tells Pulzr Cloud. Nothing has to be installed
 first: the drivers and `pulzr-probe` are in every image.
 
 ## What happens when you plug one in
@@ -20,7 +20,7 @@ first: the drivers and `pulzr-probe` are in every image.
    in its table of known adapters.
 4. A known adapter is asked what firmware it runs, with only the probes its
    table entry allows. An adapter it cannot name is never written to.
-5. When the list changed, the gateway sends it to Pulzar Cloud at once, on
+5. When the list changed, the gateway sends it to Pulzr Cloud at once, on
    its own (`pulzr-claim radios`, a few hundred bytes), and publishes its
    retained MQTT state again. The gateway's page shows the card within
    seconds.
@@ -79,7 +79,7 @@ match a bare bridge chip.
 A cellular modem is not a radio pulzr-probe names: it is listed beside them,
 as `modems`, by `/usr/libexec/pulzr/usb-modems` (pulzr-probe's package, every
 image), so a gateway can say it has one before anything on it can drive one.
-That is what Pulzar Net offers the Cellular add-on on; see
+That is what Pulzr Net offers the Cellular add-on on; see
 [backhaul.md](/PulzrOS/backhaul.html), "Cellular is an add-on".
 
 It reads the USB descriptors sysfs has for every device, no driver needed,

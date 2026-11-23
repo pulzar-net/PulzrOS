@@ -154,7 +154,7 @@ Service.__index = Service
 --   clock     seconds, monotonic (the daemon reads /proc/uptime)
 --   resolve   function() -> device path, or nil and why
 --   present   function(path) -> whether that path is still the port
---   report    function() asking Pulzar Cloud to be told; may be nil
+--   report    function() asking Pulzr Cloud to be told; may be nil
 --   log       function(level, message); may be nil
 function M.new(deps)
   local self = setmetatable({}, Service)
@@ -317,7 +317,7 @@ function Service:read_battery()
   end
 end
 
--- How the power board is, in the words that warrant telling Pulzar Cloud now
+-- How the power board is, in the words that warrant telling Pulzr Cloud now
 -- rather than at the next six-hourly report. A voltage drifts and is not in
 -- it; the charge crossing a band is.
 function Service:summary()
@@ -382,10 +382,10 @@ local function ago(stamp, now)
   return math.max(0, math.floor(now - stamp + 0.5))
 end
 
--- What `pulzr-rak-power status` prints, and what goes to Pulzar Cloud: the
+-- What `pulzr-rak-power status` prints, and what goes to Pulzr Cloud: the
 -- recorded state with every time as seconds before now. Ages rather than
 -- clock times because a gateway's clock is 1970 until NTP answers, and the
--- watchdog is fed from the first seconds of boot; Pulzar Cloud turns them back
+-- watchdog is fed from the first seconds of boot; Pulzr Cloud turns them back
 -- into times against its own clock.
 --
 -- The daemon writes its record at least every STATE_EVERY seconds, so one

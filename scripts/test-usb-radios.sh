@@ -5,7 +5,7 @@
 #   scripts/test-usb-radios.sh
 #
 # pulzr-probe itself is tested in pulzr-edge against sysfs fixtures. What is
-# the gateway's is here: a burst of hotplug events becomes one scan, Pulzar
+# the gateway's is here: a burst of hotplug events becomes one scan, Pulzr
 # Cloud is told only when the list changed and only once adopted, the claim
 # report gets the list or null, and a radio id that arrived over the network
 # never reaches pulzr-probe unless it is one.

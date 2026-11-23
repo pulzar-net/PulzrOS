@@ -9,7 +9,7 @@ ADDON_FEATURE="cellular"
 # modem's, and it is QMI). Installed on request where the modem is whatever is
 # plugged into a USB host port: the Opal, the Pis and the RAK7391, whose LTE
 # is an optional mPCIe card on USB. pulzr-radios reports a modem plugged into
-# one of those (`modems`), and Pulzar Net offers this add-on for it. A board
+# one of those (`modems`), and Pulzr Net offers this add-on for it. A board
 # with neither gets no cellular at all.
 ADDON_BOARDS="gl-sft1200 rpi3 rpi4 rpi5 rak7391 rak7268c rak7268cv2 rak7289cv2"
 # The gateway's backhaul may be this add-on alone (a SIM, no cable), and a

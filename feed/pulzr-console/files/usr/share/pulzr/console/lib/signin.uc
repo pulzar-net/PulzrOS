@@ -8,7 +8,7 @@
 // it, by its MAC and its address on that network. So the gateway loads the
 // page — out of the WiFi radio and nowhere else — and hands it to whoever is
 // signing in, over whatever reaches the console: a cable, the setup AP, or
-// Pulzar Cloud over cellular. signin.uc is the proxy; this is what it and the
+// Pulzr Cloud over cellular. signin.uc is the proxy; this is what it and the
 // console share.
 //
 // ── WHY ITS OWN PORT ───────────────────────────────────────────────────────
@@ -16,7 +16,7 @@
 // A portal's page is somebody else's HTML and script. Served from the
 // console's origin it could call the console's API with the session of
 // whoever is signing in, so it never is: the proxy is a second uhttpd on
-// SIGNIN_PORT, which the browser treats as another origin, and Pulzar Cloud
+// SIGNIN_PORT, which the browser treats as another origin, and Pulzr Cloud
 // gives it another device host for the same reason. The console's own
 // listener has no /signin at all.
 //
@@ -93,9 +93,9 @@ available = function() {
     return { error: 'The WiFi network has not been checked yet.' };
 };
 
-// Whether the request came over Pulzar Cloud — the tunnel, or the SIM that
+// Whether the request came over Pulzr Cloud — the tunnel, or the SIM that
 // the cloud reaches through 1NCE — rather than from somebody here. The
-// console needs to know which URL opens the proxy: Pulzar Cloud gives it a
+// console needs to know which URL opens the proxy: Pulzr Cloud gives it a
 // device host of its own, and locally it is this address on SIGNIN_PORT.
 viaPulzarNet = function(addr) {
     if (!addr || !match(addr, /^[0-9.]+$/)) return false;

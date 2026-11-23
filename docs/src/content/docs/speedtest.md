@@ -13,11 +13,11 @@ of the Backhaul page tests that one connection.
 | | |
 |---|---|
 | Direct | librespeed-cli against the nearest LibreSpeed public server, once per free uplink, bound to that uplink's device (`--interface`), so a test cannot fall through to another link mid-run |
-| Tunnel | the cloud sending to and taking from this gateway over WireGuard, the path the console, SSH and management take through Pulzar Cloud |
+| Tunnel | the cloud sending to and taking from this gateway over WireGuard, the path the console, SSH and management take through Pulzr Cloud |
 
 A fast line with a slow tunnel says the tunnel is the problem. The tunnel
 test is asked for over the report's channel (`pulzr-claim tunnel-test`,
-proved by the claim secret); the cloud runs one at a time across Pulzar Cloud and
+proved by the claim secret); the cloud runs one at a time across Pulzr Cloud and
 answers `busy` otherwise, and the gateway tries again a minute or two later.
 the cloud measures against two endpoints the console answers only on the
 tunnel port, only to the hub (`/api/speedtest/tunnel/source` and `sink`).
@@ -69,7 +69,7 @@ a run. `pulzr-speedtest schedule off|daily|weekly`.
 `/etc/pulzr/speedtest/history.json`, the last 120, kept across upgrades.
 The latest of each test on each uplink rides on every report (`speedtest`),
 and a run reports at once. The MQTT agent's `speedtest` op answers with the
-last 30, short, under its 8 KB limit. Pulzar Cloud shows both on the gateway's
+last 30, short, under its 8 KB limit. Pulzr Cloud shows both on the gateway's
 Backhaul.
 
 ```

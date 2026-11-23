@@ -11,7 +11,7 @@
 // records cannot differ between the two.
 //
 // What does not carry over is what needs a browser: the "Sign in with
-// Pulzar" handoff lands on a browser origin, and a firmware upload is a file
+// Pulzr" handoff lands on a browser origin, and a firmware upload is a file
 // picker. Recovery sign-in covers the first, and an image path on the
 // gateway — the SD card, or /tmp over SSH — covers the second.
 //
@@ -25,12 +25,12 @@
 //                            access, and docs/src/content/docs/auth.md is plain that physical
 //                            access proves nothing on a gateway in a car park.
 //   pulzr-tui --remote     as an SSH session's only command, opened from
-//                            Pulzar Cloud for an organization's admin. They
+//                            Pulzr Cloud for an organization's admin. They
 //                            were signed in there and the session is the
 //                            proof, so there is no sign-in here — and no `!`:
-//                            a root shell on PulzarOS is a copy of it, which
+//                            a root shell on PulzrOS is a copy of it, which
 //                            is what this mode exists to not hand out.
-//                            Pulzar Cloud names it as the certificate's
+//                            Pulzr Cloud names it as the certificate's
 //                            force-command, so sshd runs nothing else.
 
 let _m_fs = require('fs');
@@ -128,10 +128,10 @@ signedIn = function() { return app.session != null; };
 
 // Whether `!` drops to a shell for this session.
 //
-// A root shell on PulzarOS is a copy of PulzarOS, so it is Pulzar's: started
-// from a root shell already, or signed in as Pulzar staff — Pulzar Cloud's
+// A root shell on PulzrOS is a copy of PulzrOS, so it is Pulzr's: started
+// from a root shell already, or signed in as Pulzr staff — Pulzr Cloud's
 // signature says so (auth.uc's `shell`). An organization's admin signs in with
-// the local password, by Pulzar or by recovery too, and gets the console and
+// the local password, by Pulzr or by recovery too, and gets the console and
 // nothing under it. A remote session never: its sshd runs nothing else. A
 // development build lets any signed-in session through, for the bench.
 mayShell = function() {
@@ -168,7 +168,7 @@ loadPage = function(page, quiet) {
         warn(sprintf('pulzr-tui: %s\n%s\n', page.error, e.stacktrace ?? ''));
     }
     page.loaded = time();
-    // Adoption can happen under any page — from a phone, from Pulzar Cloud —
+    // Adoption can happen under any page — from a phone, from Pulzr Cloud —
     // and the banner has to follow it.
     try { app.unadopted = !api.claim.isAdopted(); app.reclaiming = api.claim.reclaiming(); } catch (e) {}
     if (!quiet) flash(null);
@@ -289,10 +289,10 @@ banner = function(width) {
     const cols = length(mark) ? logo.width(env) : 0;
     let text = [];
     if (width >= cols + 3 + 39) {
-        const p = _m_fs.popen('/usr/sbin/pulzr-figlet -f /usr/share/pulzr/fonts/slant.flf -- Pulzar 2>/dev/null', 'r');
+        const p = _m_fs.popen('/usr/sbin/pulzr-figlet -f /usr/share/pulzr/fonts/slant.flf -- Pulzr 2>/dev/null', 'r');
         if (p) { text = filter(split(p.read('all') ?? '', '\n'), (l) => length(trim(l))); p.close(); }
     }
-    text = length(text) ? map(text, (l) => ui.style(l, 'bold')) : [ ui.style('Pulzar', 'accent') ];
+    text = length(text) ? map(text, (l) => ui.style(l, 'bold')) : [ ui.style('Pulzr', 'accent') ];
     bannerCache[width] = length(mark) ? logo.beside(mark, text, cols) : text;
     return bannerCache[width];
 };
@@ -425,7 +425,7 @@ shell = function() {
     const sh = _m_fs.access('/bin/ash') ? '/bin/ash' : '/bin/sh';
     // Written and flushed before the shell starts, or it lands after the
     // shell's own banner.
-    _m_fs.stdout.write('\nexit returns to the Pulzar console.\n\n');
+    _m_fs.stdout.write('\nexit returns to the Pulzr console.\n\n');
     _m_fs.stdout.flush();
 
     // Ctrl-C and Ctrl-Z belong to the shell while it runs. Caught here with a
@@ -450,7 +450,7 @@ shell = function() {
 
 // `!` for everybody else signed in: logs and link state at a prompt that runs
 // fixed programs and nothing typed (diag.uc). An organization's admin at a
-// port needs the logs; the shell under them is Pulzar's.
+// port needs the logs; the shell under them is Pulzr's.
 diagnostics = function() {
     term.close();
     const quiet = () => null;
@@ -696,7 +696,7 @@ navEntries = function() {
 };
 
 drawHeader = function(width) {
-    let left = ' ' + ui.style('Pulzar', 'accent');
+    let left = ' ' + ui.style('Pulzr', 'accent');
     let host = '';
     try { host = trim(_m_fs.readfile('/proc/sys/kernel/hostname') ?? ''); } catch (e) {}
     if (length(host)) left += '  ' + ui.style(host, 'dim');
@@ -711,7 +711,7 @@ drawHeader = function(width) {
         else if (s.kind == 'remote') right = ui.style('via ' + s.subject, 'dim');
         // The web console's sidebar footer, word for word.
         else right = ui.style(s.subject + ' ' + ui.glyph('dot') + ' '
-                              + (s.kind == 'sso' ? 'via Pulzar' : 'local sign-in'), 'dim');
+                              + (s.kind == 'sso' ? 'via Pulzr' : 'local sign-in'), 'dim');
     }
     if (app.paused) right = ui.style('Paused', 'dim') + (length(right) ? '  ' + right : '');
     const gap = width - term.cols(left) - term.cols(right) - 1;
@@ -747,7 +747,7 @@ bodyBlocks = function(width) {
         const s = app.session;
         if (s.kind == 'recovery')
             push(blocks, { t: 'notice', tone: 'warning',
-                text: 'Recovery session ' + ui.glyph('dash') + ' granted by Pulzar for offline access. Normal sign-in resumes once this gateway is back online.' });
+                text: 'Recovery session ' + ui.glyph('dash') + ' granted by Pulzr for offline access. Normal sign-in resumes once this gateway is back online.' });
         if (app.unadopted && app.path != '/adopt') {
             push(blocks, { t: 'notice', tone: 'warning',
                 text: 'Not adopted. This gateway is not managed by any organization. Its configuration is local only, and adoption will replace it.' });
@@ -755,7 +755,7 @@ bodyBlocks = function(width) {
         }
         if (app.reclaiming && app.path != '/adopt') {
             push(blocks, { t: 'notice', tone: 'warning',
-                text: 'Claim revoked. Pulzar refuses this gateway\'s reports until its new claim is adopted.' });
+                text: 'Claim revoked. Pulzr refuses this gateway\'s reports until its new claim is adopted.' });
             push(blocks, { t: 'buttons', items: [ { label: 'Show the claim', key: 'banner:adopt', run: () => makeCtx().go('/adopt') } ] });
         }
         if (length(blocks)) push(blocks, { t: 'blank' });
@@ -916,11 +916,11 @@ start = function(opts) {
                      forced: getenv('PULZR_ASCII') == '1' };
     term.open(app.termOpts);
     ui.init(term);
-    term.setTitle('Pulzar');
+    term.setTitle('Pulzr');
 
     signal('SIGWINCH', () => { app.resized = true; });
 
-    // Audit records name the session's subject. Pulzar Cloud knows which of
+    // Audit records name the session's subject. Pulzr Cloud knows which of
     // its people opened a remote session and records it there; here it is
     // the network that did.
     if (app.remote) {

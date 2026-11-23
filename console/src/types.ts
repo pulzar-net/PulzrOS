@@ -23,7 +23,7 @@ export interface LoginMethods {
   recovery: boolean;
   state: 'unadopted' | 'adopted';
   online?: boolean;
-  /** Where "Sign in with Pulzar" sends the browser. Adopted gateways only. */
+  /** Where "Sign in with Pulzr" sends the browser. Adopted gateways only. */
   platform?: string;
   /** This gateway's EUI, for the same link. */
   deviceId?: string;
@@ -39,7 +39,7 @@ export interface RecoveryChallenge {
     nonce: string;
     issued: number;
     expiresIn: number;
-    /** The single string an operator transcribes into Pulzar Cloud. */
+    /** The single string an operator transcribes into Pulzr Cloud. */
     code: string;
   };
   hostname: string;
@@ -114,7 +114,7 @@ export interface AddonItem {
   title: string;
 }
 
-/** GET /api/system/addons. Read-only here: installs come from Pulzar Net. */
+/** GET /api/system/addons. Read-only here: installs come from Pulzr Net. */
 export interface AddonStatus {
   wanted: string[];
   deny: string[];
@@ -463,7 +463,7 @@ export interface ClaimStatus {
   /** 'reclaiming': adopted, but the claim was revoked (the gateway changed
       hands or was released) and claimId is the new one waiting to be adopted. */
   adoption: 'unadopted' | 'adopting' | 'adopted' | 'reclaiming';
-  /** Whether Pulzar Cloud already knows about this pending claim. When it does
+  /** Whether Pulzr Cloud already knows about this pending claim. When it does
       the QR is a short URL; when it does not it carries the gateway's identity
       inline so a scan still works with no uplink. */
   registered: boolean;
@@ -657,7 +657,7 @@ export interface LanClient {
   ip: string | null;
   hostname: string | null;
   reserved: string | null;
-  /** `parkeze` is the cloud's name for the Pulzar-only policy; it stays. */
+  /** `parkeze` is the cloud's name for the Pulzr-only policy; it stays. */
   policy: 'parkeze' | 'internet';
   online: boolean;
   /** Unix seconds; DHCP contact, kept across reboots. */
@@ -808,7 +808,7 @@ export interface PortUplink {
   addressing: Addressing;
   state: { up: boolean; address: string | null; addresses?: string[]; gateway: string | null; dns?: string[] };
   /** The router at the end of it: its MAC from the ARP table, its maker as
-      Pulzar Cloud named it on the last report. */
+      Pulzr Cloud named it on the last report. */
   router: { address: string; mac: string | null; maker: string | null } | null;
   /** The public side, for the uplink the last report left on. */
   internet: { address: string | null; provider: { name: string | null; asn: number | null } | null } | null;
@@ -820,7 +820,7 @@ export interface PortNeighbor {
   name: string | null;
   description: string | null;
   chassis: string | null;
-  /** The chassis MAC's maker, as Pulzar Cloud named it. */
+  /** The chassis MAC's maker, as Pulzr Cloud named it. */
   maker?: string | null;
   managementAddress: string | null;
   capabilities: string[];
@@ -877,7 +877,7 @@ export interface PortsLayout {
 // ── speed tests ─────────────────────────────────────────────────────────────
 
 /** One test: `direct` on one uplink to a LibreSpeed server, or `tunnel`,
-    measured by Pulzar Cloud over WireGuard. */
+    measured by Pulzr Cloud over WireGuard. */
 export interface SpeedResult {
   at: number;
   test: 'direct' | 'tunnel';

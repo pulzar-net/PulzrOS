@@ -72,7 +72,7 @@ fi
 factory="$(find "${SRC}" -maxdepth 1 -name '*squashfs-factory.img.gz' | head -n1)"
 [ -n "${factory}" ] || die "no squashfs-factory image for ${BOARD}"
 
-# And the one for a gateway already running PulzarOS.
+# And the one for a gateway already running PulzrOS.
 sysupgrade="$(find "${SRC}" -maxdepth 1 -name '*squashfs-sysupgrade.img.gz' | head -n1)"
 
 log "Packaging ${BOARD}"
@@ -87,7 +87,7 @@ log "Packaging ${BOARD}"
 # holding all device config — is simply absent from the file, and writing the
 # image leaves whatever was there before untouched.
 #
-# On a card that has run PulzarOS before, that means a re-flash silently keeps
+# On a card that has run PulzrOS before, that means a re-flash silently keeps
 # the old overlay: old passwords, old identity, old /etc/config, and
 # /etc/uci-defaults still marked as already-run, so the new image's first-boot
 # scripts never execute. The device boots the new squashfs wearing the old

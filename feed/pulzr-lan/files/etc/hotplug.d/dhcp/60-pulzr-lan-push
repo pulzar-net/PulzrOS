@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# A DHCP lease added, changed or expired: push the LAN to Pulzar Cloud
+# A DHCP lease added, changed or expired: push the LAN to Pulzr Cloud
 # (pulzr-mqtt-agent --push lan), so it learns where a device is when it moves
 # instead of asking every gateway every five minutes over its SIM.
 #

@@ -9,7 +9,7 @@ Architecture: all
 Description: The devlan zone: ports for devices this gateway serves.
  DHCP and DNS with per-device reservations, NAT out whichever uplink is
  routing, clients isolated from each other, the console and the management
- tunnel, and a per-client egress policy of Pulzar only or the internet. Counts
+ tunnel, and a per-client egress policy of Pulzr only or the internet. Counts
  each client's traffic per uplink, and opens the one kind of forward a gateway
  makes: from the management tunnel to one client's port, for a bounded time.
  Every fifteen minutes, nmap asks each client on the LAN which of SSH, telnet

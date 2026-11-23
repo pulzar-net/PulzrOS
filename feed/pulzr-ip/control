@@ -5,7 +5,7 @@ Architecture: @ARCH@
 Depends: pulzr-base
 Description: Requests to devices on the gateway's LAN for their codecs.
  A device that speaks its own protocol over IP (an IP camera's settings API)
- is driven by its device type's codec in Pulzar, which turns each command into
+ is driven by its device type's codec in Pulzr, which turns each command into
  HTTP, TCP or UDP requests; pulzr-edge-ip makes them, against that device's
  address on the LAN and nothing else. Nothing device-specific is on the
  gateway. In every image with LAN ports (PACKAGES_LAN). Built from

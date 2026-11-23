@@ -10,7 +10,7 @@
 #   pulzr-ap key                 print this unit's AP passphrase
 #   pulzr-ap ssid                print this unit's SSID
 #   pulzr-ap report              the SSID and passphrase, as JSON, for
-#                                  Pulzar Cloud. false if this gateway can never
+#                                  Pulzr Cloud. false if this gateway can never
 #                                  raise one; null if there is nothing to say
 #                                  this time
 #   pulzr-ap station-check       the watchdog's: see station_check below
@@ -52,7 +52,7 @@
 #   UNADOPTED   The device holds no credentials: no tunnel, no MQTT
 #               password, no organisation. There is nothing to steal, and the
 #               only useful thing anybody can do is claim it — which needs a
-#               Pulzar login and is audited. So the AP is OPEN and the console
+#               Pulzr login and is audited. So the AP is OPEN and the console
 #               is the provisioning flow. This is the out-of-box experience and
 #               it costs nothing to give away.
 #
@@ -62,7 +62,7 @@
 #                   MOTD and readable from the console by anyone already
 #                   authorised;
 #                 * and the console behind it STILL demands a signature from
-#                   Pulzar Cloud before it will change anything.
+#                   Pulzr Cloud before it will change anything.
 #
 #               Two independent factors, and neither is guessable from the
 #               street. See docs/src/content/docs/access.md.
@@ -72,7 +72,7 @@
 # The obvious attack on a fallback like this is to cut or jam the uplink until
 # the gateway raises its AP. That works — and is useless, because an adopted
 # gateway's AP is WPA2 with a key the attacker does not have, and the console
-# behind it wants a signature from Pulzar Cloud. All the attacker achieves is a
+# behind it wants a signature from Pulzr Cloud. All the attacker achieves is a
 # log line that gets reported the moment the gateway is back.
 
 set -e
@@ -298,7 +298,7 @@ button() {
         return 1
     fi
 
-    # Read back by Pulzar Cloud with the fallback's raises: a gateway whose AP
+    # Read back by Pulzr Cloud with the fallback's raises: a gateway whose AP
     # keeps appearing is telling you something.
     mkdir -p "${JOURNAL%/*}"
     printf '{"at":%s,"reason":"button"}\n' "$(date +%s)" >> "${JOURNAL}"
@@ -306,7 +306,7 @@ button() {
 }
 
 # What somebody standing at this gateway needs to get onto its AP, for
-# Pulzar Cloud to give them. The gateway cannot show it: it has no screen, and
+# Pulzr Cloud to give them. The gateway cannot show it: it has no screen, and
 # the console that would is behind the AP. So it goes up on the report while
 # there is an uplink, ahead of the day there is not.
 #

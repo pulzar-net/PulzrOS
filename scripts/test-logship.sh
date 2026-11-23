@@ -7,7 +7,7 @@
 # What it must do: send lines at the configured level and worse, stamped from
 # logd's clock; never its own lines; escape what JSON needs escaped; hold to
 # the token bucket and count what it held back; not send a line twice after a
-# restart; keep a batch Pulzar Cloud did not take and send it with the next.
+# restart; keep a batch Pulzr Cloud did not take and send it with the next.
 set -uo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SHIP="${ROOT_DIR}/feed/pulzr-adopt/files/usr/sbin/pulzr-logship"

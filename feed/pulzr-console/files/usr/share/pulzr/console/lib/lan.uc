@@ -8,7 +8,7 @@
 // standing at it, and never reaches the tunnel (see pulzr-lan).
 //
 // Everything changed here lands in pulzr-lan's own state (UCI dhcp and
-// pulzr), which `pulzr-lan status` reads back, so Pulzar Cloud's `lan` op
+// pulzr), which `pulzr-lan status` reads back, so Pulzr Cloud's `lan` op
 // sees a reservation made at the gateway exactly as one it made itself.
 
 let _m_util = loadfile('/usr/share/pulzr/console/lib/util.uc', { raw_mode: true })();

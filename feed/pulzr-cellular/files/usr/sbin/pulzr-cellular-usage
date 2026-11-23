@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# Track bytes over the cellular interface, so an operator and Pulzar Cloud can
+# Track bytes over the cellular interface, so an operator and Pulzr Cloud can
 # both see what the SIM is spending.
 #
 #   pulzr-cellular-usage           print JSON
