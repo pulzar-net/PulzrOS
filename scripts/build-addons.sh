@@ -180,6 +180,11 @@ for pkgdir in "${FEED_DIR}"/*/; do
   # On fd 3: apk and tar below read stdin, and would eat the rest of the list.
   while read -r arch _ <&3; do
     case "${arch}" in ''|'#'*) continue ;; esac
+    # PULZR_ADDON_ARCHES: only these architectures, for a CI run that builds
+    # some boards (build.yml's dispatch). Unset, every one; a tag always is.
+    if [ -n "${PULZR_ADDON_ARCHES:-}" ]; then
+      case " ${PULZR_ADDON_ARCHES} " in *" ${arch} "*) ;; *) continue ;; esac
+    fi
     # An arch where every board that may have it carries it in the image (the
     # RAKs' pulzr-cellular) has nobody to install it, so nothing to publish.
     installable="$(installable_on "${name}" "${arch}")"

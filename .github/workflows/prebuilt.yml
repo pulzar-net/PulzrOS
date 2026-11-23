@@ -33,8 +33,13 @@ on:
       - 'scripts/device-imagebuilder-graft.sh'
       - '.github/workflows/prebuilt.yml'
   # build.yml dispatches this for a build it finds missing (an evicted cache,
-  # or a push that changed one before this ran).
+  # or a push that changed one before this ran), for the boards that wait.
   workflow_dispatch:
+    inputs:
+      boards:
+        description: 'Only what these boards need (space separated). Empty builds all.'
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -50,10 +55,23 @@ jobs:
       devices: ${{ steps.list.outputs.devices }}
     steps:
       - uses: actions/checkout@v4
+      # Every SDK target and every board's device support, the boards waiting
+      # on it included, so a change to one is built the day it is made; or a
+      # dispatch's boards' only. Through the environment: the input is
+      # arbitrary text.
       - id: list
+        env:
+          REQUESTED: ${{ inputs.boards }}
         run: |
-          echo "sdk=$(sdk/targets | jq -Rsc 'split("\n") | map(select(. != ""))')" >> "$GITHUB_OUTPUT"
-          echo "devices=$(./build.sh --list-json | jq -c '[.[] | select(.device != "") | {device, deviceKey}] | unique')" >> "$GITHUB_OUTPUT"
+          all="$(./build.sh --list-json)"
+          if [ -n "${REQUESTED}" ]; then
+            wanted="$(printf '%s' "${REQUESTED}" | tr ' ' '\n' | grep -v '^[[:space:]]*$' | jq -R . | jq -sc .)"
+            all="$(jq -c --argjson w "${wanted}" '[.[] | select(.board as $b | $w | index($b))]' <<<"${all}")"
+            echo "sdk=$(jq -c '[.[].sdk] | unique' <<<"${all}")" >> "$GITHUB_OUTPUT"
+          else
+            echo "sdk=$(sdk/targets | jq -Rsc 'split("\n") | map(select(. != ""))')" >> "$GITHUB_OUTPUT"
+          fi
+          echo "devices=$(jq -c '[.[] | select(.device != "") | {device, deviceKey}] | unique' <<<"${all}")" >> "$GITHUB_OUTPUT"
 
   sdk:
     name: SDK (${{ matrix.target }})

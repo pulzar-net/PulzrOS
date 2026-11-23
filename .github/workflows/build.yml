@@ -2,7 +2,8 @@
 #
 # ── SHAPE ──────────────────────────────────────────────────────────────────
 #
-#   check     lint and typecheck. Fast, and gates everything else.
+#   check     lint and typecheck, beside the build rather than before it; it
+#             gates what leaves the run (the add-ons' publish, the release).
 #   console   build the React app ONCE.
 #   feed      stage the noarch packages ONCE.
 #   image     per-board matrix: restores its own target's SDK packages and
@@ -90,14 +91,8 @@ jobs:
   check:
     name: Checks
     runs-on: ${{ (github.event.repository.private && vars.RUNNER) || 'ubuntu-latest' }}
-    outputs:
-      lora-targets: ${{ steps.lora.outputs.targets }}
     steps:
       - uses: actions/checkout@v4
-
-      # The targets the LoRa packages are built for, from the boards.
-      - id: lora
-        run: echo "targets=$(sdk/targets | jq -Rsc 'split("\n") | map(select(. != ""))')" >> "$GITHUB_OUTPUT"
 
       # Pulzar Cloud offers a release to a gateway when the release's version
       # is newer than the one the gateway reports, and a gateway reports
@@ -336,9 +331,12 @@ jobs:
           exit $fail
 
   # ───────────────────────────────────────────────────────────────────────
+  # Not after check: nothing here reads what check decides, and waiting for it
+  # was half of a warm run before the first image. check gates what leaves the
+  # run instead (the add-ons' publish and the release), and a failing check
+  # fails the run.
   console:
     name: Console
-    needs: check
     runs-on: ${{ (github.event.repository.private && vars.RUNNER) || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
@@ -375,12 +373,12 @@ jobs:
   # own; the add-ons need every architecture's, which this collects.
   prebuilt:
     name: Collect ${{ matrix.target }}
-    needs: check
+    needs: boards
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        target: ${{ fromJSON(needs.check.outputs.lora-targets) }}
+        target: ${{ fromJSON(needs.boards.outputs.sdk) }}
     steps:
       - uses: actions/checkout@v4
 
@@ -538,10 +536,10 @@ jobs:
     # ImageBuilders (prebuilt-devices): an upstream package for a source-only
     # target (the GL-SFT1200's siflower) resolves against that board's own
     # ImageBuilder (scripts/addon-upstream.sh). Not on any image's path.
-    needs: [feed, boards, prebuilt, prebuilt-devices]
+    needs: [check, feed, boards, prebuilt, prebuilt-devices]
     # A collector that found nothing fails, and the add-ons with it; a missing
     # graft ImageBuilder also fails build-addons.sh by name.
-    if: ${{ !cancelled() && needs.feed.result == 'success' && needs.boards.result == 'success' && needs.prebuilt.result == 'success' }}
+    if: ${{ !cancelled() && needs.check.result == 'success' && needs.feed.result == 'success' && needs.boards.result == 'success' && needs.prebuilt.result == 'success' }}
     environment: ${{ startsWith(github.ref, 'refs/tags/') && 'release' || 'build' }}
     runs-on: ${{ (github.event.repository.private && vars.RUNNER) || 'ubuntu-latest' }}
     env:
@@ -598,9 +596,11 @@ jobs:
       # an add-on pins the pulzr-base the images carry. Not the noarch half,
       # which the feed job staged and which needs the console this job lacks.
       - name: Stage every architecture
+        env:
+          ARCHES: ${{ needs.boards.outputs.arches }}
         run: |
-          PULZR_FEED_ARCHES="$(awk '!/^[[:space:]]*#/ && NF { print $1 }' feed/*/arches | sort -u | xargs)" \
-          PULZR_BUILD="$(cat .build/feed/BUILD)" ./build.sh --stage feed
+          [ -n "${ARCHES}" ] || ARCHES="$(awk '!/^[[:space:]]*#/ && NF { print $1 }' feed/*/arches | sort -u | xargs)"
+          PULZR_FEED_ARCHES="${ARCHES}" PULZR_BUILD="$(cat .build/feed/BUILD)" ./build.sh --stage feed
 
       # Only the apk inside it is used, and it is the same in every
       # ImageBuilder, so rpi4's, which that board's image job already caches.
@@ -614,6 +614,8 @@ jobs:
       - name: Build and sign the repository
         env:
           APK_KEY: ${{ secrets.PULZR_ADDONS_APK_KEY }}
+          # Every board's on a push or a tag; a dispatch's boards' otherwise.
+          PULZR_ADDON_ARCHES: ${{ needs.boards.outputs.arches }}
         run: |
           if [ "${GITHUB_REF_TYPE}" = tag ]; then
             export PULZR_ADDONS_TAG="${GITHUB_REF_NAME}"
@@ -716,11 +718,15 @@ jobs:
   # ───────────────────────────────────────────────────────────────────────
   boards:
     name: Discover boards
-    needs: check
     runs-on: ${{ (github.event.repository.private && vars.RUNNER) || 'ubuntu-latest' }}
     outputs:
       matrix: ${{ steps.list.outputs.matrix }}
+      # What the add-ons collect and pack, from the matrix, so a dispatch for
+      # one board narrows them too: its SDK target, its device ImageBuilder,
+      # its architecture.
+      sdk: ${{ steps.list.outputs.sdk }}
       devices: ${{ steps.list.outputs.devices }}
+      arches: ${{ steps.list.outputs.arches }}
     steps:
       - uses: actions/checkout@v4
       - id: list
@@ -756,10 +762,21 @@ jobs:
           [ "$(jq 'length' <<<"${matrix}")" -gt 0 ] \
             || { echo "::error::no boards matched"; exit 1; }
 
-          echo "matrix=${matrix}" >> "$GITHUB_OUTPUT"
-          # Every board's device support, the boards waiting on it included, so
-          # a change to one is built the day it is made.
-          echo "devices=$(./build.sh --list-json | jq -c '[.[] | select(.device != "") | {device, deviceKey}] | unique')" >> "$GITHUB_OUTPUT"
+          {
+            echo "matrix=${matrix}"
+            # A push or a tag packs every add-on the release ships, a board
+            # waiting on device support's architecture included (arches empty:
+            # all); a dispatch, its boards' only.
+            if [ -n "${REQUESTED}" ]; then
+              echo "sdk=$(jq -c '[.[].sdk] | unique' <<<"${matrix}")"
+              echo "devices=$(jq -c '[.[] | select(.device != "") | {device, deviceKey}] | unique' <<<"${matrix}")"
+              echo "arches=$(jq -r '[.[].arch] | unique | join(" ")' <<<"${matrix}")"
+            else
+              echo "sdk=$(sdk/targets | jq -Rsc 'split("\n") | map(select(. != ""))')"
+              echo "devices=$(./build.sh --list-json | jq -c '[.[] | select(.device != "") | {device, deviceKey}] | unique')"
+              echo "arches="
+            fi
+          } >> "$GITHUB_OUTPUT"
           jq -r '.[] | "  \(.board)  \(.target)/\(.subtarget)"' <<<"${matrix}"
 
   image:
@@ -836,7 +853,8 @@ jobs:
                       -q '[.[] | select(.status != "completed")] | length' || echo 0)"
           if [ "${active}" = 0 ]; then
             gh workflow run prebuilt.yml -R "${GITHUB_REPOSITORY}" --ref "${{ github.event.repository.default_branch }}" \
-              && echo "Started prebuilt.yml." || echo "::warning::Could not start prebuilt.yml."
+                -f boards="${{ matrix.board }}" \
+              && echo "Started prebuilt.yml for ${{ matrix.board }}." || echo "::warning::Could not start prebuilt.yml."
           else
             echo "prebuilt.yml is already running."
           fi
@@ -947,7 +965,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     # Not the add-ons: they publish to their own bucket, and a firmware fix
     # must never wait on, or be blocked by, an add-on that failed to build.
-    needs: [image, boards]
+    needs: [check, image, boards]
     runs-on: ${{ (github.event.repository.private && vars.RUNNER) || 'ubuntu-latest' }}
     permissions:
       contents: write

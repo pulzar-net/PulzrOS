@@ -69,6 +69,8 @@ docs/       this site
 
 The hours-long builds run in `prebuilt.yml`: each SDK target's packages (`sdk/build.sh`, cached by `sdk/key`) and each device ImageBuilder (`scripts/device-imagebuilder.sh`, cached by its device key). Each is its own concurrency group that never cancels a running job, and saves its cache as soon as it is built. `build.yml` only restores them. Each board's image job restores its own target's SDK packages and ImageBuilder, stages its own architecture's packages, and assembles, so no board waits on another target. A board whose build is not cached yet waits: its job says so, starts `prebuilt.yml` if nothing is running it, and `prebuilt.yml` starts `build.yml` again when the build is saved. A release refuses to publish unless every board has an image.
 
+`check` runs beside the build, not before it, and gates only what leaves the run: the add-ons' publish and the release. A dispatch of `build.yml` with `boards` (for example `gl-sft1200`) narrows everything to those boards: their images, their SDK targets and device ImageBuilders, and the add-ons for their architectures. A push or a tag builds every board.
+
 ## Packages
 
 | Package | What it is |
