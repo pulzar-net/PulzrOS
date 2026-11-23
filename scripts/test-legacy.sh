@@ -239,7 +239,7 @@ PULZR_SDK_OUT="${SDK_STUB}" bash "${ROOT_DIR}/scripts/build-feed.sh" "${ROOT_DIR
 # sysupgrade to PulzrOS has already dropped the image's old packages
 # (parkeze-ble was in the Pi images; pulzr-ble is an add-on). Listed by hand,
 # so a renamed package cannot drop out of this check by accident.
-NO_OLD_NAME="pulzr-probe pulzr-thread pulzr-modbus pulzr-zigbee pulzr-zwave pulzr-matter pulzr-ble"
+NO_OLD_NAME="pulzr-probe pulzr-thread pulzr-modbus pulzr-zigbee pulzr-zwave pulzr-matter pulzr-ble pulzr-drivers"
 for dir in "${ROOT_DIR}"/feed/pulzr-*/; do
     n="$(basename "${dir}")"; old="parkeze-${n#pulzr-}"
     case " ${NO_OLD_NAME} " in *" ${n} "*) continue ;; esac
