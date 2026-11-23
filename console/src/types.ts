@@ -662,6 +662,9 @@ export interface LanLink {
   up: boolean;
   /** Mb/s; null with no link. */
   speed: number | null;
+  duplex?: 'full' | 'half' | null;
+  /** Every up and down since boot; 1 or 2 for a port that came up once. */
+  carrierChanges?: number;
 }
 
 /** A tunnel forward the cloud opened (lan-forward). Read here, never opened. */

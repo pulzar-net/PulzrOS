@@ -370,6 +370,7 @@ check "back: uplinks that went are out of the order" '["wan","wwan"]' "$(jq -c .
 
 sed -e "s#'/etc/pulzr/lan'#'${T}/lan'#" \
     -e "s#'/tmp/dhcp.leases'#'${T}/leases'#" \
+    -e "s#/sys/class/net/#${T}/sys/#g" \
     -e 's/, [0-9]*000)/)/' \
     "${ROOT}/feed/pulzr-lan/files/usr/sbin/pulzr-lan" > "${T}/lan.uc"
 grep -q "${T}/lan'" "${T}/lan.uc" || { echo "FAIL pulzr-lan's state path moved; update this script" >&2; exit 1; }
@@ -444,5 +445,30 @@ lan cellular c2:6c:1d:d1:f7:b3 allow >/dev/null
 check "cellular: back to the default drops the section" 'null' "$(jq -c '.pulzr.lan_c26c1dd1f7b3' "${UCI_JSON}")"
 refuse_lan "a block that is not tcp or udp" cellular c2:6c:1d:d1:f7:b3 allow icmp:1
 refuse_lan "a backwards range" cellular c2:6c:1d:d1:f7:b3 allow udp:10-5
+
+# ── lan: links and clients on the wire with no lease ────────────────────────
+#
+# The Campo camera: a static address on another subnet, so no lease and no
+# ARP entry, only the bridge's own table on lan1. lan2 has no cable.
+mkdir -p "${T}/sys/br-devlan/brif/lan1" "${T}/sys/br-devlan/brif/lan2" "${T}/sys/lan1" "${T}/sys/lan2"
+echo 0x1 > "${T}/sys/br-devlan/brif/lan1/port_no"
+echo 0x2 > "${T}/sys/br-devlan/brif/lan2/port_no"
+printf '1\n' > "${T}/sys/lan1/carrier"; printf '100\n' > "${T}/sys/lan1/speed"
+printf 'full\n' > "${T}/sys/lan1/duplex"; printf '5\n' > "${T}/sys/lan1/carrier_changes"
+printf '0\n' > "${T}/sys/lan2/carrier"; printf '1\n' > "${T}/sys/lan2/carrier_changes"
+# __fdb_entry: MAC, port_no, is_local, ageing timer, port_hi, padding. The
+# camera on lan1, the reserved client on lan2, and the bridge's own address,
+# which is local and is not a client.
+{ printf '\360\000\006\020\221\153\001\000\000\000\000\000\000\000\000\000'
+  printf '\302\154\035\321\367\263\002\000\000\000\000\000\000\000\000\000'
+  printf '\224\203\304\352\256\321\001\001\000\000\000\000\000\000\000\000'
+} > "${T}/sys/br-devlan/brforward"
+check "status: each port's link" \
+    '[{"name":"lan1","up":true,"speed":100,"duplex":"full","carrierChanges":5},{"name":"lan2","up":false,"speed":null,"duplex":null,"carrierChanges":1}]' \
+    "$(lan status | jq -c .links)"
+check "status: on the wire with no lease, by its port" '[{"mac":"c2:6c:1d:d1:f7:b3","port":"lan2"},{"mac":"f0:00:06:10:91:6b","port":"lan1"}]' \
+    "$(lan status | jq -c '[.clients[] | {mac, port}] | sort_by(.mac)')"
+check "status: a wire-only client has no address and no DHCP contact" 'null null false' \
+    "$(lan status | jq -r '.clients[] | select(.mac == "f0:00:06:10:91:6b") | "\(.ip) \(.firstSeen) \(.online)"')"
 
 exit "${fail}"

@@ -11,12 +11,10 @@
 // pulzr), which `pulzr-lan status` reads back, so Pulzar Cloud's `lan` op
 // sees a reservation made at the gateway exactly as one it made itself.
 
-let _m_fs = require('fs');
-let readfile = _m_fs.readfile;
 let _m_util = loadfile('/usr/share/pulzr/console/lib/util.uc', { raw_mode: true })();
 
 // ucode does not hoist function declarations; see util.uc.
-let lan, links, status, setPolicy, reserve, setCellular, expose;
+let lan, status, setPolicy, reserve, setCellular, expose;
 
 let runJson = _m_util.runJson;
 
@@ -27,22 +25,10 @@ const NAME = /^[A-Za-z0-9-]{1,63}$/;
 // pulzr-lan with arguments already checked against the patterns above.
 lan = (args) => _m_util.tool('/usr/sbin/pulzr-lan', args);
 
-// Each LAN port's link, from the kernel. pulzr-lan reports the ports by
-// name only, and "nothing answers on lan2" is usually a cable.
-links = function(ports) {
-    return map(ports, (name) => {
-        const sys = sprintf('/sys/class/net/%s/', name);
-        const speed = int(trim(readfile(sys + 'speed') ?? ''));
-        return { name, up: trim(readfile(sys + 'operstate') ?? '') == 'up', speed: speed > 0 ? speed : null };
-    });
-};
-
+// Each port's link comes with it (pulzr-lan's portLinks), as it does over
+// MQTT, so the cloud sees what this page does.
 status = function() {
-    const s = runJson('/usr/sbin/pulzr-lan status') ?? { configured: false };
-    if (!s.configured) return s;
-    const ports = filter(s.ports ?? [], (p) => match(p, /^[A-Za-z0-9._-]+$/));
-    s.links = links(ports);
-    return s;
+    return runJson('/usr/sbin/pulzr-lan status') ?? { configured: false };
 };
 
 setPolicy = function(req) {

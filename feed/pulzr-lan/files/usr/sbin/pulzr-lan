@@ -107,6 +107,7 @@ const MAX_SECONDS = 86400;
 const STATE = '/etc/pulzr/lan';
 const JOURNAL = STATE + '/forwards.log';
 const SEEN = STATE + '/seen.json';
+const WIRE_ONLY_MAX = 8;
 const JOURNAL_KEEP = 200;
 const JOURNAL_REPORT = 20;
 const LEASES = '/tmp/dhcp.leases';
@@ -427,6 +428,22 @@ let ports = () => {
     return out;
 };
 
+// Each LAN port's link, from sysfs: no RTNL dump, so it costs what reading
+// six small files does. speed and duplex only with carrier, since the kernel
+// refuses them on a port without one. carrierChanges counts every up and
+// down since boot (a port that came up once at boot reads 1 or 2), so a
+// cable or a device that keeps dropping shows as a number that keeps moving.
+let portLinks = (ports) => map(ports, (name) => {
+    let sys = sprintf('/sys/class/net/%s/', name);
+    let read = (f) => trim(fs.readfile(sys + f) ?? '');
+    let up = read('carrier') == '1';
+    let speed = up ? int(read('speed')) : 0;
+    let duplex = up ? read('duplex') : '';
+    return { name, up, speed: speed > 0 ? speed : null,
+             duplex: duplex == 'full' || duplex == 'half' ? duplex : null,
+             carrierChanges: int(read('carrier_changes')) || 0 };
+});
+
 // Device to the logical uplink it carries, so traffic reads "wan", "wwan"
 // and "wwifi" rather than eth0 and phy0-sta0. The uplink port also carries
 // the console and link-local interfaces, so the one with a default route
@@ -536,7 +553,15 @@ let status = () => {
         c.lastSeen = time();
     }
 
-    let behind = ports();
+    // On the wire but never in DHCP or ARP: a camera with a static address
+    // on another subnet sends frames the bridge learns and nothing else.
+    // Listed with its port and nothing more, so the cloud can say it is
+    // there. Capped: a LAN port cabled into a site switch learns every MAC
+    // on that network, and the whole answer has to stay under the MQTT
+    // agent's 8 KB.
+    let behind = ports(), unknown = 0;
+    for (let mac in sort(keys(behind)))
+        if (!clients[mac] && unknown++ < WIRE_ONLY_MAX) client(mac);
     for (let mac in keys(clients))
         clients[mac].port = behind[mac] ?? null;
 
@@ -554,6 +579,7 @@ let status = () => {
         configured: true,
         address: cursor.get('network', 'devlan', 'ipaddr'),
         ports: cursor.get('network', 'devlan_dev', 'ports') ?? [],
+        links: portLinks(cursor.get('network', 'devlan_dev', 'ports') ?? []),
         clients: sort(values(clients), (a, b) => (a.ip ?? '') < (b.ip ?? '') ? -1 : 1),
         forwards: forwards(),
         exposed: exposed(),

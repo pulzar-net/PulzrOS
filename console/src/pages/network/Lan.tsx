@@ -172,7 +172,11 @@ export default function Lan() {
             ? <Badge tone="success">Online</Badge>
             : info.getValue()
               ? `${duration(Math.floor(Date.now() / 1000) - info.getValue())} ago`
-              : '—',
+              // In the bridge's table and nowhere else: never asked for a
+              // lease, and not on this subnet if it answers no ARP either.
+              : info.row.original.port && !info.row.original.ip
+                ? <Badge tone="warning">No lease</Badge>
+                : '—',
       }),
       column.display({
         id: 'reserve',
@@ -221,10 +225,15 @@ export default function Lan() {
               value={
                 <span className={styles.status}>
                   {link.up ? <Badge tone="success">Up</Badge> : <Badge tone="neutral">No link</Badge>}
-                  {link.up && link.speed && <span>{link.speed >= 1000 ? `${link.speed / 1000} Gb/s` : `${link.speed} Mb/s`}</span>}
+                  {link.up && link.speed && (
+                    <span title={link.carrierChanges != null ? `${link.carrierChanges} link changes since boot` : undefined}>
+                      {link.speed >= 1000 ? `${link.speed / 1000} Gb/s` : `${link.speed} Mb/s`}
+                      {link.duplex === 'half' && ' half duplex'}
+                    </span>
+                  )}
                   <span className={styles.dim}>
                     {clients
-                      .filter((c) => c.port === link.name && c.online)
+                      .filter((c) => c.port === link.name)
                       .map((c) => c.hostname ?? c.ip ?? c.mac)
                       .join(', ')}
                   </span>

@@ -133,6 +133,8 @@ to stay under the agent's 8KB answer.
 ```json
 {
   "configured": true, "address": "192.168.64.1", "ports": ["eth1", "eth2"],
+  "links": [{ "name": "eth1", "up": true, "speed": 100, "duplex": "full", "carrierChanges": 2 },
+            { "name": "eth2", "up": false, "speed": null, "duplex": null, "carrierChanges": 0 }],
   "clients": [{
     "mac": "c2:6c:1d:d1:f7:b3", "ip": "192.168.64.50", "hostname": "plc-1",
     "reserved": "192.168.64.50", "policy": "parkeze", "online": true, "port": "eth1",
@@ -149,10 +151,22 @@ to stay under the agent's 8KB answer.
 }
 ```
 
+- `links` is each port in `br-devlan` and its link, read from sysfs
+  (`carrier`, `speed`, `duplex`, `carrier_changes`), never through RTNL.
+  `speed` and `duplex` are null without a link. `carrierChanges` counts every
+  up and down since boot: a port that came up once reads 1 or 2, and one that
+  keeps climbing is a cable or a device dropping its link.
+- A client is anything that leased an address, holds a reservation, answers
+  ARP or is in the bridge's table. The last alone, with an `ip` of null and no
+  `firstSeen`, is a device on the wire that never asked for a lease: a camera
+  with a static address on another subnet. At most eight of those are listed,
+  so a LAN port cabled into a site switch cannot push the answer past the
+  agent's 8 KB.
 - `port` is the LAN port the client is behind, from the bridge's software
   table (`brforward`), never `bridge fdb show`: on a DSA switch that dumps the
   hardware table too, which on the GL-SFT1200 takes six seconds a port under
-  RTNL. Null until the client has sent something through the bridge.
+  RTNL. Null until the client has sent something through the bridge, and
+  again once the bridge ages it out, five minutes after its last frame.
 - `firstSeen` and `lastSeen` are DHCP contact, kept across reboots and
   upgrades. A device answering ARP right now is `online`, and its `lastSeen`
   is now.
