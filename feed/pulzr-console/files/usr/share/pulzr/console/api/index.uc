@@ -417,6 +417,12 @@ const ROUTES = {
         const result = apply.guard(CELLULAR_WINDOW, s, () => actions.setCellular(req, s));
         return result.error ? error(409, result.error) : respond(200, result);
     },
+    // Inside the window too: a SIM that is empty or not provisioned cuts off
+    // a gateway whose only way in is cellular.
+    'POST /api/network/cellular/slot': (env, req, s) => {
+        const result = apply.guard(CELLULAR_WINDOW, s, () => actions.setSimSlot(req, s));
+        return result.error ? error(409, result.error) : respond(200, result);
+    },
 
     // ── apply: the rollback window, see lib/apply.uc ────────────────────────
     'GET  /api/apply/status':     () => respond(200, apply.status()),

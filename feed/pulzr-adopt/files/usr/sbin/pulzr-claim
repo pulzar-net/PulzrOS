@@ -524,7 +524,7 @@ apply_offline() {
 # checked against a hash Pulzar Cloud stored at registration.
 
 facts() {
-    local modem wired board_id version modem_present modem_model modem_kind wired_usable tunnel iccid host_key tunnel_via ssh_ca wifi_uplink
+    local modem wired board_id version modem_present modem_model modem_kind wired_usable tunnel iccid sim_slots host_key tunnel_via ssh_ca wifi_uplink
 
     modem="$(pulzr-modem-detect --status 2>/dev/null || echo '{"present":false}')"
     wired="$(pulzr-wireguard-route status 2>/dev/null || echo '{"wiredUsable":false}')"
@@ -536,6 +536,11 @@ facts() {
     # Ethernet modem, which has no SIM this gateway can read, so simIccid is
     # empty for it and Pulzar Cloud should not wait for one.
     modem_kind="$(echo "${modem}" | jsonfilter -e '@.kind' 2>/dev/null)" || true
+    # Each SIM holder and which is in use, only from a modem with more than
+    # one (pulzr-modem-detect, "SIM SLOTS"); null otherwise, so the cloud
+    # offers a choice of slot only where there is one.
+    sim_slots="$(echo "${modem}" | jsonfilter -e '@.slots' 2>/dev/null)" || true
+    case "${sim_slots}" in \[*\]) ;; *) sim_slots=null ;; esac
 
     # This gateway's SSH host key, so the cloud can pin it instead of
     # trusting whatever answers on the tunnel address. A shared known_hosts
@@ -582,8 +587,8 @@ facts() {
     apply_support=0
     command -v pulzr-apply >/dev/null 2>&1 && apply_support=1
 
-    printf '{"board":"%s","osVersion":"%s","modemPresent":%s,"modemModel":"%s","modemKind":"%s","simIccid":"%s","sshHostKey":"%s","wiredUsable":%s,"tunnelVia":"%s","tunnelState":"%s","wifiUplink":"%s","consolePort":443,"consoleScheme":"https","tunnelConsolePort":8080,"sshPort":22,"apply":%s,"sshCa":%s,"system":%s,"rakPower":%s,"setupAp":%s,"speedtest":%s,"wiredRouters":%s,"activeUplink":"%s","stats":%s,"addons":%s,"radios":%s,"thread":%s,"consoleCertificate":%s,"listening":%s%s}' \
-        "${board_id}" "${version}" "${modem_present}" "${modem_model:-}" "${modem_kind:-}" "${iccid:-}" \
+    printf '{"board":"%s","osVersion":"%s","modemPresent":%s,"modemModel":"%s","modemKind":"%s","simIccid":"%s","simSlots":%s,"sshHostKey":"%s","wiredUsable":%s,"tunnelVia":"%s","tunnelState":"%s","wifiUplink":"%s","consolePort":443,"consoleScheme":"https","tunnelConsolePort":8080,"sshPort":22,"apply":%s,"sshCa":%s,"system":%s,"rakPower":%s,"setupAp":%s,"speedtest":%s,"wiredRouters":%s,"activeUplink":"%s","stats":%s,"addons":%s,"radios":%s,"thread":%s,"consoleCertificate":%s,"listening":%s%s}' \
+        "${board_id}" "${version}" "${modem_present}" "${modem_model:-}" "${modem_kind:-}" "${iccid:-}" "${sim_slots}" \
         "${host_key:-}" "${wired_usable}" "${tunnel_via:-none}" "${tunnel:-none}" "${wifi_uplink:-unchecked}" "${apply_support}" "${ssh_ca}" "$(system_facts)" "$(rak_power_facts)" "$(setup_ap_facts)" "$(speedtest_facts)" "$(router_facts)" "$(active_uplink)" "$(stats_facts)" \
         "$(addon_facts)" "$(radio_facts)" "$(thread_facts)" "$(console_cert_facts)" "$(listening_facts)" "$(console_csr_field)"
 }

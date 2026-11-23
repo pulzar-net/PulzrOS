@@ -59,6 +59,23 @@ unlock it and tap Trust when it asks, with Personal Hotspot on.
 None of the `usbwan` rows has been tried on hardware, and neither have MBIM or
 AT modems; QMI is the RAK's and the one that has.
 
+### SIM slots
+
+A modem with more than one SIM holder (a dual-SIM Quectel, an EM7565) lists
+each in ModemManager's `sim-slots` and says which is primary. A modem with one
+lists none, and then nothing about slots is shown or reported.
+
+| | |
+|---|---|
+| Reported | `pulzr-modem-detect --status`'s `slots`: each slot, whether it holds a SIM, its ICCID, which is in use; on every report as `simSlots`, null without several |
+| Chosen | Backhaul > Cellular's SIM card, or `pulzr-modem-detect --set-slot N`; `--set-primary-sim-slot` in ModemManager, which re-probes the modem |
+| Kept | `pulzr.cellular.sim_slot`, recorded the first time a modem with several is seen, and put back on the modem when it differs (at most once a minute) |
+| Undone | like any uplink change: the switch runs inside the apply window, the slot is in the snapshot, and the revert's reload puts the modem back on the old one (`--sync-slot`) |
+
+A SIM that is empty or not provisioned on the network cuts off a gateway only
+reached over cellular, which is why the switch is not final until the console
+reaches the gateway again.
+
 ### A tethered link is cellular
 
 `usbwan` is a DHCP lease on an Ethernet device, which is exactly what the wired

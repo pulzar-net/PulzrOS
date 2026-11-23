@@ -155,6 +155,17 @@ export interface Modem {
   rssi: number | null;
   rsrp: number | null;
   snr: number | null;
+  /** Each SIM holder, on a modem with more than one; null otherwise. */
+  slots?: SimSlot[] | null;
+}
+
+export interface SimSlot {
+  slot: number;
+  /** A SIM in the holder. */
+  present: boolean;
+  iccid: string;
+  /** The one the modem uses. */
+  active: boolean;
 }
 
 export interface NetworkStatus {

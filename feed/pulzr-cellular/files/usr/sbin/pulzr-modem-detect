@@ -4,6 +4,10 @@
 #
 #   pulzr-modem-detect            find it and write it into UCI
 #   pulzr-modem-detect --status   report, change nothing
+#   pulzr-modem-detect --set-slot N
+#                                 use the SIM in slot N, on a modem with several
+#   pulzr-modem-detect --sync-slot
+#                                 put the modem on pulzr.cellular.sim_slot
 #
 # ── WHY THIS IS NEEDED ─────────────────────────────────────────────────────
 #
@@ -28,6 +32,14 @@ command -v mmcli >/dev/null 2>&1 || {
     exit 1
 }
 
+case "$1" in
+    --set-slot)
+        case "$2" in [1-9]) ;; *) echo "a slot number" >&2; exit 2 ;; esac
+        ;;
+    --sync-slot|--status|'') ;;
+    *) echo "usage: pulzr-modem-detect [--status|--set-slot N|--sync-slot]" >&2; exit 2 ;;
+esac
+
 # ModemManager enumerates asynchronously and a modem can take twenty seconds to
 # appear after a cold boot, so this waits rather than concluding there is none.
 modem_index=""
@@ -36,11 +48,13 @@ while [ "${waited}" -lt "${MM_TIMEOUT}" ]; do
     modem_index="$(mmcli -L 2>/dev/null | sed -n 's|.*/Modem/\([0-9]*\).*|\1|p' | head -n1)"
     [ -n "${modem_index}" ] && break
     [ "$1" = "--status" ] && break      # do not block a console page load
+    [ "$1" = "--set-slot" ] && break
     sleep 2
     waited=$((waited + 2))
 done
 
 if [ -z "${modem_index}" ]; then
+    case "$1" in --set-slot|--sync-slot) echo "no modem" >&2; exit 1 ;; esac
     if [ "$1" = "--status" ]; then
         # A HiLink dongle or a tethered phone is a modem ModemManager never
         # sees: it is a USB Ethernet adapter, and pulzr-usb-cellular binds
@@ -82,9 +96,84 @@ esac
 # SIM by ICCID, and until now somebody read it off the card and typed it into
 # the fleet page — next to a device that could simply be asked.
 sim_index="$(echo "${detail}" | sed -n 's|.*primary sim path: */org/freedesktop/ModemManager1/SIM/\([0-9]*\).*|\1|p' | head -n1)"
+iccid_of() {
+    mmcli -i "$1" --output-keyvalue 2>/dev/null | sed -n 's/^sim.properties.iccid *: *//p' | head -n1 | tr -cd '0-9'
+}
 iccid=""
-[ -n "${sim_index}" ] && iccid="$(mmcli -i "${sim_index}" --output-keyvalue 2>/dev/null |
-    sed -n 's/^sim.properties.iccid *: *//p' | head -n1 | tr -cd '0-9')"
+[ -n "${sim_index}" ] && iccid="$(iccid_of "${sim_index}")"
+
+# ── SIM SLOTS ──────────────────────────────────────────────────────────────
+#
+# A modem with two SIM holders (a dual-SIM Quectel, an EM7565) lists each in
+# sim-slots and says which is primary; one with a single holder lists none,
+# and then there is nothing to choose and nothing is reported. ModemManager
+# switches with --set-primary-sim-slot and re-probes the modem, so its index
+# changes and hotplug runs this script again.
+#
+# The slot in use is kept in pulzr.cellular.sim_slot, recorded the first time
+# this sees a modem with several, so pulzr-apply's snapshot always holds the
+# slot before a change: a switch to an empty or unprovisioned SIM that cuts
+# the gateway off is undone when the window runs out, by its reload calling
+# --sync-slot, like any other change to an uplink.
+kv="$(mmcli -m "${modem_index}" --output-keyvalue 2>/dev/null)"
+slot_count="$(echo "${kv}" | sed -n 's/^modem\.generic\.sim-slots\.length *: *//p' | head -n1 | tr -cd '0-9')"
+primary_slot="$(echo "${kv}" | sed -n 's/^modem\.generic\.primary-sim-slot *: *//p' | head -n1 | tr -cd '0-9')"
+slots_json=null
+if [ "${slot_count:-0}" -gt 1 ] 2>/dev/null; then
+    slots_json='['
+    n=1
+    while [ "${n}" -le "${slot_count}" ]; do
+        path="$(echo "${kv}" | sed -n "s/^modem\.generic\.sim-slots\.value\[${n}\] *: *//p" | head -n1)"
+        idx="$(echo "${path}" | sed -n 's|.*/SIM/\([0-9]*\)$|\1|p')"
+        slot_iccid=""
+        [ -n "${idx}" ] && slot_iccid="$(iccid_of "${idx}")"
+        [ "${n}" -gt 1 ] && slots_json="${slots_json},"
+        slots_json="${slots_json}$(printf '{"slot":%d,"present":%s,"iccid":"%s","active":%s}' \
+            "${n}" "$([ -n "${idx}" ] && echo true || echo false)" "${slot_iccid}" \
+            "$([ "${n}" = "${primary_slot}" ] && echo true || echo false)")"
+        n=$((n + 1))
+    done
+    slots_json="${slots_json}]"
+fi
+
+# The modem onto pulzr.cellular.sim_slot. At most once a minute: hotplug runs
+# this on every interface event, and a modem that refuses the switch would
+# otherwise be asked again on each one.
+sync_slot() {
+    local want stamp=/var/run/pulzr-sim-slot
+    want="$(uci -q get pulzr.cellular.sim_slot)"
+    [ -n "${want}" ] && [ -n "${primary_slot}" ] && [ "${want}" != "${primary_slot}" ] || return 0
+    [ "${want}" -le "${slot_count:-0}" ] 2>/dev/null || return 0
+    if [ -f "${stamp}" ] && [ $(( $(date +%s) - $(cat "${stamp}" 2>/dev/null || echo 0) )) -lt 60 ]; then
+        return 0
+    fi
+    date +%s > "${stamp}"
+    if mmcli -m "${modem_index}" --set-primary-sim-slot="${want}" >/dev/null 2>&1; then
+        log "SIM slot ${primary_slot} -> ${want}"
+    else
+        log "the modem refused SIM slot ${want}"
+        return 1
+    fi
+}
+
+case "$1" in
+    --set-slot)
+        [ "${slot_count:-0}" -gt 1 ] 2>/dev/null || { echo "this modem has one SIM slot" >&2; exit 2; }
+        [ "$2" -le "${slot_count}" ] || { echo "this modem has ${slot_count} SIM slots" >&2; exit 2; }
+        uci -q set pulzr.cellular=cellular
+        uci -q set pulzr.cellular.sim_slot="$2"
+        uci commit pulzr
+        rm -f /var/run/pulzr-sim-slot
+        sync_slot || { echo "the modem refused slot $2" >&2; exit 1; }
+        printf '{"slot":%d}\n' "$2"
+        exit 0
+        ;;
+    --sync-slot)
+        rm -f /var/run/pulzr-sim-slot
+        sync_slot
+        exit $?
+        ;;
+esac
 
 # Poll ModemManager's own location state for a fix and freeze it into
 # pulzr.location.*, the same reference-coordinate mechanism a board with no
@@ -222,8 +311,8 @@ if mmcli -m "${modem_index}" --location-status 2>/dev/null | grep -q 'gps-nmea';
 fi
 
 if [ "$1" = "--status" ]; then
-    printf '{"present":true,"kind":"%s","index":%s,"device":"%s","manufacturer":"%s","model":"%s","imei":"%s","iccid":"%s","gpsCapable":%s}\n' \
-        "${kind}" "${modem_index}" "${device_path}" "${manufacturer}" "${model}" "${imei}" "${iccid}" "${gps_capable}"
+    printf '{"present":true,"kind":"%s","index":%s,"device":"%s","manufacturer":"%s","model":"%s","imei":"%s","iccid":"%s","gpsCapable":%s,"slots":%s}\n' \
+        "${kind}" "${modem_index}" "${device_path}" "${manufacturer}" "${model}" "${imei}" "${iccid}" "${gps_capable}" "${slots_json}"
     exit 0
 fi
 
@@ -257,5 +346,10 @@ put cellular.model "${manufacturer} ${model}"
 put cellular.imei "${imei}"
 put cellular.iccid "${iccid}"
 put cellular.gps_capable "$([ "${gps_capable}" = "true" ] && echo 1 || echo 0)"
+# The slot in use, once, so a change has one to go back to (see SIM SLOTS).
+if [ "${slot_count:-0}" -gt 1 ] 2>/dev/null && [ -z "$(uci -q get pulzr.cellular.sim_slot)" ] && [ -n "${primary_slot}" ]; then
+    put cellular.sim_slot "${primary_slot}"
+fi
 [ "${changed}" = 1 ] && uci commit pulzr
+sync_slot
 exit 0

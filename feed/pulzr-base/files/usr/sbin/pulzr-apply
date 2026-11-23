@@ -103,6 +103,10 @@ reload() {
     /etc/init.d/firewall reload >/dev/null 2>&1
     /etc/init.d/dnsmasq reload >/dev/null 2>&1
     [ -x /usr/sbin/pulzr-uplinks ] && /usr/sbin/pulzr-uplinks apply >/dev/null 2>&1
+    # The SIM slot is the modem's, not netifd's: put back, it has to be asked
+    # for (pulzr-modem-detect, "SIM SLOTS").
+    [ -n "$(uci -q get pulzr.cellular.sim_slot)" ] && [ -x /usr/sbin/pulzr-modem-detect ] &&
+        ( /usr/sbin/pulzr-modem-detect --sync-slot ) >/dev/null 2>&1 &
     [ -x /usr/sbin/pulzr-lan ] && ( sleep 5; /usr/sbin/pulzr-lan isolate ) >/dev/null 2>&1 &
     # The tunnel and LoRa routing re-pick their uplink on ifup and ifdown; an
     # uplink that only changed name gets neither, so ask once.

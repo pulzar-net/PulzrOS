@@ -25,7 +25,7 @@ let _m_util = loadfile('/usr/share/pulzr/console/lib/util.uc', { raw_mode: true 
 // Declaring the names first makes every one of them a known local before any
 // body is compiled, so closures capture the binding rather than a missing
 // global and definition order stops mattering. auth.uc alone had six of these.
-let ifaceStatus, linkSpeed, cellularStatus, status, modem, backhaul, setCellular;
+let ifaceStatus, linkSpeed, cellularStatus, status, modem, backhaul, setCellular, setSimSlot;
 
 let run = _m_util.run;; let runJson = _m_util.runJson;; let ubus = _m_util.ubus;
 
@@ -107,7 +107,7 @@ modem = function() {
     // `mmcli --output-keyvalue` is the stable machine-readable form; the human
     // output reflows between releases and is not worth parsing.
     const raw = run(sprintf('mmcli -m %d --output-keyvalue 2>/dev/null', found.index));
-    if (!raw) return { kind: found.kind, model: found.model, registration: null };
+    if (!raw) return { kind: found.kind, model: found.model, registration: null, slots: found.slots ?? null };
 
     const field = {};
     for (let line in split(raw, '\n')) {
@@ -123,6 +123,8 @@ modem = function() {
     return {
         kind: found.kind,
         model: found.model,
+        // Each SIM holder, on a modem with more than one; null otherwise.
+        slots: found.slots ?? null,
         imei: found.imei,
         registration: field['modem.generic.state'] || null,
         network: field['modem.3gpp.operator-name'] || null,
@@ -232,10 +234,19 @@ setCellular = function(req, session) {
     return { ok: true, applied: { apn: req.apn, enabled: req.enabled } };
 };
 
+// Which SIM the modem uses, on one with several holders. Kept in
+// pulzr.cellular.sim_slot, so the apply window's snapshot can put the old one
+// back if the new SIM cuts the gateway off (pulzr-modem-detect).
+setSimSlot = function(req) {
+    const slot = int(req.slot ?? 0);
+    if (slot < 1 || slot > 9) return { error: 'A SIM slot number.' };
+    return _m_util.tool('/usr/sbin/pulzr-modem-detect', ['--set-slot', sprintf('%d', slot)]);
+};
+
 // ── module exports ──────────────────────────────────────────────────────────
 //
 // A returned object, not `export` statements. uhttpd's ucode plugin compiles
 // its handler in TEMPLATE mode and loads anything else through loadfile(),
 // neither of which is module mode — `export` is a syntax error there. See the
 // header of api/index.uc for the full contract.
-return { backhaul, setCellular, status };
+return { backhaul, setCellular, setSimSlot, status };

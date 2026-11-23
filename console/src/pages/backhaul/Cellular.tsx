@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { SignalHigh } from 'lucide-react';
+import { CreditCard, SignalHigh } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/services/api';
-import type { NetworkStatus } from '@/types';
+import type { NetworkStatus, SimSlot } from '@/types';
 import Section from '@/components/ui/Section';
-import { StatusBadge } from '@/components/ui/Badge';
+import Badge, { StatusBadge } from '@/components/ui/Badge';
 import Fact, { FactList } from '@/components/Fact';
 import Notice from '@/components/ui/Notice';
 import Button from '@/components/ui/Button';
@@ -22,6 +22,11 @@ import styles from '../Pages.module.css';
  * Only the APN and the on/off switch are exposed. Everything else about a 1NCE
  * SIM is fixed by the carrier, and a console offering to change the PDP type is
  * a console offering a way to strand a gateway that is only reachable over it.
+ *
+ * A modem with more than one SIM holder lists them, and one can be made the
+ * one in use. Applied like the rest: a SIM that cannot attach cuts off a
+ * gateway reached over it, and the old slot comes back unless this page
+ * reaches the gateway again.
  */
 export default function Cellular() {
   const queryClient = useQueryClient();
@@ -59,6 +64,7 @@ export default function Cellular() {
   if (network.isError) return <ErrorState error={network.error} onRetry={network.refetch} />;
 
   const modem = cellular!.modem;
+  const slots = modem?.slots && modem.slots.length > 1 ? modem.slots : null;
 
   return (
     <div className="fade-in">
@@ -74,6 +80,14 @@ export default function Cellular() {
           <Fact label="Signal" value={modem?.rssi != null ? `${modem.rssi} dBm` : null} />
         </FactList>
       </Section>
+
+      {slots && (
+        <Slots
+          slots={slots}
+          disabled={change.applying || change.phase === 'confirming'}
+          onUse={(slot) => change.apply('/network/cellular/slot', { slot })}
+        />
+      )}
 
       <Section title="Connection" icon={SignalHigh}>
         <div className={styles.form}>
@@ -100,5 +114,30 @@ export default function Cellular() {
         </div>
       </Section>
     </div>
+  );
+}
+
+function Slots({ slots, disabled, onUse }: { slots: SimSlot[]; disabled: boolean; onUse: (slot: number) => void }) {
+  return (
+    <Section title="SIM" icon={CreditCard}>
+      <FactList>
+        {slots.map((s) => (
+          <Fact
+            key={s.slot}
+            label={`Slot ${s.slot}`}
+            value={
+              <span className={styles.status}>
+                {s.present ? <span className="mono">{s.iccid || 'SIM'}</span> : <span className={styles.dim}>Empty</span>}
+                {s.active ? (
+                  <Badge tone="success">In use</Badge>
+                ) : (
+                  <Button disabled={disabled || !s.present} onClick={() => onUse(s.slot)}>Use</Button>
+                )}
+              </span>
+            }
+          />
+        ))}
+      </FactList>
+    </Section>
   );
 }

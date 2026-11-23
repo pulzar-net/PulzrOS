@@ -61,6 +61,7 @@ const ACTIONS = {
     setBluetooth: (req, s) => audited('bluetooth.set', { by: s.subject, enabled: req.enabled },
                                       bluetooth.set(req)),
     setCellular: (req, s) => network.setCellular(req, s),
+    setSimSlot: (req, s) => audited('cellular.slot', { by: s.subject, slot: req.slot }, network.setSimSlot(req)),
 
     // ── ports: roles, VLANs, each uplink's addressing; see lib/ports.uc ─────
     setPorts: (req, s) => audited('ports.set', { by: s.subject, ports: req.ports }, ports.set(req, s)),
