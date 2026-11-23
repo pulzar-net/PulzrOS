@@ -42,6 +42,7 @@ import ErrorState from '@/components/ErrorState';
 import ApplyChangeNotice from '@/components/ApplyChangeNotice';
 import { useApplyChange, type Pending } from '@/hooks/useApplyChange';
 import { useFeatures } from '@/hooks/useFeatures';
+import type { RadiosStatus } from '@/pages/radios/model';
 import { useCellular } from '@/hooks/useCellular';
 import { duration } from '@/lib/format';
 import { uplinkRows, type LinkRow } from '@/lib/uplinks';
@@ -92,6 +93,12 @@ export default function Backhaul() {
   const access = useQuery({
     queryKey: ['access'],
     queryFn: () => api.get<AccessStatus>('/access/status'),
+    refetchInterval: 15_000,
+    enabled: features.has('wifi'),
+  });
+  const radios = useQuery({
+    queryKey: ['radios'],
+    queryFn: () => api.get<RadiosStatus>('/radios'),
     refetchInterval: 15_000,
     enabled: features.has('wifi'),
   });
@@ -152,6 +159,7 @@ export default function Backhaul() {
       ports: ports.data,
       access: access.data,
       network: network.data,
+      radios: radios.data,
       cellular: cellular.shown,
     },
     features,

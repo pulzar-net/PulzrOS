@@ -78,7 +78,7 @@ let parsePhy, fits, bandOf, phyOf, radioInfo, widthsOf, familyOf, channelOk, max
 let iftypeOf, roleOf, networksOf, attachable, interfaceView, counts, room, defaultRoute;
 let status, setRadio, setAp, removeAp, joinUplink, apFromRequest, checkAp, writeAp, reload, newApName;
 let devices, ifaces, saeCapable, cached;
-let slotOn, slotFor, configured, removeUplink, handover, readHandover, writeHandover, handoverWhy;
+let slotOn, slotFor, configured, removeUplink, handover, readHandover, writeHandover, handoverWhy, scan;
 
 let run = _m_util.run;; let runJson = _m_util.runJson;
 
@@ -515,11 +515,17 @@ status = function() {
         route: defaultRoute(),
         hostname: trim(readfile('/proc/sys/kernel/hostname') ?? '') || null,
         uplink: uci.get('wireless', 'parkeze_sta', 'ssid') ? uci.get('wireless', 'parkeze_sta', 'device') : null,
-        // Every WiFi uplink, the WiFi page's first.
-        uplinks: map(filter(SLOTS, (sl) => configured(uci, sl)), (sl) => ({
-            id: sl.section, iface: sl.iface,
-            radio: uci.get('wireless', sl.section, 'device'), ssid: uci.get('wireless', sl.section, 'ssid'),
-        })),
+        // Every WiFi uplink, the WiFi page's first, with its address: the
+        // Backhaul rows show the second one's from here (the WiFi page's
+        // status knows only the first).
+        uplinks: map(filter(SLOTS, (sl) => configured(uci, sl)), (sl) => {
+            const link = runJson(sprintf('ubus call network.interface.%s status', sl.iface)) ?? {};
+            return {
+                id: sl.section, iface: sl.iface,
+                radio: uci.get('wireless', sl.section, 'device'), ssid: uci.get('wireless', sl.section, 'ssid'),
+                up: !!link.up, address: link['ipv4-address']?.[0]?.address ?? null,
+            };
+        }),
         handover: readHandover(),
     };
 };
@@ -901,8 +907,22 @@ removeUplink = function(req) {
     return { ok: true };
 };
 
+// The networks one radio hears (?radio=radio1), as access.scan answers. The
+// uplink onto the 5 GHz radio offers the network the 2.4 GHz one is on only
+// when the 5 GHz radio hears it: a site whose 5 GHz network has its own name
+// would otherwise be joined to a network that radio can never reach, and the
+// handover would spend two minutes finding that out.
+scan = function(query) {
+    const m = match(query ?? '', /(^|&)radio=([A-Za-z0-9_]{1,32})(&|$)/);
+    const uci = cursor();
+    if (!m || uci.get('wireless', m[2]) != 'wifi-device') return { capable: false, networks: [], error: 'No such radio.' };
+    const phy = phyOf(uci.get_all('wireless', m[2]), radioInfo(m[2], null).phy);
+    if (!phy) return { capable: true, networks: [], error: 'The radio is not detected.' };
+    return access.scan(phy);
+};
+
 // ── module exports ──────────────────────────────────────────────────────────
 //
 // A returned object, not `export` statements; see the header of
 // api/index.uc.
-return { channelOk, fits, handover, joinUplink, parsePhy, removeAp, removeUplink, setAp, setRadio, status, widthsOf };
+return { channelOk, fits, handover, joinUplink, parsePhy, removeAp, removeUplink, scan, setAp, setRadio, status, widthsOf };

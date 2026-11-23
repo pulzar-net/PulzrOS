@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
-import { Cable, Globe, Plus, RadioTower, Router, Signal, Users, Waypoints, Wifi } from 'lucide-react';
+import { Cable, Globe, RadioTower, Router, Signal, Users, Waypoints, Wifi } from 'lucide-react';
 import type { AccessStatus } from '@/types';
 import Badge, { type Tone } from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
@@ -40,13 +40,11 @@ export default function SignalPath({
   wifi,
   onSignIn,
   signingIn,
-  onAddAp,
 }: {
   status: RadiosStatus;
   wifi: AccessStatus['wifi'] | undefined;
   onSignIn: () => void;
   signingIn: boolean;
-  onAddAp?: () => void;
 }) {
   const { radios, route } = status;
   const mode = gatewayMode(status);
@@ -144,11 +142,6 @@ export default function SignalPath({
             <Line state="idle" />
             <div className={`${styles.node} ${styles.ghost}`}>
               <span className={styles.ghostTitle}>No access point</span>
-              {onAddAp && (
-                <Button onClick={onAddAp}>
-                  <Plus size={14} strokeWidth={2} /> Add Access Point
-                </Button>
-              )}
             </div>
           </div>
         )}

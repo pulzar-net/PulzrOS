@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  ArrowUpFromLine, ChevronDown, Pencil, Plus, RadioTower, Repeat, SlidersHorizontal, Trash2, Waypoints, Wifi,
+  ArrowUpFromLine, ChevronDown, Pencil, Plus, RadioTower, SlidersHorizontal, Trash2, Waypoints, Wifi,
 } from 'lucide-react';
 import { api } from '@/services/api';
 import type { AccessStatus, UplinksStatus } from '@/types';
@@ -21,7 +21,7 @@ import { signalBars } from '@/pages/backhaul/wifiFormat';
 import { explain, type WifiFailureInfo } from '@/pages/backhaul/WifiFailure';
 import SignalPath from './SignalPath';
 import {
-  ApDialog, RadioDialog, RemoveApDialog, RemoveUplinkDialog, RepeaterDialog, UplinkDialog, type RepeaterPlan,
+  ApDialog, RadioDialog, RemoveApDialog, RemoveUplinkDialog, UplinkDialog,
 } from './dialogs';
 import {
   BAND_NAMES, ROLE_NAMES, channelText, joiningIface, radioName, securityLabel,
@@ -70,8 +70,10 @@ export default function Radios() {
   const [removing, setRemoving] = useState<RadioInterface | null>(null);
   const [removingUplink, setRemovingUplink] = useState<RadioInterface | null>(null);
   const [moving, setMoving] = useState<Radio | null>(null);
-  const [repeater, setRepeater] = useState(false);
-  const [wizard, setWizard] = useState<{ extra: Record<string, unknown>; rejoin?: string } | null>(null);
+  // `handover`: another radio's uplink carries the traffic while this join
+  // runs, and the page's own notice follows it, not the wizard's outcome
+  // step (which watches the WiFi page's station).
+  const [wizard, setWizard] = useState<{ extra: Record<string, unknown>; handover?: boolean } | null>(null);
 
   const applied = (pending?: Pending | null) => {
     change.watch(pending);
@@ -87,8 +89,6 @@ export default function Radios() {
   const status = radios.data!;
   const wifi = access.data?.wifi;
   const current = wifi?.configured ? wifi.ssid : null;
-  const present = status.radios.filter((r) => r.present);
-  const canAp = status.networks.length > 0 && present.some((r) => r.capabilities.room.ap);
 
   if (!status.radios.length) {
     return (
@@ -117,27 +117,12 @@ export default function Radios() {
         icon={Wifi}
         wide
         note={status.country ? `Country ${status.country}` : undefined}
-        actions={
-          <>
-            {canAp && (
-              <Button onClick={() => setApTarget({})}>
-                <Plus size={14} strokeWidth={2} /> Add Access Point
-              </Button>
-            )}
-            {canAp && (
-              <Button variant="primary" onClick={() => setRepeater(true)}>
-                <Repeat size={14} strokeWidth={2} /> Set Up Repeater
-              </Button>
-            )}
-          </>
-        }
       >
         <SignalPath
           status={status}
           wifi={wifi}
           onSignIn={signIn.start}
           signingIn={signIn.isPending}
-          onAddAp={canAp ? () => setApTarget({}) : undefined}
         />
         {signIn.isError && <Notice tone="error">{(signIn.error as Error).message}</Notice>}
       </Section>
@@ -167,35 +152,22 @@ export default function Radios() {
         onApplied={applied}
         onChooseNetwork={(radio) => {
           setMoving(null);
-          setWizard({ extra: { radio: radio.id } });
+          setWizard({ extra: { radio: radio.id }, handover: true });
         }}
       />
       <RemoveUplinkDialog status={status} iface={removingUplink} onClose={() => setRemovingUplink(null)} onApplied={applied} />
-      <RepeaterDialog
-        status={status}
-        open={repeater}
-        current={current}
-        onClose={() => setRepeater(false)}
-        onApplied={applied}
-        onChooseNetwork={(plan: RepeaterPlan) => {
-          setRepeater(false);
-          setWizard({ extra: { radio: plan.uplinkRadio, ap: plan.ap } });
-        }}
-        onRejoined={(ssid) => {
-          setRepeater(false);
-          setWizard({ extra: {}, rejoin: ssid });
-        }}
-      />
       {wifi && (
         <JoinWizard
           open={!!wizard}
-          rejoin={wizard?.rejoin}
           wifi={wifi}
           failure={detail.data?.failure}
           endpoint="/radios/uplink"
           extra={wizard?.extra}
           onClose={() => setWizard(null)}
-          onJoined={applied}
+          onJoined={(pending) => {
+            applied(pending);
+            if (wizard?.handover) setWizard(null);
+          }}
           onFailureShown={() => undefined}
         />
       )}
@@ -227,7 +199,10 @@ function RadioCard({
   const carriesUplink = radio.interfaces.some((i) => i.role === 'uplink');
   const canUplink = radio.present && !carriesUplink && radio.capabilities.modes.includes('managed')
     && radio.capabilities.room.uplink;
-  const canAp = radio.present && status.networks.length > 0 && radio.capabilities.room.ap;
+  // A repeater is a network joined on one radio and another broadcast on a
+  // radio that is not joined to anything; a radio carrying the uplink takes
+  // no access point until it is disconnected.
+  const canAp = radio.present && !carriesUplink && status.networks.length > 0 && radio.capabilities.room.ap;
   const state = !radio.present ? { label: 'Not detected', tone: 'error' as const }
     : !radio.enabled ? { label: 'Off', tone: 'neutral' as const }
     : radio.up ? { label: 'Up', tone: 'success' as const }

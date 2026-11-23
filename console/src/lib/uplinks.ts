@@ -11,6 +11,7 @@ import type {
   UplinksStatus,
 } from '@/types';
 import type { Tone } from '@/components/ui/Badge';
+import type { RadiosStatus } from '@/pages/radios/model';
 import { modemKind, portLabel, uplinkName } from '@/lib/format';
 
 /**
@@ -62,6 +63,9 @@ export interface LinkSources {
   ports?: PortsStatus;
   access?: AccessStatus;
   network?: NetworkStatus;
+  /** The radios page's answer: a second radio's WiFi uplink (wwifi2) has its
+      network, signal and address here, not in `access`. */
+  radios?: RadiosStatus;
   /** False leaves cellular out: the add-on on a board with no modem plugged
       in (useCellular). */
   cellular?: boolean;
@@ -79,8 +83,10 @@ export function linkSpeed(mbps: number | null | undefined) {
   return mbps >= 1000 ? `${mbps / 1000} Gb/s` : `${mbps} Mb/s`;
 }
 
-function pageFor(kind: Uplink['kind']) {
-  if (kind === 'wifi') return '/backhaul/wifi';
+function pageFor(kind: Uplink['kind'], iface: string) {
+  // The first WiFi uplink is the WiFi page's; a second radio's is joined and
+  // removed on the radios page.
+  if (kind === 'wifi') return iface === 'wwifi' ? '/backhaul/wifi' : '/network/wifi';
   if (kind === 'ethernet') return '/backhaul/ethernet';
   return '/backhaul/cellular';
 }
@@ -124,7 +130,13 @@ function wiredFacts(uplink: PortUplink | null | undefined, speed: number | null 
   };
 }
 
-function wifiFacts({ paths, access }: LinkSources): Facts {
+function wifiFacts({ paths, access, radios }: LinkSources, iface = 'wwifi'): Facts {
+  if (iface !== 'wwifi') {
+    const u = radios?.uplinks.find((x) => x.iface === iface);
+    const station = radios?.radios.flatMap((r) => r.interfaces).find((i) => i.id === u?.id);
+    return { link: u?.ssid ?? null, signal: station?.signal != null ? `${station.signal} dBm` : null,
+             address: u?.up ? bare(u.address) : null, addressing: null };
+  }
   const wifi = access?.wifi;
   if (wifi?.configured) {
     return { link: wifi.ssid, signal: wifi.signal != null ? `${wifi.signal} dBm` : null,
@@ -172,7 +184,7 @@ export function uplinkRows(
           facts = { ...NO_FACTS, link: linkSpeed(paths.wired.speed), address: bare(paths.wired.address) };
         }
       }
-      if (u.kind === 'wifi') facts = wifiFacts(sources);
+      if (u.kind === 'wifi') facts = wifiFacts(sources, u.iface);
       if (u.kind === 'cellular' || u.kind === 'usb-cellular') {
         facts = modemFacts(paths, u.kind, u.kind === 'cellular' && u.up ? bare(network?.cellular.address) : null);
       }
@@ -185,7 +197,7 @@ export function uplinkRows(
         active,
         tone,
         state,
-        to: pageFor(u.kind),
+        to: pageFor(u.kind, u.iface),
         iface: u.iface,
         metered: u.metered,
         uplink: u,

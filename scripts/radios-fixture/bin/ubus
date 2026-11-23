@@ -14,6 +14,8 @@ case "$1 $2 $3" in
     "call iwinfo assoclist")
         f="${T}/assoc/$(device "$4").json"
         [ -f "${f}" ] && cat "${f}" || echo '{"results":[]}' ;;
-    "call iwinfo scan") echo '{"results":[]}' ;;
+    "call iwinfo scan")
+        f="${T}/scan/$(device "$4").json"
+        [ -f "${f}" ] && cat "${f}" || echo '{"results":[]}' ;;
     *) exit 4 ;;
 esac

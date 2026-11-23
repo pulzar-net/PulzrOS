@@ -90,7 +90,7 @@ let access = loadfile('${LIB}/access.uc', { raw_mode: true })();
 let call = json(ARGV[0]);
 let fns = { status: radios.status, setRadio: radios.setRadio, setAp: radios.setAp,
             removeAp: radios.removeAp, joinUplink: radios.joinUplink, joinWifi: access.joinWifi,
-            handover: radios.handover, removeUplink: radios.removeUplink,
+            handover: radios.handover, removeUplink: radios.removeUplink, scan: radios.scan,
             parsePhy: radios.parsePhy, fits: radios.fits, channelOk: radios.channelOk,
             widthsOf: radios.widthsOf };
 let out;
@@ -282,6 +282,16 @@ check "status: both WiFi uplinks, the WiFi page's first" '[["parkeze_sta","wwifi
 check "status: the second station is this page's, an uplink" '["uplink","radios"]' \
     "$(jq -c '[.radios[1].interfaces[] | select(.id == "pulzr_sta2") | .role, .owner]' <<< "${st}")"
 check "status: the handover" "joining" "$(jq -r .handover.state <<< "${st}")"
+
+# What one radio hears, for the uplink dialog: the 2.4 GHz network is not
+# offered on the 5 GHz radio when that radio does not hear it.
+mkdir -p "${T}/scan"
+echo '{"results":[{"ssid":"Charter","signal":-50,"quality":60,"encryption":{"enabled":true,"authentication":["psk"]}}]}' > "${T}/scan/phy0.json"
+echo '{"results":[{"ssid":"Charter-5G","signal":-60,"quality":50,"encryption":{"enabled":true,"authentication":["psk"]}}]}' > "${T}/scan/phy1.json"
+check "scan: one radio, only what it hears" '["Charter-5G"]' "$(call scan '"radio=radio1"' | jq -c '[.networks[].ssid]')"
+check "scan: the other radio" '["Charter"]' "$(call scan '"radio=radio0"' | jq -c '[.networks[].ssid]')"
+check "scan: an unknown radio" "No such radio." "$(call scan '"radio=radio9"' | jq -r .error)"
+rm -rf "${T}/scan"
 
 # Proven: up, and open on this network. It goes where the old one was in the
 # order, the old one right behind it, a cable ahead of both left ahead.

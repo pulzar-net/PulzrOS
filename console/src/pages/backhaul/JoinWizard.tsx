@@ -104,10 +104,15 @@ export default function JoinWizard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, rejoin]);
 
+  // A join onto a chosen radio lists what that radio hears: the 5 GHz radio
+  // does not hear a 2.4 GHz-only network, and offering it there is a join
+  // that cannot work.
+  const radio = typeof extra?.radio === 'string' ? extra.radio : null;
   const scan = useQuery({
-    queryKey: ['wifi-scan'],
+    queryKey: ['wifi-scan', radio],
     queryFn: () =>
-      api.get<{ capable: boolean; networks: WifiNetwork[]; error?: string }>('/access/scan'),
+      api.get<{ capable: boolean; networks: WifiNetwork[]; error?: string }>(
+        radio ? `/radios/scan?radio=${encodeURIComponent(radio)}` : '/access/scan'),
     enabled: open,
     // Scanning takes the radio away from whatever it is doing; not on a timer.
     refetchOnWindowFocus: false,

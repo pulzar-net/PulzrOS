@@ -214,56 +214,12 @@
 /* ── dialogs ────────────────────────────────────────────────────────────── */
 .form { display: grid; }
 
-.pair {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-}
-
 .checks {
   display: flex;
   flex-wrap: wrap;
   gap: 4px 20px;
 }
 .checks > * { margin-bottom: 0; }
-
-/* The repeater it will make, as the path will draw it. */
-.preview {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 16px;
-  padding: 12px;
-  border-radius: var(--radius-md);
-  background: var(--bg-secondary);
-  font-size: var(--fs-xs);
-}
-
-.previewNode {
-  max-width: 140px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  padding: 4px 8px;
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-sm);
-  background: var(--bg-elevated);
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.previewGateway { border-color: var(--border-secondary); }
-
-.previewHop {
-  display: inline-grid;
-  justify-items: center;
-  color: var(--band, var(--text-tertiary));
-  line-height: 1.2;
-}
-
-.previewBand { font-weight: 600; }
-.previewRadio { color: var(--text-tertiary); }
 
 @media (max-width: 760px) {
   /* A thumb's worth, on a phone. */
@@ -273,5 +229,4 @@
   .client { grid-template-columns: minmax(0, 1fr) auto; }
   .vendor, .rate { display: none; }
   .clients { margin-left: 0; }
-  .pair { grid-template-columns: 1fr; gap: 0; }
 }

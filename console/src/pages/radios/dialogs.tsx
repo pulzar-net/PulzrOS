@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { useMutation } from '@tanstack/react-query';
-import { ArrowRight } from 'lucide-react';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { api } from '@/services/api';
 import Dialog from '@/components/ui/Dialog';
 import Button from '@/components/ui/Button';
@@ -10,6 +9,7 @@ import Fact, { FactList } from '@/components/Fact';
 import { CheckboxField, SelectField, TextField } from '@/components/ui/Field';
 import fieldStyles from '@/components/ui/Field.module.css';
 import type { Pending } from '@/hooks/useApplyChange';
+import type { WifiNetwork } from '@/types';
 import {
   BAND_NAMES, SECURITY_LABELS, channelFits, channelText, radioName,
   type ApSecurity, type Radio, type RadioInterface, type RadiosStatus,
@@ -17,8 +17,8 @@ import {
 import styles from './Radios.module.css';
 
 /**
- * The radios page's dialogs: a radio's settings, an access point, the
- * one-step repeater and an uplink on another radio. Each posts its change and hands
+ * The radios page's dialogs: a radio's settings, an access point, and an
+ * uplink on another radio. Each posts its change and hands
  * the answer's rollback window to the page (onApplied), which confirms it once
  * the browser reaches the gateway again; see useApplyChange.
  */
@@ -383,6 +383,12 @@ export function RemoveApDialog({
  * the network the uplink is on now, rejoined here, or another one through the
  * join wizard (onChooseNetwork). The radio carrying it now keeps carrying it
  * until this one is online, then stays as the fallback (lib/radios.uc).
+ *
+ * The network the uplink is on now is offered only when this radio hears it.
+ * A site's 5 GHz network often has a name of its own, and a 2.4 GHz-only
+ * network rejoined on the 5 GHz radio is a join that cannot work, found out
+ * two minutes later. Not heard, the dialog says so and the only way on is the
+ * wizard, whose list is this radio's scan (the same query).
  */
 export function UplinkDialog({
   status,
@@ -406,10 +412,22 @@ export function UplinkDialog({
     setNetwork(ssid ? 'keep' : 'new');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [radio?.id]);
+  const scan = useQuery({
+    queryKey: ['wifi-scan', radio?.id ?? null],
+    queryFn: () => api.get<{ capable: boolean; networks: WifiNetwork[]; error?: string }>(
+      `/radios/scan?radio=${encodeURIComponent(radio!.id)}`),
+    enabled: !!radio && !!ssid,
+    refetchOnWindowFocus: false,
+    staleTime: 60_000,
+  });
+  // A scan that heard nothing at all proves nothing about the network, so
+  // only a list without it counts as not heard.
+  const heard = scan.data?.networks ?? [];
+  const unheard = !!ssid && heard.length > 0 && !heard.some((n) => n.ssid === ssid);
   const carrying = status.uplinks.find((u) => u.radio !== radio?.id);
   const from = status.radios.find((r) => r.id === carrying?.radio);
   const name = (r?: Radio) => (r ? `${radioName(status.radios, r.id)}, ${BAND_NAMES[r.band]}` : '');
-  const keep = network === 'keep' && !!ssid;
+  const keep = network === 'keep' && !!ssid && !unheard;
   return (
     <Dialog
       open={!!radio}
@@ -419,7 +437,7 @@ export function UplinkDialog({
       footer={
         <>
           <Button variant="quiet" onClick={onClose}>Cancel</Button>
-          <Button variant="primary" loading={post.isPending}
+          <Button variant="primary" loading={post.isPending || (keep && scan.isFetching)}
             onClick={() => (keep
               ? post.mutate({ path: '/radios/uplink', body: { radio: radio!.id, ssid, saved: true } })
               : onChooseNetwork(radio!))}>
@@ -430,7 +448,8 @@ export function UplinkDialog({
     >
       {radio && (
         <div className={styles.form}>
-          {ssid && (
+          {unheard && <Notice tone="warning">{`${ssid} is not heard on ${BAND_NAMES[radio.band]}.`}</Notice>}
+          {ssid && !unheard && (
             <Labelled label="Network">
               <Segmented
                 aria-label="Network"
@@ -490,130 +509,5 @@ export function RemoveUplinkDialog({
       )}
       {post.isError && <Notice tone="error">{(post.error as Error).message}</Notice>}
     </Dialog>
-  );
-}
-
-// ── the repeater ────────────────────────────────────────────────────────────
-
-export interface RepeaterPlan {
-  uplinkRadio: string;
-  ap: Record<string, unknown>;
-}
-
-/**
- * One radio joins the site's network, another (or the same one, where the
- * hardware takes both) serves the gateway's own, as one change. The upstream
- * network is the current uplink's, rejoined there, or a new one through the
- * join wizard (onChooseNetwork), which sends the access point with the join.
- */
-export function RepeaterDialog({
-  status,
-  open,
-  current,
-  onClose,
-  onApplied,
-  onChooseNetwork,
-  onRejoined,
-}: {
-  status: RadiosStatus;
-  open: boolean;
-  /** The network the uplink is on now, if it is on one. */
-  current: string | null;
-  onClose: () => void;
-  onApplied: (pending?: Pending | null) => void;
-  onChooseNetwork: (plan: RepeaterPlan) => void;
-  onRejoined: (ssid: string) => void;
-}) {
-  const usable = status.radios.filter((r) => r.present);
-  const pick = () => {
-    const up = usable.find((r) => r.id === status.uplink) ?? usable[0];
-    const ap = usable.find((r) => r.id !== up?.id) ?? up;
-    return { up: up?.id ?? '', ap: ap?.id ?? '' };
-  };
-  const [uplinkRadio, setUplinkRadio] = useState('');
-  const [apRadio, setApRadio] = useState('');
-  const [draft, setDraft] = useState<ApDraft>(() => draftFor(status));
-  const [upstream, setUpstream] = useState<'keep' | 'new'>('keep');
-  const post = usePost(onApplied, () => undefined);
-
-  useEffect(() => {
-    if (!open) return;
-    const p = pick();
-    setUplinkRadio(p.up);
-    setApRadio(p.ap);
-    setDraft({ ...draftFor(status), ssid: current ? `${current} Extended`.slice(0, 32) : '' });
-    setUpstream(current ? 'keep' : 'new');
-    post.reset();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
-
-  const options = usable.map((r) => ({ value: r.id, label: `${radioName(status.radios, r.id)}, ${BAND_NAMES[r.band]}` }));
-  const up = status.radios.find((r) => r.id === uplinkRadio);
-  const ap = status.radios.find((r) => r.id === apRadio);
-  const problem = draftProblem(draft, false);
-  const plan: RepeaterPlan = { uplinkRadio, ap: { ...bodyOf(draft), radio: apRadio } };
-
-  const go = () => {
-    if (upstream === 'new' || !current) {
-      onChooseNetwork(plan);
-      return;
-    }
-    post.mutate(
-      { path: '/radios/uplink', body: { radio: uplinkRadio, ssid: current, saved: true, ap: plan.ap } },
-      { onSuccess: () => onRejoined(current) },
-    );
-  };
-
-  return (
-    <Dialog
-      open={open}
-      size="compact"
-      onClose={onClose}
-      title="Set Up Repeater"
-      footer={
-        <>
-          <Button variant="quiet" onClick={onClose}>Cancel</Button>
-          <Button variant="primary" disabled={!!problem || !uplinkRadio || !apRadio} loading={post.isPending} onClick={go}>
-            {upstream === 'new' || !current ? 'Choose Network' : 'Apply'}
-          </Button>
-        </>
-      }
-    >
-      <div className={styles.form}>
-        <div className={styles.preview} aria-hidden>
-          <span className={styles.previewNode}>{upstream === 'keep' && current ? current : 'Site WiFi'}</span>
-          <PreviewHop radio={up} radios={status.radios} />
-          <span className={`${styles.previewNode} ${styles.previewGateway}`}>{status.hostname ?? 'Gateway'}</span>
-          <PreviewHop radio={ap} radios={status.radios} />
-          <span className={styles.previewNode}>{draft.ssid.trim() || 'New network'}</span>
-        </div>
-        <div className={styles.pair}>
-          <SelectField label="Uplink radio" value={uplinkRadio} onChange={setUplinkRadio} options={options} />
-          <SelectField label="Access point radio" value={apRadio} onChange={setApRadio} options={options} />
-        </div>
-        {current && (
-          <Labelled label="Upstream network">
-            <Segmented
-              aria-label="Upstream network"
-              value={upstream}
-              onChange={setUpstream}
-              options={[{ value: 'keep', label: current }, { value: 'new', label: 'Another network' }]}
-            />
-          </Labelled>
-        )}
-        <ApFields status={status} draft={draft} set={(next) => setDraft({ ...draft, ...next })} editing={false} />
-        {post.isError && <Notice tone="error">{(post.error as Error).message}</Notice>}
-      </div>
-    </Dialog>
-  );
-}
-
-function PreviewHop({ radio, radios }: { radio?: Radio; radios: Radio[] }) {
-  return (
-    <span className={styles.previewHop} style={radio ? ({ '--band': `var(--band-${radio.band})` } as React.CSSProperties) : undefined}>
-      <span className={styles.previewBand}>{radio ? BAND_NAMES[radio.band] : ''}</span>
-      <ArrowRight size={14} strokeWidth={2} />
-      <span className={styles.previewRadio}>{radio ? radioName(radios, radio.id) : ''}</span>
-    </span>
   );
 }

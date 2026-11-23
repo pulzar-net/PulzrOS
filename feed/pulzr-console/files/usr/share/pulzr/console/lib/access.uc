@@ -247,7 +247,10 @@ lowerAp = function() {
 // reads, and it reads the *air*, not the gateway. Still gated, because a survey
 // of every SSID at a customer site is site intelligence we should not hand to
 // somebody who has merely associated to an open AP.
-scan = function() {
+//
+// `phy` scans that radio alone (radios.uc's scan): the radios page asking
+// whether a network is heard on the 5 GHz radio, not on either.
+scan = function(phy) {
     const radio = run("uci -q show wireless | sed -n 's/^wireless\\.\\([^.]*\\)=wifi-device$/\\1/p' | head -n1");
     if (!radio) return { capable: false, networks: [] };
 
@@ -268,8 +271,9 @@ scan = function() {
     }
     const best = {};
     let answered = false;
-    for (let phy in (_m_fs.lsdir('/sys/class/ieee80211') ?? [])) {
-        const device = ifaceOf[phy] ?? phy;
+    for (let p in (_m_fs.lsdir('/sys/class/ieee80211') ?? [])) {
+        if (phy != null && p != phy) continue;
+        const device = ifaceOf[p] ?? p;
         if (!match(device, /^[A-Za-z0-9._-]{1,32}$/)) continue;
         const raw = runJson(sprintf('ubus call iwinfo scan \'{"device":"%s"}\'', device));
         if (!raw) continue;

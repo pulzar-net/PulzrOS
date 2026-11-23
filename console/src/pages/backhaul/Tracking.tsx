@@ -19,8 +19,8 @@ import styles from './Backhaul.module.css';
 
 /**
  * Which uplinks are pinged and how, a page of its own under Backhaul (it was
- * a card under the connections). The WiFi's health is pulzr-wifi-uplink's
- * portal check, so it has no switch. Cellular is untracked until somebody
+ * a card under the connections). Each WiFi uplink's health is its own
+ * pulzr-wifi-uplink portal check, so neither has a switch. Cellular is untracked until somebody
  * turns it on, because every ping is billed.
  */
 
@@ -63,7 +63,7 @@ export default function Tracking() {
           {uplinks.map((u) => (
             <div key={u.iface} className={styles.switch}>
               <span>{uplinkName(u.iface, u.device)}</span>
-              {u.iface === 'wwifi' ? (
+              {u.kind === 'wifi' ? (
                 <span className={pages.dim}>Portal check</span>
               ) : (
                 <Segmented

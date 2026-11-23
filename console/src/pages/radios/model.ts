@@ -105,7 +105,7 @@ export interface RadiosStatus {
   /** The radio the WiFi page's uplink is on, when one is configured. */
   uplink: string | null;
   /** Every WiFi uplink, the WiFi page's first. */
-  uplinks: { id: string; iface: string; radio: string; ssid: string }[];
+  uplinks: { id: string; iface: string; radio: string; ssid: string; up: boolean; address: string | null }[];
   handover: Handover | null;
 }
 

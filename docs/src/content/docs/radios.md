@@ -67,25 +67,13 @@ An open access point puts the LAN in reach of anybody in range: the PLC, the cam
 
 When you edit an access point, a blank passphrase keeps the current one. The gateway never sends a passphrase back to the console.
 
-## Repeater setup
+## Repeater
 
-**Set Up Repeater** does it in one step: one radio joins the site's network as the uplink, and another serves the gateway's own network.
-
-1. Choose the uplink radio and the access point radio. On a two-radio router, 2.4 GHz for the uplink usually reaches further. 5 GHz for the access point gives its clients more throughput.
-2. Keep the network the uplink is on now, or choose another. **Another network** opens the join wizard from Backhaul > WiFi, with its scan, passphrase, 802.1X and certificate check, on the radio you chose.
-3. Name the new network and give it a passphrase.
-
-The upstream join and the access point are one change. Both are checked before anything is written, so a refusal changes nothing. The join is a normal join: the network is saved, roaming and the portal check apply, and **Sign In** works from either page.
-
-### One radio
-
-Some radios can be a station and an access point at once. Then the access point **follows the uplink's channel**: one radio has one channel, and the upstream network chooses it. The radio card shows the channel as following the uplink, and the channel setting has no effect while the uplink is joined. The access point comes up once the uplink has associated.
-
-Whether a radio can do this is read from the radio itself (see below). A Raspberry Pi 3 can run one station and one AP. A radio that runs only one interface at a time cannot, and the page says to use two radios.
+A repeater is a network joined on one radio and another broadcast on a different radio. Join the site's network (Backhaul > WiFi, or **Use for Uplink** on a radio), then **Add Access Point** on a radio that is not joined to anything. There is no separate repeater button, and a radio carrying a WiFi uplink offers no access point until its uplink is removed. On a two-radio router, 2.4 GHz for the uplink usually reaches further, and 5 GHz for the access point gives its clients more throughput.
 
 ### Another radio as the uplink
 
-**Use for Uplink** on a radio with no station joins that radio as a second WiFi uplink, onto the network the uplink is on now or another one (**Another network** opens the join wizard for that radio). Without a WiFi uplink yet, it opens the join wizard. A rejoin from Backhaul > WiFi, and a roam, keep the uplink on the radio it is on.
+**Use for Uplink** on a radio with no station joins that radio as a second WiFi uplink, onto the network the uplink is on now or another one (**Another network** opens the join wizard for that radio). The network the uplink is on now is offered only when that radio hears it (`GET /api/radios/scan?radio=`). A site whose 5 GHz network has a name of its own gets "Charter is not heard on 5 GHz." and the join wizard, listing what the 5 GHz radio hears. Without a WiFi uplink yet, it opens the join wizard. The wizard on the radios page always lists the chosen radio's scan. A rejoin from Backhaul > WiFi, and a roam, keep the uplink on the radio it is on.
 
 The old uplink keeps carrying the traffic until the new one is proven. This is make-before-break:
 
@@ -100,7 +88,7 @@ If the new station is not open within two minutes, it is removed again and the p
 
 Each WiFi uplink has its own portal check answer (`/var/run/pulzr/wifi-uplink.json` for `wwifi`, `wifi-uplink-wwifi2.json` for `wwifi2`), and `pulzr-uplinks` judges each by its own answer. A WiFi `ifup` no longer restarts the tunnel when `wg0` is up. A restart deletes `wg0`, so a second radio coming up would drop the tunnel the first radio was carrying.
 
-A gateway has at most two WiFi uplinks. Roaming and portal sign-in belong to the first (Backhaul > WiFi). A second uplink is removed from its row's remove button: it moves to the back of the uplink order first, so the traffic is on the other uplink before it lets go.
+A gateway has at most two WiFi uplinks. Each is its own entry in the uplink order on Backhaul (**WiFi** and **WiFi 2**), dragged on its own, and each is judged by its own portal check on Tracking. Roaming and portal sign-in belong to the first (Backhaul > WiFi). A second uplink is removed from its row's remove button: it moves to the back of the uplink order first, so the traffic is on the other uplink before it lets go.
 
 ## What the hardware allows
 
@@ -131,7 +119,8 @@ So a channel change that drops the laptop you are working from, or an uplink mov
 | `POST /api/radios/radio` | `{radio, channel, width, txpower, country, enabled}` |
 | `POST /api/radios/ap` | `{id?, radio, ssid, security, key, network, hidden, isolate, enabled, allowOpen}` |
 | `POST /api/radios/ap/remove` | `{id}` |
-| `POST /api/radios/uplink` | a join (as `POST /api/access/wifi`) with `radio`, and optionally `ap` for a repeater; onto a radio with no station while another has one, a second uplink and a handover |
+| `GET /api/radios/scan?radio=` | the networks that radio hears, as `GET /api/access/scan` answers |
+| `POST /api/radios/uplink` | a join (as `POST /api/access/wifi`) with `radio`; onto a radio with no station while another has one, a second uplink and a handover. `ap` still writes an access point with it (no page sends it now) |
 | `POST /api/radios/uplink/remove` | `{radio}`: the second WiFi uplink off that radio |
 
 All of them need a session and the CSRF header, and every POST answers with the rollback window (`pending`). Every change is audited (`radio.set`, `radio.ap.add`, `radio.ap.edit`, `radio.ap.remove`, `radio.uplink`, `radio.uplink.remove`, `radio.repeater`). Tests: `scripts/test-radios.sh`.

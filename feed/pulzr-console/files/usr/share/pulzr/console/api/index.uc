@@ -477,6 +477,7 @@ const ROUTES = {
     'GET  /api/access/status':    () => respond(200, access.status()),
     'GET  /api/access/key':       (env, req, s) => respond(200, access.key()),
     'GET  /api/access/scan':      (env, req, s) => respond(200, access.scan()),
+    'GET  /api/radios/scan':      (env) => respond(200, radios.scan(env.QUERY_STRING)),
     'POST /api/access/ap':        (env, req, s) => {
         const result = actions.setAp(req, s);
         return result.error ? error(400, result.error) : respond(200, result);
