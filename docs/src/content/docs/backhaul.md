@@ -77,7 +77,7 @@ what brings it:
    admin or Pulzr staff, who installs it there. It is never installed on
    its own.
 4. pulzr-addon installs it from the release's add-on repository, about
-   3 MB to download: ModemManager with glib, libqmi and libmbim,
+   4 MB to download (11-16 MB installed): ModemManager with glib, libqmi and libmbim,
    usb-modeswitch, usbmuxd, and the kmods built for exactly this release's
    kernel. On a gateway whose only uplink is that modem's SIM nothing can be
    downloaded until a cable or WiFi is there: cellular is the add-on.

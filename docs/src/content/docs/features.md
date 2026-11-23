@@ -145,7 +145,10 @@ word:
   one (`modems`, see [usb-radios.md](/PulzrOS/usb-radios.html)), and Pulzr Net offers the
   add-on: ModemManager with glib, libqmi and libmbim, `usb-modeswitch`,
   `usbmuxd` and the kmods for MBIM, QMI, AT ports, a Huawei stick and the
-  USB Ethernet modems, about 4 MB installed.
+  USB Ethernet modems. In v0.4.0-rc.9 that is about 3.7 MB to download and
+  11 MB installed on the Opal, and 4.8 MB and 16 MB on a Pi, beyond what
+  the image already has (libopenssl3, libcurl4, usbids); libqmi,
+  ModemManager and glib are most of it.
 - **Neither** on the boards with no modem and no USB port for one, which
   set `PULZR_WAN_CELL_ENABLED=0`.
 
