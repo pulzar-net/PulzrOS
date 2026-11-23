@@ -12,6 +12,7 @@ way the licence says.
 |---|---|---|
 | OpenWrt (kernel, base system, ImageBuilder, procd, netifd, uhttpd, ubus, uci, ...) | GPL-2.0-only, with individual components under their own licences (ISC, MIT, BSD, LGPL, ...) | `downloads.openwrt.org`, pinned by `OPENWRT_VERSION` and verified by sha256 |
 | ucode and its modules, umdns, uhttpd, libubox | ISC | OpenWrt feed |
+| BusyBox | GPL-2.0-only | Built by `sdk/build.sh` (and, for the GL-SFT1200, `scripts/device-imagebuilder-graft.sh`) from OpenWrt's own recipe in its base feed at the release's commit, with the release's configuration and one option changed, `FEATURE_SH_EXTRA_QUIET` (no login banner). The source is BusyBox's release tarball as that recipe pins it, unmodified |
 | dnsmasq-full, hostapd/wpad, ModemManager, WireGuard tools, nftables, openssh, dropbear, mosquitto, curl, jq and the other packages named in `boards/*/board.conf` | each package's own licence (GPL-2.0, GPL-2.0-or-later, LGPL-2.1, BSD, EPL-2.0/EDL-1.0, MIT/curl, ...) | OpenWrt feeds |
 | librespeed-cli | LGPL-3.0 | OpenWrt feed |
 | Linux kernel and firmware blobs for the Raspberry Pi and RAK boards | GPL-2.0-only; firmware under its vendors' redistribution licences | OpenWrt and the board targets |

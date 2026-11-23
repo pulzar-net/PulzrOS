@@ -156,6 +156,11 @@ log "Configuring"
   # about 200 KB over it. The upstream series makes it this target's default
   # in config/Config-kernel.in, which the graft does not carry.
   echo "CONFIG_KERNEL_CC_OPTIMIZE_FOR_SIZE=y"
+  # busybox as every other board's: the release's configuration with the
+  # shell's login banner compiled out (sdk/build.sh, which proves that is the
+  # only difference; build.sh checks the image carries it).
+  echo "CONFIG_BUSYBOX_CUSTOM=y"
+  echo "CONFIG_BUSYBOX_CONFIG_FEATURE_SH_EXTRA_QUIET=y"
 } > .config
 make defconfig >/dev/null
 
@@ -165,6 +170,7 @@ for d in ${devices}; do
 done
 grep -q '^CONFIG_LINUX_6_18=y' .config || die "the graft did not make this a 6.18 target"
 grep -q '^CONFIG_VERSION_FILENAMES=y' .config || die "defconfig dropped the version options"
+grep -q '^CONFIG_BUSYBOX_CONFIG_FEATURE_SH_EXTRA_QUIET=y' .config || die "defconfig dropped busybox's FEATURE_SH_EXTRA_QUIET"
 
 log "Building the toolchain and the kernel"
 make download -j8 >/dev/null

@@ -5,3 +5,4 @@ chirpstack-concentratord-sx1302
 chirpstack-concentratord-sx1301
 chirpstack-mqtt-forwarder
 libloragw-sx1302-utils
+busybox

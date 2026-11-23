@@ -698,13 +698,25 @@ pack_feed() {
     rm -rf "${tmp}"
   done
 
-  # The LoRa packages, built already with the OpenWrt SDK (sdk/build.sh).
+  # The LoRa packages and busybox, built already with the OpenWrt SDK
+  # (sdk/build.sh). busybox first and on every board the SDK built for: it is
+  # OpenWrt's own, with the shell's login banner compiled out, and takes the
+  # place of the release's (verify_rootfs checks it did). A board the SDK does
+  # not build for, the GL-SFT1200, builds the same busybox in its own tree
+  # (scripts/device-imagebuilder-graft.sh), which is already in packages/.
   local sdk="${BUILD_DIR}/sdk/${OPENWRT_ARCH}" apk
+  if ls "${sdk}"/busybox-[0-9]*.apk >/dev/null 2>&1; then
+    rm -f "${ib}/packages"/busybox-[0-9]*.apk
+    cp "${sdk}"/busybox-[0-9]*.apk "${ib}/packages/"
+  fi
   rm -f "${ib}/packages"/chirpstack-*.apk "${ib}/packages"/libloragw-*.apk
   has_feature lorawan || return 0
   ls "${sdk}"/*.apk >/dev/null 2>&1 \
     || die "no LoRa packages for ${OPENWRT_ARCH} in ${sdk}; build them with sdk/build.sh ${OPENWRT_TARGET}/${OPENWRT_SUBTARGET} ${BUILD_DIR}/sdk"
-  for apk in "${sdk}"/*.apk; do cp "${apk}" "${ib}/packages/"; done
+  for apk in "${sdk}"/*.apk; do
+    case "$(basename "${apk}")" in busybox-[0-9]*) continue ;; esac
+    cp "${apk}" "${ib}/packages/"
+  done
 }
 
 
@@ -920,6 +932,19 @@ error: the image built, but contains none of our files.
          tar -tf .build/feed/pulzr-base_noarch.tar | grep pulzr-motd
          $(imagebuilder_dir)/staging_dir/host/bin/apk adbdump \\
            $(imagebuilder_dir)/packages/pulzr-base-*.apk
+EOF
+    exit 1
+  fi
+
+  # And the shell: our busybox, built with FEATURE_SH_EXTRA_QUIET (sdk/build.sh),
+  # not the release's, whose ash prints "BusyBox v... built-in shell (ash)" over
+  # the PulzrOS banner at every login. The string is in the binary only when
+  # the banner is; a release busybox that won the install has it.
+  if grep -q 'built-in shell (ash)' "${root}/bin/busybox"; then
+    cat >&2 <<EOF
+error: the image carries OpenWrt's busybox, not the one built with its login
+       banner compiled out. packages/ holds:
+$(ls "${ib}/packages"/busybox-* 2>/dev/null | sed 's/^/         /')
 EOF
     exit 1
   fi

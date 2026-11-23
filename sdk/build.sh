@@ -58,6 +58,8 @@ cd "${sdk}"
 ./scripts/feeds install -p pulzr libloragw-sx1302
 ./scripts/feeds install libloragw-sx1301 libloragw-2g4 chirpstack-concentratord chirpstack-mqtt-forwarder
 ./scripts/feeds install -p pulzr pulzr-edge-bin
+# OpenWrt's own BusyBox recipe, from the release's base feed: see BusyBox below.
+./scripts/feeds install busybox
 [ "$(readlink -f package/feeds/pulzr/libloragw-sx1302)" = "$(readlink -f feeds/pulzr/libloragw-sx1302)" ] \
   && [ ! -e package/feeds/chirpstack/libloragw-sx1302 ] \
   || { echo "libloragw-sx1302 is not ours" >&2; exit 1; }
@@ -73,12 +75,55 @@ cd "${sdk}"
   echo 'CONFIG_PACKAGE_pulzr-edge-bin=m'
 } > .config
 make defconfig
+
+# ── BusyBox ────────────────────────────────────────────────────────────────
+# OpenWrt's busybox, built from its own recipe at the release's commit with the
+# release's configuration and one option changed: FEATURE_SH_EXTRA_QUIET, so
+# the shell does not open every login with "BusyBox v1.37.0 (...) built-in
+# shell (ash)" above the PulzrOS banner (owner, 23 Nov 2026). The option is
+# compile-time only, which is why there is a build at all.
+#
+# Proved, not assumed: the recipe's configuration is generated once as the
+# release ships it and once with the option, and the two must differ in that
+# line and nothing else. Every image then checks it carries this busybox, not
+# OpenWrt's (build.sh, verify_rootfs).
+busybox_config() { find build_dir -path '*/busybox-*/.config' -newer "$1" | head -n1; }
+# Clean first: the SDK is cached between runs, and a recipe configured already
+# is not configured again.
+make package/feeds/base/busybox/clean >/dev/null
+touch .busybox-mark
+make package/feeds/base/busybox/configure >/dev/null
+stock="$(busybox_config .busybox-mark)"
+[ -n "${stock}" ] || { echo "busybox configured no .config" >&2; exit 1; }
+cp "${stock}" .busybox-stock.config
+make package/feeds/base/busybox/clean >/dev/null
+{
+  echo 'CONFIG_BUSYBOX_CUSTOM=y'
+  echo 'CONFIG_BUSYBOX_CONFIG_FEATURE_SH_EXTRA_QUIET=y'
+} >> .config
+make defconfig
+touch .busybox-mark
+make package/feeds/base/busybox/configure >/dev/null
+ours="$(busybox_config .busybox-mark)"
+[ -n "${ours}" ] || { echo "busybox configured no .config" >&2; exit 1; }
+# Both files open with a generated header and a date; only settings count.
+changed="$(diff <(grep -E '^(CONFIG_|# CONFIG_)' .busybox-stock.config) \
+                <(grep -E '^(CONFIG_|# CONFIG_)' "${ours}") | grep '^[<>]' || true)"
+[ "${changed}" = "< # CONFIG_FEATURE_SH_EXTRA_QUIET is not set
+> CONFIG_FEATURE_SH_EXTRA_QUIET=y" ] || {
+  echo "busybox's configuration changed in more than FEATURE_SH_EXTRA_QUIET:" >&2
+  echo "${changed}" >&2
+  exit 1
+}
+echo "busybox: the release's configuration, with FEATURE_SH_EXTRA_QUIET"
 make -j"$(nproc)" package/feeds/chirpstack/chirpstack-concentratord/compile \
                   package/feeds/chirpstack/chirpstack-mqtt-forwarder/compile \
                   package/feeds/pulzr/pulzr-edge/compile \
+                  package/feeds/base/busybox/compile \
   || make -j1 V=s package/feeds/chirpstack/chirpstack-concentratord/compile \
                   package/feeds/chirpstack/chirpstack-mqtt-forwarder/compile \
-                  package/feeds/pulzr/pulzr-edge/compile
+                  package/feeds/pulzr/pulzr-edge/compile \
+                  package/feeds/base/busybox/compile
 
 # ── Collect ────────────────────────────────────────────────────────────────
 arch="$(ls bin/packages)"
