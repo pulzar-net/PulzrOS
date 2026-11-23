@@ -407,7 +407,10 @@ accepting what this table's DNAT marked.
 WireGuard tunnels the gateway dials out to a customer's own servers: a farm's
 cameras streamed to the customer's video server, with nothing opened at the
 site and none of it on Pulzr's infrastructure (not `wg0`, not the web proxy,
-not our SIM). At most four. Network > LAN, Tunnels.
+not our SIM). At most four. Network > LAN, Tunnels: Add Tunnel asks for the
+server, then what it reaches (devices picked from a table of reserved
+clients) and whether the LAN's internet goes through it, then shows the
+gateway's public key to give the server.
 
 | Setting | Default | What it does |
 |---|---|---|

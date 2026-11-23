@@ -22,6 +22,7 @@ const Network = lazy(() => import('@/pages/network/Network'));
 const Ethernet = lazy(() => import('@/pages/backhaul/Ethernet'));
 const Cellular = lazy(() => import('@/pages/backhaul/Cellular'));
 const Wifi = lazy(() => import('@/pages/backhaul/Wifi'));
+const Tracking = lazy(() => import('@/pages/backhaul/Tracking'));
 const Forwarders = lazy(() => import('@/pages/lorawan/Forwarders'));
 const LorawanSettings = lazy(() => import('@/pages/lorawan/Settings'));
 const Ports = lazy(() => import('@/pages/network/Ports'));
@@ -98,6 +99,7 @@ export default function App() {
         <Route path="backhaul/ethernet" element={<Ethernet />} />
         <Route path="backhaul/cellular" element={<Gated feature="cellular"><Cellular /></Gated>} />
         <Route path="backhaul/wifi" element={<Gated feature="wifi"><Wifi /></Gated>} />
+        <Route path="backhaul/tracking" element={<Gated feature="failover"><Tracking /></Gated>} />
         <Route path="lorawan" element={<Navigate to="/lorawan/forwarders/1/status" replace />} />
         <Route path="lorawan/forwarders" element={<Navigate to="/lorawan/forwarders/1/status" replace />} />
         <Route path="lorawan/forwarders/:forwarder/:tab" element={<Gated feature="lorawan"><Forwarders /></Gated>} />

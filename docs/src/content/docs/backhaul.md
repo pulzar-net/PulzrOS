@@ -366,9 +366,11 @@ press space, move it with the arrow keys and press space again. The new order
 goes to `POST /api/uplinks/order`, which runs `pulzr-uplinks order` and
 re-ranks the metrics at once. Like a port change it is undone unless the
 browser reaches the gateway again inside the window, so an order that puts
-the console's own path behind a dead one does not strand anybody. The
-Tracking card below the list turns tracking on or off per uplink and sets the
-targets and thresholds.
+the console's own path behind a dead one does not strand anybody. Each row's
+columns are its link (a wired port's speed, the WiFi network, the carrier),
+signal, address, last speed test and when tracking last checked it.
+Backhaul > Tracking turns tracking on or off per uplink and sets the targets
+and thresholds.
 
 `scripts/test-router.sh` posts the page's body through the console API's own
 module and checks that the metrics and the tracker follow it.

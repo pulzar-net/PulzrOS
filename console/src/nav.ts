@@ -82,6 +82,7 @@ export const NAV_GROUPS: NavGroup[] = [
           { path: '/backhaul/ethernet', label: 'Ethernet' },
           { path: '/backhaul/cellular', label: 'Cellular', feature: 'cellular' },
           { path: '/backhaul/wifi', label: 'WiFi', feature: 'wifi' },
+          { path: '/backhaul/tracking', label: 'Tracking', feature: 'failover' },
         ],
       },
       {

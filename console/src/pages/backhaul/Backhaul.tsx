@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -20,7 +20,7 @@ import {
 } from '@dnd-kit/sortable';
 import { restrictToParentElement, restrictToVerticalAxis } from '@dnd-kit/modifiers';
 import { CSS } from '@dnd-kit/utilities';
-import { ArrowDown, ArrowUp, ChevronRight, Gauge, GripVertical, Network, Radar } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronRight, Gauge, GripVertical, Network } from 'lucide-react';
 import { api } from '@/services/api';
 import type {
   AccessStatus,
@@ -37,8 +37,6 @@ import Badge from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
 import Dialog from '@/components/ui/Dialog';
 import Notice from '@/components/ui/Notice';
-import Segmented from '@/components/ui/Segmented';
-import { TextField } from '@/components/ui/Field';
 import Spinner from '@/components/ui/Spinner';
 import ErrorState from '@/components/ErrorState';
 import ApplyChangeNotice from '@/components/ApplyChangeNotice';
@@ -47,7 +45,6 @@ import { useFeatures } from '@/hooks/useFeatures';
 import { useCellular } from '@/hooks/useCellular';
 import { duration } from '@/lib/format';
 import { uplinkRows, type LinkRow } from '@/lib/uplinks';
-import pages from '../Pages.module.css';
 import styles from './Backhaul.module.css';
 
 /**
@@ -61,17 +58,13 @@ import styles from './Backhaul.module.css';
  * that cuts this browser off is undone unless it reaches the gateway again.
  *
  * A board without failover has fixed paths, Ethernet then WiFi then
- * cellular, so there is nothing to drag and no Tracking card.
+ * cellular, so there is nothing to drag. Tracking is its own page
+ * (Tracking.tsx).
  *
  * Each row can run a speed test of that connection alone, whatever its place
  * in the order: pulzr-speedtest binds the test to the uplink's own device and
  * changes no route. A metered one asks first, with the data it will cost.
  */
-
-const SWITCH = [
-  { value: 'on', label: 'On' },
-  { value: 'off', label: 'Off' },
-] as const;
 
 export default function Backhaul() {
   const features = useFeatures();
@@ -141,14 +134,6 @@ export default function Backhaul() {
     },
     onSettled: () => setDropped(null),
   });
-  const track = useMutation({
-    mutationFn: (body: { iface: UplinkIface; on: boolean }) =>
-      api.post<{ pending?: Pending }>('/uplinks/track', body),
-    onSuccess: (answer) => {
-      change.watch(answer.pending);
-      refresh();
-    },
-  });
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -173,7 +158,7 @@ export default function Backhaul() {
   );
   const byKey = new Map(rows.map((row) => [row.key, row]));
   const shown = dropped ? dropped.map((key) => byKey.get(key)).filter((row): row is LinkRow => !!row) : rows;
-  const busy = save.isPending || track.isPending || change.phase === 'confirming';
+  const busy = save.isPending || change.phase === 'confirming';
   const sortable = failover && rows.length > 1;
   const nameOf = (id: string | number) => byKey.get(String(id))?.name ?? String(id);
   const announcements: Announcements = {
@@ -208,7 +193,7 @@ export default function Backhaul() {
     else runTest.mutate({ iface: row.iface, metered: false });
   };
 
-  const mutationError = (save.error ?? track.error ?? runTest.error) as Error | null;
+  const mutationError = (save.error ?? runTest.error) as Error | null;
   const anyUp = failover ? !!order.data?.active : rows.some((row) => row.active);
 
   return (
@@ -231,11 +216,27 @@ export default function Backhaul() {
           onDragEnd={onDragEnd}
         >
           <SortableContext items={shown.map((row) => row.key)} strategy={verticalListSortingStrategy}>
+            <div className={styles.head} aria-hidden>
+              {sortable && <span className={styles.handleSpace} />}
+              {failover && <span className={styles.position} />}
+              <span className={`${styles.cols} ${styles.headCols}`} style={extraCols(speedtests, failover)}>
+                <span>Connection</span>
+                <span>Link</span>
+                <span className={styles.optional}>Signal</span>
+                <span className={styles.optional}>Address</span>
+                {speedtests && <span className={styles.optional}>Speed</span>}
+                {failover && <span className={styles.optional}>Checked</span>}
+                <span className={styles.stateCol}>State</span>
+              </span>
+              {speedtests && <span className={styles.testSpace} />}
+            </div>
             <ol className={styles.rows}>
               {shown.map((row, i) => (
                 <Connection
                   key={row.key}
                   row={row}
+                  failover={failover}
+                  speedtests={speedtests}
                   position={failover ? i + 1 : null}
                   sortable={sortable}
                   disabled={busy}
@@ -279,21 +280,19 @@ export default function Backhaul() {
           : 'Billed data.'}
       </Dialog>
 
-      {failover && order.data && (
-        <Tracking
-          status={order.data}
-          rows={rows}
-          disabled={busy}
-          onTrack={(iface, on) => track.mutate({ iface, on })}
-          onApplied={(pending) => {
-            change.watch(pending);
-            refresh();
-          }}
-        />
-      )}
     </div>
   );
 }
+
+// The grid both the header and every row share, so the header lines up over
+// rows that move: Connection, Link, Signal, Address, Speed, Checked, State.
+// Connection and Link take the slack; the speed and checked columns are there
+// only on a board that has them.
+const extraCols = (speedtests: boolean, failover: boolean) =>
+  ({
+    '--cols': ['minmax(140px, 1.2fr)', 'minmax(90px, 1fr)', '72px', '140px',
+               speedtests && '200px', failover && '90px', '120px'].filter(Boolean).join(' '),
+  }) as CSSProperties;
 
 interface RowSpeed {
   latest?: SpeedResult;
@@ -303,9 +302,11 @@ interface RowSpeed {
 }
 
 function Connection({
-  row, position, sortable, disabled, speed,
+  row, failover, speedtests, position, sortable, disabled, speed,
 }: {
   row: LinkRow;
+  failover: boolean;
+  speedtests: boolean;
   /** Its place in the failover order; null on fixed paths. */
   position: number | null;
   sortable: boolean;
@@ -315,9 +316,10 @@ function Connection({
 }) {
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } =
     useSortable({ id: row.key, disabled: !sortable || disabled });
-  const detail = row.detail.filter(Boolean).join(' · ');
   const u = row.uplink;
-  const since = u?.state === 'offline' && u.since ? duration(Math.floor(Date.now() / 1000) - u.since) : null;
+  const now = Math.floor(Date.now() / 1000);
+  const since = u?.state === 'offline' && u.since ? duration(now - u.since) : null;
+  const dash = <span className={styles.dim}>—</span>;
 
   return (
     <li
@@ -339,21 +341,33 @@ function Connection({
         </button>
       )}
       {position != null && <span className={styles.position}>{position}</span>}
-      <Link to={row.to} className={styles.main} aria-label={`${row.name} settings`}>
-        <row.icon size={16} strokeWidth={1.9} className={styles.icon} />
-        <span className={styles.text}>
-          <span className={styles.name}>
-            {row.name}
-            {row.active && <span className={styles.tag}>In use</span>}
-          </span>
-          {detail && <span className={styles.detail}>{detail}</span>}
-          {speed?.latest && <SpeedLine result={speed.latest} />}
+      <Link to={row.to} className={`${styles.main} ${styles.cols}`} style={extraCols(speedtests, failover)}
+            aria-label={`${row.name} settings`}>
+        <span className={styles.name}>
+          <row.icon size={16} strokeWidth={1.9} className={styles.icon} />
+          {row.name}
+          {row.active && <span className={styles.tag}>In use</span>}
+          {row.metered && <Badge tone="neutral">Metered</Badge>}
         </span>
+        <span className={styles.cell}>{row.link ?? dash}</span>
+        <span className={`${styles.cell} ${styles.optional}`}>{row.signal ?? dash}</span>
+        <span className={`${styles.cell} ${styles.optional} mono`}>
+          {row.address ?? dash}
+          {row.address && row.addressing && <span className={styles.dim}> {row.addressing}</span>}
+        </span>
+        {speedtests && (
+          <span className={`${styles.cell} ${styles.optional}`}>{speed?.latest ? <SpeedLine result={speed.latest} /> : dash}</span>
+        )}
+        {failover && (
+          <span className={`${styles.cell} ${styles.optional}`}>
+            {u?.checkedAt ? `${duration(Math.max(0, now - u.checkedAt))} ago` : dash}
+          </span>
+        )}
         <span className={styles.state}>
           {since && <span className={styles.since}>for {since}</span>}
           <Badge tone={row.tone}>{row.state}</Badge>
+          <ChevronRight size={16} strokeWidth={1.9} className={styles.go} />
         </span>
-        <ChevronRight size={16} strokeWidth={1.9} className={styles.go} />
       </Link>
       {speed && (
         <Button
@@ -381,79 +395,5 @@ function SpeedLine({ result: r }: { result: SpeedResult }) {
       <ArrowUp size={11} strokeWidth={2.4} />{r.uploadMbps?.toFixed(1)} Mb/s
       {r.pingMs != null && <> · {Math.round(r.pingMs)} ms</>} · {ago} ago
     </span>
-  );
-}
-
-/**
- * Which uplinks are pinged and how. The WiFi's health is pulzr-wifi-uplink's
- * portal check, so it has no switch. Cellular is untracked until somebody
- * turns it on, because every ping is billed.
- */
-function Tracking({
-  status, rows, disabled, onTrack, onApplied,
-}: {
-  status: UplinksStatus;
-  rows: LinkRow[];
-  disabled: boolean;
-  onTrack: (iface: UplinkIface, on: boolean) => void;
-  onApplied: (pending?: Pending) => void;
-}) {
-  const t = status.tracking;
-  const [ips, setIps] = useState(t.ips.join(', '));
-  const [every, setEvery] = useState(String(t.interval));
-  const [down, setDown] = useState(String(t.down));
-  const [up, setUp] = useState(String(t.up));
-
-  const apply = useMutation({
-    mutationFn: () =>
-      api.post<{ pending?: Pending }>('/uplinks/tracking', {
-        ips: ips.split(',').map((ip) => ip.trim()).filter(Boolean),
-        interval: Number(every),
-        down: Number(down),
-        up: Number(up),
-      }),
-    onSuccess: (answer) => onApplied(answer.pending),
-  });
-
-  return (
-    <Section title="Tracking" icon={Radar}>
-      <div className={styles.switches}>
-        {rows.map((row) => row.uplink && (
-          <div key={row.key} className={styles.switch}>
-            <span>{row.name}</span>
-            {row.uplink.iface === 'wwifi' ? (
-              <span className={pages.dim}>Portal check</span>
-            ) : (
-              <Segmented
-                aria-label={`Tracking for ${row.name}`}
-                value={row.uplink.tracked ? 'on' : 'off'}
-                options={[...SWITCH]}
-                disabled={disabled}
-                onChange={(next) => onTrack(row.uplink!.iface, next === 'on')}
-              />
-            )}
-          </div>
-        ))}
-      </div>
-
-      <div className={pages.form}>
-        <TextField label="Ping" mono value={ips} placeholder="1.1.1.1, 8.8.8.8"
-                   onChange={(event) => setIps(event.target.value)} />
-        <TextField label="Every (seconds)" inputMode="numeric" value={every}
-                   onChange={(event) => setEvery(event.target.value)} />
-        <TextField label="Down after (misses)" inputMode="numeric" value={down}
-                   onChange={(event) => setDown(event.target.value)} />
-        <TextField label="Back after (answers)" inputMode="numeric" value={up}
-                   onChange={(event) => setUp(event.target.value)} />
-      </div>
-
-      {apply.isError && <Notice tone="error">{(apply.error as Error).message}</Notice>}
-
-      <div className={pages.actions}>
-        <Button variant="primary" loading={apply.isPending} onClick={() => apply.mutate()}>
-          Apply
-        </Button>
-      </div>
-    </Section>
   );
 }

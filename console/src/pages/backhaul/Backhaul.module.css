@@ -21,9 +21,6 @@
 
 .row:first-child { border-top: none; }
 
-/* The uplink carrying traffic, marked at its edge in the accent. */
-.inUse { box-shadow: inset 3px 0 0 var(--accent); }
-
 /* Lifted off the list while it moves: above its neighbours, with the
    hairline all round so it reads as one row in hand. */
 .dragging {
@@ -67,7 +64,6 @@
 .main {
   flex: 1 1 auto;
   min-width: 0;
-  display: flex;
   align-items: center;
   gap: var(--space-3);
   align-self: stretch;
@@ -97,6 +93,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  min-width: 0;
   font-size: var(--fs-md);
   font-weight: 600;
   color: var(--text-primary);
@@ -180,4 +177,56 @@
 @media (max-width: 480px) {
   .since { display: none; }
   .go { display: none; }
+}
+
+/* Columns: the same grid in the header and in every row's link, so the
+   header lines up over rows that move: --cols, set by Backhaul.tsx for the
+   columns the board has. */
+.cols {
+  display: grid;
+  grid-template-columns: var(--cols);
+  align-items: center;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: -6px calc(-1 * var(--card-pad)) 0;
+  padding: 0 0 0 calc(var(--card-pad) - 6px);
+  border-bottom: 1px solid var(--rule);
+}
+
+.headCols {
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: var(--space-3);
+  padding: 8px var(--card-pad) 8px var(--space-2);
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.handleSpace { flex: 0 0 28px; }
+.testSpace { flex: 0 0 auto; width: 34px; margin-right: var(--card-pad); }
+.stateCol { text-align: right; }
+
+.cell {
+  min-width: 0;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dim { color: var(--text-tertiary); }
+
+.state { justify-content: flex-end; }
+
+@media (max-width: 1180px) {
+  .optional { display: none; }
+  .cols { grid-template-columns: minmax(130px, 1.4fr) minmax(80px, 1fr) 120px; }
 }
