@@ -30,6 +30,13 @@
 # the target's feeds; the arch's are OpenWrt's as for every target. A
 # toolchain library an upstream package needs (openthread-br's libstdcpp6) is
 # then that build's, the same one the image's libc and libgcc are.
+#
+# SDK_PACKAGES, when set, is this release's SDK build for the arch
+# (sdk/build.sh's <out>/<arch>): ChirpStack Concentratord and the MQTT
+# Forwarder, which pulzr-lorawan brings. They are built from ChirpStack's
+# OpenWrt recipes against this release, and are the packages the images that
+# carry pulzr-lorawan install; OpenWrt's feeds have no ChirpStack. busybox is
+# left out: it is the image's own (sdk/build.sh), never an add-on's to bring.
 
 set -euo pipefail
 
@@ -49,21 +56,35 @@ DL="https://downloads.openwrt.org/releases/${VERSION}"
 WORK="$(mktemp -d)"
 trap 'rm -rf "${WORK}"' EXIT
 
-repos=()
-if [ -n "${TARGET_PACKAGES:-}" ]; then
-  # apk resolves only from a signed index. These are this build's own files,
-  # checked by the caller, so the index over them is signed here with a key
-  # made for this run and trusted for this run only, beside OpenWrt's.
-  ls "${TARGET_PACKAGES}"/*.apk >/dev/null 2>&1 || { echo "no packages in ${TARGET_PACKAGES}" >&2; exit 1; }
-  trusted="${WORK}/keys"; mkdir -p "${trusted}"
-  cp "${KEYS}"/*.pem "${trusted}/"
-  openssl ecparam -name prime256v1 -genkey -noout -out "${WORK}/local.pem"
-  openssl ec -in "${WORK}/local.pem" -pubout -out "${trusted}/local-target.pem" 2>/dev/null
-  rm -f "${TARGET_PACKAGES}/packages.adb"
-  ( cd "${TARGET_PACKAGES}" && "${APK}" mkndx --keys-dir "${trusted}" --sign "${WORK}/local.pem" \
+# apk resolves only from a signed index. TARGET_PACKAGES and SDK_PACKAGES are
+# this build's own files, checked by the caller, so the index over each is
+# signed here with a key made for this run and trusted for this run only,
+# beside OpenWrt's.
+trusted="${WORK}/keys"; mkdir -p "${trusted}"
+cp "${KEYS}"/*.pem "${trusted}/"
+openssl ecparam -name prime256v1 -genkey -noout -out "${WORK}/local.pem"
+openssl ec -in "${WORK}/local.pem" -pubout -out "${trusted}/local-build.pem" 2>/dev/null
+KEYS="${trusted}"
+local_index() {
+  local dir="$1"
+  ls "${dir}"/*.apk >/dev/null 2>&1 || { echo "no packages in ${dir}" >&2; exit 1; }
+  rm -f "${dir}/packages.adb"
+  ( cd "${dir}" && "${APK}" mkndx --keys-dir "${trusted}" --sign "${WORK}/local.pem" \
       --allow-untrusted --output packages.adb ./*.apk ) >&2
-  KEYS="${trusted}"
-  repos+=(--repository "${TARGET_PACKAGES}/packages.adb")
+  repos+=(--repository "${dir}/packages.adb")
+}
+
+repos=()
+if [ -n "${SDK_PACKAGES:-}" ]; then
+  sdk="${WORK}/sdk"; mkdir -p "${sdk}"
+  for f in "${SDK_PACKAGES}"/*.apk; do
+    case "$(basename "${f}")" in busybox-[0-9]*) continue ;; esac
+    if [ -f "${f}" ]; then cp "${f}" "${sdk}/"; fi
+  done
+  local_index "${sdk}"
+fi
+if [ -n "${TARGET_PACKAGES:-}" ]; then
+  local_index "${TARGET_PACKAGES}"
 else
   # The kmods feed is named for the kernel the release ships on this target.
   kernel="$(curl -fsSL --retry 3 "${DL}/targets/${TARGET}/profiles.json" \

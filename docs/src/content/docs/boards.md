@@ -72,7 +72,7 @@ confinement, the LoRa stack — is shared and must not be duplicated.
 ## Adding a concentrator, not a board
 
 Drop a JSON file into
-`feed/pulzr-concentrator/files/usr/share/pulzr/concentrator/`. That is the
+`feed/pulzr-lorawan/files/usr/share/pulzr/concentrator/`. That is the
 whole of it — the console's hardware menu is built by reading that directory,
 so a new profile appears as a selectable option with no UI change and no SPA
 rebuild.

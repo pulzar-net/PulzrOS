@@ -43,7 +43,7 @@ boardConf = function() {
 };
 
 // The board's features, from the image it was built as (PULZR_FEATURES, see
-// boards/common/board.conf), and each installed add-on's word (modbus). Not
+// boards/common/board.conf), and each installed add-on's word (lorawan). Not
 // settable here: a feature is a package on the gateway, and a page for a
 // package that is not there is a page of errors.
 //
@@ -60,6 +60,11 @@ features = function() {
         if (_m_fs.access('/usr/libexec/pulzr/addon-health/' + f[0]) && !(f[1] in out))
             push(out, f[1]);
     }
+    // gnss is the board's receiver, and pulzr-lorawan drives it: concentratord
+    // holds the port for GPS time and PPS (pulzr-gps). A Pi without the add-on
+    // has the word and nothing behind its page.
+    if (!('lorawan' in out))
+        return filter(out, (w) => w != 'gnss');
     return out;
 };
 

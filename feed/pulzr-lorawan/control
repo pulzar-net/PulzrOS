@@ -1,0 +1,12 @@
+Package: pulzr-lorawan
+Provides: pulzr-cap-lorawan
+Depends: pulzr-base, ucode, ucode-mod-fs, ucode-mod-uci, jsonfilter, jshn, ca-bundle, coreutils-stty
+Maintainer: Joseph Telaak <joseph@pulzr.net>
+License: Apache-2.0 AND MIT
+Architecture: @ARCH@
+Description: A LoRaWAN gateway on the gateway's concentrators.
+ ChirpStack Concentratord for each SX130x slot, the MQTT Forwarder to the
+ platform, the region and channel plan the console sets, the uplink buffer
+ and the receiver's GNSS. Built into the image of a board whose concentrator
+ is fitted at the factory; an add-on everywhere else, offered once
+ pulzr-probe finds one. See https://oss.pulzr.net/PulzrOS/concentrators.html.

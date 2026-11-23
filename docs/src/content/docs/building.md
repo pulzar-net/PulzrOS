@@ -79,7 +79,7 @@ The hours-long builds run in `prebuilt.yml`: each SDK target's packages (`sdk/bu
 | `pulzr-console` | the ucode API and the built console |
 | `pulzr-tui` | the terminal UI |
 | `pulzr-adopt` | claim and adoption |
-| `pulzr-concentrator` | LoRa radio detection, forwarders, GNSS |
+| `pulzr-lorawan` | the LoRaWAN add-on: concentrators, forwarders, GNSS; built in on the LoRaWAN boards |
 | `pulzr-mqtt` | the MQTT agent |
 | `pulzr-wireguard` | the management tunnel |
 | `pulzr-cellular` | modems, dongles and tethered phones; built in or an add-on |

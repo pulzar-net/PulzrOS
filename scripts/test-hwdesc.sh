@@ -19,7 +19,7 @@ set -uo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HWDESC="${ROOT_DIR}/feed/pulzr-base/files/usr/sbin/pulzr-hwdesc"
 HWLINE="${ROOT_DIR}/feed/pulzr-base/files/usr/sbin/pulzr-hwline"
-LORA_HOTPLUG="${ROOT_DIR}/feed/pulzr-concentrator/files/etc/hotplug.d/tty/20-pulzr-lora"
+LORA_HOTPLUG="${ROOT_DIR}/feed/pulzr-lorawan/files/etc/hotplug.d/tty/20-pulzr-lora"
 
 command -v python3 >/dev/null 2>&1 || { echo "python3 is required (for the jsonfilter stub)" >&2; exit 2; }
 

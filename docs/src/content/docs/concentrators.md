@@ -3,6 +3,15 @@ title: "Concentrators and channel counts"
 description: "A slot is one SX130x and the eight channels it carries."
 ---
 
+LoRaWAN is the `pulzr-lorawan` add-on ([addons.md](/PulzrOS/addons.html)):
+ChirpStack Concentratord for each slot, the MQTT Forwarder to the platform,
+and the region and channel plan from the console. It is in the image of
+every board whose concentrator is part of it (the RAK gateways, the Dragino
+LPS8N, the SenseCAP M2), where an upgrade cannot drop it, and offered on a
+kit (the Pis) when one is found. What differs between boards (the SPI device,
+the reset line, the GNSS, the SX1302 or SX1303 and its model) is in
+`board.conf`, which the add-on reads; the add-on has no board in it.
+
 ## Slots
 
 A **slot** is one SX130x and the eight channels it carries.
@@ -100,7 +109,7 @@ thing to do before the RAK7289CV2 ships.
 ## Adding a part
 
 Drop a JSON file into
-`feed/pulzr-concentrator/files/usr/share/pulzr/concentrator/`. That is the
+`feed/pulzr-lorawan/files/usr/share/pulzr/concentrator/`. That is the
 whole of it — the console's hardware menu reads that directory, so a new part
 appears as a selectable option with no UI change and no SPA rebuild.
 

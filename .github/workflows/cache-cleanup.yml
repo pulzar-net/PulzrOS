@@ -51,7 +51,7 @@ jobs:
           list="$(./build.sh --list-json)"
           openwrt="$(sed -n 's/^OPENWRT_VERSION="\(.*\)"/\1/p' boards/common/board.conf)"
           {
-            for t in $(sdk/targets); do sdk/key "${t}"; done
+            for t in $(./build.sh --sdk-targets); do sdk/key "${t}"; done
             jq -r '.[] | select(.device != "") | "device-ib-\(.device)-\(.deviceKey)"' <<<"${list}"
             jq -r '.[] | "imagebuilder-\(.imagebuilder)"' <<<"${list}"
             echo "openwrt-dl-${openwrt}"

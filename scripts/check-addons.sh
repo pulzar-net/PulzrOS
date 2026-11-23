@@ -13,6 +13,10 @@
 #     path there is: the plan and the owner both put this guard on the image
 #     side. The shared RAK lists are what the RAK7268 boards inherit, so this
 #     reads each board's resolved list, not one file.
+#   * A board whose concentrator is part of it (fixed slots, no "auto": the
+#     RAKs, the Dragino, the SenseCAP) carries pulzr-lorawan in its image. It
+#     is sold as a LoRaWAN gateway; as an add-on, the one an upgrade fails to
+#     put back is a gateway that stopped forwarding, Osborne among them.
 #   * Every architecture a board that may be offered an add-on runs is in that
 #     add-on's arches. apk matches the architecture name exactly, so the
 #     GL-SFT1200's mipsel_24kc_24kf was a gap that no build showed. Only for a
@@ -48,11 +52,13 @@ for conf in "${BOARDS_DIR}"/*/board.conf; do
   [ "${id}" = common ] || boards+=("${id}")
 done
 
-# One line per board: its id, its OPENWRT_ARCH, its resolved package list.
+# One line per board: its id, its OPENWRT_ARCH, its resolved package list, its
+# status and its concentrator slots.
 board_facts() {
   ( . "${BOARDS_DIR}/$1/board.conf"
-    printf '%s\t%s\t%s\t%s\n' "${BOARD_ID}" "${OPENWRT_ARCH:-}" \
-      "$(pulzr_packages | sed 's/#.*//' | tr -s '[:space:]' ' ')" "${BOARD_STATUS:-supported}" )
+    printf '%s\t%s\t%s\t%s\t%s\n' "${BOARD_ID}" "${OPENWRT_ARCH:-}" \
+      "$(pulzr_packages | sed 's/#.*//' | tr -s '[:space:]' ' ')" "${BOARD_STATUS:-supported}" \
+      "${PULZR_CONCENTRATOR_SLOTS:-auto}" )
 }
 
 facts="$(mktemp)"; trap 'rm -f "${facts}"' EXIT
@@ -88,7 +94,7 @@ for pkgdir in "${FEED_DIR}"/*/; do
       || bad "${name}/control does not say 'Provides: pulzr-cap-${cap}'"
   done
 
-  while IFS=$'\t' read -r id arch packages status; do
+  while IFS=$'\t' read -r id arch packages status _; do
     allowed=0
     if [ "${boards_ok}" = "*" ]; then allowed=1
     else case " ${boards_ok} " in *" ${id} "*) allowed=1 ;; esac; fi
@@ -108,6 +114,14 @@ for pkgdir in "${FEED_DIR}"/*/; do
   done < "${facts}"
 done
 [ "${count}" -gt 0 ] || bad "no add-ons found; check feed/*/addon"
+
+# Stands for Osborne: see the header.
+while IFS=$'\t' read -r id _ packages _ slots; do
+  case " ${slots} " in *" auto "*) continue ;; esac
+  case " ${packages} " in *" pulzr-lorawan "*) ;; *)
+    bad "${id} declares its concentrator slots (${slots}) and does not build pulzr-lorawan in (PULZR_ADDONS_BUILTIN)" ;;
+  esac
+done < "${facts}"
 
 # What pulzr-base will carry: one addons.caps line per add-on, and each
 # add-on's keep.d paths in the merged keep.d.

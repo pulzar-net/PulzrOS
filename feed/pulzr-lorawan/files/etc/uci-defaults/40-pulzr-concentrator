@@ -1,5 +1,6 @@
 #!/bin/sh
-# Seed the concentrator section and run the first detection.
+# Seed the LoRaWAN sections and run the first detection: on the first boot of
+# an image that carries pulzr-lorawan, or when pulzr-addon installs it.
 
 # OpenWrt's prepare_rootfs runs every uci-defaults script during image
 # assembly, with IPKG_INSTROOT set and absolute paths resolving to the build
@@ -9,12 +10,15 @@
 
 . /etc/pulzr/board.conf
 
-uci -q batch <<EOF
-set pulzr.concentrator=concentrator
-set pulzr.concentrator.status='unknown'
-set pulzr.lorawan=lorawan
-set pulzr.lorawan.region='${PULZR_LORA_REGION:-US915}'
-EOF
+# Only what is missing. The add-on installed on a gateway that ran LoRaWAN
+# before, or put back after an upgrade, finds the region somebody set kept in
+# /etc/config/pulzr, and must not reset it to the board's.
+uci -q get pulzr.concentrator >/dev/null || {
+    uci -q set pulzr.concentrator=concentrator
+    uci -q set pulzr.concentrator.status='unknown'
+}
+uci -q get pulzr.lorawan >/dev/null || uci -q set pulzr.lorawan=lorawan
+uci -q get pulzr.lorawan.region >/dev/null || uci -q set pulzr.lorawan.region="${PULZR_LORA_REGION:-US915}"
 uci commit pulzr
 
 # Detection at image-build time would record the *builder's* hardware, so this

@@ -778,7 +778,7 @@ jobs:
               echo "devices=$(jq -c '[.[] | select(.device != "") | {device, deviceKey}] | unique' <<<"${matrix}")"
               echo "arches=$(jq -r '[.[].arch] | unique | join(" ")' <<<"${matrix}")"
             else
-              echo "sdk=$(sdk/targets | jq -Rsc 'split("\n") | map(select(. != ""))')"
+              echo "sdk=$(./build.sh --sdk-targets | jq -Rsc 'split("\n") | map(select(. != ""))')"
               echo "devices=$(./build.sh --list-json | jq -c '[.[] | select(.device != "") | {device, deviceKey}] | unique')"
               echo "arches="
             fi

@@ -124,6 +124,17 @@ target_packages_of() {
   done
 }
 
+# This release's SDK build of <arch> (sdk/build.sh, which build.sh's sdk stage
+# and CI's prebuilt jobs put in .build/sdk/<arch>): ChirpStack's packages, for
+# an add-on that brings them (pulzr-lorawan). Prints the directory, or nothing
+# for an arch no SDK builds (the GL-SFT1200's); an add-on that names one of
+# them there fails in addon-upstream.sh by name.
+SDK_DIR="${SDK_DIR:-${ROOT_DIR}/.build/sdk}"
+sdk_packages_of() {
+  ls "${SDK_DIR}/$1"/*.apk >/dev/null 2>&1 && echo "${SDK_DIR}/$1"
+  return 0
+}
+
 # The boards that may install <add-on> on <arch> as an add-on: on that arch,
 # with an image, allowed by its ADDON_BOARDS and not carrying it built in.
 # One line each: <board> <target/subtarget>.
@@ -238,6 +249,7 @@ for pkgdir in "${FEED_DIR}"/*/; do
       target_packages="$(target_packages_of "${arch}")"
       kmods="${WORK}/kmods-${name}-${arch}"
       upstream_names="$(KEEP_KMODS="${keep_kmods}" TARGET_PACKAGES="${target_packages}" \
+          SDK_PACKAGES="$(sdk_packages_of "${arch}")" \
           "${ROOT_DIR}/scripts/addon-upstream.sh" "${APK}" "${OPENWRT_KEYS}" "${arch}" "${target}" \
           "${OUT}/${arch}" $(grep -v '^[[:space:]]*\(#\|$\)' "${pkgdir}/upstream") 2>"${kmods}")" \
         || { cat "${kmods}" >&2; die "could not fetch ${name}'s upstream packages for ${arch}"; }

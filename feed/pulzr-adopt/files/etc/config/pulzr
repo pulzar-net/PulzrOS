@@ -22,15 +22,6 @@ config console 'console'
 	# password that can be extracted from its flash.
 	option local_login '1'
 
-config concentrator 'concentrator'
-	option status 'unknown'
-	option detected ''
-	option override ''
-	option active ''
-
-config lorawan 'lorawan'
-	option region 'US915'
-
 config mqtt 'mqtt'
 	option host ''
 	option port '8883'

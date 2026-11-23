@@ -1,0 +1,36 @@
+#!/bin/sh
+#
+# LoRaWAN was in every Pi image (and every other board with a concentrator)
+# before it was the pulzr-lorawan add-on. A gateway that upgrades into a
+# release without it in the image, and ran a concentrator, wants the add-on
+# now: its restore installs it once the firmware is confirmed, and its own
+# 40-pulzr-concentrator finds the slots, the region and the plan where the
+# upgrade kept them in /etc/config/pulzr. A Pi that never had a concentrator
+# gets nothing, which is the point.
+#
+# Ran one is a slot that answered: pulzr-concentrator-detect recorded
+# pulzr.concentrator.present. Once only, so an add-on somebody removed later
+# is not brought back by the next upgrade.
+#
+# LoRaWAN is never the backhaul, so nothing is carried across: the add-on is
+# downloaded over the uplink the gateway came back on, and the uplinks of the
+# minutes in between are the minutes any upgrade costs.
+
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+
+. /etc/pulzr/board.conf
+
+[ "$(uci -q get pulzr_addons.main.lorawan_split)" = 1 ] && exit 0
+case " ${PULZR_ADDONS_BUILTIN} " in *" pulzr-lorawan "*) exit 0 ;; esac
+grep -q "^pulzr-lorawan	" /usr/share/pulzr/addons.caps 2>/dev/null || exit 0
+
+uci -q set pulzr_addons.main.lorawan_split=1
+if [ "$(uci -q get pulzr.concentrator.present || echo 0)" -gt 0 ] 2>/dev/null; then
+    case " $(uci -q get pulzr_addons.main.deny) " in *" lorawan "*) ;; *)
+        case " $(uci -q get pulzr_addons.main.wanted) " in *" pulzr-lorawan "*) ;; *)
+            uci -q add_list pulzr_addons.main.wanted=pulzr-lorawan ;;
+        esac ;;
+    esac
+fi
+uci -q commit pulzr_addons
+exit 0

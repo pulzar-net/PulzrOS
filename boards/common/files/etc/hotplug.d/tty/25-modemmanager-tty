@@ -10,7 +10,7 @@
 # It lives in the board files overlay rather than in a package, and that is
 # load-bearing: build.sh copies this tree over the rootfs after apk has
 # installed everything, so it replaces the package's copy. Shipping it inside
-# pulzr-concentrator instead put the same path in two packages, and the
+# the LoRaWAN package instead put the same path in two packages, and the
 # package manager refused both ("Cannot install package modemmanager" from
 # opkg, on every board; apk refuses the same clash).
 #

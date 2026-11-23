@@ -1,0 +1,16 @@
+# What makes this package an add-on (docs/src/content/docs/addons.md). One
+# capability. ADDON_FEATURE: the console's LoRaWAN pages and endpoints, and
+# its GNSS page on a board with a receiver (the receiver is concentratord's:
+# see pulzr-gps), there while this is installed.
+ADDON_TITLE="LoRaWAN"
+ADDON_CAPS="lorawan"
+ADDON_FEATURE="lorawan"
+# Built in where the concentrator is part of the product (PULZR_ADDONS_BUILTIN
+# on the RAK gateways, the Dragino LPS8N and the SenseCAP M2): a unit sold as
+# a LoRaWAN gateway must never come up from an upgrade without it. Offered on
+# a kit (the Pis) when pulzr-probe finds a concentrator on SPI or USB.
+#
+# Not the GL-SFT1200: its target is source-only (boards/gl-sft1200/openwrt),
+# so no OpenWrt SDK builds ChirpStack for its mipsel_24kc_24kf, and a build
+# for the soft-float mipsel_24kc is a package apk would refuse there.
+ADDON_BOARDS="rpi3 rpi4 rpi5 rak7391 rak7266 rak7267 rak7268c rak7268cv2 rak7268v2 rak7289cv2 rak7289v2 dragino-lps8n sensecap-m2"

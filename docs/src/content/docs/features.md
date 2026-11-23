@@ -7,7 +7,7 @@ A board says what it is for in one variable, and that one list decides what
 goes in its image, what its console shows and what its API answers.
 
 ```sh
-PULZR_FEATURES="lorawan wifi gnss"
+PULZR_FEATURES="wifi gnss"
 ```
 
 Before this, everything was in `PACKAGES_COMMON` and every page was in every
@@ -15,20 +15,25 @@ console. The Opal carried a concentrator stack, ChirpStack and an uplink broker
 for a radio it does not have; its console would have offered LoRaWAN settings
 that could only fail.
 
+LoRaWAN and cellular are not words: they are add-ons (below), built into the
+image of a board that has the radio as part of it and offered where one is
+plugged in.
+
 ## The words
 
 | Word | Packages | Console | API | Needs |
 |---|---|---|---|---|
-| `lorawan` | `PACKAGES_LORAWAN`: pulzr-concentrator, chirpstack-concentratord-sx1302, chirpstack-mqtt-forwarder, spi-tools, gpiod-tools, mosquitto-ssl | LoRaWAN | `/api/lorawan/` | |
-| `gnss` | none (pulzr-gps is in pulzr-concentrator) | GNSS | `/api/gnss` | `PULZR_GPS` not `none` |
+| `gnss` | none (pulzr-gps is in pulzr-lorawan, on while it is installed) | GNSS | `/api/gnss` | `PULZR_GPS` not `none`; pulzr-lorawan built in or offered |
 | `wifi` | `PACKAGES_WIFI`: pulzr-ap, wpad-openssl | Backhaul > WiFi, Access's setup AP | `/api/access/wifi`, `scan`, `ap`, `key` | |
 | `lan` | `PACKAGES_LAN`: pulzr-lan | Network > LAN | `/api/lan/` | `PULZR_LAN_PORTS` |
 | `dns` | `PACKAGES_DNS`: pulzr-dns | Network > DNS | `/api/dns/` | |
 | `failover` | `PACKAGES_FAILOVER`: pulzr-uplinks | Backhaul's order and Tracking; Overview's Uplink row follows its order | `/api/uplinks/` | cellular (built in or the add-on) or `wifi` |
 | `speedtest` | `PACKAGES_SPEEDTEST`: pulzr-speedtest, librespeed-cli | Network > Speed Test ([speedtest.md](/PulzrOS/speedtest.html)) | `/api/speedtest/` | not `PULZR_FLASH_CONSTRAINED` |
 
-Cellular is not a board word: `cellular` is the word of the pulzr-cellular
-add-on, built in where the modem is soldered on (below).
+`lorawan` and `cellular` are not board words: they are the words of the
+pulzr-lorawan and pulzr-cellular add-ons (below). `gnss` is the board's
+receiver, which ChirpStack Concentratord holds for GPS time and PPS, so
+`system.features()` reports it only while `lorawan` is on.
 
 Always present, on every board: Overview, Backhaul > Ethernet, Access, Panel,
 Logs, System, the management tunnel, adoption, MQTT and the TUI.
@@ -60,10 +65,10 @@ Each board's words are on its [Hardware](/PulzrOS/hardware.html) page, read from
 
 The Pi and RAK images were package-for-package what they were before the
 feature list existed; the list only named what they already carried. The
-Opal loses pulzr-concentrator, chirpstack-concentratord-sx1302,
-chirpstack-mqtt-forwarder, spi-tools, gpiod-tools and mosquitto-ssl. Since
-cellular became an add-on, the Opal, the Pis and the RAK7391 carry none of
-it until a modem is plugged in and the add-on installed.
+Opal carries no LoRaWAN and no cellular. Since cellular became an add-on, the
+Opal, the Pis and the RAK7391 carry none of it until a modem is plugged in
+and the add-on installed; since LoRaWAN did, the Pis carry none of it until a
+concentrator is found and the add-on installed.
 
 RAK gateways never get the router set: their one port is the uplink and the
 console at once (see [access.md](/PulzrOS/access.html)), and there is nothing to route
@@ -84,16 +89,40 @@ A board can carry an add-on in its image with `PULZR_ADDONS_BUILTIN`, which
 `pulzr_packages` appends and `pulzr_check_features` checks names an add-on.
 A built-in add-on upgrades with the image and cannot be removed, and its word
 is on from the first boot, because its addon-health script is in the image.
-The boards with a soldered LTE modem carry pulzr-cellular. Only the
+The boards sold as LoRaWAN gateways carry pulzr-lorawan, and
+`scripts/check-addons.sh` refuses a board that declares its concentrator
+slots without it. The boards with a soldered LTE modem carry pulzr-cellular. Only the
 RAK7289CV2 carries pulzr-modbus (and the pulzr-edge binary it brings),
 because its power board already talks Modbus; no other board may, the
 RAK7268CV2s in production above all.
 
 | Board | Built in |
 |---|---|
-| `rak7268c`, `rak7268cv2` | `pulzr-cellular` |
-| `rak7289cv2` | `pulzr-modbus`, `pulzr-cellular` |
+| `rak7266`, `rak7267`, `rak7268v2`, `rak7289v2`, `rak7391`, `dragino-lps8n`, `sensecap-m2` | `pulzr-lorawan` |
+| `rak7268c`, `rak7268cv2` | `pulzr-lorawan`, `pulzr-cellular` |
+| `rak7289cv2` | `pulzr-lorawan`, `pulzr-modbus`, `pulzr-cellular` |
 | every other | none |
+
+## LoRaWAN is an add-on
+
+LoRaWAN was the `lorawan` word, and so a fact about the image: a Pi built
+without a HAT carried ChirpStack and an uplink broker for nothing, and a Pi
+built with one could not be told apart by anything but its concentrator
+status. It is the add-on pulzr-lorawan, with the `lorawan` word:
+
+- **Built in** where the concentrator is part of the product: every RAK
+  gateway, the Dragino LPS8N and the SenseCAP M2. A sysupgrade replaces the
+  image whole, so it is in the new one too, and the gateway never comes up
+  without it.
+- **Offered** on a kit, the Pis, when pulzr-probe finds a concentrator on SPI
+  or USB, the way a Zigbee stick is.
+- **Carried over** once, on a Pi upgrading from an image that had the word:
+  `43-pulzr-lorawan-addon` adds it to `wanted` when a concentrator had
+  answered there, and the restore after the firmware is confirmed installs
+  it, keeping the region and slots `/etc/config/pulzr` kept.
+
+Not the Opal: its target is source-only, and no OpenWrt SDK builds ChirpStack
+for its architecture.
 
 ## Cellular is an add-on
 
@@ -127,16 +156,17 @@ Some scripts are called from everywhere and live in pulzr-base, not in a
 feature's package: `pulzr-backhaul-check` (adoption, the health gate, the
 motd, the reset button, the console) moved there from pulzr-cellular so a
 board without cellular still has it. `pulzr-gateway-facts` moved there
-from pulzr-concentrator: `pulzr-claim report` sends its facts from every
-gateway, and a board without `lorawan` that sent none was one Pulzr Cloud
+from the LoRaWAN package: `pulzr-claim report` sends its facts from every
+gateway, and a board without LoRaWAN that sent none was one Pulzr Cloud
 could not tell ran PulzrOS. On such a board it reports
 `concentrator=absent`. Everything else that reaches into a feature's package
 already copes with it being absent: `pulzr-wifi-uplink` tests for
 `pulzr-lora-route`, and the MQTT agent's ops fall back to `{}`.
 
-`pulzr-boot-config` stays in pulzr-concentrator. It writes a Pi's
-`config.txt`, every Pi has `lorawan`, and on a board without a Pi boot
-partition the console's UART setting already reads it as absent.
+`pulzr-boot-config` is in pulzr-base. It writes a Pi's `config.txt`: SPI on,
+for a concentrator HAT to be found before LoRaWAN is installed, and the
+wiring the Bluetooth add-on, the display and the USB device port need. On a
+board without a Pi boot partition it does nothing.
 
 ## Adding a feature
 

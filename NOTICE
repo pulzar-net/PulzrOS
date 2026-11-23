@@ -10,7 +10,7 @@ LICENSE), except where a file or package says otherwise:
     copy of a file from OpenWrt's modemmanager package and stays GPL-2.0-only.
   * feed/pulzr-base/files/usr/share/pulzr/fonts/slant.flf is a FIGlet font by
     Glenn Chappell, with its own permission notice in the file header.
-  * feed/pulzr-concentrator/files/usr/share/pulzr/region/*/region.toml and
+  * feed/pulzr-lorawan/files/usr/share/pulzr/region/*/region.toml and
     channels.toml are ChirpStack Concentratord's example files (MIT).
 
 The Pulzr name, the Pulzr logo and wordmark (console/public/icon.svg,

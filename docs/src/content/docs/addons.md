@@ -29,6 +29,7 @@ installer's 2 MB to spare, while one module's binary is a few MB.
 | pulzr-ble | `ble` | `pulzr-edge-ble` (little-endian only: not on big-endian mips) |
 | pulzr-thread | `thread` | OpenWrt's `openthread-br` |
 | pulzr-cellular | `cellular` | OpenWrt's `modemmanager`, `usb-modeswitch`, `usbmuxd` and the modem kmods |
+| pulzr-lorawan | `lorawan` | ChirpStack Concentratord and MQTT Forwarder, from this release's SDK build; OpenWrt's `mosquitto-ssl` |
 
 The first five are pulzr-edge built with that module's feature alone (the SDK recipe
 `sdk/packages/pulzr-edge`, which `ADDON_UPSTREAM` names). A radio runs where
@@ -315,3 +316,13 @@ its side comes from that board's ImageBuilder, the one its image is built
 from: kernel, kmods and toolchain libraries. A toolchain library an upstream
 package needs (openthread-br's `libstdcpp6`) is then shipped from that build;
 the rest is still OpenWrt's arch feed.
+
+A package OpenWrt does not build at all is ours, from this release's SDK build
+(`sdk/build.sh`, in `.build/sdk/<arch>`): pulzr-lorawan's ChirpStack
+Concentratord and MQTT Forwarder, from ChirpStack's own OpenWrt recipes,
+the same files the images that carry pulzr-lorawan install. They go in the
+same way as a source-only target's: `addon-upstream.sh` indexes them under a
+key made for that run, fetches with apk from that index beside OpenWrt's, and
+`build-addons.sh` signs the repository's index over them with the add-ons key,
+so a gateway checks them exactly as it checks the rest. busybox, which the SDK
+also builds, is the image's and never an add-on's.

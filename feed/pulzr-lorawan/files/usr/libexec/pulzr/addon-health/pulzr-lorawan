@@ -1,0 +1,19 @@
+#!/bin/sh
+#
+# Whether the LoRaWAN gateway is doing its job, for pulzr-addon's report.
+#
+#   exit 0  ok: a concentrator answers and the forwarder runs
+#   exit 2  idle: no concentrator in any slot
+#   exit 1  failing: a concentrator is there and the forwarder is not running,
+#           or only some of a board's slots answered
+#
+# Reported, never acted on: a card that stopped answering is a part to
+# replace, and removing the add-on over it would drop the region and channel
+# plan somebody set.
+case "$(uci -q get pulzr.concentrator.status)" in
+    present) ;;
+    partial) exit 1 ;;
+    *) exit 2 ;;
+esac
+/etc/init.d/pulzr-packet-forwarder running >/dev/null 2>&1 || exit 1
+exit 0

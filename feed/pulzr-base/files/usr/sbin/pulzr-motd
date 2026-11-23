@@ -160,9 +160,9 @@ if [ -x /usr/sbin/pulzr-usb-gadget ]; then
         "$(uci -q get network.usb.ipaddr || echo 192.168.63.1)"
 fi
 adoption_line
-# Only on a board built for LoRaWAN: "none detected" on one that has no
-# concentrator slot at all says nothing.
-case " ${PULZR_FEATURES:-} " in *" lorawan "*) concentrator_line ;; esac
+# Only with pulzr-lorawan installed: "none detected" on a gateway that has no
+# LoRaWAN at all says nothing.
+[ -e /usr/libexec/pulzr/addon-health/pulzr-lorawan ] && concentrator_line
 backhaul_line
 
 # The first-boot password, shown only while it is still the first-boot

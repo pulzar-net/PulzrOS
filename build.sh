@@ -7,6 +7,7 @@
 #   ./build.sh --all                # every board in boards/
 #   ./build.sh --list               # what is buildable
 #   ./build.sh --list-json          # ...with targets, for CI
+#   ./build.sh --sdk-targets        # the targets sdk/build.sh builds, for CI
 #
 #   ./build.sh --stage console      # just the web console
 #   ./build.sh --stage feed         # just the packages
@@ -93,15 +94,33 @@ list_boards() {
 # the board — several boards can share one. Emitting them here means the
 # workflow never has to parse board.conf itself, and a board whose target
 # changes updates its own cache key without anybody editing the workflow.
+# The OpenWrt targets sdk/build.sh builds for, one <target>/<subtarget> per
+# line: every board's, except a target only a board's own device support
+# builds (boards/<board>/openwrt/graft: the GL-SFT1200's siflower), for which
+# OpenWrt publishes no SDK. CI builds one SDK job per line (prebuilt.yml).
+#
+# These two lookups are here, not in sdk/: sdk/key hashes every file there,
+# and which boards exist is not what the SDK builds. A board added, or one
+# that takes an add-on, costs no SDK rebuild.
+sdk_targets() {
+  local conf
+  for conf in "${BOARDS_DIR}"/*/board.conf; do
+    [ "${conf}" = "${BOARDS_DIR}/common/board.conf" ] && continue
+    # shellcheck disable=SC1090
+    ( . "${conf}"
+      [ -n "${OPENWRT_DEVICE_SUPPORT:-}" ] && [ -f "${BOARDS_DIR}/${OPENWRT_DEVICE_SUPPORT}/openwrt/graft" ] && exit 0
+      echo "${OPENWRT_TARGET}/${OPENWRT_SUBTARGET}" )
+  done | sort -u
+}
+
 # The SDK build a board on <arch> takes its binaries from (pulzr-probe,
-# pulzr-edge, busybox): the sdk/targets target on that arch, and for the
+# pulzr-edge, busybox): the sdk_targets target on that arch, and for the
 # GL-SFT1200's mipsel_24kc_24kf the soft-float mipsel_24kc one, as
-# feed/pulzr-probe/fetch takes. Here, not in sdk/: sdk/key hashes every file
-# there, and a lookup is not what the SDK builds.
+# feed/pulzr-probe/fetch takes.
 sdk_target_for() {
   local arch="$1" t conf
   case "${arch}" in mipsel_24kc_24kf) arch=mipsel_24kc ;; esac
-  for t in $("${ROOT_DIR}/sdk/targets"); do
+  for t in $(sdk_targets); do
     for conf in "${BOARDS_DIR}"/*/board.conf; do
       [ "${conf}" = "${BOARDS_DIR}/common/board.conf" ] && continue
       # shellcheck disable=SC1090
@@ -122,7 +141,7 @@ list_boards_json() {
       . "${BOARDS_DIR}/${board}/board.conf"
       # sdk: the SDK build its binaries come from (sdk_target_for), and
       # that build's cache key (sdk/key).
-      local sdk; sdk="$(sdk_target_for "${OPENWRT_ARCH}")" || die "no SDK target builds ${OPENWRT_ARCH} (sdk/targets)"
+      local sdk; sdk="$(sdk_target_for "${OPENWRT_ARCH}")" || die "no SDK target builds ${OPENWRT_ARCH} (sdk_targets)"
       printf '{"board":"%s","name":"%s","status":"%s","target":"%s","subtarget":"%s","arch":"%s","imagebuilder":"%s","device":"%s","deviceKey":"%s","sdk":"%s","sdkKey":"%s"}' \
         "${BOARD_ID}" "${BOARD_NAME}" "${BOARD_STATUS:-supported}" \
         "${OPENWRT_TARGET}" "${OPENWRT_SUBTARGET}" \
@@ -731,14 +750,16 @@ pack_feed() {
   # place of the release's (verify_rootfs checks it did). A board the SDK does
   # not build for, the GL-SFT1200, builds the same busybox in its own tree
   # (scripts/device-imagebuilder-graft.sh), which is already in packages/.
+  # The LoRa packages are there for pulzr-lorawan's Depends, so a board that
+  # carries it built in must have them.
   local sdk="${BUILD_DIR}/sdk/${OPENWRT_ARCH}" apk
   if ls "${sdk}"/busybox-[0-9]*.apk >/dev/null 2>&1; then
     rm -f "${ib}/packages"/busybox-[0-9]*.apk
     cp "${sdk}"/busybox-[0-9]*.apk "${ib}/packages/"
   fi
   rm -f "${ib}/packages"/chirpstack-*.apk "${ib}/packages"/libloragw-*.apk
-  has_feature lorawan || return 0
-  ls "${sdk}"/*.apk >/dev/null 2>&1 \
+  addon_builtin pulzr-lorawan || return 0
+  ls "${sdk}"/chirpstack-*.apk >/dev/null 2>&1 \
     || die "no LoRa packages for ${OPENWRT_ARCH} in ${sdk}; build them with sdk/build.sh ${OPENWRT_TARGET}/${OPENWRT_SUBTARGET} ${BUILD_DIR}/sdk"
   for apk in "${sdk}"/*.apk; do
     case "$(basename "${apk}")" in busybox-[0-9]*) continue ;; esac
@@ -1008,17 +1029,18 @@ main() {
   case "${1:-}" in
     --list)      list_boards; exit 0 ;;
     --list-json) list_boards_json; exit 0 ;;
+    --sdk-targets) sdk_targets; exit 0 ;;
     # `mapfile` is bash 4 and macOS ships bash 3.2, so --all silently did
     # nothing there. A read loop works on both.
     --all)       while IFS= read -r b; do boards+=("${b}"); done < <(list_boards) ;;
     -h|--help)
-      sed -n '2,24p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+      sed -n '2,25p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
       exit 0 ;;
     '')
       # No board is fine for the stages that do not need one.
       case "${stage}" in
         console|feed|addons) ;;
-        *) sed -n '2,24p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        *) sed -n '2,25p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
       esac ;;
     *) boards=("$@") ;;
   esac

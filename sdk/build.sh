@@ -3,7 +3,7 @@
 # Build the LoRa packages for one target with the OpenWrt SDK of the release
 # the images are built from.
 #
-#   sdk/build.sh <target>/<subtarget> <out-dir>      (sdk/targets lists them)
+#   sdk/build.sh <target>/<subtarget> <out-dir>      (build.sh --sdk-targets lists them)
 #
 # ChirpStack Concentratord and the MQTT Forwarder are built by ChirpStack's own
 # OpenWrt recipes (their feed, pinned in feeds), with OpenWrt's Rust, so they

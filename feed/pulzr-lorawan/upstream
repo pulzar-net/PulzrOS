@@ -1,0 +1,12 @@
+# The packages this add-on brings, fetched with their dependencies
+# (scripts/addon-upstream.sh) and published beside it. ChirpStack's come from
+# this release's SDK build (sdk/build.sh, ChirpStack's own OpenWrt recipes),
+# the same builds the images that carry it install; the rest from OpenWrt's
+# signed feeds unchanged.
+chirpstack-concentratord-sx1302
+chirpstack-concentratord-sx1301
+chirpstack-mqtt-forwarder
+mosquitto-ssl
+spi-tools
+gpiod-tools
+coreutils-stty

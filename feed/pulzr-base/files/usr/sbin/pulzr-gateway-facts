@@ -11,7 +11,7 @@
 #
 # Also used by `pulzr-claim report`, so a gateway with no working radio —
 # which sends no stats — still says what it is. In pulzr-base, not the
-# lorawan feature's package, for the same reason: a router such as the Opal
+# LoRaWAN add-on, for the same reason: a router such as the Opal
 # has no radio at all, and without these facts Pulzr Cloud cannot tell it
 # runs PulzrOS, so never asks for its LAN or lists the devices behind it.
 #
@@ -49,8 +49,8 @@ wwan="$(addr wwan)"; [ -n "${wwan}" ]  && echo "cellular_ip=${wwan}"
 tunnel="$(jsonfilter -i /etc/pulzr/wireguard/tunnel.json -e '@.address' 2>/dev/null)"
 [ -n "${tunnel}" ] && echo "tunnel_ip=${tunnel%/*}"
 
-# absent on a build without the lorawan feature: there is nothing to detect.
-if [ -x /usr/sbin/pulzr-concentrator-detect ]; then
+# absent without pulzr-lorawan: there is nothing to detect.
+if [ -e /usr/libexec/pulzr/addon-health/pulzr-lorawan ]; then
     echo "concentrator=$(uci -q get pulzr.concentrator.status || echo unknown)"
 else
     echo "concentrator=absent"
@@ -74,6 +74,9 @@ words="${PULZR_FEATURES}"
     [ -e "/usr/libexec/pulzr/addon-health/${name}" ] || continue
     case " ${words} " in *" ${feature} "*) ;; *) words="${words} ${feature}" ;; esac
 done < /usr/share/pulzr/addons.caps
+# gnss only with lorawan, whose concentratord drives the receiver: as
+# system.features().
+case " ${words} " in *" lorawan "*) ;; *) words="$(echo " ${words} " | sed 's/ gnss / /')" ;; esac
 echo "features=$(echo ${words} | tr ' ' ',')"
 
 # The Wi-Fi bands its radios have, as 2g,5g,6g: what the gateway's page lists
