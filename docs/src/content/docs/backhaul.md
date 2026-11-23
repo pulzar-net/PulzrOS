@@ -309,6 +309,11 @@ module and checks that the metrics and the tracker follow it.
 A board without `failover` shows the same list with no grips: its order is
 fixed, Ethernet, then WiFi, then cellular.
 
+With the `speedtest` feature each row also has its last speed test and a
+button that tests that connection alone, out of its own device, whatever its
+place in the order; a cellular one asks first, with the data it will cost.
+See [Speed tests](/PulzrOS/speedtest.html), "One connection".
+
 ### Nothing is accepted from the wan zone
 
 This is the rule that makes a wired backhaul safe, and it is worth stating

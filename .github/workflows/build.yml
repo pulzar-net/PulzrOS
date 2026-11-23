@@ -212,6 +212,12 @@ jobs:
       - name: WiFi uplink and roaming
         run: UCODE=/tmp/ucode/build/ucode scripts/test-wifi-uplink.sh
 
+      # A speed test of one connection from the Backhaul page: out of that
+      # uplink's own device, no route touched, and cellular only once its
+      # cost is confirmed.
+      - name: Speed test of one uplink
+        run: UCODE=/tmp/ucode/build/ucode scripts/test-speedtest.sh
+
       # The radios page: what each radio runs and what the hardware lets it
       # run. A repeater the radio cannot hold, a channel the regulatory domain
       # closes or an open AP onto the LAN are refused before anything is

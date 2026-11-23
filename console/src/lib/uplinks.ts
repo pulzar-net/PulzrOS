@@ -37,6 +37,10 @@ export interface LinkRow {
   detail: (string | null | undefined)[];
   /** Its settings page. */
   to: string;
+  /** The netifd interface: what a speed test of it alone names. */
+  iface: string | null;
+  /** Billed by the megabyte. */
+  metered: boolean;
   /** pulzr-uplinks' entry, with failover. */
   uplink?: Uplink;
 }
@@ -155,6 +159,8 @@ export function uplinkRows(
         state,
         detail,
         to: pageFor(u.kind),
+        iface: u.iface,
+        metered: u.metered,
         uplink: u,
       };
     });
@@ -181,6 +187,8 @@ export function uplinkRows(
           wired.proto === 'static' ? 'static' : wired.proto === 'dhcp' ? 'DHCP' : null,
         ],
     to: '/backhaul/ethernet',
+    iface: wired.iface ?? (wired.device ? 'wan' : null),
+    metered: false,
   });
   if (features.has('wifi') && wifi) {
     rows.push({
@@ -193,6 +201,8 @@ export function uplinkRows(
       state: wifi.up ? 'Up' : 'Down',
       detail: wifiDetail(sources),
       to: '/backhaul/wifi',
+      iface: 'wwifi',
+      metered: false,
     });
   }
   if (features.has('cellular')) {
@@ -212,6 +222,8 @@ export function uplinkRows(
         'metered',
       ],
       to: '/backhaul/cellular',
+      iface: modem ? (usb ? 'usbwan' : 'wwan') : null,
+      metered: true,
     });
   }
   return rows;

@@ -6,8 +6,10 @@
 //   pulzr-speedtest latest            the last of each test on each uplink
 //   pulzr-speedtest brief             status with the last 30, short: the
 //                                       MQTT agent's `speedtest`, under 8KB
-//   pulzr-speedtest start             run now, in the background
-//   pulzr-speedtest run               run now, here
+//   pulzr-speedtest start [iface [metered]]
+//                                     run now, in the background
+//   pulzr-speedtest run [iface [metered]]
+//                                     run now, here
 //   pulzr-speedtest schedule off|daily|weekly
 //   pulzr-speedtest service           the scheduler, under procd
 //
@@ -28,13 +30,28 @@
 // plain HTTP ran at 48. HTTPS is the fallback for a server that does not
 // answer HTTP, and the result says which it was.
 //
-// ── NEVER CELLULAR ─────────────────────────────────────────────────────────
+// ── NEVER CELLULAR ON ITS OWN ──────────────────────────────────────────────
 //
-// Only wired and WiFi uplinks are tested, each through its own device, so a
-// test cannot fall through to the SIM when the route moves mid-test. A WiFi
-// network still on its sign-in page, an uplink tracking has seen carry
-// nothing, and the tunnel while it rides cellular are skipped. A gateway
-// whose only uplink is cellular never runs one.
+// A run of every uplink, the schedule's and the console's Run, tests only
+// wired and WiFi uplinks, each through its own device, so a test cannot fall
+// through to the SIM when the route moves mid-test. A WiFi network still on
+// its sign-in page, an uplink tracking has seen carry nothing, and the tunnel
+// while it rides cellular are skipped. A gateway whose only uplink is
+// cellular never runs one by itself.
+//
+// ── ONE UPLINK ─────────────────────────────────────────────────────────────
+//
+// `start <iface>` tests that uplink alone, whatever its place in the order:
+// librespeed-cli and curl bind to its device, and the kernel answers a bound
+// socket from that device's own default route, which netifd keeps at the
+// uplink's metric (pulzr-uplinks keeps one even for a failed uplink, for its
+// probes). Nothing about which uplink carries the gateway's traffic changes.
+//
+// A metered one (cellular, a USB modem) runs only with the word `metered`
+// after its name, which the console sends once somebody has seen the
+// estimate and confirmed it, and for METERED_SECONDS each way rather than the
+// configured duration. `status` carries the estimate (`metered`): the last
+// test on that uplink scaled to that length, or ASSUMED_MBPS without one.
 //
 // ── WHEN ───────────────────────────────────────────────────────────────────
 //
@@ -53,6 +70,12 @@ const SERVERS = 'https://librespeed.org/backend-servers/servers.php';
 const KEEP = 120;
 const EVERY = { daily: 86400, weekly: 604800 };
 const DEVICE = /^[A-Za-z0-9._-]{1,15}$/;
+const IFACE = /^[A-Za-z0-9_]{1,32}$/;
+const METERED_KINDS = { cellular: true, 'usb-cellular': true };
+const METERED_SECONDS = 5;
+// Down and up, Mb/s, for an estimate with no earlier test on the uplink: a
+// good LTE cell. An estimate that comes in high is the safe way round.
+const ASSUMED_MBPS = [50, 20];
 
 let die = (msg, code) => {
     warn(msg, '\n');
@@ -134,6 +157,25 @@ let free = () => {
     return out;
 };
 
+// One uplink by name, any kind, for a test of it alone; null when it is not
+// an uplink here or has no device up.
+let one = (iface) => {
+    if (!match(iface ?? '', IFACE)) return null;
+    let st = captureJson('/usr/sbin/pulzr-uplinks status');
+    if (st?.uplinks) {
+        for (let u in st.uplinks) {
+            if (u.iface != iface) continue;
+            let dev = u.up ? (u.device ?? device(u.iface)) : null;
+            return dev ? { iface, kind: u.kind, device: dev, state: u.state } : null;
+        }
+        return null;
+    }
+    let kind = { wwifi: 'wifi', wwan: 'cellular', usbwan: 'usb-cellular' }[iface] ??
+               (match(iface, /^wan(_[A-Za-z0-9_]+)?$/) ? 'ethernet' : null);
+    let dev = kind ? device(iface) : null;
+    return dev ? { iface, kind, device: dev, state: null } : null;
+};
+
 // ── the tests ──────────────────────────────────────────────────────────────
 
 // A command with a ceiling: there is no `timeout` applet in this build.
@@ -171,7 +213,8 @@ let librespeed = (dev, list, cfg) => {
 };
 
 let direct = (u, cfg) => {
-    let entry = { at: time(), test: 'direct', iface: u.iface, kind: u.kind, device: u.device };
+    let entry = { at: time(), test: 'direct', iface: u.iface, kind: u.kind, device: u.device,
+                  duration: cfg.duration, metered: !!METERED_KINDS[u.kind] };
     let list = servers(u.device);
     if (!list) return { ...entry, error: 'the LibreSpeed server list did not load' };
     let r = librespeed(u.device, list.plain, cfg), secure = false;
@@ -218,24 +261,39 @@ let running = () => {
     return r;
 };
 
-let run = () => {
+// What `run` and `start` are asked to test: every free uplink, or the one
+// named, refused here rather than in the background so the console hears why.
+let chosen = (iface, metered) => {
+    if (iface == null) return { uplinks: free(), only: false };
+    let u = one(iface) ?? die(sprintf('%s is not an uplink that is up here', iface), 2);
+    u.state != 'portal' || die(sprintf('%s is on a sign-in page', iface), 2);
+    !METERED_KINDS[u.kind] || metered == 'metered' || die(sprintf('%s is metered: confirm the data it costs', iface), 2);
+    return { uplinks: [u], only: true };
+};
+
+let run = (iface, metered) => {
     if (running()) die('a speed test is already running', 3);
+    let pick = chosen(iface, metered);
     system(['mkdir', '-p', '/var/run/pulzr']);
     let self = int(split(fs.readfile('/proc/self/stat') ?? '0', ' ')[0]);
-    writeJson(RUNNING, { pid: self, startedAt: time() });
-    let cfg = config(), out = [];
-    let uplinks = free();
+    writeJson(RUNNING, { pid: self, startedAt: time(), iface: pick.only ? iface : null });
+    let base = config(), out = [];
+    let uplinks = pick.uplinks;
     if (!length(uplinks)) {
         log('no wired or WiFi uplink to test');
     }
+    let cfg = base;
     for (let u in uplinks) {
+        cfg = METERED_KINDS[u.kind] ? { ...base, duration: METERED_SECONDS } : base;
         let r = direct(u, cfg);
         push(out, r);
         log(r.error ? sprintf('%s: %s', u.iface, r.error)
                     : sprintf('%s: %.1f down, %.1f up Mb/s, %.0f ms (%s)', u.iface, r.downloadMbps, r.uploadMbps, r.pingMs, r.server));
     }
-    if (length(uplinks)) {
-        let t = tunnel(cfg);
+    // The tunnel is one path whichever uplink it rides, so a test of one
+    // uplink leaves it out.
+    if (length(uplinks) && !pick.only) {
+        let t = tunnel(base);
         if (t) {
             push(out, t);
             log(t.error ? sprintf('tunnel: %s', t.error)
@@ -282,13 +340,34 @@ let due = (cfg) => {
     return (now >= at && now < at + 1800) || (last && since > EVERY[cfg.every] + 86400);
 };
 
+// What a test of each metered uplink that is up would cost, in MB: its last
+// test scaled to METERED_SECONDS, or ASSUMED_MBPS for that long each way.
+let metered = (h) => {
+    let out = [];
+    let st = captureJson('/usr/sbin/pulzr-uplinks status');
+    let list = st?.uplinks ?? filter(map(['wwan', 'usbwan'], one), (u) => u);
+    for (let u in list) {
+        if (!METERED_KINDS[u.kind] || u.up === false) continue;
+        let last = null;
+        for (let r in h)
+            if (r.test == 'direct' && r.iface == u.iface && !r.error && r.bytesReceived != null) last = r;
+        let bytes = last
+            ? (last.bytesReceived + (last.bytesSent ?? 0)) * METERED_SECONDS / (last.duration ?? config().duration)
+            : (ASSUMED_MBPS[0] + ASSUMED_MBPS[1]) * METERED_SECONDS * 1000000 / 8;
+        push(out, { iface: u.iface, seconds: METERED_SECONDS, estimateMB: int(bytes / 1000000.0 + 0.999),
+                    from: last ? 'last test' : 'assumed' });
+    }
+    return out;
+};
+
 let status = () => {
     let cfg = config(), r = running();
     let h = history();
     return {
         schedule: { every: cfg.every, at: sprintf('%02d:%02d', slot() / 3600, (slot() % 3600) / 60), duration: cfg.duration },
-        running: r ? { startedAt: r.startedAt } : null,
+        running: r ? { startedAt: r.startedAt, iface: r.iface ?? null } : null,
         uplinks: map(free(), (u) => ({ iface: u.iface, kind: u.kind, device: u.device })),
+        metered: metered(h),
         history: h,
     };
 };
@@ -303,7 +382,8 @@ let latest = () => {
         return { at: r.at, test: r.test, iface: r.iface ?? null, kind: r.kind ?? null, via: r.via ?? null,
                  device: r.device ?? null,
                  downloadMbps: r.downloadMbps ?? null, uploadMbps: r.uploadMbps ?? null,
-                 pingMs: r.pingMs ?? null, server: r.server ?? null, error: r.error ?? null };
+                 pingMs: r.pingMs ?? null, server: r.server ?? null, error: r.error ?? null,
+                 metered: r.metered ?? false };
     });
 };
 
@@ -317,17 +397,19 @@ let commands = {
         st.history = map(length(h) > 30 ? slice(h, length(h) - 30) : h, (r) => ({
             at: r.at, test: r.test, iface: r.iface ?? null, kind: r.kind ?? null, via: r.via ?? null,
             device: r.device ?? null, downloadMbps: r.downloadMbps ?? null, uploadMbps: r.uploadMbps ?? null, pingMs: r.pingMs ?? null,
-            server: r.server ? substr(r.server, 0, 40) : null, error: r.error ?? null,
+            server: r.server ? substr(r.server, 0, 40) : null, error: r.error ?? null, metered: r.metered ?? false,
         }));
         printf('%J\n', st);
     },
 
-    run: () => printf('%J\n', run()),
+    run: (iface, metered) => printf('%J\n', run(iface, metered)),
 
-    start: () => {
+    start: (iface, metered) => {
         if (running()) die('a speed test is already running', 3);
-        system(['start-stop-daemon', '-S', '-b', '-x', '/usr/sbin/pulzr-speedtest', '--', 'run']);
-        printf('%J\n', { started: true });
+        let pick = chosen(iface, metered);
+        system(['start-stop-daemon', '-S', '-b', '-x', '/usr/sbin/pulzr-speedtest', '--', 'run',
+                ...(pick.only ? [iface, ...(metered == 'metered' ? ['metered'] : [])] : [])]);
+        printf('%J\n', { started: true, iface: pick.only ? iface : null });
     },
 
     schedule: (every) => {

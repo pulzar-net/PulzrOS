@@ -67,6 +67,7 @@ for t in scripts/test-*.sh; do bash "$t" || echo "FAILED: $t"; done
 | `test-led.sh` | LED drivers against a fake sysfs |
 | `test-rak-power.sh` | the RAK power board on a simulated bus (needs Lua 5.1 and libmodbus) |
 | `test-router.sh` | uplinks and DNS failover (needs `UCODE`) |
+| `test-speedtest.sh` | a speed test of one uplink: its device, no route touched, cellular only confirmed (needs `UCODE`) |
 | `test-wifi-uplink.sh` | the WiFi verdict and roaming (needs `UCODE`) |
 | `test-addon.sh` | installing, refusing and restoring add-ons (needs `UCODE`) |
 | `test-figlet.sh` | the banner renderer against `figlet` (needs `UCODE`) |

@@ -27,7 +27,7 @@ The gateway at a glance: uplink in use, LoRaWAN and radio state, resources, firm
 
 | Page | What you do there | Feature |
 |---|---|---|
-| **Backhaul** | every connection in failover order, its state, address and signal, which one is in use; drag to set the order, tracking per uplink | every board; ordering and tracking with `failover` |
+| **Backhaul** | every connection in failover order, its state, address and signal, which one is in use; drag to set the order, tracking per uplink, a speed test of each | every board; ordering and tracking with `failover` |
 | **Backhaul > Ethernet** | DHCP or a static address on each wired uplink, and its VLAN | every board |
 | **Backhaul > Cellular** | APN, on or off, signal and the modem's state | `cellular` |
 | **Backhaul > WiFi** | scan and join a network, see why it is not online, sign in to a captive portal | `wifi` |

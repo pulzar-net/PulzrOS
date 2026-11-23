@@ -14,8 +14,11 @@ status = function() {
     return _m_util.runJson(TOOL + ' status') ?? { error: 'pulzr-speedtest is not on this gateway.' };
 };
 
-start = function() {
-    return _m_util.tool(TOOL, ['start']);
+// Every free uplink, or the one named; a metered one only with `metered`,
+// which the console sends after showing the estimate (pulzr-speedtest).
+start = function(req) {
+    if (req?.iface == null) return _m_util.tool(TOOL, ['start']);
+    return _m_util.tool(TOOL, ['start', req.iface, ...(req.metered === true ? ['metered'] : [])]);
 };
 
 setSchedule = function(req) {

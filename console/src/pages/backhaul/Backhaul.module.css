@@ -141,6 +141,24 @@
   color: var(--text-tertiary);
 }
 
+/* The last speed test, under the detail line, its arrows quieter than the
+   figures. */
+.speed {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-variant-numeric: tabular-nums;
+}
+
+.speed svg { color: var(--text-tertiary); }
+
+/* Run a speed test of this connection: outside the link, like the grip. */
+.test {
+  flex: 0 0 auto;
+  margin-right: var(--card-pad);
+  padding-inline: 8px;
+}
+
 /* Tracking: each uplink's switch on a line, name left, switch right. */
 .switches {
   display: flex;

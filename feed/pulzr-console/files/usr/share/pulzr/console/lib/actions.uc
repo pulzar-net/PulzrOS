@@ -71,7 +71,8 @@ const ACTIONS = {
     confirmPorts: (req, s) => ports.confirm(),
 
     // ── speed tests; see lib/speedtest.uc ──────────────────────────────────
-    startSpeedtest: (req, s) => audited('speedtest.run', { by: s.subject }, speedtest.start()),
+    startSpeedtest: (req, s) => audited('speedtest.run',
+        { by: s.subject, iface: req.iface ?? null, metered: req.metered === true }, speedtest.start(req)),
     setSpeedtestSchedule: (req, s) => audited('speedtest.schedule', { by: s.subject, every: req.every },
                                               speedtest.setSchedule(req)),
     revertPorts: (req, s) => audited('ports.revert', { by: s.subject }, ports.revert()),

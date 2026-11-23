@@ -851,8 +851,12 @@ export interface SpeedResult {
   at: number;
   test: 'direct' | 'tunnel';
   iface?: string | null;
-  kind?: 'ethernet' | 'wifi';
+  kind?: Uplink['kind'];
   device?: string | null;
+  /** Seconds each way. */
+  duration?: number;
+  /** Over a billed link: run alone, once confirmed, for less time. */
+  metered?: boolean;
   /** The tunnel's path: wired or wifi. */
   via?: string;
   server?: string | null;
@@ -870,8 +874,12 @@ export interface SpeedResult {
 /** `pulzr-speedtest status`. */
 export interface SpeedtestStatus {
   schedule: { every: 'off' | 'daily' | 'weekly'; at: string; duration: number };
-  running: { startedAt: number } | null;
+  /** `iface` when it is a test of that uplink alone. */
+  running: { startedAt: number; iface?: string | null } | null;
   /** The uplinks a run would test now. */
   uplinks: { iface: string; kind: string; device: string }[];
+  /** What a test of each metered uplink that is up would cost: its last
+      test scaled to `seconds`, or an assumed good LTE cell. */
+  metered: { iface: string; seconds: number; estimateMB: number; from: 'last test' | 'assumed' }[];
   history: SpeedResult[];
 }
