@@ -132,6 +132,8 @@ export interface InterfaceStatus {
   device?: string;
   proto?: string;
   address?: string | null;
+  /** Every address on it, "a.b.c.d/nn"; `address` is the first. */
+  addresses?: string[];
   gateway?: string | null;
   uptime?: number;
 }
@@ -190,11 +192,12 @@ export interface BackhaulStatus {
     device: string | null;
     gateway: string | null;
     address?: string | null;
+    addresses?: string[];
     proto?: string | null;
     /** Mb/s; null with no link. */
     speed?: number | null;
   };
-  wifi?: { up: boolean; device: string | null; address: string | null };
+  wifi?: { up: boolean; device: string | null; address: string | null; addresses?: string[] };
   tunnel: {
     wiredOnly: true;
     note: string;
@@ -551,6 +554,7 @@ export interface AccessStatus {
             `offline` answers nothing. See pulzr-wifi-uplink. */
         uplink: 'open' | 'portal' | 'offline' | 'unchecked';
         address: string | null;
+        addresses?: string[];
         signal: number | null;
         mac: string | null;
       };
@@ -792,7 +796,7 @@ export interface PortUplink {
   role: 'uplink';
   iface: string;
   addressing: Addressing;
-  state: { up: boolean; address: string | null; gateway: string | null; dns?: string[] };
+  state: { up: boolean; address: string | null; addresses?: string[]; gateway: string | null; dns?: string[] };
   /** The router at the end of it: its MAC from the ARP table, its maker as
       Pulzar Cloud named it on the last report. */
   router: { address: string; mac: string | null; maker: string | null } | null;
@@ -818,6 +822,8 @@ export interface PortVlan {
   vid: number;
   role: Exclude<PortRole, 'none'>;
   addressing: Addressing;
+  /** Every address on the VLAN's device. */
+  addresses?: string[];
   uplink: PortUplink | null;
 }
 
@@ -830,6 +836,8 @@ export interface Port {
   link: { present: boolean; up?: boolean; speed?: number | null; mac?: string | null };
   role: PortRole;
   addressing: Addressing;
+  /** Every address on the port's device, whichever interface holds it. */
+  addresses?: string[];
   uplink: PortUplink | null;
   neighbors?: PortNeighbor[];
   vlans: PortVlan[];

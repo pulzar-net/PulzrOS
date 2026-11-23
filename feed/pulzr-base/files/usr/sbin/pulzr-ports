@@ -576,12 +576,29 @@ let ifaceState = (name) => {
     let out = capture(['ubus', 'call', 'network.interface.' + name, 'status']);
     let s = null;
     try { s = out ? json(out) : null; } catch (e) { s = null; }
-    if (!s) return { up: false, address: null, gateway: null, dns: [] };
-    let address = null, gateway = null;
-    for (let a in s['ipv4-address'] ?? []) address = sprintf('%s/%d', a.address, a.mask);
+    if (!s) return { up: false, address: null, addresses: [], gateway: null, dns: [] };
+    // Every address, the first as `address`: it used to keep the last.
+    let addresses = map(s['ipv4-address'] ?? [], (a) => sprintf('%s/%d', a.address, a.mask));
+    let address = length(addresses) ? addresses[0] : null, gateway = null;
     for (let r in s.route ?? []) if (r.target == '0.0.0.0' && r.mask == 0) gateway = r.nexthop;
     // What a lease handed out, so Ethernet's "Make static" keeps it.
-    return { up: !!s.up, address, gateway, dns: s['dns-server'] ?? [], device: s.l3_device ?? null };
+    return { up: !!s.up, address, addresses, gateway, dns: s['dns-server'] ?? [], device: s.l3_device ?? null };
+};
+
+// Every IPv4 address on each Linux device, whichever netifd interface holds
+// it: the board's uplink port carries its lease and the console's
+// 192.168.61.1/24 and 169.254.61.1/16 as three interfaces on one device.
+let deviceAddresses = () => {
+    let out = {};
+    let dump = null;
+    try { dump = json(capture(['ubus', 'call', 'network.interface', 'dump']) ?? 'null'); } catch (e) { dump = null; }
+    for (let ifc in dump?.interface ?? []) {
+        let dev = ifc.l3_device ?? ifc.device;
+        if (!dev) continue;
+        for (let a in ifc['ipv4-address'] ?? [])
+            push(out[dev] ??= [], sprintf('%s/%d', a.address, a.mask));
+    }
+    return out;
 };
 
 let status = () => {
@@ -589,7 +606,7 @@ let status = () => {
     let all = links(ports, b);
     let byLink = {};
     for (let l in all) byLink[l.device] = l;
-    let macs = arp(), known = identity(), heard = neighbors();
+    let macs = arp(), known = identity(), heard = neighbors(), held = deviceAddresses();
     let linkOut = (l) => {
         if (!l) return null;
         let out = { role: l.role };
@@ -617,9 +634,11 @@ let status = () => {
             link: carrier(x.name),
             role: x.role,
             addressing: x.addressing,
+            addresses: uniq(held[x.name] ?? []),
             uplink: x.role == 'uplink' ? linkOut(byLink[x.name]) : null,
             neighbors: map(heard[x.name] ?? [], (n) => ({ ...n, maker: known?.routers?.[lc(n.chassis ?? '')] ?? null })),
             vlans: map(x.vlans, (v) => ({ vid: v.vid, role: v.role, addressing: v.addressing,
+                                          addresses: uniq(held[sprintf('%s.%d', x.name, v.vid)] ?? []),
                                           uplink: v.role == 'uplink' ? linkOut(byLink[sprintf('%s.%d', x.name, v.vid)]) : null })),
         })),
         console: accessPort(ports, b),

@@ -110,3 +110,10 @@ export function bitrate(bytesPerSecond: number | null | undefined): { value: str
   }
   return { value: n >= 100 || i === 0 ? n.toFixed(0) : n.toFixed(1), unit: units[i] };
 }
+
+/** Every address an interface holds, or its one `address` from firmware
+    that reported one. Null with none. */
+export function addressList(o: { address?: string | null; addresses?: string[] } | null | undefined): string | null {
+  const all = o?.addresses?.length ? o.addresses : o?.address ? [o.address] : [];
+  return all.length ? all.join(', ') : null;
+}

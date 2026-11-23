@@ -14,6 +14,7 @@ import Spinner from '@/components/ui/Spinner';
 import ErrorState from '@/components/ErrorState';
 import ApplyChangeNotice from '@/components/ApplyChangeNotice';
 import { useApplyChange } from '@/hooks/useApplyChange';
+import { addressList } from '@/lib/format';
 import styles from '../Pages.module.css';
 
 /**
@@ -110,11 +111,11 @@ function Uplink({
   return (
     <Section title={wired.label} icon={EthernetPort} note={<StatusBadge ok={wired.uplink.state.up} />}>
       <FactList>
-        <Fact label="Address" value={wired.uplink.state.address} mono />
+        <Fact label="Address" value={addressList(wired.uplink.state)} mono />
         <Fact label="Gateway" value={wired.uplink.state.gateway} mono />
         <Fact label="Link" value={link.up ? (link.speed ? speed(link.speed) : 'Up') : 'No cable'} />
-        {net && <Fact label="Console address" value={net.console.address} mono />}
-        {net && <Fact label="Link-local" value={net.linkLocal.address} mono />}
+        {net && <Fact label="Console address" value={addressList(net.console)} mono />}
+        {net && <Fact label="Link-local" value={addressList(net.linkLocal)} mono />}
       </FactList>
 
       <div className={styles.options}>

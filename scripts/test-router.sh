@@ -307,6 +307,19 @@ check "seed: the board's shape, keeping wan's static address" \
 ports seed
 check "seed: a kept layout is left alone" '3' "$(jq '[.pulzr[] | select(.[".type"] == "port")] | length' "${UCI_JSON}")"
 
+# Every address on a port, whichever interface holds it: the Opal's wan with
+# its lease, and the console's two on the same device.
+cat > "${NET_JSON}" <<'EOF'
+{"wan": {"up": true, "l3_device": "wan", "ipv4-address": [{"address": "10.0.0.50", "mask": 24}, {"address": "10.0.5.9", "mask": 24}]},
+ "console": {"up": true, "l3_device": "wan", "ipv4-address": [{"address": "192.168.61.1", "mask": 24}]},
+ "linklocal": {"up": true, "l3_device": "wan", "ipv4-address": [{"address": "169.254.61.1", "mask": 16}]}}
+EOF
+check "status: every address on a port" '["10.0.0.50/24","10.0.5.9/24","192.168.61.1/24","169.254.61.1/16"]' \
+    "$(ports status | jq -c '.ports[0].addresses')"
+check "status: every address on an uplink, the first as address" '"10.0.0.50/24" ["10.0.0.50/24","10.0.5.9/24"]' \
+    "$(ports status | jq -c '.ports[0].uplink.state | .address, .addresses' | paste -sd' ' -)"
+check "status: a LAN port has none of its own" '[]' "$(ports status | jq -c '.ports[1].addresses')"
+
 cat > "${T}/layout.json" <<'EOF'
 {"ports": [{"name": "wan", "role": "devices"},
            {"name": "lan1", "role": "uplink"},

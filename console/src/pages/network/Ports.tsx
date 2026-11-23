@@ -18,7 +18,7 @@ import ErrorState from '@/components/ErrorState';
 import ApplyChangeNotice from '@/components/ApplyChangeNotice';
 import { useApplyChange } from '@/hooks/useApplyChange';
 import { useFeatures } from '@/hooks/useFeatures';
-import { countdown } from '@/lib/format';
+import { addressList, countdown } from '@/lib/format';
 import styles from './Ports.module.css';
 
 /**
@@ -189,7 +189,11 @@ export default function Ports() {
         size: 140,
         cell: ({ row: { original: r } }) => {
           const uplink = uplinkOf(r);
-          const address = uplink?.state.address ?? (r.vid == null && state?.console === r.port.name ? state.consoleAddress : null);
+          // Every address on the device, whichever interface holds it: the
+          // board's port carries its lease and the console's two.
+          const held = r.vid == null ? r.port.addresses : r.port.vlans.find((v) => v.vid === r.vid)?.addresses;
+          const address = held?.length ? held.join(', ')
+            : uplink?.state.address ?? (r.vid == null && state?.console === r.port.name ? state.consoleAddress : null);
           return address ? <span className="mono">{address}</span> : <span className={styles.dim}>—</span>;
         },
       }),
@@ -445,7 +449,7 @@ function PortDetails({ port, clients, consoleAddress }: {
           <div key={label}>
             <div className={styles.heading}>Uplink{uplinks.length > 1 || label !== 'Untagged' ? `, ${label}` : ''}</div>
             <FactList>
-              <Fact label="Address" value={uplink.state.address} mono />
+              <Fact label="Address" value={addressList(uplink.state)} mono />
               <Fact label="Addressing" value={uplink.addressing.mode === 'static' ? 'Static' : 'DHCP'} />
               <Fact label="Router" value={uplink.router ? [uplink.router.maker, uplink.router.address].filter(Boolean).join(' · ') : null} />
               {uplink.router?.mac && <Fact label="Router MAC" value={uplink.router.mac} mono />}

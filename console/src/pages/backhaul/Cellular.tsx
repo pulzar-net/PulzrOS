@@ -13,7 +13,7 @@ import Spinner from '@/components/ui/Spinner';
 import ErrorState from '@/components/ErrorState';
 import ApplyChangeNotice from '@/components/ApplyChangeNotice';
 import { useApplyChange, type Pending } from '@/hooks/useApplyChange';
-import { modemKind } from '@/lib/format';
+import { addressList, modemKind } from '@/lib/format';
 import styles from '../Pages.module.css';
 
 /**
@@ -74,7 +74,7 @@ export default function Cellular() {
           <Fact label="State" value={<StatusBadge ok={cellular!.up === true} />} />
           <Fact label="Adapter" value={modemKind(modem?.kind)} />
           <Fact label="Model" value={modem?.model} />
-          <Fact label="Address" value={cellular!.address} mono />
+          <Fact label="Address" value={addressList(cellular)} mono />
           <Fact label="Network" value={modem?.network} />
           <Fact label="Technology" value={modem?.technology} />
           <Fact label="Signal" value={modem?.rssi != null ? `${modem.rssi} dBm` : null} />

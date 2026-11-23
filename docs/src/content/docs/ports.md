@@ -87,3 +87,12 @@ A layout:
 
 Over MQTT, `ports` answers with `status`, read-only, as `uplinks` and `dns`
 do: the layout is the site's, and Pulzar Cloud shows it beside the gateway.
+
+Each port and VLAN in `status` lists `addresses`: every IPv4 address on its
+device, whichever netifd interface holds it, so the board's uplink port shows
+its lease and the console's `192.168.61.1/24` and `169.254.61.1/16` together.
+A LAN port has none of its own; the bridge's are in the `lan` report
+(`address` and `addresses`). An uplink's `state` has `addresses` too, with
+`address` the first of them. The console's interface readers
+(`/api/network/status`, `/api/access/status`) report `addresses` beside
+`address` the same way.

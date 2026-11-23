@@ -6,7 +6,7 @@ import type { AccessStatus } from '@/types';
 import Section from '@/components/ui/Section';
 import Badge from '@/components/ui/Badge';
 import Fact from '@/components/Fact';
-import { duration } from '@/lib/format';
+import { addressList, duration } from '@/lib/format';
 import Notice from '@/components/ui/Notice';
 import Button from '@/components/ui/Button';
 import Spinner from '@/components/ui/Spinner';
@@ -167,7 +167,7 @@ export default function Wifi() {
               </div>
               <div className={styles.heroMeta}>
                 {[
-                  wifi.up ? wifi.address : null,
+                  wifi.up ? addressList(wifi) : null,
                   wifi.up && wifi.signal != null ? `${bars.word}, ${wifi.signal} dBm` : null,
                   SECURITY_NAMES[wifi.security],
                 ].filter(Boolean).join(' · ')}

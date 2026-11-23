@@ -33,9 +33,12 @@ ifaceStatus = function(name) {
     const status = ubus(sprintf('network.interface.%s', name), 'status');
     if (!status) return { configured: false };
 
-    let address = null, gateway = null;
-    for (let a in (status['ipv4-address'] ? status['ipv4-address'] : []))
-        address = sprintf('%s/%d', a.address, a.mask);
+    // Every address, not one: an interface can hold several (a static list,
+    // a lease and an alias), and the page lists them all. `address` is the
+    // first, which is the one netifd configured first.
+    let addresses = map(status['ipv4-address'] ? status['ipv4-address'] : [],
+                        (a) => sprintf('%s/%d', a.address, a.mask));
+    let address = length(addresses) ? addresses[0] : null, gateway = null;
     for (let r in (status.route ? status.route : []))
         if (r.target == '0.0.0.0' && r.mask == 0) gateway = r.nexthop;
 
@@ -46,6 +49,7 @@ ifaceStatus = function(name) {
         device: status.l3_device,
         proto: status.proto,
         address: address,
+        addresses: addresses,
         gateway: gateway,
         uptime: status.uptime,
     };
@@ -173,6 +177,7 @@ backhaul = function() {
             device: wiredDevice,
             gateway: route ? route.gateway : null,
             address: wan.address,
+            addresses: wan.addresses ?? [],
             proto: wan.proto,
             speed: linkSpeed(wiredDevice || wan.device),
         },
@@ -180,6 +185,7 @@ backhaul = function() {
             up: wwifi.up == true,
             device: wwifi.device,
             address: wwifi.address,
+            addresses: wwifi.addresses ?? [],
         },
         tunnel: {
             // Deliberately restated on every response rather than assumed by

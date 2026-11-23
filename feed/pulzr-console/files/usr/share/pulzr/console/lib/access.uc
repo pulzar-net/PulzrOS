@@ -150,6 +150,7 @@ status = function() {
                 // in wifiDetail().
                 uplink: signin.uplink().state,
                 address: length(addresses) ? addresses[0].address : null,
+                addresses: map(addresses, (a) => sprintf('%s/%d', a.address, a.mask)),
                 signal: signal,
                 mac: mac,
             };
