@@ -34,9 +34,9 @@ The console will not let you past the initial password without changing it. Once
 | Held past 10 s (every light comes on) | factory reset |
 | Anything else | nothing |
 
-**Setup mode** raises an access point for 30 minutes, but only when no uplink works. Join `Pulzar-<six hex>`, open `https://192.168.62.1`, sign in, and go to **Backhaul > WiFi**. If an uplink does work, nothing is raised and the lights flash fast for six seconds: the console is reachable the usual way. On an adopted gateway the AP's passphrase is on the gateway's page in the cloud and on its own Access page.
+**Setup mode** raises an access point for 30 minutes, but only when no uplink works. Join `Pulzar-<six hex>`, open `https://192.168.62.1`, sign in, and go to **Backhaul > WiFi**. If an uplink does work, nothing is raised and the lights flash fast for six seconds: the console is reachable the usual way. On an adopted gateway the AP's passphrase is on the gateway's page in the cloud and on its own Network page.
 
-Turn the gesture off with `pulzr.ap.button=0` (Access page). The full design, and why the ethernet port is the primary way back in, is in [Setup access](/PulzrOS/access.html).
+Turn the gesture off with `pulzr.ap.button=0` (Network page, Setup Access Point). The full design, and why the ethernet port is the primary way back in, is in [Setup access](/PulzrOS/access.html).
 
 ## Re-flashing a card
 

@@ -17,7 +17,25 @@
   min-width: 0;
 }
 
-/* wordmark.svg is a 344x95 mask; font-size (set per size) scales it. */
+/* The wordmark and OS on one baseline; font-size (set per size) scales both. */
+.word {
+  display: flex;
+  align-items: center;
+  gap: 0.04em;
+}
+
+/* As tall as the wordmark's letters, in the accent, heavier and set tight so
+   it reads as part of the name rather than a label after it. */
+.os {
+  font-family: Outfit, Inter, -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 1.05em;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  color: var(--accent);
+}
+
+/* wordmark.svg is a 344x95 mask. */
 .name {
   height: 0.95em;
   aspect-ratio: 344 / 95;

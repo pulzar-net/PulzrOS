@@ -27,12 +27,12 @@ The gateway at a glance: uplink in use, LoRaWAN and radio state, CPU, memory and
 
 | Page | What you do there | Feature |
 |---|---|---|
-| **Backhaul** | every connection in failover order with its link, signal, address, last speed test and last check, which one is in use; drag to set the order, a speed test of each | every board; ordering with `failover` |
+| **Backhaul** | every connection in failover order with its link, signal, address, last speed test and last check, which one is in use; drag to set the order, a speed test of each; the management tunnel to Pulzr Cloud | every board; ordering with `failover` |
 | **Backhaul > Ethernet** | DHCP or a static address on each wired uplink, and its VLAN | every board |
 | **Backhaul > Cellular** | APN, on or off, signal and the modem's state; which SIM slot on a modem with several | `cellular` |
 | **Backhaul > WiFi** | scan and join a network, see why it is not online, sign in to a captive portal | `wifi` |
 | **Backhaul > Tracking** | tracking on or off per uplink, its ping targets and thresholds | `failover` |
-| **Network** | every jack with its role and speed, as on Network > Ports; what each WiFi radio runs (role, network, security, channel, clients or signal); every client on the LAN and the access points, with its MAC, address, port or SSID, the services the LAN port scan found open and when it was last seen | every board; WiFi with `wifi`, clients with `lan` or `wifi` |
+| **Network** | every jack with its role and speed, as on Network > Ports; what each WiFi radio runs (role, network, security, channel, clients or signal) and the setup access point; every client on the LAN and the access points, with its MAC, address, port or SSID, the services the LAN port scan found open and when it was last seen | every board; WiFi with `wifi`, clients with `lan` or `wifi` |
 | **Network > Ports** | each port an uplink, a LAN port or unused; tagged VLANs. Undone unless confirmed. | every board |
 | **Network > LAN** | the LAN ports, clients, reservations, per-device policy and cellular rule | `lan` |
 | **Network > Tunnels** | WireGuard tunnels to a customer's own servers: what each reaches, the internet through it | `lan` |
@@ -40,7 +40,6 @@ The gateway at a glance: uplink in use, LoRaWAN and radio state, CPU, memory and
 | **Network > Port Forwarding** | exposed ports on the uplinks, and the tunnel forwards Pulzr Cloud opens | `lan` |
 | **Network > DNS** | upstream servers, local names, rebind protection, dynamic DNS | `dns` |
 | **Network > Speed Test** | a test out of each uplink, never cellular | `speedtest` |
-| **Access** | the setup access point and its passphrase, the management tunnel | every board |
 
 Details: [Networking](/PulzrOS/networking.html), [Setup access](/PulzrOS/access.html).
 
@@ -59,7 +58,7 @@ On fixed hardware (RAK units) the radio settings are read-only: the hardware can
 
 | Page | What you do there |
 |---|---|
-| **Panel** | each light on the board and what it shows now, the blink codes, the reset button |
+| **Panel** | each light on the board and what it shows now, the blink codes, the reset button; only on a board with LEDs |
 | **Logs** | the system log, filtered and followed live |
 | **System > Resources** | CPU, memory, temperature, storage, processes |
 | **System > Maintenance** | firmware upgrade, the local password, add-ons, reboot |

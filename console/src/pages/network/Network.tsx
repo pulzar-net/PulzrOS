@@ -20,6 +20,7 @@ import ErrorState from '@/components/ErrorState';
 import { useFeatures } from '@/hooks/useFeatures';
 import { duration, portLabel } from '@/lib/format';
 import PortStrip from './PortStrip';
+import SetupAccessPoint from './SetupAccessPoint';
 import styles from '../Pages.module.css';
 
 /**
@@ -272,6 +273,7 @@ export default function Network() {
           <DataTable table={wifiTable} fill="ssid" onRowClick={() => navigate('/network/wifi')} />
         </Section>
       )}
+      {features.has('wifi') && <SetupAccessPoint />}
       {showClients && (
         <Section
           title="Clients"

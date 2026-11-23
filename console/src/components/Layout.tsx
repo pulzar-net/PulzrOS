@@ -1,7 +1,9 @@
 import { Suspense, type CSSProperties } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { LogOut, Network, RefreshCw, ShieldAlert } from 'lucide-react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { api } from '@/services/api';
+import type { IoStatus } from '@/types';
 import { useSession } from '@/contexts/SessionContext';
 import { NAV, NAV_GROUPS, type NavEntry, type Tone } from '@/nav';
 import RecoveryBanner from './RecoveryBanner';
@@ -25,9 +27,19 @@ export default function Layout({
   const features = useFeatures();
   // Cellular's page only while it belongs on screen (useCellular).
   const cellular = useCellular();
+  // Panel only on a board with lights to show: the board's own list, or the
+  // kernel's on firmware from before it (owner, 23 Nov 2026). The same query
+  // the page makes; until it answers the entry is left out.
+  const io = useQuery({
+    queryKey: ['io-status'],
+    queryFn: () => api.get<IoStatus>('/io/status'),
+    staleTime: 5 * 60_000,
+  });
+  const leds = (io.data?.panel?.lights.length ?? 0) > 0
+    || (io.data?.leds ?? []).some((l) => l.present) || (io.data?.available.length ?? 0) > 0;
   const available = (entries: NavEntry[]) =>
     entries
-      .filter((entry) => features.has(entry.feature))
+      .filter((entry) => features.has(entry.feature) && (entry.path !== '/io' || leds))
       .map((entry) => ({
         ...entry,
         children: entry.children?.filter((child) =>

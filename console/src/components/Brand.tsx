@@ -1,7 +1,7 @@
 import styles from './Brand.module.css';
 
 /**
- * The Pulzr mark and wordmark, in one place.
+ * The Pulzr mark and the PulzrOS wordmark, in one place.
  *
  * The same two files app.pulzr.net draws (icon.svg and wordmark.svg), shipped
  * with the firmware rather than fetched: a gateway console has to render with
@@ -37,7 +37,12 @@ export default function Brand({
       <div className={styles.text}>
         {/* The wordmark is a mask filled with the text colour, so it follows
             the light and dark themes as the name in text did. */}
-        <div className={styles.name} style={{ fontSize: s.name }} role="img" aria-label="Pulzr" />
+        {/* PulzrOS: the Pulzr wordmark with OS set beside it in the accent,
+            the way the product is named on the gateway (owner, 23 Nov 2026). */}
+        <div className={styles.word} style={{ fontSize: s.name }} role="img" aria-label="PulzrOS">
+          <div className={styles.name} />
+          <span className={styles.os} aria-hidden>OS</span>
+        </div>
         {sub && (
           <div className={styles.sub} style={{ fontSize: s.sub }}>
             {sub}

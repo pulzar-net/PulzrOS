@@ -35,7 +35,6 @@ const Gnss = lazy(() => import('@/pages/Gnss'));
 const Bluetooth = lazy(() => import('@/pages/Bluetooth'));
 const Radios = lazy(() => import('@/pages/radios/Radios'));
 const Panel = lazy(() => import('@/pages/Panel'));
-const Access = lazy(() => import('@/pages/Access'));
 const Logs = lazy(() => import('@/pages/Logs'));
 const Resources = lazy(() => import('@/pages/system/Resources'));
 const Maintenance = lazy(() => import('@/pages/system/Maintenance'));
@@ -120,7 +119,9 @@ export default function App() {
         <Route path="bluetooth" element={<Gated feature="bluetooth"><Bluetooth /></Gated>} />
         {/* Where concentrator hardware used to be; it is a forwarder's tab now. */}
         <Route path="hardware" element={<Navigate to="/lorawan/forwarders/1/concentrator" replace />} />
-        <Route path="access" element={<Access />} />
+        {/* The Access page went (23 Nov 2026): its tunnel is on Backhaul, its
+            setup access point on Network. */}
+        <Route path="access" element={<Navigate to="/backhaul" replace />} />
         <Route path="io" element={<Panel />} />
         <Route path="logs" element={<Logs />} />
         <Route path="system" element={<Navigate to="/system/resources" replace />} />

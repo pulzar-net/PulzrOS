@@ -1,7 +1,6 @@
 import {
   Bluetooth,
   Gauge,
-  KeyRound,
   Lightbulb,
   Network,
   Radio,
@@ -101,7 +100,6 @@ export const NAV_GROUPS: NavGroup[] = [
           { path: '/network/speed', label: 'Speed Test', feature: 'speedtest' },
         ],
       },
-      { path: '/access', label: 'Access', icon: KeyRound, tone: 'amber' },
     ],
   },
   {

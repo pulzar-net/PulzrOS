@@ -155,7 +155,7 @@ waiting at a sign-in page, which are both what a moved gateway tends to have.
 
 **The master switch does not apply.** `pulzr.ap.enabled` is off by default and
 is about raising a radio unasked. With it in charge the gesture would do nothing
-on any gateway out of the box. `pulzr.ap.button=0` (Access page) is the switch
+on any gateway out of the box. `pulzr.ap.button=0` (Network page, Setup Access Point) is the switch
 for this, for a site that would rather have the truck roll.
 
 **The old network.** While a station is enabled on a radio, hostapd holds an AP on
@@ -173,7 +173,7 @@ carries it to the platform while there is an uplink (`setupAp`), for an admin of
 the organization to read off the gateway's page. The platform takes named fields
 only, so one that does not know this field drops it. Until it does, or for a
 gateway that never reported from 0.3.6, the only place to read the passphrase is
-the gateway's own Access page, and the way in to an adopted gateway with no uplink
+the gateway's own Network page, and the way in to an adopted gateway with no uplink
 is a cable.
 The passphrase survives upgrades from 0.3.6 (`keep.d/pulzr-ap`). Before that
 each upgrade changed it.
@@ -297,7 +297,7 @@ whatever was working, and is very hard for the site to trace back to a LoRaWAN
 gateway on a pole.
 
 The installer-facing consequence — a laptop that says "no internet" and
-self-assigns `169.254.x.x` — is stated on the Access page rather than left to
+self-assigns `169.254.x.x` — is stated on the Ports page rather than left to
 be discovered.
 
 ### Reaching it

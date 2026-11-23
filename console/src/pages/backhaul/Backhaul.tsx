@@ -46,6 +46,7 @@ import type { RadiosStatus } from '@/pages/radios/model';
 import { useCellular } from '@/hooks/useCellular';
 import { duration } from '@/lib/format';
 import { uplinkRows, type LinkRow } from '@/lib/uplinks';
+import ManagementTunnel from './ManagementTunnel';
 import styles from './Backhaul.module.css';
 
 /**
@@ -262,6 +263,8 @@ export default function Backhaul() {
           </SortableContext>
         </DndContext>
       </Section>
+
+      <ManagementTunnel />
 
       <Dialog
         open={!!confirm}
