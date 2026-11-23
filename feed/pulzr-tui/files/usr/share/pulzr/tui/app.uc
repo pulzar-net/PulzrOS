@@ -68,7 +68,6 @@ const NAV_GROUPS = [
             { path: '/backhaul/cellular', label: 'Cellular', feature: 'cellular' },
             { path: '/backhaul/wifi', label: 'WiFi', feature: 'wifi' },
         ] },
-        { path: '/access', label: 'Access' },
     ] },
     { label: 'Radios', entries: [
         { path: '/lorawan', label: 'LoRaWAN', feature: 'lorawan', children: [
@@ -79,7 +78,8 @@ const NAV_GROUPS = [
         { path: '/gnss', label: 'GNSS', feature: 'gnss' },
     ] },
     { label: 'Gateway', entries: [
-        { path: '/io', label: 'Panel' },
+        // Only on a board with lights, as the web console (23 Nov 2026).
+        { path: '/io', label: 'Panel', feature: 'leds' },
         { path: '/system', label: 'System', children: [
             { path: '/system/resources', label: 'Resources' },
             { path: '/system/maintenance', label: 'Maintenance' },
@@ -95,7 +95,7 @@ const PAGES = {
     '/': 'overview',
     '/backhaul/ethernet': 'ethernet', '/backhaul/cellular': 'cellular', '/backhaul/wifi': 'wifi',
     '/lorawan/forwarders': 'forwarders', '/lorawan/settings': 'lorawan-settings',
-    '/gnss': 'gnss', '/bluetooth': 'bluetooth', '/access': 'access', '/io': 'panel',
+    '/gnss': 'gnss', '/bluetooth': 'bluetooth', '/io': 'panel',
     '/logs': 'logs', '/system/resources': 'resources', '/system/maintenance': 'maintenance',
     '/adopt': 'claim',
     // Before a session: the claim screen, sign-in and the forced password.
@@ -135,11 +135,13 @@ const app = {
     browsing: false,      // looked past the claim screen without adopting
     termOpts: null,       // how the terminal was opened, to open it again
     features: null,       // system.features(), read with every page; null: all
+    leds: null,           // whether the board has lights to show; read once
 };
 
 // Whether a nav entry is there on this gateway. Until the features have been
 // read once, everything is, as before the read could fail.
 shown = function(e) {
+    if (e.feature == 'leds') return app.leds !== false;
     return !e.feature || app.features == null || (e.feature in app.features);
 };
 
@@ -198,6 +200,12 @@ loadPage = function(page, quiet) {
     // An add-on installed or removed meanwhile (from Pulzr Net) moves a page
     // in or out, so with every page rather than once.
     try { const f = api.system.features(); if (type(f) == 'array') app.features = f; } catch (e) {}
+    // The board's lights do not change while it runs: asked once.
+    if (app.leds == null) try {
+        const io = api.io.status();
+        app.leds = length(io?.panel?.lights ?? []) > 0 || length(io?.available ?? []) > 0
+            || length(filter(io?.leds ?? [], (l) => l.present)) > 0;
+    } catch (e) {}
     if (!quiet) flash(null);
     app.dirty = true;
 };
@@ -999,7 +1007,7 @@ start = function(opts) {
     // its people opened a remote session and records it there; here it is
     // the network that did.
     if (app.remote) {
-        app.session = { subject: 'Pulzar Cloud', kind: 'remote' };
+        app.session = { subject: 'Pulzr Cloud', kind: 'remote' };
         app.focus = 'nav';
     }
     else if (!app.console) {

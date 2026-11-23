@@ -1,7 +1,7 @@
 // Overview — console/src/pages/Overview.tsx.
 return function(ctx) {
     const ui = ctx.ui, fmt = ctx.fmt, api = ctx.api;
-    const st = { summary: null, backhaul: null, lora: null, addons: null };
+    const st = { summary: null, backhaul: null, lora: null, addons: null, features: null };
 
     // The web console's addonBadge, word for word: an add-on an upgrade has
     // yet to put back reads Restoring until it is in.
@@ -29,6 +29,7 @@ return function(ctx) {
             st.backhaul = api.network.backhaul();
             st.lora = api.lorawan.status();
             st.addons = api.addons.status();
+            st.features = api.system.features();
         },
         view: function(width) {
             const s = st.summary, b = st.backhaul ?? {}, l = st.lora;
@@ -58,11 +59,17 @@ return function(ctx) {
             const kind = cell.modem?.kind;
             // A dongle or a phone carries whatever SIM is in it, not 1NCE's.
             const usb = kind == 'hilink' || kind == 'tether';
-            push(out, { t: 'section', title: usb ? 'Cellular' : 'Cellular ' + ui.glyph('dot') + ' 1NCE' });
-            push(out, { t: 'fact', label: 'Adapter',
-                        value: ui.status(cell.modem != null, fmt.modemKind(kind) ?? 'Present', 'Absent') });
-            push(out, { t: 'fact', label: 'Data', value: ui.status(cell.up) });
-            push(out, { t: 'fact', label: 'Signal', value: cell.modem?.rssi != null ? sprintf('%d dBm', cell.modem.rssi) : null });
+            // Cellular where the web console shows it (hooks/useCellular): the
+            // add-on built into a board with a soldered modem, or a modem
+            // plugged in. An Opal with neither read "Adapter Absent".
+            const builtIn = st.addons?.items?.['pulzr-cellular']?.builtIn === true;
+            if ('cellular' in (st.features ?? []) && (builtIn || cell.modem != null)) {
+                push(out, { t: 'section', title: usb ? 'Cellular' : 'Cellular ' + ui.glyph('dot') + ' 1NCE' });
+                push(out, { t: 'fact', label: 'Adapter',
+                            value: ui.status(cell.modem != null, fmt.modemKind(kind) ?? 'Present', 'Absent') });
+                push(out, { t: 'fact', label: 'Data', value: ui.status(cell.up) });
+                push(out, { t: 'fact', label: 'Signal', value: cell.modem?.rssi != null ? sprintf('%d dBm', cell.modem.rssi) : null });
+            }
 
             const adoption = s.adoption ?? {};
             push(out, { t: 'section', title: 'Identity' });
