@@ -7,6 +7,9 @@
 #   pulzr-firmware confirm             this boot is healthy; keep it, and
 #                                      restore the add-ons (pulzr-addon)
 #   pulzr-firmware rollback-target     print the image to flash to go back
+#   pulzr-firmware handoff <img> move|copy
+#                                      bring a checked image that waited on
+#                                      the flash into RAM, then sysupgrade
 #
 # ── WHY THERE IS A JOURNAL AT ALL ──────────────────────────────────────────
 #
@@ -149,6 +152,7 @@ pending)
 
     set_keys \
         "state=pending" \
+        "reason=" \
         "issuer=${issuer}" \
         "started_at=$(now)" \
         "from_version=${PULZR_VERSION:-unknown}" \
@@ -244,6 +248,73 @@ not the image that was signed." >&2
     exit 0
     ;;
 
+# ── from the flash into RAM, then sysupgrade ────────────────────────────────
+#
+#   pulzr-firmware handoff <image> move|copy
+#
+# For an image the console checked where it waited, on the overlay, because
+# neither a card nor RAM had room for it (firmware.uc, flashRoom). sysupgrade
+# overwrites the overlay, so the image has to be in /tmp before it starts, and
+# by now it is: `pending` has run and the upgrade is decided. So the services
+# the upgrade would stop anyway are stopped first, while there is still a
+# system to start them again, and the image moves only once the memory is
+# there. If it still does not fit, they start again, the journal says so
+# (state=failed) and nothing is flashed: a gateway that cannot upgrade keeps
+# running, rather than being stopped for nothing.
+handoff)
+    image="${2:?usage: pulzr-firmware handoff <image> move|copy}"
+    mode="${3:-copy}"
+    staged=/tmp/pulzr-firmware.img
+    stopped=/tmp/.pulzr-handoff.stopped
+    # What the kernel and sysupgrade's own stage keep beside the image.
+    reserve=$((4 * 1024 * 1024))
+    [ -s "${image}" ] || { log "handoff: no such image: ${image}"; exit 1; }
+    want="$(get target_sha256 2>/dev/null)"
+    size="$(wc -c < "${image}")"
+    available() { echo $(( $(sed -n 's/^MemAvailable: *\([0-9]*\) kB/\1/p' /proc/meminfo) * 1024 )); }
+
+    if [ "$(available)" -lt $((size + reserve)) ]; then
+        # Every procd service but the ones sysupgrade itself runs on.
+        : > "${stopped}"
+        # The top-level keys of `ubus call service list`, one tab in.
+        for service in $(ubus call service list 2>/dev/null | sed -n 's/^\t"\([^"]*\)": {$/\1/p'); do
+            case "${service}" in log|network|urngd|rpcd|ubus) continue ;; esac
+            [ -x "/etc/init.d/${service}" ] || continue
+            "/etc/init.d/${service}" stop >/dev/null 2>&1 && echo "${service}" >> "${stopped}"
+        done
+        sync; echo 3 > /proc/sys/vm/drop_caches 2>/dev/null
+        log "handoff: stopped $(wc -l < "${stopped}") services for the upgrade"
+    fi
+
+    if [ "$(available)" -lt $((size + reserve)) ]; then
+        reason="$((size / 1048576)) MB image, $(( $(available) / 1048576 )) MB of memory with services stopped"
+        set_keys "state=failed" "failed_at=$(now)" "reason=Not enough memory to upgrade: ${reason}"
+        log "handoff: not enough memory (${reason}); nothing flashed"
+        [ "${mode}" = move ] && rm -f "${image}"
+        [ -f "${stopped}" ] && while read -r service; do
+            "/etc/init.d/${service}" start >/dev/null 2>&1
+        done < "${stopped}"
+        exit 1
+    fi
+
+    if [ "${mode}" = move ]; then
+        cp "${image}" "${staged}" && rm -f "${image}"
+    else
+        cp "${image}" "${staged}"
+    fi
+    if [ -n "${want}" ] && [ "$(digest "${staged}")" != "${want}" ]; then
+        set_keys "state=failed" "failed_at=$(now)" "reason=The image changed on its way into memory."
+        log "handoff: the image in memory is not the one checked; nothing flashed"
+        rm -f "${staged}"
+        [ -f "${stopped}" ] && while read -r service; do
+            "/etc/init.d/${service}" start >/dev/null 2>&1
+        done < "${stopped}"
+        exit 1
+    fi
+    log "handoff: image in memory, upgrading"
+    exec sysupgrade "${staged}"
+    ;;
+
 # What to flash to undo the pending upgrade, or nothing if we cannot.
 rollback-target)
     target="$(get from_image)"
@@ -304,7 +375,7 @@ status)
     target="$(get from_image 2>/dev/null)"
     can_roll_back=false
     [ -n "${target}" ] && [ -f "${target}" ] && can_roll_back=true
-    printf '{"state":"%s","version":"%s","build":"%s","fromVersion":"%s","issuer":"%s","startedAt":"%s","confirmedAt":"%s","attempts":%s,"canRollBack":%s}\n' \
+    printf '{"state":"%s","version":"%s","build":"%s","fromVersion":"%s","issuer":"%s","startedAt":"%s","confirmedAt":"%s","attempts":%s,"canRollBack":%s,"reason":"%s"}\n' \
         "${state:-none}" \
         "${PULZR_VERSION:-unknown}" "${PULZR_BUILD:-unknown}" \
         "$(get from_version 2>/dev/null)" \
@@ -312,7 +383,8 @@ status)
         "$(get started_at 2>/dev/null)" \
         "$(get confirmed_at 2>/dev/null)" \
         "$(get attempts 2>/dev/null || echo 0)" \
-        "${can_roll_back}"
+        "${can_roll_back}" \
+        "$(get reason 2>/dev/null | sed 's/["\\]//g')"
     ;;
 
 *)

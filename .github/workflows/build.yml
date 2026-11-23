@@ -169,6 +169,7 @@ jobs:
           ./scripts/test-ssh-setup.sh
           ./scripts/test-cellular-watchdog.sh
           ./scripts/test-firmware-stash.sh
+          ./scripts/test-firmware-handoff.sh
           ./scripts/test-legacy.sh
           ./scripts/test-usb-radios.sh
           ./scripts/test-ble-config.sh

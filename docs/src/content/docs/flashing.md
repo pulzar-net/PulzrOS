@@ -166,6 +166,20 @@ would have on a first boot.
 
 ## Upgrading a running gateway
 
+### Where the image waits
+
+An upgrade from the console or from Pulzar Cloud is written somewhere before
+it is checked and flashed: on the SD card when the gateway has one; else in
+RAM, when it fits with 16 MB to spare; else on the gateway's own flash (the
+overlay), when that has room with 8 MB to spare. sysupgrade overwrites the
+overlay, so an image checked there is not flashed from there:
+`pulzr-firmware handoff` stops the services the upgrade would stop anyway,
+moves the image into RAM and only then runs sysupgrade. If even then the
+memory is not there, it starts the services again and flashes nothing, and
+the gateway's firmware status says why (`state` failed, with a `reason`). A
+GL-SFT1200 with no card (about 23 MB of RAM available against an 18.5 MB
+image) upgrades this way.
+
 ### By hand
 
 Root over SSH takes the fleet key or a Pulzar Cloud certificate, or on a

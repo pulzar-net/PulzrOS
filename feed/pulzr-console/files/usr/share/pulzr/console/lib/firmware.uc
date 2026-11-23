@@ -39,7 +39,7 @@ let _m_fs = require('fs');
 let _m_uci = require('uci');
 let _m_util = loadfile('/usr/share/pulzr/console/lib/util.uc', { raw_mode: true })();
 
-let upload, installFile, apply, olderThan, runningVersion, meminfoAvailable, cardRoom, staging, inspect, shellQuote;
+let upload, installFile, apply, olderThan, runningVersion, meminfoAvailable, cardRoom, flashRoom, staging, inspect, shellQuote, inRam;
 
 const META = '/tmp/pulzr-firmware.json';
 const MANIFEST = '/tmp/pulzr-firmware.manifest';
@@ -93,13 +93,55 @@ cardRoom = function() {
     return free > 0 ? { dir, free } : null;
 };
 
-// Returns { path, room, onCard }. room is what may be spent here.
-staging = function() {
+// ── on the flash, when neither fits ─────────────────────────────────────────
+//
+// A gateway with no card and little RAM still has its own flash. A GL-SFT1200
+// has 115MB of RAM, about 23MB of it available on a running gateway, against
+// an 18.5MB image, so the RAM path refused it ("has room for 5 MB") while its
+// overlay had 79MB free. Measured on campo's Cigar Curer, November 2026.
+//
+// The overlay is what sysupgrade wipes, so an image can wait there but cannot
+// be flashed from there. It is checked there, where it costs no memory, and
+// only once it passed does `pulzr-firmware handoff` stop the services the
+// upgrade would stop anyway and move it into /tmp, which is when the memory is
+// there to hold it. FLASH_MARGIN is what the overlay keeps for the gateway's
+// own settings and logs while the image sits on it.
+const FLASH_DIR = '/overlay/pulzr-firmware';
+const FLASH_MARGIN = 8 * 1024 * 1024;
+
+flashRoom = function() {
+    if (system('grep -q " /overlay " /proc/mounts') != 0) return null;
+    if (system(sprintf('mkdir -p %s', FLASH_DIR)) != 0) return null;
+    const proc = _m_fs.popen("df -k /overlay 2>/dev/null | awk 'NR==2 {print $4}'", 'r');
+    const free = proc ? int(trim(proc.read('all') ?? '0')) * 1024 : 0;
+    if (proc) proc.close();
+    return free > FLASH_MARGIN ? { dir: FLASH_DIR, free: free - FLASH_MARGIN } : null;
+};
+
+// Where an image of `len` bytes waits: the card, else RAM when it fits there,
+// else the flash. Returns { path, room, onCard, onFlash, ram }: room is what
+// may be spent at path, and ram what the RAM path would have had, for the
+// refusal.
+staging = function(len) {
     const card = cardRoom();
     if (card)
         return { path: card.dir + '/pulzr-firmware.img', room: card.free, onCard: true };
-    return { path: '/tmp/pulzr-firmware.img',
-             room: meminfoAvailable() - HEADROOM, onCard: false };
+    const ram = meminfoAvailable() - HEADROOM;
+    if (len <= ram)
+        return { path: '/tmp/pulzr-firmware.img', room: ram, onCard: false, ram };
+    const flash = flashRoom();
+    if (flash)
+        return { path: flash.dir + '/pulzr-firmware.img', room: flash.free, onCard: false,
+                 onFlash: true, ram };
+    return { path: '/tmp/pulzr-firmware.img', room: ram, onCard: false, ram };
+};
+
+// Whether sysupgrade can read `path` where it is: in /tmp, or on the card.
+// Anything else is on the system sysupgrade is about to overwrite.
+inRam = function(path) {
+    if (match(path, /^\/tmp\//)) return true;
+    const mount = _m_uci.cursor().get('pulzr', 'storage', 'mount');
+    return !!(mount && length(mount) && index(path, mount + '/') == 0);
 };
 
 meminfoAvailable = function() {
@@ -140,13 +182,16 @@ upload = function(env, issuer, staff) {
     if (len <= 0)
         return { status: 400, error: 'No image in the request.' };
 
-    const stage = staging();
+    const stage = staging(len);
     const IMAGE = stage.path;
     if (len > stage.room)
-        return { status: 413, error: sprintf(
-            'Image is %d MB; this gateway has room for %d MB%s.',
-            len / 1048576, stage.room / 1048576,
-            stage.onCard ? ' on its card' : ' in memory, and has no card to stage on') };
+        return { status: 413, error: stage.onCard
+            ? sprintf('Image is %d MB; this gateway has room for %d MB on its card.',
+                      len / 1048576, stage.room / 1048576)
+            : sprintf('Image is %d MB; this gateway has room for %d MB in memory and %s, and has no card.',
+                      len / 1048576, (stage.ram > 0 ? stage.ram : 0) / 1048576,
+                      stage.onFlash ? sprintf('%d MB on its flash', stage.room / 1048576)
+                                    : 'none on its flash') };
 
     _m_fs.unlink(IMAGE);
     const out = _m_fs.open(IMAGE, 'w');
@@ -175,6 +220,7 @@ upload = function(env, issuer, staff) {
     if (result.error) return result;
     result.bytes = received;
     result.stagedOnCard = stage.onCard;
+    result.stagedOnFlash = !!stage.onFlash;
     return result;
 };
 
@@ -308,8 +354,14 @@ apply = function(IMAGE, manifest, issuer, owned, staff) {
     _m_util.run(sprintf('pulzr-firmware pending %s %s', quoted, who));
 
     // Detached, after a pause, so this response reaches the browser before
-    // sysupgrade stops uhttpd. Settings kept.
-    _m_util.run(sprintf('(sleep 3; sysupgrade %s) >/dev/null 2>&1 &', quoted));
+    // sysupgrade stops uhttpd. Settings kept. An image that waited on the
+    // flash goes through handoff, which moves it (copies it, if it is not
+    // ours) into /tmp first; see flashRoom.
+    if (inRam(IMAGE))
+        _m_util.run(sprintf('(sleep 3; sysupgrade %s) >/dev/null 2>&1 &', quoted));
+    else
+        _m_util.run(sprintf('(sleep 3; pulzr-firmware handoff %s %s) >/dev/null 2>&1 &',
+                            quoted, owned ? 'move' : 'copy'));
     return { status: 202, ok: true, signed,
              target: image.target, openwrt: image.openwrt };
 };
