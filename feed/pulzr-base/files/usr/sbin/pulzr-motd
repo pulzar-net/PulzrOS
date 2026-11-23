@@ -114,9 +114,17 @@ backhaul_line() {
     # Reads the tunnel's last handshake from the kernel and the routing table.
     # Nothing here goes near the network, so printing a banner never costs
     # cellular data — see docs/src/content/docs/backhaul.md for why that matters on this fleet.
-    local colour text
+    local colour text dev kind
+    # The uplink the default route leaves by, named for what it is. Read from
+    # the routing table, like the tunnel state, never by asking the network.
+    dev="$(ip route show default 2>/dev/null | sed -n 's/.* dev \([^ ]*\).*/\1/p' | head -n1)"
+    case "${dev}" in
+        phy*-sta*|wlan*) kind="Wi-Fi" ;;
+        wwan*|ppp*|usbwan*) kind="cellular" ;;
+        *) kind="wired" ;;
+    esac
     if [ "$(pulzr-backhaul-check --tunnel 2>/dev/null)" = "up" ]; then
-        colour="${GREEN}"; text="wired (management tunnel up)"
+        colour="${GREEN}"; text="${kind} (management tunnel up)"
     elif ( . /usr/share/pulzr/cellular.sh; cellular_gateway >/dev/null ); then
         colour="${YELLOW}"; text="cellular only — metered"
     else
@@ -151,11 +159,10 @@ if [ -x /usr/sbin/pulzr-usb-gadget ]; then
     say "  ${DIM}USB${OFF}          https://pulzr.local/  ${DIM}%s${OFF}\n" \
         "$(uci -q get network.usb.ipaddr || echo 192.168.63.1)"
 fi
-# The same console, here. Named because somebody at a shell prompt has no
-# other way to learn it exists.
-[ -x /usr/sbin/pulzr-tui ] && say "  ${DIM}Terminal${OFF}     pulzr-tui\n"
 adoption_line
-concentrator_line
+# Only on a board built for LoRaWAN: "none detected" on one that has no
+# concentrator slot at all says nothing.
+case " ${PULZR_FEATURES:-} " in *" lorawan "*) concentrator_line ;; esac
 backhaul_line
 
 # The first-boot password, shown only while it is still the first-boot
