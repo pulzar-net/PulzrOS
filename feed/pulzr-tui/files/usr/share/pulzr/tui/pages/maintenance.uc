@@ -31,8 +31,6 @@ return function(ctx) {
             push(out, { t: 'section', title: 'Firmware' });
             push(out, { t: 'fact', label: 'PulzrOS', value: fw.version ? sprintf('%s (build %s)', fw.version, fw.build) : null });
             push(out, { t: 'fact', label: 'Commit', value: fw.commit });
-            push(out, { t: 'fact', label: 'OpenWrt', value: fw.openwrt });
-            push(out, { t: 'fact', label: 'Kernel', value: fw.kernel });
             push(out, { t: 'fact', label: 'Board', value: id.boardName });
             if (st.upgrading) {
                 push(out, { t: 'notice', tone: 'info', text: 'Upgrading. The gateway restarts in a few minutes.' });

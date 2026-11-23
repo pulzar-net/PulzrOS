@@ -21,7 +21,7 @@ Why it works this way is in [Authentication and SSH](/PulzrOS/auth.html).
 
 ### Overview
 
-The gateway at a glance: uplink in use, LoRaWAN and radio state, resources, firmware version, OpenWrt and kernel.
+The gateway at a glance: uplink in use, LoRaWAN and radio state, CPU, memory and load, the PulzrOS version and uptime.
 
 ### Connectivity
 
@@ -32,10 +32,11 @@ The gateway at a glance: uplink in use, LoRaWAN and radio state, resources, firm
 | **Backhaul > Cellular** | APN, on or off, signal and the modem's state; which SIM slot on a modem with several | `cellular` |
 | **Backhaul > WiFi** | scan and join a network, see why it is not online, sign in to a captive portal | `wifi` |
 | **Backhaul > Tracking** | tracking on or off per uplink, its ping targets and thresholds | `failover` |
-| **Network** | every port with its role, link and speed; every client on the LAN and the access points, with its MAC, address, port or SSID, the services the LAN port scan found open and when it was last seen | every board; clients with `lan` or `wifi` |
+| **Network** | every jack with its role and speed, as on Network > Ports; what each WiFi radio runs (role, network, security, channel, clients or signal); every client on the LAN and the access points, with its MAC, address, port or SSID, the services the LAN port scan found open and when it was last seen | every board; WiFi with `wifi`, clients with `lan` or `wifi` |
 | **Network > Ports** | each port an uplink, a LAN port or unused; tagged VLANs. Undone unless confirmed. | every board |
 | **Network > LAN** | the LAN ports, clients, reservations, per-device policy and cellular rule | `lan` |
 | **Network > Tunnels** | WireGuard tunnels to a customer's own servers: what each reaches, the internet through it | `lan` |
+| **Network > WiFi** | each radio, what runs on it, the path from the internet to its clients; channels, access points, the uplink's radio, a repeater. Undone unless confirmed. | `wifi` |
 | **Network > Port Forwarding** | exposed ports on the uplinks, and the tunnel forwards Pulzr Cloud opens | `lan` |
 | **Network > DNS** | upstream servers, local names, rebind protection, dynamic DNS | `dns` |
 | **Network > Speed Test** | a test out of each uplink, never cellular | `speedtest` |
@@ -49,7 +50,6 @@ Details: [Networking](/PulzrOS/networking.html), [Setup access](/PulzrOS/access.
 |---|---|---|
 | **LoRaWAN > Forwarders** | each concentrator slot: detected part, gateway ID, packets, the LNS broker it publishes to | `lorawan` |
 | **LoRaWAN > Settings** | region plan, bus and reset line on kit boards, uplink delivery over cellular | `lorawan` |
-| **WiFi** | each radio, what runs on it, the path from the internet to its clients; channels, access points, the uplink's radio, a repeater. Undone unless confirmed. | `wifi` |
 | **Bluetooth** | the adapter and what it forwards | `bluetooth` (the pulzr-ble add-on) |
 | **GNSS** | receiver, live fix and recorded position | `gnss` |
 

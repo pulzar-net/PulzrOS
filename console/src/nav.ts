@@ -9,7 +9,6 @@ import {
   Satellite,
   ScrollText,
   Settings2,
-  Wifi,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { Feature } from '@/types';
@@ -93,6 +92,9 @@ export const NAV_GROUPS: NavGroup[] = [
         children: [
           { path: '/network/ports', label: 'Ports', wide: true },
           { path: '/network/lan', label: 'LAN', feature: 'lan', wide: true },
+          // What each WiFi radio runs: the uplink, access points, a repeater.
+          // Backhaul's WiFi is the network the uplink joins; this is the radios.
+          { path: '/network/wifi', label: 'WiFi', feature: 'wifi' },
           { path: '/network/tunnels', label: 'Tunnels', feature: 'lan' },
           { path: '/network/forwarding', label: 'Port Forwarding', feature: 'lan' },
           { path: '/network/dns', label: 'DNS', feature: 'dns' },
@@ -115,9 +117,6 @@ export const NAV_GROUPS: NavGroup[] = [
           { path: '/lorawan/settings', label: 'Settings' },
         ],
       },
-      // What each WiFi radio runs: the uplink, access points, a repeater.
-      // Backhaul's WiFi is the network the uplink joins; this is the radios.
-      { path: '/wifi', label: 'WiFi', icon: Wifi, tone: 'blue', feature: 'wifi' },
       { path: '/bluetooth', label: 'Bluetooth', icon: Bluetooth, tone: 'indigo', feature: 'bluetooth' },
       { path: '/gnss', label: 'GNSS', icon: Satellite, tone: 'sky', feature: 'gnss' },
     ],

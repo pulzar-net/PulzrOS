@@ -22,7 +22,6 @@
 a.row:hover { background: var(--bg-secondary); }
 
 /* The uplink carrying traffic, marked at its edge in the accent. */
-.inUse { box-shadow: inset 3px 0 0 var(--accent); }
 
 .rowIcon {
   flex: 0 0 auto;

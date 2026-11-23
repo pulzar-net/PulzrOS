@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   createColumnHelper,
@@ -10,8 +10,8 @@ import {
 } from '@tanstack/react-table';
 import { EthernetPort, MonitorSmartphone, Wifi } from 'lucide-react';
 import { api } from '@/services/api';
-import type { LanStatus, Port, PortsStatus } from '@/types';
-import type { RadiosStatus } from '@/pages/radios/model';
+import type { LanStatus, PortsStatus } from '@/types';
+import { BAND_NAMES, ROLE_NAMES as RADIO_ROLES, channelText, securityLabel, type RadiosStatus } from '@/pages/radios/model';
 import Section from '@/components/ui/Section';
 import Badge from '@/components/ui/Badge';
 import DataTable from '@/components/DataTable';
@@ -19,13 +19,13 @@ import Spinner from '@/components/ui/Spinner';
 import ErrorState from '@/components/ErrorState';
 import { useFeatures } from '@/hooks/useFeatures';
 import { duration, portLabel } from '@/lib/format';
-import { linkSpeed } from '@/lib/uplinks';
+import PortStrip from './PortStrip';
 import styles from '../Pages.module.css';
 
 /**
- * The Network area's own page: every port, and every client on the
- * gateway's LAN and its access points, each the way into the page that
- * changes it (Ports, LAN, WiFi).
+ * The Network area's own page: every port, what each WiFi radio runs, and
+ * every client on the gateway's LAN and its access points, each the way into
+ * the page that changes it (Ports, WiFi, LAN).
  *
  * Nothing here is a report of its own. The ports are pulzr-ports'; the
  * clients are pulzr-lan's (DHCP leases, the neighbor table and the bridge's
@@ -54,23 +54,28 @@ interface ClientRow {
 
 const SERVICES: Record<number, string> = { 22: 'SSH', 23: 'Telnet', 80: 'HTTP', 8080: 'HTTP', 443: 'HTTPS', 8443: 'HTTPS' };
 
-interface PortRow {
-  name: string;
-  label: string;
-  role: string;
+/** One thing a radio runs: the uplink, an access point; or the radio, off. */
+interface WifiRow {
+  id: string;
+  band: string;
+  role: string | null;
+  ssid: string | null;
+  security: string | null;
+  channel: string | null;
+  /** An access point's stations. */
+  clients: number | null;
+  /** The uplink's signal. */
+  signal: number | null;
   up: boolean;
-  present: boolean;
-  speed: number | null;
-  clients: number;
+  off: boolean;
 }
 
-const ROLES: Record<Port['role'], string> = { uplink: 'Uplink', devices: 'LAN', none: 'Unused' };
-
 const clientColumn = createColumnHelper<ClientRow>();
-const portColumn = createColumnHelper<PortRow>();
+const wifiColumn = createColumnHelper<WifiRow>();
 
 export default function Network() {
   const features = useFeatures();
+  const navigate = useNavigate();
   const ports = useQuery({
     queryKey: ['ports'],
     queryFn: () => api.get<PortsStatus>('/ports/status'),
@@ -114,7 +119,7 @@ export default function Network() {
       const ssid = station?.ssid ?? (c.port ? ssidOf.get(c.port) : undefined);
       rows.set(mac, {
         mac,
-        name: c.reserved ?? c.hostname,
+        name: c.hostname,
         ip: c.ip,
         where: ssid ?? (c.port ? portLabel(c.port) : null),
         wifi: Boolean(ssid),
@@ -131,18 +136,52 @@ export default function Network() {
     return [...rows.values()];
   }, [lan.data, radios.data]);
 
-  const portRows = useMemo<PortRow[]>(() => (ports.data?.ports ?? []).map((p) => {
-    const vlans = p.vlans.map((v) => `VLAN ${v.vid} ${ROLES[v.role].toLowerCase()}`);
-    return {
-      name: p.name,
-      label: p.label,
-      role: [p.role === 'none' && vlans.length ? null : ROLES[p.role], ...vlans].filter(Boolean).join(', '),
-      up: p.link.up === true,
-      present: p.link.present,
-      speed: p.link.up ? (p.link.speed ?? null) : null,
-      clients: (lan.data?.clients ?? []).filter((c) => c.port === p.name).length,
-    };
-  }), [ports.data, lan.data]);
+  // Each radio's interfaces, one row each; a radio running nothing is one
+  // row saying so.
+  const wifiRows = useMemo<WifiRow[]>(() => (radios.data?.radios ?? []).flatMap((radio): WifiRow[] => {
+    const band = BAND_NAMES[radio.band] ?? radio.band;
+    const live = radio.interfaces.filter((i) => i.enabled);
+    if (!radio.enabled || !live.length) {
+      return [{ id: radio.id, band, role: null, ssid: null, security: null, channel: null, clients: null, signal: null, up: false, off: true }];
+    }
+    return live.map((i) => ({
+      id: `${radio.id}.${i.id}`, band, role: RADIO_ROLES[i.role], ssid: i.ssid ?? i.meshId,
+      security: i.security ? securityLabel(i.security) : null, channel: channelText(radio),
+      clients: i.role === 'ap' ? (i.clients?.length ?? 0) : null,
+      signal: i.role === 'uplink' || i.role === 'client' ? i.signal : null,
+      up: i.up, off: false,
+    }));
+  }), [radios.data]);
+
+  const wifiColumns = useMemo(() => [
+    wifiColumn.accessor('band', { header: 'Radio', size: 90 }),
+    wifiColumn.accessor((w) => w.role ?? '', {
+      id: 'role', header: 'Role', size: 120,
+      cell: (info) => info.row.original.off ? <span className={styles.dim}>Off</span> : info.getValue(),
+    }),
+    wifiColumn.accessor((w) => w.ssid ?? '', {
+      id: 'ssid', header: 'Network',
+      cell: (info) => info.getValue() || <span className={styles.dim}>—</span>,
+    }),
+    wifiColumn.accessor((w) => w.security ?? '', {
+      id: 'security', header: 'Security', size: 100,
+      cell: (info) => info.getValue() || <span className={styles.dim}>—</span>,
+    }),
+    wifiColumn.accessor((w) => w.channel ?? '', {
+      id: 'channel', header: 'Channel', size: 80,
+      cell: (info) => info.getValue() || <span className={styles.dim}>—</span>,
+    }),
+    wifiColumn.display({
+      id: 'detail', header: 'Clients / Signal', size: 130,
+      cell: ({ row: { original: w } }) => w.clients != null ? w.clients
+        : w.signal != null ? `${w.signal} dBm` : <span className={styles.dim}>—</span>,
+    }),
+    wifiColumn.display({
+      id: 'state', header: 'State', size: 90,
+      cell: ({ row: { original: w } }) => w.off ? <Badge tone="neutral">Off</Badge>
+        : w.up ? <Badge tone="success">Up</Badge> : <Badge tone="warning">Down</Badge>,
+    }),
+  ], []);
 
   const clientColumns = useMemo(() => [
     clientColumn.accessor((c) => c.name ?? '', {
@@ -203,36 +242,12 @@ export default function Network() {
     }),
   ], []);
 
-  const portColumns = useMemo(() => [
-    portColumn.accessor('label', {
-      header: 'Port',
-      size: 140,
-      cell: (info) => <Link to="/network/ports">{info.getValue()}</Link>,
-    }),
-    portColumn.accessor('role', { header: 'Role' }),
-    portColumn.accessor((p) => (p.up ? 1 : 0), {
-      id: 'link',
-      header: 'Link',
-      size: 110,
-      cell: (info) => {
-        const p = info.row.original;
-        if (!p.present) return <Badge tone="neutral">Absent</Badge>;
-        return p.up ? <Badge tone="success">Up</Badge> : <Badge tone="neutral">No cable</Badge>;
-      },
-    }),
-    portColumn.accessor((p) => p.speed ?? 0, {
-      id: 'speed',
-      header: 'Speed',
-      size: 100,
-      cell: (info) => linkSpeed(info.row.original.speed) ?? '—',
-    }),
-    portColumn.accessor('clients', {
-      header: 'Clients',
-      size: 80,
-      cell: (info) => info.getValue() || '—',
-    }),
-  ], []);
-
+  const wifiTable = useReactTable({
+    data: wifiRows,
+    columns: wifiColumns,
+    getRowId: (row) => row.id,
+    getCoreRowModel: getCoreRowModel(),
+  });
   const clientTable = useReactTable({
     data: clients,
     columns: clientColumns,
@@ -242,13 +257,6 @@ export default function Network() {
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
   });
-  const portTable = useReactTable({
-    data: portRows,
-    columns: portColumns,
-    getRowId: (row) => row.name,
-    getCoreRowModel: getCoreRowModel(),
-  });
-
   if (ports.isLoading) return <Spinner label="Reading the ports" />;
   if (ports.isError) return <ErrorState error={ports.error} onRetry={ports.refetch} />;
 
@@ -257,8 +265,13 @@ export default function Network() {
   return (
     <div className="fade-in">
       <Section title="Ports" icon={EthernetPort} wide>
-        <DataTable table={portTable} fill="role" />
+        <PortStrip ports={ports.data!.ports} onSelect={(name) => navigate(`/network/ports?port=${encodeURIComponent(name)}`)} />
       </Section>
+      {features.has('wifi') && wifiRows.length > 0 && (
+        <Section title="WiFi" icon={Wifi} wide>
+          <DataTable table={wifiTable} fill="ssid" onRowClick={() => navigate('/network/wifi')} />
+        </Section>
+      )}
       {showClients && (
         <Section
           title="Clients"

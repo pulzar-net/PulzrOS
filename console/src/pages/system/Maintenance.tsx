@@ -39,8 +39,6 @@ export default function Maintenance() {
             }
           />
           <Fact label="Commit" value={system.firmware.commit} mono />
-          <Fact label="OpenWrt" value={system.firmware.openwrt} />
-          <Fact label="Kernel" value={system.firmware.kernel} mono />
           <Fact label="Board" value={system.identity.boardName} />
         </FactList>
         <FirmwareUpload />

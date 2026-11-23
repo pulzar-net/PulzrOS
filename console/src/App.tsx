@@ -114,7 +114,9 @@ export default function App() {
         <Route path="network/dns" element={<Gated feature="dns"><Dns /></Gated>} />
         <Route path="network/speed" element={<Gated feature="speedtest"><SpeedTest /></Gated>} />
         <Route path="gnss" element={<Gated feature="gnss"><Gnss /></Gated>} />
-        <Route path="wifi" element={<Gated feature="wifi"><Radios /></Gated>} />
+        <Route path="network/wifi" element={<Gated feature="wifi"><Radios /></Gated>} />
+        {/* WiFi moved under Network (23 Nov 2026); old links still land. */}
+        <Route path="wifi" element={<Navigate to="/network/wifi" replace />} />
         <Route path="bluetooth" element={<Gated feature="bluetooth"><Bluetooth /></Gated>} />
         {/* Where concentrator hardware used to be; it is a forwarder's tab now. */}
         <Route path="hardware" element={<Navigate to="/lorawan/forwarders/1/concentrator" replace />} />

@@ -21,7 +21,7 @@ import type {
   AddonStatus,
   BackhaulStatus,
   BluetoothStatus,
-  LanStatus,
+  SystemStats,
   LorawanStatus,
   SystemHistory,
   SystemSummary,
@@ -78,11 +78,12 @@ export default function Overview() {
     refetchInterval: 15_000,
     enabled: features.has('bluetooth'),
   });
-  const lan = useQuery({
-    queryKey: ['lan'],
-    queryFn: () => api.get<LanStatus>('/lan/status'),
-    refetchInterval: 15_000,
-    enabled: features.has('lan'),
+  // The same query System > Resources makes: its core count turns the load
+  // average into a share of the CPU.
+  const stats = useQuery({
+    queryKey: ['system-stats'],
+    queryFn: () => api.get<SystemStats>('/system/stats'),
+    refetchInterval: 60_000,
   });
   // With failover the order is the site's, so which uplink carries traffic is
   // pulzr-uplinks' answer, not Ethernet-then-WiFi-then-cellular.
@@ -130,9 +131,8 @@ export default function Overview() {
         <BluetoothCard bt={bluetooth.data} />
       )}
       <AddonsCard items={addons.data?.items} />
-      {features.has('lan') && lan.data && <LanCard lan={lan.data} />}
       <GatewayCard system={system} />
-      <SystemCard system={system} latest={latest} />
+      <SystemCard system={system} latest={latest} cores={stats.data?.cpu.cores} />
     </div>
   );
 }
@@ -405,24 +405,6 @@ function AddonsCard({ items }: { items: Record<string, AddonItem> | undefined })
   );
 }
 
-function LanCard({ lan }: { lan: LanStatus }) {
-  if (!lan.configured) {
-    return (
-      <Section title="LAN" icon={Cable} actions={<><Badge tone="neutral">Not configured</Badge><GoTo to="/network/lan" label="LAN" /></>} />
-    );
-  }
-  const clients = lan.clients ?? [];
-  const online = clients.filter((c) => c.online).length;
-  return (
-    <Section title="LAN" icon={Cable} actions={<GoTo to="/network/lan" label="LAN" />}>
-      <StatGrid>
-        <Stat label="Online" value={count(online)} detail={`of ${clients.length}`} />
-        <Stat label="Forwards" value={count(lan.forwards?.length ?? 0)} />
-      </StatGrid>
-    </Section>
-  );
-}
-
 // ── the gateway itself ──────────────────────────────────────────────────────
 
 function GatewayCard({ system }: { system: SystemSummary }) {
@@ -450,9 +432,12 @@ function GatewayCard({ system }: { system: SystemSummary }) {
 function SystemCard({
   system,
   latest,
+  cores,
 }: {
   system: SystemSummary;
   latest: SystemHistory['points'][number] | undefined;
+  /** Unknown until /system/stats answers: then the load shows as its figure. */
+  cores: number | undefined;
 }) {
   const { firmware, health } = system;
   return (
@@ -460,8 +445,10 @@ function SystemCard({
       {(latest || health.temperature != null) && (
         <StatGrid>
           {latest && <Stat label="CPU" value={Math.round(latest.cpu)} unit="%" />}
-          {latest && <Stat label="Memory" value={Math.round(latest.mem)} unit="%" />}
-          {latest && <Stat label="Load" value={latest.load.toFixed(2)} />}
+          {latest && <MemoryStat used={latest.mem} total={latest.memTotal} />}
+          {latest && (cores
+            ? <Stat label="Load" value={Math.round((latest.load / cores) * 100)} unit="%" />
+            : <Stat label="Load" value={latest.load.toFixed(2)} />)}
           {health.temperature != null && <Stat label="Temp" value={health.temperature.toFixed(0)} unit="°C" />}
         </StatGrid>
       )}
@@ -470,11 +457,22 @@ function SystemCard({
           label="PulzrOS"
           value={firmware.version ? `${firmware.version}${firmware.commit ? ` (${firmware.commit})` : ''}` : null}
         />
-        <Fact label="OpenWrt" value={firmware.openwrt} />
-        <Fact label="Kernel" value={firmware.kernel} mono />
         <Fact label="Uptime" value={health.uptime != null ? duration(health.uptime) : null} />
       </FactList>
     </Section>
   );
 }
 
+/** Memory in use: GB from 1 GB up, MB below, with the total under it. The
+ *  history records bytes (pulzr-stats); it was drawn as a percentage once,
+ *  which read "955818..." on the Opal. */
+function MemoryStat({ used, total }: { used: number; total: number }) {
+  const [value, unit] = memory(used);
+  return <Stat label="Memory" value={value} unit={unit} detail={total ? `of ${memory(total).join(' ')}` : undefined} />;
+}
+
+function memory(n: number): [string, string] {
+  const MB = 1024 * 1024;
+  const GB = 1024 * MB;
+  return n >= GB ? [(n / GB).toFixed(1), 'GB'] : [String(Math.round(n / MB)), 'MB'];
+}

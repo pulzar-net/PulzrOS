@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { createColumnHelper, getCoreRowModel, useReactTable } from '@tanstack/react-table';
 import { EthernetPort, Trash2 } from 'lucide-react';
@@ -19,6 +20,7 @@ import ApplyChangeNotice from '@/components/ApplyChangeNotice';
 import { useApplyChange } from '@/hooks/useApplyChange';
 import { useFeatures } from '@/hooks/useFeatures';
 import { addressList, countdown } from '@/lib/format';
+import PortStrip, { ROLE_NAMES, speed, tier } from './PortStrip';
 import styles from './Ports.module.css';
 
 /**
@@ -36,7 +38,6 @@ type Draft = PortsLayout['ports'];
 type DraftPort = Draft[number];
 type VlanRole = Exclude<PortRole, 'none'>;
 
-const ROLE_NAMES: Record<PortRole, string> = { uplink: 'Uplink', devices: 'LAN', none: 'Unused' };
 
 const toDraft = (state: PortsStatus): Draft =>
   state.ports.map((p) => ({
@@ -49,16 +50,6 @@ const toDraft = (state: PortsStatus): Draft =>
 const same = (a: DraftPort, b: DraftPort) =>
   a.role === b.role && JSON.stringify(a.vlans.map((v) => [v.vid, v.role])) === JSON.stringify(b.vlans.map((v) => [v.vid, v.role]));
 
-/** Gigabit and up, fast Ethernet, or nothing: the colour of a jack. */
-function tier(port: Port) {
-  if (!port.link.up) return '';
-  return (port.link.speed ?? 0) >= 1000 ? styles.gigabit : styles.fast;
-}
-
-function speed(mbps: number | null | undefined) {
-  if (!mbps) return null;
-  return mbps >= 1000 ? `${mbps / 1000} Gb/s` : `${mbps} Mb/s`;
-}
 
 const clientName = (c: LanClient) => c.hostname ?? c.ip ?? c.mac;
 
@@ -91,7 +82,9 @@ export default function Ports() {
   });
   const [draft, setDraft] = useState<Draft | null>(null);
   const [dirty, setDirty] = useState(false);
-  const [editing, setEditing] = useState<string | null>(null);
+  // ?port= opens that port: the Network page's jacks link here.
+  const [params] = useSearchParams();
+  const [editing, setEditing] = useState<string | null>(params.get('port'));
   // The port under the pointer, on the strip or in the table: both show it.
   const [hovered, setHovered] = useState<string | null>(null);
   const lit = (name: string) => name === hovered || name === editing;
@@ -245,28 +238,14 @@ export default function Ports() {
       )}
 
       <Section title="Ports" icon={EthernetPort} wide>
-        <div className={styles.strip} role="list">
-          {state!.ports.map((port) => {
-            const role = draft.find((p) => p.name === port.name)!.role;
-            return (
-              <button
-                key={port.name}
-                type="button"
-                role="listitem"
-                className={`${styles.jack} ${tier(port)} ${editing === port.name ? styles.selected : ''} ${hovered === port.name ? styles.lit : ''}`}
-                onClick={() => setEditing(port.name)}
-                onMouseEnter={() => setHovered(port.name)}
-                onMouseLeave={() => setHovered(null)}
-                aria-label={`${port.label}, ${ROLE_NAMES[role]}`}
-              >
-                <span className={styles.jackRole}>{ROLE_NAMES[role]}</span>
-                <span className={styles.socket}><EthernetPort size={20} strokeWidth={1.8} /></span>
-                <span className={styles.jackName}>{port.label}</span>
-                <span className={styles.jackSpeed}>{port.link.up ? speed(port.link.speed) ?? 'Up' : '—'}</span>
-              </button>
-            );
-          })}
-        </div>
+        <PortStrip
+          ports={state!.ports}
+          roleOf={(port) => draft.find((p) => p.name === port.name)!.role}
+          selected={editing}
+          hovered={hovered}
+          onSelect={setEditing}
+          onHover={setHovered}
+        />
 
         <DataTable
           table={table}
