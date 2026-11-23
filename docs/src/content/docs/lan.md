@@ -326,7 +326,10 @@ with LAN ports, makes them. Nothing on the gateway knows the device.
 | Log | The device and the request's name, never its contents: a device's login rides in them |
 
 The binary is pulzr-edge built with its `ip` feature alone, as each add-on's
-module is, so the image carries only that module.
+module is, so the image carries only that module: on mipsel (the Opal) 4.1 MB
+raw and 1.2 MB in the image's squashfs (pulzr-edge 0.5.1's release build), in
+the read-only image, nothing on the overlay. pulzr-edge with every module is
+over 10 MB raw.
 
 ## The tunnel forward
 
