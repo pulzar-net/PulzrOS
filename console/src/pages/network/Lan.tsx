@@ -68,10 +68,30 @@ function VendorCell({ mac }: { mac: string }) {
   return <span className={own.name} title={vendor.name}>{vendor.name}</span>;
 }
 
+// How long a client stays listed after the gateway last heard from it,
+// unless it is configured: the same hour as Pulzar Cloud's Devices on LAN
+// (net-api gateway_lan.ACTIVE_SECONDS).
+const ACTIVE_SECONDS = 3600;
+
+const SHOW = [
+  { value: 'active', label: 'Active' },
+  { value: 'all', label: 'All' },
+] as const;
+
+/** Heard from within the hour (online, on the bridge, learned from its ARP),
+ *  or configured, which stays while off: reserved, or an exposed port's
+ *  target. */
+function listed(c: LanClient, exposed: Set<string>, now: number): boolean {
+  if (c.online || c.port || c.learned) return true;
+  if (c.lastSeen != null && now - c.lastSeen < ACTIVE_SECONDS) return true;
+  return !!c.reserved || exposed.has(c.ip ?? '') || exposed.has(c.reserved ?? '');
+}
+
 export default function Lan() {
   const queryClient = useQueryClient();
   const [sorting, setSorting] = useState<SortingState>([{ id: 'ip', desc: false }]);
   const [editing, setEditing] = useState<LanClient | null>(null);
+  const [show, setShow] = useState<'active' | 'all'>('active');
 
   const lan = useQuery({
     queryKey: ['lan'],
@@ -192,8 +212,12 @@ export default function Lan() {
     [setPolicy, policyPending],
   );
 
+  const exposedIps = new Set((lan.data?.exposed ?? []).map((e) => e.ip));
+  const now = Math.floor(Date.now() / 1000);
+  const shown = (lan.data?.clients ?? []).filter((c) => show === 'all' || listed(c, exposedIps, now));
+
   const table = useReactTable({
-    data: lan.data?.clients ?? [],
+    data: shown,
     columns,
     state: { sorting },
     onSortingChange: setSorting,
@@ -232,7 +256,7 @@ export default function Lan() {
                     </span>
                   )}
                   <span className={styles.dim}>
-                    {clients
+                    {shown
                       .filter((c) => c.port === link.name)
                       .map((c) => c.hostname ?? c.ip ?? c.mac)
                       .join(', ')}
@@ -245,7 +269,8 @@ export default function Lan() {
         </FactList>
       </Section>
 
-      <Section title="Clients" icon={MonitorSmartphone} wide>
+      <Section title="Clients" icon={MonitorSmartphone} wide
+               actions={<Segmented aria-label="Clients shown" value={show} options={[...SHOW]} onChange={setShow} />}>
         {policy.isError && <Notice tone="error">{(policy.error as Error).message}</Notice>}
         <DataTable table={table} fill="name"
                    cellClassName={(id) => (id === 'reserve' ? own.reserve : own.cell)} />

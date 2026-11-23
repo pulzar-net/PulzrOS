@@ -192,6 +192,11 @@ const MAX_SECONDS = 86400;
 const STATE = '/etc/pulzr/lan';
 const JOURNAL = STATE + '/forwards.log';
 const SEEN = STATE + '/seen.json';
+// A client's DHCP contact is kept a week after the last, then forgotten, so
+// the visitor of two weeks ago neither stays on every report nor fills the
+// MQTT agent's 8 KB. Pulzar Cloud keeps its own record of it. A reserved
+// client keeps its entry: it is configured, not passing through.
+const SEEN_KEEP = 7 * 86400;
 const WIRE_ONLY_MAX = 8;
 const LEARN = 'pulzr_lan_learn';
 const PROBES = 8;
@@ -929,8 +934,9 @@ let status = () => {
         if (s.cellular == 'block') c.cellular = 'block';
         c.cellularBlock = filter(s.cellular_block ?? [], (t) => blockEntry(t));
     });
-    let seen = readSeen(), now = online();
+    let seen = readSeen(), now = online(), at = time();
     for (let mac in keys(seen)) {
+        if (at - (seen[mac].last ?? 0) > SEEN_KEEP && !clients[mac]) continue;
         let c = client(mac);
         c.firstSeen = seen[mac].first;
         c.lastSeen = seen[mac].last;
@@ -1326,6 +1332,18 @@ let commands = {
         seen[mac] ??= { first: at };
         seen[mac].last = at;
         seen[mac].ip = ip;
+        // Forget what has been gone SEEN_KEEP, its address's counters folded
+        // into its own first, as for a client that moved.
+        let reserved = {};
+        cursor.foreach('dhcp', 'host', (s) => {
+            let m = normalMac(type(s.mac) == 'array' ? s.mac[0] : s.mac);
+            if (m && index(s['.name'], 'lan_') == 0) reserved[m] = true;
+        });
+        for (let other in keys(seen)) {
+            if (other == mac || reserved[other] || at - (seen[other].last ?? 0) <= SEEN_KEEP) continue;
+            if (counting && seen[other].ip) foldAddress(seen[other].ip, other);
+            delete seen[other];
+        }
         writeSeen(seen);
     },
 

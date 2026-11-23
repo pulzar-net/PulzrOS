@@ -187,7 +187,12 @@ to stay under the agent's 8KB answer.
   again once the bridge ages it out, five minutes after its last frame.
 - `firstSeen` and `lastSeen` are DHCP contact, kept across reboots and
   upgrades. A device answering ARP right now is `online`, and its `lastSeen`
-  is now.
+  is now. A client with no contact for a week is forgotten (`SEEN_KEEP`),
+  unless it is reserved; Pulzar Cloud keeps its own record of it.
+- Network > LAN lists clients heard from in the last hour (online, on the
+  bridge, learned from their ARP) and configured ones, which stay while off:
+  reserved, or an exposed port's target. **All** shows the rest. Pulzar
+  Cloud's Devices on LAN uses the same hour.
 - `traffic` is per uplink, by the netifd interface that carried it (`wan`,
   `wan_<port>`, `wwifi`, `wwan`, `usbwan`), and `tunnel` for a forward's
   traffic. The console's Cellular column is `wwan` and `usbwan` together.

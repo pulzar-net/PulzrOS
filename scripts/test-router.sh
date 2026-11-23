@@ -683,4 +683,19 @@ check "a forward to it, through the tunnel" '172.16.5.112 80' "$(lan forward 172
 check "the forward's element" '1' "$(lastload | grep -c ': 172.16.5.112 . 80 }')"
 lan address remove 172.16.5.251/24 >/dev/null
 
+# ── lan: the DHCP contact journal forgets what has been gone a week ─────────
+#
+# A visitor last seen two weeks ago, one ten minutes ago, and the reserved
+# client, silent for three weeks.
+now="$(date +%s)"
+jq -n --argjson now "${now}" '{
+  "aa:00:00:00:00:01": {first: ($now - 2592000), last: ($now - 1209600), ip: "192.168.64.120"},
+  "aa:00:00:00:00:02": {first: ($now - 3600), last: ($now - 600), ip: "192.168.64.121"},
+  "c2:6c:1d:d1:f7:b3": {first: ($now - 2592000), last: ($now - 1814400), ip: "192.168.64.50"}}' > "${T}/lan/seen.json"
+check "seen: a client gone two weeks is not reported, a reserved one is" '["aa:00:00:00:00:02","c2:6c:1d:d1:f7:b3"]' \
+    "$(lan status | jq -c '[.clients[] | select(.mac | test("^aa:|^c2:")) | .mac] | sort')"
+lan seen aa:00:00:00:00:03 192.168.64.122
+check "seen: a new contact prunes the journal, keeping the reserved" \
+    '["aa:00:00:00:00:02","aa:00:00:00:00:03","c2:6c:1d:d1:f7:b3"]' "$(jq -c 'keys' "${T}/lan/seen.json")"
+
 exit "${fail}"
