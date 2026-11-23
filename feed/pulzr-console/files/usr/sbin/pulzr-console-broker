@@ -60,7 +60,7 @@ const PROVISIONING = { actions: [ 'claimApply' ] };
 
 // Reachable with a session.
 const SIGNED_IN = {
-    system: [ 'summary', 'stats', 'processes', 'logs', 'history' ],
+    system: [ 'summary', 'stats', 'processes', 'logs', 'history', 'features' ],
     network: [ 'status', 'backhaul' ],
     lorawan: [ 'status', 'concentrator', 'gps', 'forwarders' ],
     ports: [ 'status' ],

@@ -38,7 +38,7 @@ let _m_fs = require('fs');
 // ucode does not hoist function declarations; see console/lib/util.uc.
 let start, loop, draw, drawHeader, drawNav, drawBody, drawFooter, handleKey, handleEdit;
 let handleDialog, activate, moveFocus, openPath, current, navEntries, loadPage, tick;
-let signOut, signedIn, flash, makeCtx, pageFor, bodyBlocks, layoutBody, runAction, quit, banner, shell, qr, mayShell;
+let signOut, signedIn, flash, makeCtx, pageFor, bodyBlocks, layoutBody, runAction, quit, banner, shell, qr, mayShell, shown;
 let diagnostics;
 
 const LIB = getenv('PULZR_TUI_LIB') ?? '/usr/share/pulzr/tui';
@@ -52,19 +52,23 @@ let logo = loadfile(LIB + '/../logo.uc', { raw_mode: true })();
 let diag = load('diag');
 
 // The sidebar, in console/src/nav.ts's order and with its labels.
+// `feature`: shown only while the gateway has it, the web console's nav.ts
+// words (system.features(): the board's, and each installed add-on's), so
+// LoRaWAN appears once pulzr-lorawan is installed, as Cellular does with
+// pulzr-cellular.
 const NAV = [
     { path: '/', label: 'Overview' },
     { path: '/backhaul', label: 'Backhaul', children: [
         { path: '/backhaul/ethernet', label: 'Ethernet' },
-        { path: '/backhaul/cellular', label: 'Cellular' },
-        { path: '/backhaul/wifi', label: 'WiFi' },
+        { path: '/backhaul/cellular', label: 'Cellular', feature: 'cellular' },
+        { path: '/backhaul/wifi', label: 'WiFi', feature: 'wifi' },
     ] },
-    { path: '/lorawan', label: 'LoRaWAN', children: [
+    { path: '/lorawan', label: 'LoRaWAN', feature: 'lorawan', children: [
         { path: '/lorawan/forwarders', label: 'Forwarders' },
         { path: '/lorawan/settings', label: 'Settings' },
     ] },
-    { path: '/gnss', label: 'GNSS' },
-    { path: '/bluetooth', label: 'Bluetooth' },
+    { path: '/gnss', label: 'GNSS', feature: 'gnss' },
+    { path: '/bluetooth', label: 'Bluetooth', feature: 'bluetooth' },
     { path: '/access', label: 'Access' },
     { path: '/io', label: 'Panel' },
     { path: '/logs', label: 'Logs' },
@@ -117,6 +121,13 @@ const app = {
     resized: false,
     browsing: false,      // looked past the claim screen without adopting
     termOpts: null,       // how the terminal was opened, to open it again
+    features: null,       // system.features(), read with every page; null: all
+};
+
+// Whether a nav entry is there on this gateway. Until the features have been
+// read once, everything is, as before the read could fail.
+shown = function(e) {
+    return !e.feature || app.features == null || (e.feature in app.features);
 };
 
 flash = function(text, tone) {
@@ -171,13 +182,24 @@ loadPage = function(page, quiet) {
     // Adoption can happen under any page — from a phone, from Pulzr Cloud —
     // and the banner has to follow it.
     try { app.unadopted = !api.claim.isAdopted(); app.reclaiming = api.claim.reclaiming(); } catch (e) {}
+    // An add-on installed or removed meanwhile (from Pulzar Net) moves a page
+    // in or out, so with every page rather than once.
+    try { const f = api.system.features(); if (type(f) == 'array') app.features = f; } catch (e) {}
     if (!quiet) flash(null);
     app.dirty = true;
 };
 
 openPath = function(path) {
-    // A group opens on its first child, as the web console's routes do.
-    for (let e in NAV) if (e.path == path && e.children) path = e.children[0].path;
+    // A group opens on its first shown child, as the web console's routes do;
+    // a page the gateway does not have opens the overview instead.
+    for (let e in NAV) {
+        if (index(path, e.path) == 0 && e.path != '/' && !shown(e)) path = '/';
+        if (e.path == path && e.children) {
+            const kids = filter(e.children, shown);
+            path = length(kids) ? kids[0].path : '/';
+        }
+        for (let c in e.children ?? []) if (c.path == path && !shown(c)) path = '/';
+    }
     const page = pageFor(path);
     if (!page) return;
     app.path = path;
@@ -688,9 +710,10 @@ handleDialog = function(key) {
 navEntries = function() {
     const out = [];
     for (let e in NAV) {
+        if (!shown(e)) continue;
         push(out, { path: e.path, label: e.label, depth: 0 });
         if (e.children && index(app.path, e.path) == 0 && e.path != '/')
-            for (let c in e.children) push(out, { path: c.path, label: c.label, depth: 1 });
+            for (let c in filter(e.children, shown)) push(out, { path: c.path, label: c.label, depth: 1 });
     }
     return out;
 };

@@ -40,7 +40,7 @@ const broker = (method, args) => {
 const NAMES = {
     auth: [ 'loginLocal', 'loginMethods', 'recoveryChallenge', 'recoveryVerify',
             'terminalStart', 'terminalCollect', 'readSession', 'destroySession' ],
-    system: [ 'summary', 'stats', 'processes', 'logs', 'history' ],
+    system: [ 'summary', 'stats', 'processes', 'logs', 'history', 'features' ],
     network: [ 'status', 'backhaul' ],
     lorawan: [ 'status', 'concentrator', 'gps', 'forwarders' ],
     ports: [ 'status' ],

@@ -35,6 +35,8 @@ return {
             temperatures: [ { name: 'cpu-thermal', celsius: 51.6 } ], power: [], interfaces: [],
             processes: [ { pid: 1201, name: 'chirpstack-conc', rss: 9437184 }, { pid: 980, name: 'ModemManager', rss: 7340032 }, { pid: 1, name: 'procd', rss: 3145728 }, { pid: 640, name: 'uhttpd', rss: 2097152 }, { pid: 700, name: 'dnsmasq', rss: 1048576 } ] }),
         history: (q) => ({ interval: 20, points }),
+        // A Pi with every page: the board's words and its add-ons'.
+        features: () => [ 'wifi', 'gnss', 'speedtest', 'lorawan', 'cellular', 'bluetooth' ],
         processes: () => ({ total: time() * 400, processes: [ { pid: 1, name: 'procd', command: '/sbin/procd', state: 'S', ticks: time() % 97, threads: 1, rss: 3145728 },
             { pid: 1201, name: 'chirpstack-conc', command: '/usr/bin/chirpstack-concentratord-sx1302 -c /var/etc/concentratord.toml', state: 'S', ticks: time() * 3, threads: 4, rss: 9437184 },
             { pid: 2, name: 'kthreadd', command: '', state: 'S', ticks: 0, threads: 1, rss: 0 } ] }),
