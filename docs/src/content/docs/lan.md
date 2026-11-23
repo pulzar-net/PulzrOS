@@ -310,6 +310,24 @@ until the port goes. A forward, reservation or exposed port to an address on
 no subnet of the LAN is refused with `<ip> is on no subnet of the LAN: add
 one for it first`.
 
+## Devices a codec drives (pulzr-ip)
+
+A device that speaks its own protocol over IP instead of Pulzar's (an IP
+camera's settings API) is driven by its device type's codec, which runs in
+Pulzar, not here: it turns each command into `ip.http`, `ip.tcp` or `ip.udp`
+requests (pulzr-protocol, "IP requests"), and pulzr-edge-ip, in every image
+with LAN ports, makes them. Nothing on the gateway knows the device.
+
+| | |
+|---|---|
+| Where | Only an address on a subnet `br-devlan` holds (the LAN, and any added for a device with a static address), never the gateway's own, the network or the broadcast address; the address is Pulzar's record of the device, never the codec's |
+| Config | `/var/run/pulzr-edge/ip.toml`, generated at every start from `br-devlan`'s addresses; a change to `devlan` or `devlan_extra` restarts it |
+| Limits | 30 s and 48 KiB a request; no redirects, no proxy; one device's requests in order |
+| Log | The device and the request's name, never its contents: a device's login rides in them |
+
+The binary is pulzr-edge built with its `ip` feature alone, as each add-on's
+module is, so the image carries only that module.
+
 ## The tunnel forward
 
 The one forward a gateway makes: from the WireGuard management tunnel to one
