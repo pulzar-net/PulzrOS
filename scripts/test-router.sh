@@ -124,6 +124,38 @@ for bad in "1.1.1.300 10 3 3" "1.1.1.1 4 3 3" "1.1.1.1 10 0 3" "1.1.1.1,2.2.2.2,
 done
 up tracking 1.1.1.1,8.8.8.8 10 3 2 >/dev/null
 
+# The Backhaul page's drag and drop, through the console API's own module:
+# the body it posts to /api/uplinks/order and /api/uplinks/track, into
+# pulzr-uplinks, and on to the metrics and the tracker. The order a person
+# drops in is the order failover runs in.
+cat > "${T}/pulzr-uplinks" <<EOF
+#!/bin/sh
+exec "${UCODE}" -R -L "${ROOT}/scripts/router-fixture/*.uc" -L "${MODULES}" "${T}/uplinks.uc" "\$@"
+EOF
+chmod +x "${T}/pulzr-uplinks"
+sed -e "s#/usr/share/pulzr/console/lib/util.uc#${ROOT}/feed/pulzr-console/files/usr/share/pulzr/console/lib/util.uc#" \
+    -e "s#'/usr/sbin/pulzr-uplinks'#'${T}/pulzr-uplinks'#" \
+    "${ROOT}/feed/pulzr-console/files/usr/share/pulzr/console/lib/uplinks.uc" > "${T}/console-uplinks.uc"
+grep -q "${T}/pulzr-uplinks" "${T}/console-uplinks.uc" || { echo "FAIL lib/uplinks.uc's tool path moved; update this script" >&2; exit 1; }
+page() {
+    BODY="$2" "${UCODE}" -R -L "${MODULES}" -e "
+        let m = loadfile('${T}/console-uplinks.uc', { raw_mode: true })();
+        printf('%J\n', m['$1'](json(getenv('BODY'))));"
+}
+
+check "page: cellular dropped on top is saved" '{"order":["wwan","wan","usbwan"],"active":"wwan"}' \
+    "$(page setOrder '{"order": ["wwan", "wan", "usbwan"]}' | jq -c '{order, active}')"
+check "page: the order is in UCI" '["wwan","wan","usbwan"]' "$(jq -c .pulzr.uplinks.order "${UCI_JSON}")"
+check "page: the metrics follow it" '["20","10","30"]' "$(metrics)"
+page setTrack '{"iface": "wwan", "on": true}' >/dev/null
+ROUNDS=3 up run
+check "page: tracking moves off the top one to the next in the dropped order" 'offline ["20","100","30"] wan' \
+    "$(state wwan) $(metrics) $(up status | jq -r .active)"
+check "page: a repeat is refused" 'true' "$(page setOrder '{"order": ["wan", "wan"]}' | jq 'has("error")')"
+page setTrack '{"iface": "wwan", "on": false}' >/dev/null
+page setOrder '{"order": ["wan", "wwan", "usbwan"]}' >/dev/null
+check "page: back to the cable first" '["10","20","30"]' "$(metrics)"
+
 : > "${T}/ping_ok"
 ROUNDS=3 up run
 check "offline again" 'offline' "$(state wan)"

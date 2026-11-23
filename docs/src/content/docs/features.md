@@ -25,7 +25,7 @@ that could only fail.
 | `wifi` | `PACKAGES_WIFI`: pulzr-ap, wpad-openssl | Backhaul > WiFi, Access's setup AP | `/api/access/wifi`, `scan`, `ap`, `key` | |
 | `lan` | `PACKAGES_LAN`: pulzr-lan | Network > LAN | `/api/lan/` | `PULZR_LAN_PORTS` |
 | `dns` | `PACKAGES_DNS`: pulzr-dns | Network > DNS | `/api/dns/` | |
-| `failover` | `PACKAGES_FAILOVER`: pulzr-uplinks | Network > Uplinks; Overview's Uplink row follows its order | `/api/uplinks/` | `cellular` or `wifi` |
+| `failover` | `PACKAGES_FAILOVER`: pulzr-uplinks | Backhaul's order and Tracking; Overview's Uplink row follows its order | `/api/uplinks/` | `cellular` or `wifi` |
 | `speedtest` | `PACKAGES_SPEEDTEST`: pulzr-speedtest, librespeed-cli | Network > Speed Test ([speedtest.md](/PulzrOS/speedtest.html)) | `/api/speedtest/` | not `PULZR_FLASH_CONSTRAINED` |
 
 Always present, on every board: Overview, Backhaul > Ethernet, Access, Panel,
@@ -229,7 +229,7 @@ paragraph explaining itself, which this console does not do.
 | Internet: Cellular | Backhaul > Cellular (`cellular`) |
 | Clients, LAN, DHCP, address reservation | Network > LAN (`lan`), built: `pulzr-lan status`, reserve, per-MAC policy and cellular rule, the open tunnel forwards read-only |
 | Port forwarding | Network > LAN (`lan`), Exposed ports: wired and WiFi uplinks only, to reserved clients |
-| Multi-WAN: priority, tracking, failover | Network > Uplinks (`failover`), built: the order, per-uplink tracking, the ping targets and thresholds; failover only, no load balance |
+| Multi-WAN: priority, tracking, failover | Backhaul (`failover`), built: the order by drag and drop, per-uplink tracking, the ping targets and thresholds; failover only, no load balance |
 | DNS: hosts, upstream, rebind protection | Network > DNS (`dns`), built: automatic or custom upstream, local names, rebind protection and its allowed domains |
 | DDNS | Network > DNS (`dns`), Dynamic DNS: the customer's own Cloudflare zone, not a vendor domain |
 | Management Control | Access, already |

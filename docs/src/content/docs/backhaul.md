@@ -286,6 +286,29 @@ spends the SIM on traffic a cable would carry free.
 
 `scripts/test-router.sh` walks it through a failover and back, in CI.
 
+#### Setting the order
+
+The console's **Backhaul** page lists every connection the gateway has, each
+wired port or VLAN that is an uplink, the WiFi and cellular, in the order
+failover tries them. Each row has the connection's state from tracking, its
+address, link speed or signal, and whether it carries traffic now. A row opens
+that connection's own page (Backhaul > Ethernet, WiFi or Cellular).
+
+Drag a row by its grip to change the order; with a keyboard, focus the grip,
+press space, move it with the arrow keys and press space again. The new order
+goes to `POST /api/uplinks/order`, which runs `pulzr-uplinks order` and
+re-ranks the metrics at once. Like a port change it is undone unless the
+browser reaches the gateway again inside the window, so an order that puts
+the console's own path behind a dead one does not strand anybody. The
+Tracking card below the list turns tracking on or off per uplink and sets the
+targets and thresholds.
+
+`scripts/test-router.sh` posts the page's body through the console API's own
+module and checks that the metrics and the tracker follow it.
+
+A board without `failover` shows the same list with no grips: its order is
+fixed, Ethernet, then WiFi, then cellular.
+
 ### Nothing is accepted from the wan zone
 
 This is the rule that makes a wired backhaul safe, and it is worth stating

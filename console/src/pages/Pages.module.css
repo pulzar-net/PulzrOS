@@ -11,13 +11,6 @@
 
 .actions { margin-top: 14px; }
 
-/* Two small buttons that belong together and must not wrap apart in a
-   narrow table cell, like an uplink's up and down. */
-.pair {
-  display: flex;
-  gap: 6px;
-}
-
 .divider {
   height: 1px;
   background: var(--border-primary);

@@ -87,11 +87,6 @@ export function portLabel(device: string | null | undefined): string {
   return vid ? `${name} VLAN ${vid}` : name;
 }
 
-/** A wired uplink: wan, or wan_<device> for another port or a VLAN. */
-export function isWiredIface(iface: string | null | undefined): boolean {
-  return iface === 'wan' || !!iface?.startsWith('wan_');
-}
-
 const UPLINK_NAMES: Record<string, string> = { wwifi: 'WiFi', wwan: 'Cellular', usbwan: 'USB cellular' };
 
 /** An uplink by name, a wired one by its port: wan_lan1 is "LAN 1". */

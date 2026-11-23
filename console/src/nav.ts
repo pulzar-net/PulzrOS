@@ -23,6 +23,8 @@ import type { Feature } from '@/types';
  *
  * A section with children is a group, not a page: its own path goes to the
  * first child, and the children show in the sidebar while you are inside it.
+ * One with `overview` is both: its own path is a page summing its children
+ * up, and the sidebar opens that.
  *
  * An entry with a feature exists only on a board built with it; the sidebar
  * leaves it out, and a group whose children are all left out, and App.tsx
@@ -45,6 +47,9 @@ export interface NavEntry {
   tone: Tone;
   feature?: Feature;
   children?: NavChild[];
+  /** Its own path is a page too, over its children: Backhaul's list of
+      every connection. */
+  overview?: boolean;
   /** Uses the whole window rather than the reading column — a table that
       needs every column it can get. */
   wide?: boolean;
@@ -68,6 +73,7 @@ export const NAV_GROUPS: NavGroup[] = [
         path: '/backhaul',
         label: 'Backhaul',
         icon: Network, tone: 'blue',
+        overview: true,
         children: [
           { path: '/backhaul/ethernet', label: 'Ethernet' },
           { path: '/backhaul/cellular', label: 'Cellular', feature: 'cellular' },
@@ -81,7 +87,6 @@ export const NAV_GROUPS: NavGroup[] = [
         children: [
           { path: '/network/ports', label: 'Ports', wide: true },
           { path: '/network/lan', label: 'LAN', feature: 'lan', wide: true },
-          { path: '/network/uplinks', label: 'Uplinks', feature: 'failover' },
           { path: '/network/dns', label: 'DNS', feature: 'dns' },
           { path: '/network/speed', label: 'Speed Test', feature: 'speedtest' },
         ],

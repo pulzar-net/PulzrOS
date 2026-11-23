@@ -46,6 +46,7 @@ Built to static files at image build time and served by uhttpd.
 | react, react-dom | MIT |
 | react-router-dom | MIT |
 | @tanstack/react-query, @tanstack/react-table | MIT |
+| @dnd-kit/core, @dnd-kit/sortable, @dnd-kit/modifiers, @dnd-kit/utilities | MIT |
 | lucide-react | ISC |
 | uPlot | MIT |
 | vite, @vitejs/plugin-react | MIT |

@@ -17,6 +17,7 @@ import PasswordPrompt from '@/components/PasswordPrompt';
  * is usually opened to answer one question, and on a Pi 3 over a slow link the
  * difference between parsing one page and parsing seven is visible.
  */
+const Backhaul = lazy(() => import('@/pages/backhaul/Backhaul'));
 const Ethernet = lazy(() => import('@/pages/backhaul/Ethernet'));
 const Cellular = lazy(() => import('@/pages/backhaul/Cellular'));
 const Wifi = lazy(() => import('@/pages/backhaul/Wifi'));
@@ -24,7 +25,6 @@ const Forwarders = lazy(() => import('@/pages/lorawan/Forwarders'));
 const LorawanSettings = lazy(() => import('@/pages/lorawan/Settings'));
 const Ports = lazy(() => import('@/pages/network/Ports'));
 const Lan = lazy(() => import('@/pages/network/Lan'));
-const Uplinks = lazy(() => import('@/pages/network/Uplinks'));
 const Dns = lazy(() => import('@/pages/network/Dns'));
 const SpeedTest = lazy(() => import('@/pages/network/SpeedTest'));
 const Gnss = lazy(() => import('@/pages/Gnss'));
@@ -93,7 +93,7 @@ export default function App() {
       <Route element={<Layout unadopted={unadopted} reclaiming={reclaiming} />}>
         <Route path="adopt" element={<Onboarding />} />
         <Route index element={<Overview />} />
-        <Route path="backhaul" element={<Navigate to="/backhaul/ethernet" replace />} />
+        <Route path="backhaul" element={<Backhaul />} />
         <Route path="backhaul/ethernet" element={<Ethernet />} />
         <Route path="backhaul/cellular" element={<Gated feature="cellular"><Cellular /></Gated>} />
         <Route path="backhaul/wifi" element={<Gated feature="wifi"><Wifi /></Gated>} />
@@ -104,7 +104,6 @@ export default function App() {
         <Route path="network" element={<Navigate to="/network/ports" replace />} />
         <Route path="network/ports" element={<Ports />} />
         <Route path="network/lan" element={<Gated feature="lan"><Lan /></Gated>} />
-        <Route path="network/uplinks" element={<Gated feature="failover"><Uplinks /></Gated>} />
         <Route path="network/dns" element={<Gated feature="dns"><Dns /></Gated>} />
         <Route path="network/speed" element={<Gated feature="speedtest"><SpeedTest /></Gated>} />
         <Route path="gnss" element={<Gated feature="gnss"><Gnss /></Gated>} />

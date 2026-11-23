@@ -27,12 +27,12 @@ The gateway at a glance: uplink in use, LoRaWAN and radio state, resources, firm
 
 | Page | What you do there | Feature |
 |---|---|---|
+| **Backhaul** | every connection in failover order, its state, address and signal, which one is in use; drag to set the order, tracking per uplink | every board; ordering and tracking with `failover` |
 | **Backhaul > Ethernet** | DHCP or a static address on each wired uplink, and its VLAN | every board |
 | **Backhaul > Cellular** | APN, on or off, signal and the modem's state | `cellular` |
 | **Backhaul > WiFi** | scan and join a network, see why it is not online, sign in to a captive portal | `wifi` |
 | **Network > Ports** | each port an uplink, a LAN port or unused; tagged VLANs. Undone unless confirmed. | every board |
 | **Network > LAN** | clients, reservations, per-device policy and cellular rule, exposed ports | `lan` |
-| **Network > Uplinks** | uplink order, health tracking and failover | `failover` |
 | **Network > DNS** | upstream servers, local names, rebind protection, dynamic DNS | `dns` |
 | **Network > Speed Test** | a test out of each uplink, never cellular | `speedtest` |
 | **Access** | the setup access point and its passphrase, the management tunnel | every board |

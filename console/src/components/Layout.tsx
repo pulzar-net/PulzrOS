@@ -45,12 +45,12 @@ export default function Layout({
           {groups.map((group) => (
             <div key={group.label ?? ''} className={styles.group}>
               {group.label && <div className={styles.groupLabel}>{group.label}</div>}
-              {group.entries.map(({ path, label, icon: Icon, tone, children }) => {
+              {group.entries.map(({ path, label, icon: Icon, tone, children, overview }) => {
                 const inside = path !== '/' && location.pathname.startsWith(path);
                 return (
                   <div key={path} className={styles.entry}>
                     <NavLink
-                      to={children ? children[0].path : path}
+                      to={children && !overview ? children[0].path : path}
                       end={path === '/'}
                       className={({ isActive }) =>
                         `${styles.navItem} ${isActive || inside ? styles.active : ''}`

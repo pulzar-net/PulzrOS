@@ -7,16 +7,12 @@ import {
   Cable,
   ChevronRight,
   Cpu,
-  EthernetPort,
   Fingerprint,
   Network,
   Puzzle,
   Radio,
   ShieldCheck,
-  Signal,
-  Wifi,
 } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/services/api';
@@ -25,12 +21,10 @@ import type {
   AddonStatus,
   BackhaulStatus,
   BluetoothStatus,
-  Feature,
   LanStatus,
   LorawanStatus,
   SystemHistory,
   SystemSummary,
-  Uplink,
   UplinksStatus,
 } from '@/types';
 import Section from '@/components/ui/Section';
@@ -41,7 +35,8 @@ import Notice from '@/components/ui/Notice';
 import Spinner from '@/components/ui/Spinner';
 import ErrorState from '@/components/ErrorState';
 import TimeChart, { Legend, type Series } from '@/components/TimeChart';
-import { bitrate, bytes, count, duration, inUnit, modemKind, portLabel, uplinkName } from '@/lib/format';
+import { bitrate, bytes, count, duration, inUnit } from '@/lib/format';
+import { uplinkRows, type LinkRow } from '@/lib/uplinks';
 import { useFeatures } from '@/hooks/useFeatures';
 import styles from './Overview.module.css';
 
@@ -115,7 +110,10 @@ export default function Overview() {
   const system = summary.data!;
   const points = history.data?.points ?? [];
   const latest = points.at(-1);
-  const links = uplinkRows(backhaul.data, features.has('failover') ? order.data : undefined, features);
+  const links = uplinkRows(
+    { paths: backhaul.data, order: features.has('failover') ? order.data : undefined },
+    features,
+  );
 
   return (
     <div className="fade-in" style={{ '--card-min': '360px' } as CSSProperties}>
@@ -138,142 +136,6 @@ export default function Overview() {
 }
 
 // ── uplinks ─────────────────────────────────────────────────────────────────
-
-interface LinkRow {
-  key: string;
-  name: string;
-  icon: LucideIcon;
-  device: string | null;
-  /** Carrying traffic now. */
-  active: boolean;
-  tone: Tone;
-  state: string;
-  detail: (string | null | undefined)[];
-  to: string;
-}
-
-const KIND_ICONS: Record<Uplink['kind'], LucideIcon> = {
-  ethernet: EthernetPort,
-  wifi: Wifi,
-  cellular: Signal,
-  'usb-cellular': Signal,
-};
-
-function speed(mbps: number | null | undefined) {
-  if (!mbps) return null;
-  return mbps >= 1000 ? `${mbps / 1000} Gb/s` : `${mbps} Mb/s`;
-}
-
-function pageFor(kind: Uplink['kind']) {
-  if (kind === 'wifi') return '/backhaul/wifi';
-  if (kind === 'ethernet') return '/backhaul/ethernet';
-  return '/backhaul/cellular';
-}
-
-/** What a modem says about itself, for its row. */
-function modemDetail(paths: BackhaulStatus | undefined) {
-  const modem = paths?.cellular.modem;
-  if (!modem) return [];
-  const signal = modem.rssi != null ? `${modem.rssi} dBm` : modem.quality != null ? `${modem.quality}%` : null;
-  return [modem.model ?? modemKind(modem.kind), signal, modem.network, modem.technology];
-}
-
-/**
- * One row per uplink. With failover, pulzr-uplinks' list in the site's order
- * with its tracking verdict on each; without, the gateway's fixed paths.
- */
-function uplinkRows(
-  paths: BackhaulStatus | undefined,
-  order: UplinksStatus | undefined,
-  features: { has: (feature?: Feature) => boolean },
-): LinkRow[] {
-  if (order) {
-    const byIface = new Map(order.uplinks.map((u) => [u.iface, u]));
-    const ordered = [
-      ...order.order.map((iface) => byIface.get(iface)).filter((u): u is Uplink => !!u),
-      ...order.uplinks.filter((u) => !order.order.includes(u.iface)),
-    ];
-    return ordered.map((u) => {
-      const active = order.active === u.iface;
-      const [tone, state] = trackedState(u, active);
-      const detail: (string | null | undefined)[] = [];
-      if (u.kind === 'ethernet' && u.device && u.device === paths?.wired.device) detail.push(speed(paths.wired.speed));
-      if (u.kind === 'wifi' && paths?.wifi?.up) detail.push(paths.wifi.address?.split('/')[0]);
-      if (u.kind === 'cellular') detail.push(...modemDetail(paths));
-      if (u.metered) detail.push('metered');
-      return {
-        key: u.iface,
-        name: uplinkName(u.iface, u.device),
-        icon: KIND_ICONS[u.kind],
-        device: u.device,
-        active,
-        tone,
-        state,
-        detail,
-        to: pageFor(u.kind),
-      };
-    });
-  }
-
-  if (!paths) return [];
-  const rows: LinkRow[] = [];
-  const { wired, wifi, cellular } = paths;
-  const carrying = wired.up ? 'wired' : wifi?.up ? 'wifi' : cellular.up ? 'cellular' : null;
-  rows.push({
-    key: 'wired',
-    name: wired.device ? portLabel(wired.device) : 'Ethernet',
-    icon: EthernetPort,
-    device: wired.device,
-    active: carrying === 'wired',
-    tone: wired.up ? 'success' : 'neutral',
-    state: wired.up ? 'Up' : 'Down',
-    detail: [
-      speed(wired.speed),
-      wired.address?.split('/')[0],
-      wired.proto === 'static' ? 'static' : wired.proto === 'dhcp' ? 'DHCP' : null,
-    ],
-    to: '/backhaul/ethernet',
-  });
-  if (features.has('wifi') && wifi) {
-    rows.push({
-      key: 'wifi',
-      name: 'WiFi',
-      icon: Wifi,
-      device: wifi.device,
-      active: carrying === 'wifi',
-      tone: wifi.up ? 'success' : 'neutral',
-      state: wifi.up ? 'Up' : 'Down',
-      detail: [wifi.address?.split('/')[0]],
-      to: '/backhaul/wifi',
-    });
-  }
-  if (features.has('cellular')) {
-    const modem = cellular.modem;
-    rows.push({
-      key: 'cellular',
-      name: 'Cellular',
-      icon: Signal,
-      device: cellular.device ?? null,
-      active: carrying === 'cellular',
-      tone: cellular.up ? 'success' : 'neutral',
-      state: !modem ? 'No modem' : cellular.up ? 'Up' : 'Standby',
-      detail: [...modemDetail(paths), 'metered'],
-      to: '/backhaul/cellular',
-    });
-  }
-  return rows;
-}
-
-function trackedState(u: Uplink, active: boolean): [Tone, string] {
-  if (!u.up || u.state === 'down') return ['neutral', 'Down'];
-  switch (u.state) {
-    case 'online': return ['success', 'Online'];
-    case 'offline': return ['error', 'No internet'];
-    case 'portal': return ['warning', 'Sign-in page'];
-    case 'unchecked': return [active ? 'success' : 'neutral', active ? 'Up' : 'Checking'];
-    default: return ['success', 'Up'];
-  }
-}
 
 function UplinksCard({
   links,
