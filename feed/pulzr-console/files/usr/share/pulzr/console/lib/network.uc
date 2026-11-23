@@ -97,6 +97,9 @@ modem = function() {
     // mmcli, not uqmi: cellular goes through ModemManager, chosen when
     // OpenWrt 24.10 shipped no uqmi. An absent modem is a normal state — a wired-only
     // board has none — so this returns null rather than erroring.
+    // pulzr-modem-detect is the Cellular add-on's. Without it there is no
+    // modem to find, and asking logged "not found" every poll (Cigar Curer).
+    if (!_m_fs.access('/usr/sbin/pulzr-modem-detect', 'x')) return null;
     const found = runJson('/usr/sbin/pulzr-modem-detect --status');
     if (!found || !found.present) return null;
 

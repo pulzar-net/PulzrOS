@@ -49,7 +49,10 @@ grepFile = function(path, pattern) {
 // device. If a view ever needs ubus in a loop, that view should switch.
 ubus = function(object, method, args) {
     const payload = args ? sprintf(" '%J'", args) : '';
-    return runJson(sprintf('ubus call %s %s%s', object, method, payload));
+    // An object that does not exist (wwan with no Cellular add-on) is null
+    // here, as every caller takes it; its "Command failed: Not found" went to
+    // uhttpd's stderr and so into the system log, twice a request.
+    return runJson(sprintf('ubus call %s %s%s 2>/dev/null', object, method, payload));
 };
 
 // One of the gateway's own tools (pulzr-lan, pulzr-dns, pulzr-uplinks)
