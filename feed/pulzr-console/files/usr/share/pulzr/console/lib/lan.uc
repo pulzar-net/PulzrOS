@@ -1,6 +1,7 @@
 // The devlan zone, through pulzr-lan: what the console reads and what it
-// may change per client (policy, reservation, cellular rule), and the ports
-// exposed on the wired and WiFi uplinks.
+// may change per client (policy, reservation, cellular rule), the ports
+// exposed on the wired and WiFi uplinks, and the tunnels out to a customer's
+// servers.
 //
 // Tunnel forwards are not here: they are the cloud's, opened over MQTT
 // (lan-forward), and the console reads the open ones in status and nothing
@@ -14,13 +15,14 @@
 let _m_util = loadfile('/usr/share/pulzr/console/lib/util.uc', { raw_mode: true })();
 
 // ucode does not hoist function declarations; see util.uc.
-let lan, status, setPolicy, reserve, setCellular, expose;
+let lan, status, setPolicy, reserve, setCellular, expose, tunnel;
 
 let runJson = _m_util.runJson;
 
 const MAC = /^[0-9a-fA-F]{2}(:[0-9a-fA-F]{2}){5}$/;
 const IPV4 = /^[0-9]{1,3}(\.[0-9]{1,3}){3}$/;
 const NAME = /^[A-Za-z0-9-]{1,63}$/;
+const TUNNEL = /^[a-z][a-z0-9]{0,9}$/;
 
 // pulzr-lan with arguments already checked against the patterns above.
 lan = (args) => _m_util.tool('/usr/sbin/pulzr-lan', args);
@@ -74,4 +76,25 @@ expose = function(req) {
     return lan(args);
 };
 
-return { expose, reserve, setCellular, setPolicy, status };
+// One change a request, as lan-tunnel is over MQTT: remove it, switch the
+// internet through it, set what its server reaches, or set the server.
+tunnel = function(req) {
+    const name = req.name ?? '';
+    if (!match(name, TUNNEL)) return { error: 'A name: a lowercase letter, then up to nine letters or digits.' };
+    if (req.remove === true) return lan(['tunnel', 'remove', name]);
+    if (type(req.internet) == 'bool') return lan(['tunnel', 'internet', name, req.internet ? 'on' : 'off']);
+    if (req.reach == 'none' || req.reach == 'lan') return lan(['tunnel', 'reach', name, req.reach]);
+    if (req.reach == 'devices') {
+        const devices = type(req.devices) == 'array' ? req.devices : [];
+        if (!length(devices)) return { error: 'Pick a device.' };
+        for (let ip in devices)
+            if (type(ip) != 'string' || !match(ip, IPV4)) return { error: 'An IPv4 address on the LAN.' };
+        return lan(['tunnel', 'reach', name, join(',', devices)]);
+    }
+    if (!req.endpoint || !req.publicKey) return { error: 'The server\'s endpoint and public key.' };
+    const args = ['tunnel', 'set', name, req.endpoint, req.publicKey];
+    if (req.address) push(args, req.address);
+    return lan(args);
+};
+
+return { expose, reserve, setCellular, setPolicy, status, tunnel };

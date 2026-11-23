@@ -59,8 +59,10 @@ ubus = function(object, method, args) {
 // tool's one line on stderr, which is what the caller shows.
 tool = function(path, args) {
     for (let a in args)
-        if (type(a) != 'string' || !match(a, /^[A-Za-z0-9.:_-]{1,253}$/))
-            return { error: 'Letters, digits, dots, colons and hyphens only.' };
+        // Inside single quotes, where only a quote means anything: + / = for
+        // a WireGuard key and an address's prefix, commas for a list.
+        if (type(a) != 'string' || !match(a, /^[A-Za-z0-9.:_,\/+=-]{1,253}$/))
+            return { error: 'Letters, digits and . : _ , / + = - only.' };
     const quoted = join(' ', map(args, (a) => "'" + a + "'"));
     const proc = popen(path + ' ' + quoted + ' 2>&1', 'r');
     if (!proc) return { error: sprintf('%s is not on this gateway.', path) };

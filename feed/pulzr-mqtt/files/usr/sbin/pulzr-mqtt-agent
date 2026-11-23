@@ -47,8 +47,8 @@
 #
 # Arguments are validated before use and never interpolated into a command
 # line. The LAN operations hand theirs to pulzr-lan as separate arguments,
-# and it refuses anything that is not a MAC, an address on its LAN, a port or
-# a number of seconds.
+# and it refuses anything that is not a MAC, an address on its LAN, a port,
+# a number of seconds, or a tunnel's name, endpoint, key and address.
 #
 # ── COST ───────────────────────────────────────────────────────────────────
 #
@@ -343,6 +343,26 @@ dispatch() {
                 out="$(lan address remove "$(field address)")"
             else
                 out="$(lan address add "$(field address)")"
+            fi || { echo "${out}"; return 1; } ;;
+        # A tunnel out to a customer's server (pulzr-lan tunnel), by `name`,
+        # one change a request: `remove: true`; `internet` true or false;
+        # `reach` none, lan or devices with `devices`, a list of addresses;
+        # or the server's `endpoint` and `publicKey`, optional `address`.
+        # The answer is the tunnel, with this gateway's public key.
+        lan-tunnel)
+            name="$(field name)"
+            if [ "$(field remove)" = "true" ]; then
+                out="$(lan tunnel remove "${name}")"
+            elif [ "$(field internet)" = "true" ]; then
+                out="$(lan tunnel internet "${name}" on)"
+            elif [ "$(field internet)" = "false" ]; then
+                out="$(lan tunnel internet "${name}" off)"
+            elif [ "$(field reach)" = "devices" ]; then
+                out="$(lan tunnel reach "${name}" "$(field 'devices[*]' | tr '\n' ',' | sed 's/,$//')")"
+            elif [ -n "$(field reach)" ]; then
+                out="$(lan tunnel reach "${name}" "$(field reach)")"
+            else
+                out="$(lan tunnel set "${name}" "$(field endpoint)" "$(field publicKey)" "$(field address)")"
             fi || { echo "${out}"; return 1; } ;;
 
         # Last, and deliberately plain. A reboot takes the gateway away for a

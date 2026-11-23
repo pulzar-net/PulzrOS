@@ -39,6 +39,12 @@
 # which goes where the console goes. SSH stays off: a PLC has no business with
 # it, and everything a laptop here needs is in the console.
 #
+#   a tunnel     a customer's server, through a tunnel the gateway dials
+#                out (pulzr-lan tunnel), reaches the clients it was given,
+#                and carries the LAN's internet only when told to. Tunnels
+#                are in no fw4 zone, so the defaults drop them, but for
+#                what pulzr-lan's guard marked (site-forward.nft).
+#
 # REJECT rather than the uplink's DROP: this is our network, nobody scans it
 # from outside, and a PLC told "refused" fails in a second where one dropped
 # retries for a minute.
@@ -161,6 +167,13 @@ set firewall.lan_expose.type='nftables'
 set firewall.lan_expose.path='/usr/share/pulzr/lan/wan-forward.nft'
 set firewall.lan_expose.position='chain-pre'
 set firewall.lan_expose.chain='forward_wan'
+
+delete firewall.lan_site
+set firewall.lan_site=include
+set firewall.lan_site.type='nftables'
+set firewall.lan_site.path='/usr/share/pulzr/lan/site-forward.nft'
+set firewall.lan_site.position='chain-pre'
+set firewall.lan_site.chain='forward'
 EOF
 
 # The default policy, per uplink zone: Pulzr over HTTPS and MQTT, and NTP.

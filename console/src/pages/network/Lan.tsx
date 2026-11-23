@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ArrowRightLeft, Cable, Globe, MonitorSmartphone } from 'lucide-react';
+import { ArrowRightLeft, Cable, Check, Copy, Globe, MonitorSmartphone, Waypoints } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   createColumnHelper,
@@ -10,14 +10,14 @@ import {
 } from '@tanstack/react-table';
 import { api } from '@/services/api';
 import { useVendor } from '@/lib/oui';
-import type { LanClient, LanExposed, LanForward, LanStatus, LanTraffic, UplinksStatus } from '@/types';
+import type { LanClient, LanExposed, LanForward, LanStatus, LanTraffic, LanTunnel, UplinksStatus } from '@/types';
 import Section from '@/components/ui/Section';
 import Badge from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
 import Dialog from '@/components/ui/Dialog';
 import Notice from '@/components/ui/Notice';
 import Segmented from '@/components/ui/Segmented';
-import { SelectField, TextField } from '@/components/ui/Field';
+import { CheckboxField, SelectField, TextField } from '@/components/ui/Field';
 import Fact, { FactList } from '@/components/Fact';
 import DataTable from '@/components/DataTable';
 import Spinner from '@/components/ui/Spinner';
@@ -34,8 +34,10 @@ import own from './Lan.module.css';
  * rule. Tunnel forwards are listed and never opened here: they are the cloud's
  * (lan-forward). Exposed ports are opened here, because they are the site's:
  * a port on the wired or WiFi uplink to a reserved client, never over the
- * tunnel or cellular (pulzr-lan). Everything set here is in pulzr-lan's
- * state, which is what Pulzr Cloud's `lan` op reads.
+ * tunnel or cellular (pulzr-lan). So are tunnels out to a customer's own
+ * servers: what each server reaches, and whether the LAN's internet goes
+ * through it. Everything set here is in pulzr-lan's state, which is what
+ * Pulzr Cloud's `lan` op reads.
  */
 
 const POLICIES: { value: LanClient['policy']; label: string }[] = [
@@ -278,6 +280,8 @@ export default function Lan() {
 
       <Exposed state={state} clients={clients} nameOf={nameOf} />
 
+      <Tunnels state={state} clients={clients} />
+
       <Forwards forwards={state.forwards ?? []} nameOf={nameOf} />
 
       {editing && <ReserveDialog client={editing} onClose={() => setEditing(null)} />}
@@ -384,6 +388,189 @@ function Exposed({
       )}
     </Section>
   );
+}
+
+const SWITCH = [
+  { value: 'off', label: 'Off' },
+  { value: 'on', label: 'On' },
+] as const;
+
+const REACH = [
+  { value: 'none', label: 'None' },
+  { value: 'lan', label: 'Whole LAN' },
+  { value: 'devices', label: 'Devices' },
+] as const;
+
+// WireGuard handshakes every two minutes while the keepalive runs; three
+// without one is a tunnel that is down.
+const HANDSHAKE_FRESH = 180;
+
+type TunnelChange = { name: string } & Partial<{
+  remove: boolean; internet: boolean; reach: LanTunnel['reach']; devices: string[];
+  endpoint: string; publicKey: string; address: string;
+}>;
+
+// Tunnels the gateway dials out to a customer's servers (pulzr-lan tunnel).
+function Tunnels({ state, clients }: { state: LanStatus; clients: LanClient[] }) {
+  const queryClient = useQueryClient();
+  const tunnels = state.tunnels ?? [];
+  const [name, setName] = useState('');
+  const [endpoint, setEndpoint] = useState('');
+  const [key, setKey] = useState('');
+  const [address, setAddress] = useState('');
+
+  const save = useMutation({
+    mutationFn: (body: TunnelChange) => api.post('/lan/tunnel', body),
+    onSuccess: (_, body) => {
+      if (body.endpoint) { setName(''); setEndpoint(''); setKey(''); setAddress(''); }
+      queryClient.invalidateQueries({ queryKey: ['lan'] });
+    },
+  });
+
+  // A device the server may be given keeps its address: reserved, or on
+  // another subnet of the bridge, where nothing is leased (pulzr-lan pinned).
+  const subnets = (state.addresses ?? []).map(subnetOf);
+  const pinned = clients.filter((c) => c.reserved || (c.ip && subnets.some((n) => inSubnet(c.ip!, n))));
+  const exists = tunnels.some((t) => t.name === name.trim());
+
+  return (
+    <Section title="Tunnels" icon={Waypoints}>
+      {save.isError && <Notice tone="error">{(save.error as Error).message}</Notice>}
+      {tunnels.map((t, i) => (
+        <div key={t.name}>
+          {i > 0 && <div className={styles.divider} />}
+          <TunnelFacts
+            tunnel={t}
+            pinned={pinned}
+            pending={save.isPending}
+            change={(body) => save.mutate({ name: t.name, ...body })}
+            edit={() => { setName(t.name); setEndpoint(t.endpoint ?? ''); setKey(t.serverKey ?? ''); setAddress(t.address ?? ''); }}
+          />
+        </div>
+      ))}
+      {tunnels.length > 0 && <div className={styles.divider} />}
+      <div className={styles.form}>
+        <TextField label="Name" mono value={name} placeholder="campo" onChange={(e) => setName(e.target.value)} />
+        <TextField label="Server endpoint" mono value={endpoint} placeholder="203.0.113.10:51820"
+                   onChange={(e) => setEndpoint(e.target.value)} />
+        <TextField label="Server public key" mono value={key} onChange={(e) => setKey(e.target.value)} />
+        <TextField label="Address" mono value={address} placeholder="10.77.0.2/30"
+                   onChange={(e) => setAddress(e.target.value)} />
+      </div>
+      <div className={styles.actions}>
+        <Button
+          variant="primary"
+          loading={save.isPending}
+          disabled={!name.trim() || !endpoint.trim() || !key.trim()}
+          onClick={() => save.mutate({ name: name.trim(), endpoint: endpoint.trim(), publicKey: key.trim(),
+                                       address: address.trim() || undefined })}
+        >
+          {exists ? 'Save tunnel' : 'Add tunnel'}
+        </Button>
+      </div>
+    </Section>
+  );
+}
+
+function TunnelFacts({
+  tunnel: t, pinned, pending, change, edit,
+}: {
+  tunnel: LanTunnel;
+  pinned: LanClient[];
+  pending: boolean;
+  change: (body: Omit<TunnelChange, 'name'>) => void;
+  edit: () => void;
+}) {
+  // Devices chosen with none ticked yet is a choice the gateway has not
+  // heard: it reaches nothing until the first.
+  const [mode, setMode] = useState<LanTunnel['reach']>(t.reach);
+  const [copied, setCopied] = useState(false);
+  const now = Math.floor(Date.now() / 1000);
+  const fresh = t.latestHandshake != null && now - t.latestHandshake < HANDSHAKE_FRESH;
+  const shown = mode === 'devices' && t.reach === 'none' ? 'devices' : t.reach;
+  const options = [
+    ...pinned.map((c) => ({ ip: (c.reserved ?? c.ip)!, label: [c.hostname, c.reserved ?? c.ip].filter(Boolean).join(' ') })),
+    ...t.devices.filter((ip) => !pinned.some((c) => (c.reserved ?? c.ip) === ip)).map((ip) => ({ ip, label: ip })),
+  ];
+
+  const toggle = (ip: string, on: boolean) => {
+    const devices = on ? [...t.devices, ip] : t.devices.filter((d) => d !== ip);
+    change(devices.length ? { reach: 'devices', devices } : { reach: 'none' });
+  };
+
+  return (
+    <>
+      <FactList>
+        <Fact
+          label="Tunnel"
+          value={
+            <span className={styles.status}>
+              <span className="mono">{t.name}</span>
+              {fresh ? <Badge tone="success">Connected</Badge> : <Badge tone="warning">Not connected</Badge>}
+              {!fresh && t.latestHandshake != null && (
+                <span className={styles.dim}>Last handshake {duration(now - t.latestHandshake)} ago</span>
+              )}
+              <Button onClick={edit}>Edit</Button>
+              <Button variant="danger" disabled={pending} onClick={() => change({ remove: true })}>Remove</Button>
+            </span>
+          }
+        />
+        <Fact label="Server" value={t.endpoint} mono />
+        <Fact
+          label="Public key"
+          value={
+            t.publicKey && (
+              <span className={styles.status}>
+                <span className="mono">{t.publicKey}</span>
+                {navigator.clipboard && (
+                  <Button onClick={() => void navigator.clipboard.writeText(t.publicKey!).then(() => setCopied(true))}>
+                    {copied ? <Check size={14} strokeWidth={2} /> : <Copy size={14} strokeWidth={2} />}
+                    {copied ? 'Copied' : 'Copy'}
+                  </Button>
+                )}
+              </span>
+            )
+          }
+        />
+        <Fact label="Address" value={t.address} mono />
+        <Fact label="Traffic" value={`${bytes(t.rxBytes)} in, ${bytes(t.txBytes)} out`} />
+        <Fact
+          label="Internet"
+          value={
+            <Segmented aria-label={`Internet through ${t.name}`} value={t.internet ? 'on' : 'off'}
+                       options={[...SWITCH]} disabled={pending}
+                       onChange={(next) => change({ internet: next === 'on' })} />
+          }
+        />
+        <Fact
+          label="Reaches"
+          value={
+            <Segmented aria-label={`What ${t.name} reaches`} value={shown} options={[...REACH]} disabled={pending}
+                       onChange={(next) => { setMode(next); if (next !== 'devices') change({ reach: next }); }} />
+          }
+        />
+      </FactList>
+      {shown === 'devices' && (
+        options.length === 0
+          ? <Notice tone="info">No reserved clients.</Notice>
+          : options.map((o) => (
+              <CheckboxField key={o.ip} label={o.label} disabled={pending} checked={t.devices.includes(o.ip)}
+                             onChange={(e) => toggle(o.ip, e.target.checked)} />
+            ))
+      )}
+    </>
+  );
+}
+
+// "10.0.0.2/24" as a network and mask.
+function subnetOf(cidr: string) {
+  const [ip, bits] = cidr.split('/');
+  const mask = Number(bits) === 0 ? 0 : (~0 << (32 - Number(bits))) >>> 0;
+  return { net: (ipOrder(ip) & mask) >>> 0, mask };
+}
+
+function inSubnet(ip: string, n: { net: number; mask: number }) {
+  return ((ipOrder(ip) & n.mask) >>> 0) === n.net;
 }
 
 // RFC 1918 and the carrier-grade NAT range: an address a site router or a

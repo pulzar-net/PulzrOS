@@ -198,8 +198,10 @@ Three rules follow, and every router page keeps them:
   DNS name. Neither reaches the other's path: an exposed port never answers
   on `wg0` or a cellular device, and a connection through one is dropped
   rather than leave on cellular. Customer traffic does not ride our tunnel
-  or our SIM. See [lan.md](/PulzrOS/lan.html). Still no DMZ, no site VPN that reaches
-  the LAN, and no firewall rule editor.
+  or our SIM. A tunnel (`pulzr-lan tunnel`) is the customer's too: WireGuard
+  the gateway dials out to their own server, which reaches only the devices
+  it was given, at their own addresses, never over cellular. See
+  [lan.md](/PulzrOS/lan.html). Still no DMZ and no firewall rule editor.
 - **Policy is per MAC**: `internet` (the default, metered per device) or
   `parkeze` (Pulzr, NTP and DNS only), through `pulzr-lan policy`,
   and a cellular rule beside it: allowed, blocked, or allowed but for some
@@ -276,6 +278,7 @@ paragraph explaining itself, which this console does not do.
 | Internet: Cellular | Backhaul > Cellular (`cellular`) |
 | Clients, LAN, DHCP, address reservation | Network > LAN (`lan`), built: `pulzr-lan status`, reserve, per-MAC policy and cellular rule, the open tunnel forwards read-only |
 | Port forwarding | Network > LAN (`lan`), Exposed ports: wired and WiFi uplinks only, to reserved clients |
+| Site VPN | Network > LAN (`lan`), Tunnels: WireGuard out to a customer's server, what it reaches on the LAN, internet through it off by default |
 | Multi-WAN: priority, tracking, failover | Backhaul (`failover`), built: the order by drag and drop, per-uplink tracking, the ping targets and thresholds; failover only, no load balance |
 | DNS: hosts, upstream, rebind protection | Network > DNS (`dns`), built: automatic or custom upstream, local names, rebind protection and its allowed domains |
 | DDNS | Network > DNS (`dns`), Dynamic DNS: the customer's own Cloudflare zone, not a vendor domain |

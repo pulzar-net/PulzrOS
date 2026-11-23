@@ -113,6 +113,10 @@ pulzr-lan forward <ip> <port> <seconds>
 pulzr-lan unforward <tunnel port>
 pulzr-lan expose tcp|udp <port> <ip> [<client port>]
 pulzr-lan unexpose tcp|udp <port>
+pulzr-lan tunnel set <name> <endpoint> <server public key> [<address>]
+pulzr-lan tunnel remove <name>
+pulzr-lan tunnel internet <name> on|off
+pulzr-lan tunnel reach <name> none|lan|<ip>[,<ip>...]
 pulzr-lan address add|remove <a.b.c.d/nn> another subnet on the bridge
 pulzr-lan address for <device ip>         one in a device's own subnet, probed free
 pulzr-lan links                           reload the uplinks' devices and addresses
@@ -122,9 +126,9 @@ pulzr-lan save-usage                      save each client's totals for the next
 
 In the console, Network > LAN (`lib/lan.uc`, `pages/network/Lan.tsx`): the
 clients, each one's policy, reservation and cellular rule, the exposed ports,
-and the open tunnel forwards. It sets the first four through the commands
-above, audited as `lan.policy`, `lan.reserve`, `lan.cellular` and
-`lan.expose`, so the `lan` op reports them like any other. It never opens or
+the tunnels and the open tunnel forwards. It sets all but the forwards through
+the commands above, audited as `lan.policy`, `lan.reserve`, `lan.cellular`,
+`lan.expose` and `lan.tunnel`, so the `lan` op reports them like any other. It never opens or
 closes a tunnel forward: that is the cloud's, over MQTT. The cloud opens no
 exposed port: that is the site's, made at the gateway.
 
@@ -138,6 +142,7 @@ Over MQTT (`parkeze/gateway/<eui>/mgmt/request`, see `pulzr-mqtt-agent`):
 | `lan-forward` | `ip`, `port`, `seconds` | `{port, ip, dport, expires}` |
 | `lan-unforward` | `port` | `{port, closed}` |
 | `lan-address` | `address` (`10.0.0.2/24`) and optional `remove: true`, or `for` (a device's address) | `{addresses, address}` |
+| `lan-tunnel` | `name`, and one of: `remove: true`; `internet` true or false; `reach` `none`, `lan`, or `devices` with `devices` (addresses); `endpoint` and `publicKey`, optional `address` | the tunnel, as in `tunnels` below |
 
 `lan` is not part of `all`: it grows with the number of devices, and `all` has
 to stay under the agent's 8KB answer.
@@ -165,7 +170,11 @@ to stay under the agent's 8KB answer.
   "journal": [{ "at": 1793051648, "op": "open", "port": 40000, "ip": "192.168.64.50",
                 "dport": 8080, "seconds": 3600, "id": "<request id>" }],
   "scannedAt": 1793051700,
-  "usageEpoch": "3f2a9c1e-6921b5c4"
+  "usageEpoch": "3f2a9c1e-6921b5c4",
+  "tunnels": [{ "name": "campo", "endpoint": "203.0.113.10:51820", "serverKey": "<server's public key>",
+                "address": "10.77.0.2/30", "publicKey": "<this gateway's public key>",
+                "internet": false, "reach": "devices", "devices": ["10.0.0.112"],
+                "latestHandshake": 1793051690, "rxBytes": 18230, "txBytes": 9120344 }]
 }
 ```
 
@@ -201,8 +210,10 @@ to stay under the agent's 8KB answer.
   PulzrOS's own nftables table, so a firewall reload does not zero it.
 - `exposedOn` is where exposed ports answer now: each wired and WiFi
   uplink's address. A private one is behind a site router.
-- `journal` is the last twenty forwards opened and closed, and ports exposed
-  and removed (`op` `expose`, `unexpose`).
+- `journal` is the last twenty forwards opened and closed, ports exposed
+  and removed (`op` `expose`, `unexpose`), and tunnel changes (`op`
+  `tunnel-set`, `tunnel-remove`, `tunnel-internet`, `tunnel-reach`).
+- `tunnels`: see [Tunnels](#tunnels). Never a private key.
 - `services` is the management ports the client answered on at the last scan
   that reached it, and `scannedAt` when the last scan ran. A client no scan has
   reached has no `services`: unknown, not closed.
@@ -374,9 +385,10 @@ Dynamic DNS; [features.md](/PulzrOS/features.html)). TCP or UDP, at most 32.
 - **Never out cellular.** A connection through an exposed port is dropped
   rather than forwarded to a cellular device, so a failover does not carry
   a customer's stream on our SIM.
-- **To a reserved address.** The device has to hold a reservation, and keeps
-  it while exposed: moving or releasing it is refused until the port goes,
-  or the port would follow whatever leased the address next.
+- **To an address that stays.** The device has to hold a reservation, or be
+  on another subnet of the bridge, where nothing is leased. It keeps the
+  reservation while exposed: moving or releasing it is refused until the
+  port goes, or the port would follow whatever leased the address next.
 - **Not the gateway's own ports**: TCP 22, 80, 443 and 8443, UDP 67 and 68.
 - **Kept**, in UCI (`pulzr.expose_<proto>_<port>`), across reboots and
   upgrades; each one made and removed is in the journal.
@@ -389,3 +401,61 @@ follow the main routing table, so an exposed port answers on whichever
 uplink carries the default route; see the header of `/usr/sbin/pulzr-lan`.
 fw4's `wan` zone forwards nothing, so `wan-forward.nft` adds one rule to it,
 accepting what this table's DNAT marked.
+
+## Tunnels
+
+WireGuard tunnels the gateway dials out to a customer's own servers: a farm's
+cameras streamed to the customer's video server, with nothing opened at the
+site and none of it on Pulzr's infrastructure (not `wg0`, not the web proxy,
+not our SIM). At most four. Network > LAN, Tunnels.
+
+| Setting | Default | What it does |
+|---|---|---|
+| Server endpoint, public key | | where the gateway dials, with a keepalive every 25 s so the server can always reach in |
+| Address | `10.77.0.2/30` | the gateway's in the tunnel; the server is the other host of the `/30` |
+| Reaches | none | what the server reaches on the LAN: nothing, the whole LAN, or chosen devices, each at its own address |
+| Internet | off | on: what LAN clients start toward the internet leaves through the tunnel instead of an uplink |
+
+The gateway makes its own key (`wg genkey`); only the public key is shown,
+for the server. The private key is in UCI, where netifd reads it, and never
+in the report, the console or a command line.
+
+**Devices at their own addresses.** A device given to a tunnel must keep its
+address: reserved, or on another subnet of the bridge (a camera with a
+static address; [Devices with a static address](#devices-with-a-static-address)).
+The server routes those addresses into the tunnel (its WireGuard peer lists
+them in `AllowedIPs`), and the gateway masquerades each connection to its own
+address on the device's subnet, so a camera whose default gateway is some
+other router still answers. Releasing a reservation or removing a subnet a
+tunnel points at is refused until the tunnel lets go of it.
+
+**Nothing else.** Nothing on the gateway answers on a tunnel, and a tunnel is
+in no fw4 zone, so everything else from it is dropped. A connection already
+open when a device is taken away is dropped with it. A LAN client reaches the
+server only with Internet on.
+
+**Internet.** One tunnel at a time. LAN clients' connections are marked
+(`0x5355`) and routed by three rules: the main table without its default
+routes (the gateway's own subnets), then table 77, the tunnel's default
+route, then unreachable. So while the tunnel is down those clients reach no
+internet rather than leaking out an uplink. Replies to what came in (an
+exposed port, a tunnel forward) are not marked. The gateway's own traffic,
+Pulzr's included, never takes it. Through a tunnel, the customer's server
+decides what a client reaches: a client's `parkeze` policy and cellular
+rules apply on the uplinks.
+
+**Never over cellular.** A tunnel's own WireGuard packets carry its fwmark
+(`0x5354`) and are dropped if they would leave on `wwan` or `usbwan`: over
+cellular a tunnel is down, not on our SIM. They follow the main table
+otherwise (`nohostroute`), so a tunnel moves between wired and WiFi as the
+uplinks fail over. A gateway whose default route is cellular while WiFi is
+also up has its tunnels down.
+
+**Kept.** netifd's `network.site_<name>` and its peer, and
+`pulzr.tunnel_<name>`: UCI, which sysupgrade keeps, key included, so the
+server's copy of the public key stays good. Each change is in the journal.
+
+A tunnel's traffic is counted like an uplink's, as `site_<name>` in each
+client's `traffic`. The rules are in the header of `/usr/sbin/pulzr-lan`
+(TUNNELS).
+

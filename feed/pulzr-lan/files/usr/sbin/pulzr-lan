@@ -11,6 +11,10 @@
 //   pulzr-lan unforward <tunnel port> [<request id>]
 //   pulzr-lan expose tcp|udp <port> <ip> [<client port>]
 //   pulzr-lan unexpose tcp|udp <port>
+//   pulzr-lan tunnel set <name> <endpoint> <server public key> [<address>]
+//   pulzr-lan tunnel remove <name>
+//   pulzr-lan tunnel internet <name> on|off
+//   pulzr-lan tunnel reach <name> none|lan|<ip>[,<ip>...]
 //   pulzr-lan cellular <mac> allow|block [tcp:<port>[-<port>] udp:...]
 //   pulzr-lan links                          which devices are which uplink
 //   pulzr-lan seen <mac> <ip>                from a DHCP event
@@ -72,6 +76,57 @@
 //
 // fw4's wan zone forwards nothing, so one rule is added to it
 // (/usr/share/pulzr/lan/wan-forward.nft), as for the tunnel's.
+//
+// ── TUNNELS ────────────────────────────────────────────────────────────────
+//
+// WireGuard tunnels this gateway dials out to a customer's own servers. A
+// server reaches what it is given on the LAN, and may carry the LAN's
+// internet traffic; none of it touches Pulzr's infrastructure: not wg0, not
+// the web proxy, not our SIM. For a camera's video to the customer's video
+// server, with nothing opened at the site.
+//
+// Each is netifd's: interface site_<name>, proto wireguard, its private key
+// made here (`wg genkey`) and kept in UCI, where netifd reads it. Only the
+// public key is ever shown. One peer (site_<name>_server): the server's key
+// and endpoint, a keepalive every 25 s so the server can always reach in.
+// The address is a /30, the server the other host in it. nohostroute:
+// netifd would pin a host route to the endpoint on whatever uplink routed
+// it at ifup, cellular at a boot where WiFi is slow, and keep it there. The
+// outer UDP follows the main table instead, as uplinks fail over and back.
+// What it is for is pulzr.tunnel_<name>:
+//
+//   reach     what the server reaches on the LAN: nothing (the default),
+//             the whole LAN, or devices, each at its own address. A device
+//             keeps its address (reserved, or on another subnet of the
+//             bridge, where nothing is leased). The server routes those
+//             addresses into the tunnel; here they are masqueraded to the
+//             bridge's address, as the tunnel forward is, since a camera
+//             with a static address on a foreign subnet has some other
+//             router as its default.
+//   internet  off by default. On, what LAN clients start toward anything
+//             but the gateway's own subnets leaves through the tunnel,
+//             masqueraded to the tunnel's address, and not at all while it
+//             is down: the route is table SITE_TABLE, its rules match the
+//             bridge and SITE_ROUTE, and an unreachable rule ends them. One
+//             tunnel at a time. Replies to connections that came in (an
+//             exposed port, a tunnel forward) are not marked and follow
+//             the main table. The gateway's own traffic is never routed
+//             this way. A client's parkeze policy and cellular rules are
+//             fw4's and pulzr-lan's on the uplinks; through a tunnel the
+//             customer's server decides.
+//
+// Nothing on the gateway answers on a tunnel: site_in drops all input from
+// one. fw4 knows no zone for them, so it drops their forwarding too, except
+// what this table's guard marked SITE_MARK (site-forward.nft, in fw4's
+// forward chain). A LAN client reaches a server only with internet on. The
+// outer UDP carries the same mark as its fwmark and is dropped in egress if
+// it would leave on a cellular device: over cellular a tunnel is down, not
+// on our SIM.
+//
+// ponytail: the outer UDP follows the main table's default route. A gateway
+// whose default is cellular while WiFi is also up has its tunnels down;
+// route SITE_MARK by a table of its own, as pulzr-wireguard-route does
+// wg0's, if a site ever orders cellular ahead of an unmetered uplink.
 //
 // ── CELLULAR ───────────────────────────────────────────────────────────────
 //
@@ -174,6 +229,22 @@ let uci = require('uci');
 const TABLE = 'pulzr_lan';
 const MARK = 0x504b;
 const EXPOSE_MARK = 0x5045;
+// What a tunnel may forward, and the fwmark on its outer UDP: one value, two
+// uses. SITE_ROUTE is what a LAN client started, for the internet's policy
+// route. Both clear of 0x9700/0xff00 and 0x9800/0xff00, the marks wg0 and
+// LoRa are routed by.
+const SITE_MARK = 0x5354;
+const SITE_ROUTE = 0x5355;
+const SITE_TABLE = 77;
+const SITE_PRIORITY = 7700;
+const SITE_ADDRESS = '10.77.0.2/30';
+const SITE_PORT = 51820;
+const MAX_TUNNELS = 4;
+const MAX_REACH = 32;
+// netifd's interface, and the device it makes, is site_<name>: fifteen
+// characters at most.
+const TUNNEL_NAME = /^[a-z][a-z0-9]{0,9}$/;
+const WG_KEY = /^[A-Za-z0-9+\/]{42}[AEIMQUYcgkosw480]=$/;
 // What the gateway answers on its own uplink address: DHCP renewals, and the
 // console, its WiFi sign-in proxy and SSH, which a site may reach it on.
 const RESERVED = { tcp: [22, 80, 443, 8443], udp: [67, 68] };
@@ -374,10 +445,76 @@ let needClient = (ip) => {
     die(sprintf('%s is on no subnet of the LAN: add one for it first', ip), 3);
 };
 
+// An address that stays its device's, so a port forwarded to it for good
+// does not land on whatever leases it next: a reservation, or another
+// subnet of the bridge, where nothing is leased and the address is the
+// device's own static one.
+let pinned = (ip) => {
+    let n = ipToInt(ip), out = false;
+    for (let x in extraNets())
+        if ((n & x.mask) == x.net) out = true;
+    cursor.foreach('dhcp', 'host', (s) => {
+        if (s.ip == ip && index(s['.name'], 'lan_') == 0) out = true;
+    });
+    return out;
+};
+
+// ── tunnels' settings ─────────────────────────────────────────────────────
+
+let tunnelIface = (name) => 'site_' + name;
+
+// Every tunnel, from pulzr.tunnel_<name> and netifd's two sections.
+let tunnels = () => {
+    let out = [];
+    cursor.foreach('pulzr', 'lan_tunnel', (s) => {
+        if (!match(s.name ?? '', TUNNEL_NAME)) return;
+        let ifc = cursor.get_all('network', tunnelIface(s.name)) ?? {};
+        let peer = cursor.get_all('network', tunnelIface(s.name) + '_server') ?? {};
+        let reach = s.reach == 'lan' || s.reach == 'devices' ? s.reach : 'none';
+        push(out, { name: s.name, address: asList(ifc.addresses)[0] ?? null,
+                    endpoint: peer.endpoint_host ? sprintf('%s:%s', peer.endpoint_host, peer.endpoint_port ?? SITE_PORT) : null,
+                    serverKey: peer.public_key ?? null, internet: s.internet == '1', reach,
+                    devices: reach == 'devices' ? asList(s.device) : [] });
+    });
+    return sort(out, (a, b) => a.name < b.name ? -1 : 1);
+};
+
+// "203.0.113.10:51820" or "video.example.com", as {host, port}, or null.
+let tunnelEndpoint = (text) => {
+    let m = match(text ?? '', /^([A-Za-z0-9.-]{1,253})(:([0-9]{1,5}))?$/);
+    let port = m?.[3] ? int(m[3]) : SITE_PORT;
+    return m && port >= 1 && port <= 65535 ? { host: m[1], port } : null;
+};
+
+// This gateway's public key on a tunnel, from the private one netifd holds.
+// The private key goes to `wg pubkey` on stdin, never on a command line, and
+// the answer comes back through a file: popen reads or writes, not both.
+let tunnelPublicKey = (name) => {
+    let key = cursor.get('network', tunnelIface(name), 'private_key');
+    if (!key) return null;
+    let out = sprintf('/tmp/pulzr-tunnel.%s.pub', name);
+    let proc = fs.popen(sprintf("wg pubkey > '%s' 2>/dev/null", out), 'w');
+    if (!proc) return null;
+    proc.write(key + '\n');
+    proc.close();
+    let pub = trim(fs.readfile(out) ?? '');
+    fs.unlink(out);
+    return match(pub, WG_KEY) ? pub : null;
+};
+
+// What the peer may send and be sent: the server, or anything with the
+// internet on, which WireGuard's routing by key needs to carry it.
+let tunnelPeerIps = (t) => {
+    if (t.internet) return ['0.0.0.0/0'];
+    let n = cidr(t.address);
+    return n ? [intToIp(n.addr == n.net + 1 ? n.net + 2 : n.net + 1) + '/32'] : [];
+};
 
 // ── the table ─────────────────────────────────────────────────────────────
 
-let table = () => sprintf(`
+let table = () => {
+    let br = bridge(), hex = (n) => sprintf('0x%x', n);
+    return `
 table inet ${TABLE} {
 	set usage_up { type ipv4_addr . ifname; flags dynamic; counter; }
 	set usage_down { type ipv4_addr . ifname; flags dynamic; counter; }
@@ -387,34 +524,56 @@ table inet ${TABLE} {
 	set cellular_if { type ifname; }
 	set expose_open { type inet_proto . inet_service; }
 	map expose_to { type inet_proto . inet_service : ipv4_addr . inet_service; }
+	set site_if { type ifname; }
+	set site_lan { type ifname; }
+	set site_dev { type ifname . ipv4_addr; }
+	set site_inet { type ifname; }
 	set cell_deny { type ether_addr; }
 	set cell_block { type ether_addr . inet_proto . inet_service; flags interval; }
 
 	chain dstnat {
 		type nat hook prerouting priority dstnat - 5; policy accept;
-		iifname "wg0" tcp dport @forward_open ct mark set 0x%x dnat ip to tcp dport map @forward_to
-		iifname . ip daddr @uplink_in meta l4proto . th dport @expose_open ct mark set 0x%x dnat ip to meta l4proto . th dport map @expose_to
+		iifname "wg0" tcp dport @forward_open ct mark set ${hex(MARK)} dnat ip to tcp dport map @forward_to
+		iifname . ip daddr @uplink_in meta l4proto . th dport @expose_open ct mark set ${hex(EXPOSE_MARK)} dnat ip to meta l4proto . th dport map @expose_to
 	}
 	chain srcnat {
 		type nat hook postrouting priority srcnat - 5; policy accept;
-		ct mark 0x%x oifname "%s" masquerade
+		ct mark ${hex(MARK)} oifname "${br}" masquerade
+		ct mark ${hex(SITE_MARK)} masquerade
 	}
 	chain guard {
 		type filter hook forward priority filter - 5; policy accept;
-		ct mark 0x%x ct original proto-dst != @forward_open drop
-		ct mark 0x%x meta l4proto . ct original proto-dst != @expose_open drop
-		ct mark 0x%x oifname @cellular_if drop
-		iifname "%s" oifname @cellular_if ether saddr @cell_deny reject
-		iifname "%s" oifname @cellular_if ether saddr . meta l4proto . th dport @cell_block reject
+		ct mark ${hex(MARK)} ct original proto-dst != @forward_open drop
+		ct mark ${hex(EXPOSE_MARK)} meta l4proto . ct original proto-dst != @expose_open drop
+		ct mark ${hex(EXPOSE_MARK)} oifname @cellular_if drop
+		iifname . ip daddr @site_dev oifname "${br}" meta mark set ${hex(SITE_MARK)}
+		iifname @site_lan oifname "${br}" meta mark set ${hex(SITE_MARK)}
+		iifname "${br}" oifname @site_inet meta mark set ${hex(SITE_MARK)}
+		meta mark ${hex(SITE_MARK)} ct mark set ${hex(SITE_MARK)}
+		ct mark ${hex(SITE_MARK)} ct direction original meta mark != ${hex(SITE_MARK)} drop
+		iifname "${br}" oifname @cellular_if ether saddr @cell_deny reject
+		iifname "${br}" oifname @cellular_if ether saddr . meta l4proto . th dport @cell_block reject
+	}
+	chain client_mark {
+		type filter hook prerouting priority mangle; policy accept;
+		iifname "${br}" ct direction original meta mark set ${hex(SITE_ROUTE)}
+	}
+	chain site_in {
+		type filter hook input priority filter - 5; policy accept;
+		iifname @site_if drop
+	}
+	chain egress {
+		type filter hook output priority filter - 5; policy accept;
+		meta mark ${hex(SITE_MARK)} oifname @cellular_if drop
 	}
 	chain account {
 		type filter hook forward priority filter + 10; policy accept;
-		iifname "%s" update @usage_up { ip saddr . oifname }
-		oifname "%s" update @usage_down { ip daddr . iifname }
+		iifname "${br}" update @usage_up { ip saddr . oifname }
+		oifname "${br}" update @usage_down { ip daddr . iifname }
 	}
 }
-`, MARK, EXPOSE_MARK, MARK, bridge(), MARK, EXPOSE_MARK, EXPOSE_MARK,
-   bridge(), bridge(), bridge(), bridge());
+`;
+};
 
 // ── usage epochs ────────────────────────────────────────────────────────────
 
@@ -458,11 +617,11 @@ let startUsage = () => {
                 : sprintf('usage: new epoch %s', usageEpoch()));
 };
 
-// A table from before exposed ports has none of their sets. A gateway gets a
+// A table from before tunnels has none of their sets. A gateway gets a
 // new one at the reboot an upgrade brings; this is for a package swapped in
 // by hand, and it closes any tunnel forward open at the time.
 let ensureTable = () => {
-    if (length(capture(['nft', 'list', 'set', 'inet', TABLE, 'uplink_in']))) return true;
+    if (length(capture(['nft', 'list', 'set', 'inet', TABLE, 'site_dev']))) return true;
     if (length(capture(['nft', 'list', 'table', 'inet', TABLE])))
         system(['nft', 'delete', 'table', 'inet', TABLE]);
     if (!nftScript(table())) return false;
@@ -583,6 +742,13 @@ let exposed = () => {
     return sort(out, (a, b) => a.port - b.port || (a.proto < b.proto ? -1 : 1));
 };
 
+// The addresses a port or a tunnel points at for good.
+let held = () => {
+    let out = map(exposed(), (e) => e.ip);
+    for (let t in tunnels()) push(out, ...t.devices);
+    return out;
+};
+
 // The uplinks by role, from netifd: the wired and WiFi uplinks' devices and
 // addresses, which exposed ports answer on, and the cellular devices.
 let links = () => {
@@ -619,6 +785,14 @@ let loadSets = () => {
     fill('expose_open', open);
     push(lines, sprintf('flush map inet %s expose_to', TABLE));
     if (length(to)) push(lines, sprintf('add element inet %s expose_to { %s }', TABLE, join(', ', to)));
+
+    let all = tunnels(), dev = (t) => sprintf('"%s"', tunnelIface(t.name)), pairs = [];
+    for (let t in all)
+        for (let ip in t.devices) push(pairs, sprintf('%s . %s', dev(t), ip));
+    fill('site_if', map(all, dev));
+    fill('site_lan', map(filter(all, (t) => t.reach == 'lan'), dev));
+    fill('site_dev', pairs);
+    fill('site_inet', map(filter(all, (t) => t.internet), dev));
 
     let deny = [], block = [];
     cursor.foreach('pulzr', 'lan_client', (s) => {
@@ -901,6 +1075,23 @@ let pushLan = () => {
         system([AGENT, '--push', 'lan']);
 };
 
+// The tunnels as `status` reports them: the settings, this gateway's public
+// key, the last handshake (Unix seconds, null before the first) and the
+// bytes through it. Never a private key: `wg show <dev> dump` prints it
+// first, so the two narrow views are read instead.
+let tunnelStatus = () => map(tunnels(), (t) => {
+    let handshake = null, rx = 0, tx = 0;
+    for (let line in split(capture(['wg', 'show', tunnelIface(t.name), 'latest-handshakes']) ?? '', '\n')) {
+        let f = split(trim(line), /\s+/);
+        if (length(f) == 2 && int(f[1]) > 0) handshake = int(f[1]);
+    }
+    for (let line in split(capture(['wg', 'show', tunnelIface(t.name), 'transfer']) ?? '', '\n')) {
+        let f = split(trim(line), /\s+/);
+        if (length(f) == 3) { rx += int(f[1]); tx += int(f[2]); }
+    }
+    return { ...t, publicKey: tunnelPublicKey(t.name), latestHandshake: handshake, rxBytes: rx, txBytes: tx };
+});
+
 let status = () => {
     let lan = lanNet();
     if (!lan) return { configured: false };
@@ -1002,6 +1193,7 @@ let status = () => {
         // addresses. A private one is behind a site router, which has to
         // forward to it as well.
         exposedOn: map(links().expose, (e) => ({ uplink: e.uplink, address: e.address })),
+        tunnels: tunnelStatus(),
         journal: journalTail(),
         scannedAt: readScan().at ?? null,
         usageEpoch: usageEpoch(),
@@ -1020,12 +1212,11 @@ let isolate = () => {
     ensureLearn() || warn('could not load the learning table\n');
 };
 
-// A reservation an exposed port points at stays where it is: moved or
+// A reservation a port points at for good stays where it is: moved or
 // released, the port would follow whatever leases the address next.
 let keepExposed = (was, now) => {
     if (!was || was == now) return;
-    for (let e in exposed())
-        if (e.ip == was) die(sprintf('%s has exposed ports; remove them first', was), 3);
+    if (was in held()) die(sprintf('%s has exposed ports or a tunnel; remove them first', was), 3);
 };
 
 // Whether two subnets share an address.
@@ -1034,17 +1225,23 @@ let overlap = (a, b) => {
     return (a.net & mask) == (b.net & mask);
 };
 
-// What a new subnet on the bridge may not overlap: the LAN, the others, the
-// fixed networks and every subnet the gateway holds now (uplinks, tunnel).
-let refuseExtra = (n) => {
+// What a new subnet on the bridge, or a tunnel's, may not overlap: the LAN,
+// the bridge's others, the tunnels', the fixed networks and every subnet the
+// gateway holds now (uplinks, wg0). `self` is the tunnel being set, which
+// may keep its own subnet.
+let refuseNet = (n, self) => {
     if (overlap(n, lanNet())) return 'overlaps the LAN';
     for (let x in extraNets())
         if (overlap(n, x)) return sprintf('overlaps %s', x.text);
+    for (let t in tunnels()) {
+        let x = cidr(t.address);
+        if (t.name != self && x && overlap(n, x)) return sprintf('overlaps tunnel %s', t.name);
+    }
     for (let f in FIXED_NETS)
         if (overlap(n, cidr(f))) return sprintf('overlaps %s', f);
     let dump = captureJson(['ubus', 'call', 'network.interface', 'dump']);
     for (let ifc in dump?.interface ?? []) {
-        if (ifc.interface == 'devlan' || ifc.interface == EXTRA || ifc.interface == 'loopback') continue;
+        if (ifc.interface in ['devlan', EXTRA, 'loopback'] || ifc.interface == tunnelIface(self)) continue;
         for (let a in ifc['ipv4-address'] ?? []) {
             let x = cidr(sprintf('%s/%d', a.address, a.mask));
             if (x && overlap(n, x)) return sprintf('overlaps %s (%s)', x.text, ifc.interface);
@@ -1094,7 +1291,7 @@ let commands = {
             let net = device & 0xffffff00, taken = {}, pick = null, probes = 0;
             let wire = learned();
             for (let mac in keys(wire)) taken[wire[mac].ip] = true;
-            let why = refuseExtra(cidr(intToIp(net | 253) + '/24'));
+            let why = refuseNet(cidr(intToIp(net | 253) + '/24'));
             why && die(sprintf('%s/24 %s', intToIp(net), why), 3);
             for (let host = 253; host >= 2 && pick == null && probes < PROBES; host--) {
                 let ip = intToIp(net | host);
@@ -1114,15 +1311,16 @@ let commands = {
                 return;
             }
             (length(have) < MAX_EXTRA) || die(sprintf('at most %d other subnets', MAX_EXTRA), 3);
-            let why = refuseExtra(n);
+            let why = refuseNet(n);
             why && die(sprintf('%s %s', n.text, why), 3);
             push(have, n);
         } else if (op == 'remove') {
             let kept = filter(have, (x) => x.text != n.text);
             (length(kept) < length(have)) || die(sprintf('%s is not on the LAN', n.text), 3);
-            // An exposed port into it would point at nothing.
-            for (let e in exposed())
-                if ((ipToInt(e.ip) & n.mask) == n.net) die(sprintf('%s has exposed ports; remove them first', e.ip), 3);
+            // A port into it would point at nothing.
+            for (let ip in held())
+                if ((ipToInt(ip) & n.mask) == n.net)
+                    die(sprintf('%s has exposed ports or a tunnel; remove them first', ip), 3);
             have = kept;
         } else {
             die('address add|remove <a.b.c.d/nn> | address for <device ip>', 2);
@@ -1133,10 +1331,118 @@ let commands = {
         printf('%J\n', { addresses: texts, address: n.text });
     },
 
-    // An uplink came up, went down or changed address (hotplug).
+    // An uplink came up, went down or changed address (hotplug). A tunnel
+    // that is down, its endpoint's name unresolved at boot say, is tried
+    // again: an uplink coming up is when that may have changed.
     links: () => {
         if (!lanNet()) exit(0);
         (ensureTable() && loadSets()) || die('could not load the uplinks');
+        for (let t in tunnels())
+            if (!captureJson(['ubus', 'call', 'network.interface.' + tunnelIface(t.name), 'status'])?.up)
+                system(['ubus', 'call', 'network.interface.' + tunnelIface(t.name), 'up']);
+    },
+
+    // A tunnel out to a customer's server: see TUNNELS above.
+    tunnel: (op, name, ...args) => {
+        lanNet() || die('no LAN on this gateway');
+        (op in ['set', 'remove', 'internet', 'reach']) ||
+            die('tunnel set <name> <endpoint> <server public key> [<address>] | tunnel remove <name> | ' +
+                'tunnel internet <name> on|off | tunnel reach <name> none|lan|<ip>[,<ip>...]', 2);
+        match(name ?? '', TUNNEL_NAME) || die('a tunnel name: a lowercase letter, then up to nine letters or digits', 2);
+        let ifc = tunnelIface(name), peer = ifc + '_server', section = 'tunnel_' + name;
+        let was = filter(tunnels(), (t) => t.name == name)[0];
+        (op == 'set' || was) || die(sprintf('no tunnel %s', name), 3);
+        let entry = { at: time(), op: 'tunnel-' + op, name };
+
+        if (op == 'set') {
+            let key = args[1], address = args[2];
+            let ep = tunnelEndpoint(args[0]) ?? die('an endpoint, like 203.0.113.10:51820', 2);
+            match(key ?? '', WG_KEY) || die('the server\'s WireGuard public key, 44 characters ending in =', 2);
+            (was || length(tunnels()) < MAX_TUNNELS) || die(sprintf('at most %d tunnels', MAX_TUNNELS), 3);
+            let n = cidr(length(address) ? address : (was?.address ?? SITE_ADDRESS));
+            (n?.bits == 30) || die('a tunnel\'s address is a /30, like 10.77.0.2/30', 2);
+            let why = refuseNet(n, name);
+            why && die(sprintf('%s %s', n.text, why), 3);
+            // Kept while the tunnel is, so the server's copy of the public
+            // key stays good through a change of endpoint.
+            let secret = cursor.get('network', ifc, 'private_key') ?? trim(capture(['wg', 'genkey']) ?? '');
+            match(secret, WG_KEY) || die('could not make a WireGuard key');
+            was || cursor.set('pulzr', section, 'lan_tunnel');
+            cursor.set('pulzr', section, 'name', name);
+            cursor.set('network', ifc, 'interface');
+            cursor.set('network', ifc, 'proto', 'wireguard');
+            cursor.set('network', ifc, 'private_key', secret);
+            cursor.set('network', ifc, 'addresses', [n.text]);
+            cursor.set('network', ifc, 'fwmark', sprintf('0x%x', SITE_MARK));
+            cursor.set('network', ifc, 'nohostroute', '1');
+            cursor.set('network', peer, 'wireguard_' + ifc);
+            cursor.set('network', peer, 'public_key', key);
+            cursor.set('network', peer, 'endpoint_host', ep.host);
+            cursor.set('network', peer, 'endpoint_port', sprintf('%d', ep.port));
+            cursor.set('network', peer, 'route_allowed_ips', '0');
+            cursor.set('network', peer, 'persistent_keepalive', '25');
+            entry.endpoint = sprintf('%s:%d', ep.host, ep.port);
+            entry.address = n.text;
+        } else if (op == 'remove') {
+            cursor.delete('pulzr', section);
+            cursor.delete('network', ifc);
+            cursor.delete('network', peer);
+        } else if (op == 'internet') {
+            let on = args[0] == 'on';
+            (on || args[0] == 'off') || die('internet is on or off', 2);
+            for (let t in tunnels())
+                if (on && t.internet && t.name != name)
+                    die(sprintf('tunnel %s carries the internet; turn it off there first', t.name), 3);
+            on ? cursor.set('pulzr', section, 'internet', '1') : cursor.delete('pulzr', section, 'internet');
+            entry.internet = on;
+        } else {
+            let to = args[0] ?? '', devices = [];
+            if (to != 'none' && to != 'lan') {
+                devices = uniq(split(to, ','));
+                (length(devices) <= MAX_REACH) || die(sprintf('at most %d devices', MAX_REACH), 2);
+                for (let ip in devices) {
+                    needClient(ip);
+                    pinned(ip) || die(sprintf('reserve %s first', ip), 3);
+                }
+            }
+            cursor.delete('pulzr', section, 'device');
+            if (to == 'none') cursor.delete('pulzr', section, 'reach');
+            else cursor.set('pulzr', section, 'reach', to == 'lan' ? 'lan' : 'devices');
+            if (length(devices)) cursor.set('pulzr', section, 'device', devices);
+            entry.reach = to == 'none' || to == 'lan' ? to : 'devices';
+            entry.devices = devices;
+        }
+        cursor.commit('pulzr');
+
+        // The peer's addresses follow the internet switch, and the policy
+        // route follows whichever tunnel has it on.
+        let now = filter(tunnels(), (t) => t.name == name)[0];
+        if (now) cursor.set('network', peer, 'allowed_ips', tunnelPeerIps(now));
+        let inet = filter(tunnels(), (t) => t.internet)[0];
+        for (let s in ['site_inet', 'site_inet_main', 'site_inet_via', 'site_inet_end'])
+            cursor.delete('network', s);
+        if (inet) {
+            let rule = (s, priority, opts) => {
+                cursor.set('network', s, 'rule');
+                cursor.set('network', s, 'in', 'devlan');
+                cursor.set('network', s, 'mark', sprintf('0x%x', SITE_ROUTE));
+                cursor.set('network', s, 'priority', sprintf('%d', priority));
+                for (let k in keys(opts)) cursor.set('network', s, k, opts[k]);
+            };
+            cursor.set('network', 'site_inet', 'route');
+            cursor.set('network', 'site_inet', 'interface', tunnelIface(inet.name));
+            cursor.set('network', 'site_inet', 'target', '0.0.0.0/0');
+            cursor.set('network', 'site_inet', 'table', sprintf('%d', SITE_TABLE));
+            rule('site_inet_main', SITE_PRIORITY, { lookup: 'main', suppress_prefixlength: '0' });
+            rule('site_inet_via', SITE_PRIORITY + 1, { lookup: sprintf('%d', SITE_TABLE) });
+            rule('site_inet_end', SITE_PRIORITY + 2, { action: 'unreachable' });
+        }
+        cursor.commit('network');
+        system(['ubus', 'call', 'network', 'reload']);
+        ensureTable() && loadSets() || die('could not load the tunnels');
+        journal(entry);
+        log(sprintf('tunnel %s %s', name, op));
+        printf('%J\n', filter(tunnelStatus(), (t) => t.name == name)[0] ?? { name, removed: true });
     },
 
     status: () => printf('%J\n', status()),
@@ -1175,11 +1481,7 @@ let commands = {
         needClient(ip);
         dport = dport == null ? port : (match(dport, /^[0-9]{1,5}$/) ? int(dport) : 0);
         (dport >= 1 && dport <= 65535) || die('a client port from 1 to 65535', 2);
-        let reserved = false;
-        cursor.foreach('dhcp', 'host', (s) => {
-            if (s.ip == ip && index(s['.name'], 'lan_') == 0) reserved = true;
-        });
-        reserved || die(sprintf('reserve %s first', ip), 3);
+        pinned(ip) || die(sprintf('reserve %s first', ip), 3);
         let name = sprintf('expose_%s_%d', proto, port);
         (cursor.get('pulzr', name) || length(exposed()) < MAX_EXPOSED)
             || die(sprintf('at most %d exposed ports', MAX_EXPOSED), 3);
@@ -1364,5 +1666,5 @@ let commands = {
 };
 
 let cmd = commands[ARGV[0] ?? 'status'];
-cmd ?? die('usage: pulzr-lan {apply|status|policy|cellular|reserve|unreserve|forward|unforward|expose|unexpose|address|links|seen|isolate|scan|scan-service|save-usage}', 2);
+cmd ?? die('usage: pulzr-lan {apply|status|policy|cellular|reserve|unreserve|forward|unforward|expose|unexpose|tunnel|address|links|seen|isolate|scan|scan-service|save-usage}', 2);
 call(cmd, null, null, ...slice(ARGV, 1));

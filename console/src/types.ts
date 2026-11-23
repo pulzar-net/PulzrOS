@@ -648,7 +648,7 @@ export interface ProcessList {
 // ── lan ─────────────────────────────────────────────────────────────────────
 
 /** Bytes by the netifd interface that carried them (wan, wwifi, wwan,
-    usbwan), and `tunnel` for a forward's traffic: running totals within the
+    usbwan, site_<name> for a tunnel), and `tunnel` for a forward's traffic: running totals within the
     report's usageEpoch, kept across clean reboots (docs/lan.md, Metering). */
 export type LanTraffic = Record<string, { txBytes: number; rxBytes: number }>;
 
@@ -713,6 +713,29 @@ export interface LanStatus {
   exposedOn?: { uplink: string; address: string }[];
   /** Unix seconds of the last port scan. */
   scannedAt?: number | null;
+  tunnels?: LanTunnel[];
+}
+
+/** A WireGuard tunnel the gateway dials out to a customer's server
+    (pulzr-lan tunnel). */
+export interface LanTunnel {
+  name: string;
+  endpoint: string | null;
+  serverKey: string | null;
+  /** This gateway's address in it, a /30. */
+  address: string | null;
+  /** This gateway's public key, for the server. */
+  publicKey: string | null;
+  /** LAN clients' internet traffic leaves through it. */
+  internet: boolean;
+  /** What the server reaches on the LAN. */
+  reach: 'none' | 'lan' | 'devices';
+  /** For `devices`: each reached at its own address. */
+  devices: string[];
+  /** Unix seconds; null before the first. */
+  latestHandshake: number | null;
+  rxBytes: number;
+  txBytes: number;
 }
 
 /** A port on the uplinks forwarded to a client for good (pulzr-lan expose). */

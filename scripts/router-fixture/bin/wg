@@ -1,0 +1,12 @@
+#!/bin/sh
+# wireguard-tools for pulzr-lan: genkey makes the one private key below,
+# pubkey answers for it alone (so the key must arrive on stdin), and
+# `show <dev> <what>` prints $T/wg.<dev>.<what>. Every command line is kept
+# in $T/wg.argv, to show a private key never rides one.
+echo "$*" >> "${T}/wg.argv"
+case "$1" in
+	genkey) echo 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=' ;;
+	pubkey) read -r key; [ "${key}" = 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=' ] && echo 'QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8=' ;;
+	show) cat "${T}/wg.$2.$3" 2>/dev/null ;;
+esac
+exit 0

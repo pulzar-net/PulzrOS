@@ -2,7 +2,7 @@ Package: pulzr-lan
 Provides: parkeze-lan
 Replaces: parkeze-lan
 Conflicts: parkeze-lan
-Depends: ucode, ucode-mod-fs, ucode-mod-uci, dnsmasq-full, firewall4, nftables-json, kmod-nft-nat, kmod-nft-bridge, iputils-arping, nmap
+Depends: ucode, ucode-mod-fs, ucode-mod-uci, dnsmasq-full, firewall4, nftables-json, kmod-nft-nat, kmod-nft-bridge, iputils-arping, nmap, kmod-wireguard, wireguard-tools
 Maintainer: Joseph Telaak <joseph@pulzr.net>
 License: Apache-2.0
 Architecture: all
@@ -12,6 +12,8 @@ Description: The devlan zone: ports for devices this gateway serves.
  tunnel, and a per-client egress policy of Pulzr only or the internet. Counts
  each client's traffic per uplink, and opens the one kind of forward a gateway
  makes: from the management tunnel to one client's port, for a bounded time.
+ Tunnels: WireGuard out to a customer's own servers, which reach the clients
+ they were given and may carry the LAN's internet, never over cellular.
  Every fifteen minutes, nmap asks each client on the LAN which of SSH, telnet
  and web it answers on, so the console offers only what will open.
  For boards that set PULZR_LAN_PORTS; see boards/common/board.conf.

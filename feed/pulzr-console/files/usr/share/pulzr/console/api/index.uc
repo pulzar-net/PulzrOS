@@ -552,6 +552,10 @@ const ROUTES = {
         const result = actions.setLanReserve(req, s);
         return result.error ? error(400, result.error) : respond(200, result);
     },
+    'POST /api/lan/tunnel':  (env, req, s) => {
+        const result = actions.setLanTunnel(req, s);
+        return result.error ? error(400, result.error) : respond(200, result);
+    },
 
     // ── dns: the resolver, see lib/dns.uc ───────────────────────────────────
     'GET  /api/dns/status':    () => respond(200, dns.status()),

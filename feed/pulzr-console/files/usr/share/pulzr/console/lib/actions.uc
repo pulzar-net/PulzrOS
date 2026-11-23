@@ -131,6 +131,10 @@ const ACTIONS = {
     setLanExpose: (req, s) => audited('lan.expose',
         { by: s.subject, proto: req.proto, port: req.port, ip: req.ip || null, dport: req.dport || null },
         lan.expose(req)),
+    setLanTunnel: (req, s) => audited('lan.tunnel',
+        { by: s.subject, name: req.name, remove: req.remove === true, internet: req.internet,
+          reach: req.reach, devices: req.devices, endpoint: req.endpoint, address: req.address },
+        lan.tunnel(req)),
 
     // ── dns ─────────────────────────────────────────────────────────────────
     setDnsUpstream: (req, s) => audited('dns.upstream', { by: s.subject, servers: req.servers ?? [] },

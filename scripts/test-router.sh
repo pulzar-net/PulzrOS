@@ -683,6 +683,79 @@ check "a forward to it, through the tunnel" '172.16.5.112 80' "$(lan forward 172
 check "the forward's element" '1' "$(lastload | grep -c ': 172.16.5.112 . 80 }')"
 lan address remove 172.16.5.251/24 >/dev/null
 
+# ── lan: tunnels out to a customer's server ────────────────────────────────
+#
+# Campo's: the gateway dials out, and the server reaches the camera (static,
+# 10.20.0.112 on another subnet of the bridge) at its own address, nothing
+# else, and the LAN's internet only once that is switched on.
+SERVER=ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8= PRIV=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=
+: > "${T}/wg.argv"
+lan address add 10.20.0.2/24 >/dev/null
+refuse_lan "a tunnel name with a capital" tunnel set Campo 203.0.113.10 "${SERVER}"
+refuse_lan "a name too long for a device" tunnel set campofarmabc 203.0.113.10 "${SERVER}"
+refuse_lan "a key that is not WireGuard's" tunnel set campo 203.0.113.10 notakey=
+refuse_lan "an endpoint with a bad port" tunnel set campo 203.0.113.10:70000 "${SERVER}"
+refuse_lan "an address that is not a /30" tunnel set campo 203.0.113.10 "${SERVER}" 10.77.0.2/24
+refuse_lan "an address on the LAN" tunnel set campo 203.0.113.10 "${SERVER}" 192.168.64.8/30
+refuse_lan "a reach for a tunnel not there" tunnel reach campo lan
+out="$(lan tunnel set campo 203.0.113.10 "${SERVER}")"
+check "tunnel: this gateway's public key, never the private one" \
+    'QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8= 203.0.113.10:51820 10.77.0.2/30 none false null' \
+    "$(echo "${out}" | jq -r '"\(.publicKey) \(.endpoint) \(.address) \(.reach) \(.internet) \(.privateKey)"')"
+check "tunnel: the private key never on a command line or in the status" '0 0' \
+    "$(grep -c "${PRIV}" "${T}/wg.argv") $(lan status | grep -c "${PRIV}")"
+check "tunnel: netifd's interface, out of the cellular-free routing" \
+    '["wireguard",["10.77.0.2/30"],"0x5354","1"]' \
+    "$(jq -c '.network.site_campo | [.proto, .addresses, .fwmark, .nohostroute]' "${UCI_JSON}")"
+check "tunnel: its peer, the server's /32 only, kept alive" \
+    "[\"wireguard_site_campo\",\"${SERVER}\",\"203.0.113.10\",\"51820\",[\"10.77.0.1/32\"],\"0\",\"25\"]" \
+    "$(jq -c '.network.site_campo_server | [.[".type"], .public_key, .endpoint_host, .endpoint_port, .allowed_ips, .route_allowed_ips, .persistent_keepalive]' "${UCI_JSON}")"
+check "tunnel: reaches nothing by default" '"site_campo"||' \
+    "$(lastload | sed -n 's/^add element inet pulzr_lan site_if { \(.*\) }$/\1/p')|$(lastload | grep '^add element inet pulzr_lan site_dev' || true)|$(lastload | grep '^add element inet pulzr_lan site_inet' || true)"
+refuse_lan "a second tunnel on the first one's subnet" tunnel set other 198.51.100.7 "${SERVER}"
+refuse_lan "a device not reserved on the LAN" tunnel reach campo 192.168.64.51
+refuse_lan "a device off every subnet" tunnel reach campo 172.31.0.9
+refuse_lan "the gateway's own address" tunnel reach campo 10.20.0.2
+check "tunnel: a static device on another subnet, at its own address" '"devices" ["10.20.0.112"]' \
+    "$(lan tunnel reach campo 10.20.0.112 | jq -c '.reach, .devices' | paste -sd' ' -)"
+check "tunnel: loaded for that tunnel's device alone" 'add element inet pulzr_lan site_dev { "site_campo" . 10.20.0.112 }' \
+    "$(lastload | grep '^add element inet pulzr_lan site_dev')"
+refuse_lan "removing the subnet a tunnel's device is on" address remove 10.20.0.2/24
+check "tunnel: a reserved client too" '["192.168.64.50","10.20.0.112"]' \
+    "$(lan tunnel reach campo 192.168.64.50,10.20.0.112 | jq -c .devices)"
+refuse_lan "releasing a reservation a tunnel points at" unreserve c2:6c:1d:d1:f7:b3
+lan tunnel reach campo lan >/dev/null
+check "tunnel: the whole LAN" '"site_campo"' "$(lastload | sed -n 's/^add element inet pulzr_lan site_lan { \(.*\) }$/\1/p')"
+lan tunnel reach campo none >/dev/null
+check "tunnel: and back to nothing" '' "$(lastload | grep '^add element inet pulzr_lan site_lan\|^add element inet pulzr_lan site_dev' || true)"
+check "tunnel: no internet route until it is switched on" 'null null' \
+    "$(jq -c '.network.site_inet, .network.site_inet_end' "${UCI_JSON}" | paste -sd' ' -)"
+lan tunnel internet campo on >/dev/null
+check "internet: a default route in its own table, on this tunnel" '["site_campo","0.0.0.0/0","77"]' \
+    "$(jq -c '.network.site_inet | [.interface, .target, .table]' "${UCI_JSON}")"
+check "internet: what LAN clients start, main's subnets first, then the tunnel, then nowhere" \
+    '[["devlan","0x5355","7700","main","0",null],["devlan","0x5355","7701","77",null,null],["devlan","0x5355","7702",null,null,"unreachable"]]' \
+    "$(jq -c '[.network.site_inet_main, .network.site_inet_via, .network.site_inet_end | [.in, .mark, .priority, .lookup, .suppress_prefixlength, .action]]' "${UCI_JSON}")"
+check "internet: the peer carries anything" '["0.0.0.0/0"]' "$(jq -c '.network.site_campo_server.allowed_ips' "${UCI_JSON}")"
+check "internet: forwarded out that tunnel" 'add element inet pulzr_lan site_inet { "site_campo" }' \
+    "$(lastload | grep '^add element inet pulzr_lan site_inet')"
+lan tunnel set other 198.51.100.7:51821 "${SERVER}" 10.77.1.2/30 >/dev/null
+refuse_lan "a second tunnel carrying the internet" tunnel internet other on
+check "status: both tunnels" '["campo","other"]' "$(lan status | jq -c '[.tunnels[].name]')"
+echo "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8=	1795619000" > "${T}/wg.site_campo.latest-handshakes"
+echo "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8=	1200	3400" > "${T}/wg.site_campo.transfer"
+check "status: the handshake and the bytes" '1795619000 1200 3400' \
+    "$(lan status | jq -r '.tunnels[] | select(.name == "campo") | "\(.latestHandshake) \(.rxBytes) \(.txBytes)"')"
+lan tunnel internet campo off >/dev/null
+check "internet off: the route and the rules go, the peer is the server again" 'null null ["10.77.0.1/32"]' \
+    "$(jq -c '.network.site_inet, .network.site_inet_via, .network.site_campo_server.allowed_ips' "${UCI_JSON}" | paste -sd' ' -)"
+lan tunnel remove other >/dev/null
+lan tunnel remove campo >/dev/null
+check "remove: every section goes" 'null null null' \
+    "$(jq -c '.network.site_campo, .network.site_campo_server, .pulzr.tunnel_campo' "${UCI_JSON}" | paste -sd' ' -)"
+check "journalled" 'tunnel-remove' "$(tail -n1 "${T}/lan/forwards.log" | jq -r .op)"
+lan address remove 10.20.0.2/24 >/dev/null
+
 # ── lan: the DHCP contact journal forgets what has been gone a week ─────────
 #
 # A visitor last seen two weeks ago, one ten minutes ago, and the reserved
