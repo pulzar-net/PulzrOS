@@ -295,9 +295,20 @@ apply = function(IMAGE, manifest, issuer, owned, staff) {
     // Belt and braces after the metadata check. Its exit status cannot be
     // trusted to reject a bad image (see the header), but when it does say no
     // it means it.
+    //
+    // OpenWrt 25.12's sysupgrade copies an image that is not in /tmp to
+    // /tmp/sysupgrade.img before it checks it, -T included, and leaves the
+    // copy there. For an image waiting on the flash that is the whole image
+    // again in RAM, which is the memory pulzr-firmware handoff then finds
+    // missing: "not enough memory (19 MB image, 22 MB of memory with services
+    // stopped)" on Cigar Curer, twice, with 20 MB of that copy in /tmp. So a
+    // copy this check made goes as soon as the check is done.
+    const SCRATCH = '/tmp/sysupgrade.img';
+    const leaves = !match(IMAGE, /^\/tmp\//) && !_m_fs.access(SCRATCH);
     const proc = _m_fs.popen(sprintf('sysupgrade -T %s 2>&1', shellQuote(IMAGE)), 'r');
     const verdict = proc ? trim(proc.read('all') ?? '') : '';
     const rc = proc ? proc.close() : 1;
+    if (leaves) _m_fs.unlink(SCRATCH);
     if (rc != 0)
         return refuse(length(verdict)
             ? sprintf('Not a valid image for this gateway: %s', verdict)
