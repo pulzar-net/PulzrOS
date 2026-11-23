@@ -105,6 +105,7 @@ pulzr-lan unforward <tunnel port>
 pulzr-lan expose tcp|udp <port> <ip> [<client port>]
 pulzr-lan unexpose tcp|udp <port>
 pulzr-lan links                           reload the uplinks' devices and addresses
+pulzr-lan scan                            scan the clients' management ports now
 ```
 
 In the console, Network > LAN (`lib/lan.uc`, `pages/network/Lan.tsx`): the
@@ -140,6 +141,7 @@ to stay under the agent's 8KB answer.
     "reserved": "192.168.64.50", "policy": "parkeze", "online": true, "port": "eth1",
     "cellular": "allow", "cellularBlock": ["tcp:554"],
     "firstSeen": 1793051334, "lastSeen": 1793051821, "leaseExpires": 1793094533,
+    "services": [22, 80],
     "traffic": { "wan": { "txBytes": 6169, "rxBytes": 22131 },
                  "tunnel": { "txBytes": 2109, "rxBytes": 927 } }
   }],
@@ -147,7 +149,8 @@ to stay under the agent's 8KB answer.
   "exposed": [{ "proto": "tcp", "port": 8080, "ip": "192.168.64.50", "dport": 80 }],
   "exposedOn": [{ "uplink": "wwifi", "address": "192.168.1.40" }],
   "journal": [{ "at": 1793051648, "op": "open", "port": 40000, "ip": "192.168.64.50",
-                "dport": 8080, "seconds": 3600, "id": "<request id>" }]
+                "dport": 8080, "seconds": 3600, "id": "<request id>" }],
+  "scannedAt": 1793051700
 }
 ```
 
@@ -179,6 +182,36 @@ to stay under the agent's 8KB answer.
   uplink's address. A private one is behind a site router.
 - `journal` is the last twenty forwards opened and closed, and ports exposed
   and removed (`op` `expose`, `unexpose`).
+- `services` is the management ports the client answered on at the last scan
+  that reached it, and `scannedAt` when the last scan ran. A client no scan has
+  reached has no `services`: unknown, not closed.
+
+## The port scan
+
+Which of SSH (22), telnet (23) and web (80, 443, 8080, 8443) each client
+answers on, so the console offers a terminal or a web page only where one will
+open. `pulzr-lan-scan` runs `pulzr-lan scan` every fifteen minutes, a minute or
+two after a new lease, and a few minutes after boot.
+
+It is meant to go unnoticed by the devices it asks:
+
+- nmap, a TCP connect to each of the six ports, polite timing (`-T2`: one
+  probe at a time, 0.4 s apart), one retry, and at most a minute a client.
+- Only the clients the gateway can see on the devlan bridge now, by a complete
+  ARP entry, never a sweep of the subnet. Bound to the bridge (`-e
+  br-devlan`), so nothing is ever asked on an uplink.
+- Not at all while the default route is cellular, or when there is none: the
+  tunnel that would use the answer is not there, and the push would be billed.
+
+A scan that finds what the last one did pushes nothing; one that finds a port
+open or closed pushes `lan`. The result is kept in `/var/run`, so a reboot
+forgets it and the first scan after boot says it again. A client gone a week
+loses what was found on it.
+
+The gateway's own ports are never scanned. Every board's six-hourly report
+carries `listening`: the same six ports, for those something on the gateway
+listens on beyond loopback, read from the kernel's socket table
+(`pulzr-claim`). The console offers the gateway's Shell and Web UI by it.
 
 ## The tunnel forward
 

@@ -371,6 +371,9 @@ check "back: uplinks that went are out of the order" '["wan","wwan"]' "$(jq -c .
 sed -e "s#'/etc/pulzr/lan'#'${T}/lan'#" \
     -e "s#'/tmp/dhcp.leases'#'${T}/leases'#" \
     -e "s#/sys/class/net/#${T}/sys/#g" \
+    -e "s#'/proc/net/arp'#'${T}/arp'#" \
+    -e "s#'/var/run/pulzr'#'${T}/run'#" \
+    -e "s#'/usr/sbin/pulzr-mqtt-agent'#'${T}/agent'#" \
     -e 's/, [0-9]*000)/)/' \
     "${ROOT}/feed/pulzr-lan/files/usr/sbin/pulzr-lan" > "${T}/lan.uc"
 grep -q "${T}/lan'" "${T}/lan.uc" || { echo "FAIL pulzr-lan's state path moved; update this script" >&2; exit 1; }
@@ -470,5 +473,47 @@ check "status: on the wire with no lease, by its port" '[{"mac":"c2:6c:1d:d1:f7:
     "$(lan status | jq -c '[.clients[] | {mac, port}] | sort_by(.mac)')"
 check "status: a wire-only client has no address and no DHCP contact" 'null null false' \
     "$(lan status | jq -r '.clients[] | select(.mac == "f0:00:06:10:91:6b") | "\(.ip) \(.firstSeen) \(.online)"')"
+
+# ── lan: the port scan ──────────────────────────────────────────────────────
+#
+# Only the clients the bridge sees now, only the console's ports, polite and
+# bound to the bridge; not at all without a default route or on cellular; and
+# a push only when what answers changed.
+
+printf '#!/bin/sh\necho "$*" >> "%s/pushes"\n' "${T}" > "${T}/agent"
+chmod +x "${T}/agent"
+jq '.pulzr.adoption = {".type": "adoption", ".name": "adoption", "state": "adopted"}' "${UCI_JSON}" > "${T}/u" && mv "${T}/u" "${UCI_JSON}"
+cat > "${T}/arp" <<'ARP'
+IP address       HW type     Flags       HW address            Mask     Device
+192.168.64.50    0x1         0x2         c2:6c:1d:d1:f7:b3     *        br-devlan
+192.168.64.77    0x1         0x2         02:80:e1:9c:0f:3f     *        br-devlan
+192.168.64.78    0x1         0x0         02:80:e1:9c:0f:40     *        br-devlan
+10.0.0.1         0x1         0x2         d4:6a:91:5f:cf:00     *        wan
+ARP
+printf '22\n80\n' > "${T}/nmap.192.168.64.50"
+: > "${T}/nmap.log"
+
+check "scan: nothing without a default route" '{"skipped":true} 0' "$(lan scan | jq -c .) $(wc -l < "${T}/nmap.log" | tr -d ' ')"
+jq '.wwan.route = [{"target": "0.0.0.0", "mask": 0, "metric": 10}]' "${NET_JSON}" > "${T}/n" && mv "${T}/n" "${NET_JSON}"
+check "scan: nothing while cellular routes" '{"skipped":true} 0' "$(lan scan | jq -c .) $(wc -l < "${T}/nmap.log" | tr -d ' ')"
+jq '.wan.route = [{"target": "0.0.0.0", "mask": 0, "metric": 1}]' "${NET_JSON}" > "${T}/n" && mv "${T}/n" "${NET_JSON}"
+lan scan >/dev/null
+check "scan: the console's ports, polite, bound to the bridge" \
+    '-n -Pn -sT -T2 --max-retries 1 --host-timeout 60s -e br-devlan -p 22,23,80,443,8080,8443 -oG -' \
+    "$(tail -n1 "${T}/nmap.log" | sed 's/ 192\..*//')"
+check "scan: only the clients the bridge sees now" '192.168.64.50 192.168.64.77' \
+    "$(tail -n1 "${T}/nmap.log" | tr ' ' '\n' | grep '^192' | sort | paste -sd' ' -)"
+check "scan: each client's open ports in the status, [] for one with none" '[22,80] []' \
+    "$(lan status | jq -c '[.clients[] | select(.mac == "c2:6c:1d:d1:f7:b3")][0].services') $(lan status | jq -c '[.clients[] | select(.mac == "02:80:e1:9c:0f:3f")][0].services')"
+check "scan: an incomplete ARP entry is not scanned, and has no ports" 'null' \
+    "$(lan status | jq -c '[.clients[] | select(.mac == "02:80:e1:9c:0f:40")][0].services')"
+check "scan: when, in the status" 'number' "$(lan status | jq -r '.scannedAt | type')"
+check "scan: the change is pushed" '--push lan' "$(cat "${T}/pushes")"
+lan scan >/dev/null
+check "scan: the same answer is not pushed again" '1' "$(wc -l < "${T}/pushes" | tr -d ' ')"
+printf '22\n23\n' > "${T}/nmap.192.168.64.77"
+lan scan >/dev/null
+check "scan: telnet appearing is pushed" '2 [22,23]' \
+    "$(wc -l < "${T}/pushes" | tr -d ' ') $(lan status | jq -c '[.clients[] | select(.mac == "02:80:e1:9c:0f:3f")][0].services')"
 
 exit "${fail}"

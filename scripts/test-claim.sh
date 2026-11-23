@@ -182,6 +182,16 @@ check "report carries the host key" \
 check "a board without a RAK power board reports it as null" \
     python3 -c 'import json,sys; assert json.loads(sys.argv[1])["facts"]["rakPower"] is None' "$(last_body report)"
 
+# The management ports listening beyond loopback, from the socket table: SSH
+# and the tunnel console on any address, never telnet on 127.0.0.1, nor a
+# connection that is not listening, nor the IPv6 loopback.
+mkdir -p "${SANDBOX}/proc"
+printf '  sl  local_address rem_address   st\n   0: 00000000:0016 00000000:0000 0A\n   1: 0100007F:0017 00000000:0000 0A\n   2: 00000000:1F90 00000000:0000 0A\n   3: 0A00007A:01BB 0A000001:C000 01\n   4: 00000000:0BB8 00000000:0000 0A\n' > "${SANDBOX}/proc/tcp"
+printf '  sl  local_address rem_address   st\n   0: 00000000000000000000000000000000:0016 00000000000000000000000000000000:0000 0A\n   1: 00000000000000000000000001000000:01BB 00000000000000000000000000000000:0000 0A\n' > "${SANDBOX}/proc/tcp6"
+PULZR_PROC_NET="${SANDBOX}/proc" claim report
+check "the report lists what listens: SSH and 8080, not loopback, not 3000" \
+    python3 -c 'import json,sys; assert json.loads(sys.argv[1])["facts"]["listening"] == [22, 8080]' "$(last_body report)"
+
 printf '#!/bin/sh\necho "{\\"running\\":true,\\"watchdog\\":{\\"state\\":\\"failing\\"}}"\n' > "${STUBS}/pulzr-rak-power"
 chmod +x "${STUBS}/pulzr-rak-power"
 claim report

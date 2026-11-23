@@ -196,4 +196,5 @@ uci commit dhcp
 uci commit firewall
 
 /etc/init.d/pulzr-lan enable
+/etc/init.d/pulzr-lan-scan enable
 exit 0

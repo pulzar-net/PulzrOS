@@ -582,10 +582,10 @@ facts() {
     apply_support=0
     command -v pulzr-apply >/dev/null 2>&1 && apply_support=1
 
-    printf '{"board":"%s","osVersion":"%s","modemPresent":%s,"modemModel":"%s","modemKind":"%s","simIccid":"%s","sshHostKey":"%s","wiredUsable":%s,"tunnelVia":"%s","tunnelState":"%s","wifiUplink":"%s","consolePort":443,"consoleScheme":"https","tunnelConsolePort":8080,"sshPort":22,"apply":%s,"sshCa":%s,"system":%s,"rakPower":%s,"setupAp":%s,"speedtest":%s,"wiredRouters":%s,"activeUplink":"%s","stats":%s,"addons":%s,"radios":%s,"thread":%s,"consoleCertificate":%s%s}' \
+    printf '{"board":"%s","osVersion":"%s","modemPresent":%s,"modemModel":"%s","modemKind":"%s","simIccid":"%s","sshHostKey":"%s","wiredUsable":%s,"tunnelVia":"%s","tunnelState":"%s","wifiUplink":"%s","consolePort":443,"consoleScheme":"https","tunnelConsolePort":8080,"sshPort":22,"apply":%s,"sshCa":%s,"system":%s,"rakPower":%s,"setupAp":%s,"speedtest":%s,"wiredRouters":%s,"activeUplink":"%s","stats":%s,"addons":%s,"radios":%s,"thread":%s,"consoleCertificate":%s,"listening":%s%s}' \
         "${board_id}" "${version}" "${modem_present}" "${modem_model:-}" "${modem_kind:-}" "${iccid:-}" \
         "${host_key:-}" "${wired_usable}" "${tunnel_via:-none}" "${tunnel:-none}" "${wifi_uplink:-unchecked}" "${apply_support}" "${ssh_ca}" "$(system_facts)" "$(rak_power_facts)" "$(setup_ap_facts)" "$(speedtest_facts)" "$(router_facts)" "$(active_uplink)" "$(stats_facts)" \
-        "$(addon_facts)" "$(radio_facts)" "$(thread_facts)" "$(console_cert_facts)" "$(console_csr_field)"
+        "$(addon_facts)" "$(radio_facts)" "$(thread_facts)" "$(console_cert_facts)" "$(listening_facts)" "$(console_csr_field)"
 }
 
 # CPU, memory, temperature, storage, buffer depth, signal and bytes per uplink
@@ -766,6 +766,21 @@ system_facts() {
 $(pulzr-gateway-facts 2>/dev/null)
 EOF
     printf '{%s}' "${out}"
+}
+
+# The management ports something here listens on beyond loopback, read from
+# the kernel's own socket table rather than probed: SSH, telnet and the web
+# ports, so the console offers a terminal or the web UI for this gateway only
+# while there is something to answer. A JSON list, [] when nothing listens.
+listening_facts() {
+    local dir="${PULZR_PROC_NET:-/proc/net}" hex port out=""
+    for hex in $(awk 'FNR > 1 && $4 == "0A" && $2 !~ /^0100007F:/ && $2 !~ /^0000000000000000FFFF00000100007F:/ && $2 !~ /^00000000000000000000000001000000:/ {
+                         sub(/.*:/, "", $2); print $2 }' "${dir}/tcp" "${dir}/tcp6" 2>/dev/null | sort -u); do
+        port="$(printf '%d' "0x${hex}" 2>/dev/null)" || continue
+        case " 22 23 80 443 8080 8443 " in *" ${port} "*) out="${out}${port}
+" ;; esac
+    done
+    printf '[%s]' "$(printf '%s' "${out}" | sort -nu | tr '\n' ',' | sed 's/,$//')"
 }
 
 # The management tunnel's speed, measured from Pulzar Cloud's end: the cloud

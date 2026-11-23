@@ -1,0 +1,19 @@
+#!/bin/sh
+# nmap -oG: its arguments to $T/nmap.log; each address it is given answers on
+# the ports $T/nmap.<address> lists, or on none.
+echo "$*" >> "${T}/nmap.log"
+echo "# Nmap 7.95 scan initiated as: nmap $*"
+for arg in "$@"; do
+    case "${arg}" in
+        [0-9]*.[0-9]*.[0-9]*.[0-9]*)
+            ports=""
+            for p in 22 23 80 443 8080 8443; do
+                state=closed
+                grep -qx "${p}" "${T}/nmap.${arg}" 2>/dev/null && state=open
+                ports="${ports}${ports:+, }${p}/${state}/tcp//x///"
+            done
+            printf 'Host: %s ()\tStatus: Up\n' "${arg}"
+            printf 'Host: %s ()\tPorts: %s\n' "${arg}" "${ports}" ;;
+    esac
+done
+echo "# Nmap done -- scanned"

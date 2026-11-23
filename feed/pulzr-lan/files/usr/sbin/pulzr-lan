@@ -15,6 +15,9 @@
 //   pulzr-lan links                          which devices are which uplink
 //   pulzr-lan seen <mac> <ip>                from a DHCP event
 //   pulzr-lan isolate                        port isolation on every member
+//   pulzr-lan scan                           which management ports each
+//                                              client answers on (nmap)
+//   pulzr-lan scan-service                   scan every so often (procd)
 //
 // ── THE TUNNEL FORWARD ─────────────────────────────────────────────────────
 //
@@ -75,6 +78,21 @@
 // whatever the policy allows. REJECT, as the zone does: a client refused
 // fails at once rather than retrying into a link it may not use.
 //
+// ── THE PORT SCAN ──────────────────────────────────────────────────────────
+//
+// Which management ports each client answers on: SSH, telnet and web, so the
+// console offers a terminal or a web page only where one will open. nmap,
+// a TCP connect to each port, polite timing (-T2: one probe at a time, 0.4 s
+// apart), one retry, and only to the clients the gateway can see on the
+// devlan bridge right now (a complete ARP entry), never a sweep of the
+// subnet and never anything on an uplink. Every fifteen minutes and soon
+// after a new lease, and not at all while the default route is cellular: the
+// tunnel is not there to use what it finds, and the push would be billed.
+// A scan that finds what the last one did pushes nothing.
+//
+// The result is in /var/run, so a reboot forgets it and the first scan after
+// boot says it again; `status` carries each client's open ports.
+//
 // ── COUNTING ───────────────────────────────────────────────────────────────
 //
 // Per client and per uplink, by nftables: a dynamic set keyed on the client's
@@ -111,6 +129,19 @@ const WIRE_ONLY_MAX = 8;
 const JOURNAL_KEEP = 200;
 const JOURNAL_REPORT = 20;
 const LEASES = '/tmp/dhcp.leases';
+const ARP = '/proc/net/arp';
+const SCAN_DIR = '/var/run/pulzr';
+const SCAN = SCAN_DIR + '/lan-scan.json';
+// What the console has a button for: SSH, telnet, and a web UI on the usual
+// four. A device's other services are its own business.
+const SCAN_PORTS = [22, 23, 80, 443, 8080, 8443];
+const SCAN_EVERY = 900;
+// The soonest a new lease is scanned again after the last scan.
+const SCAN_SOONEST = 120;
+// A client gone this long loses what was found on it.
+const SCAN_KEEP = 7 * 86400;
+const MAX_SCAN_HOSTS = 64;
+const AGENT = '/usr/sbin/pulzr-mqtt-agent';
 
 let cursor = uci.cursor();
 
@@ -395,7 +426,7 @@ let leases = () => {
 // Who is answering right now: a complete ARP entry on the bridge.
 let online = () => {
     let out = {}, dev = bridge();
-    for (let line in split(fs.readfile('/proc/net/arp') ?? '', '\n')) {
+    for (let line in split(fs.readfile(ARP) ?? '', '\n')) {
         let f = split(trim(line), /\s+/);
         if (length(f) >= 6 && f[5] == dev && f[2] == '0x2')
             out[normalMac(f[3])] = f[0];
@@ -507,6 +538,80 @@ let journal = (entry) => {
     fs.rename(JOURNAL + '.tmp', JOURNAL);
 };
 
+// ── the port scan ─────────────────────────────────────────────────────────
+
+let readScan = () => {
+    try { return json(fs.readfile(SCAN) ?? '{}') ?? {}; } catch (e) { return {}; }
+};
+
+// Whether a scan's push would ride cellular, or go nowhere: the interface
+// holding the lowest-metric default route.
+let onCellular = () => {
+    let dump = captureJson(['ubus', 'call', 'network.interface', 'dump']), best = null;
+    for (let ifc in dump?.interface ?? []) {
+        if (!ifc.up) continue;
+        for (let r in ifc.route ?? [])
+            if (r.target == '0.0.0.0' && r.mask == 0 && (best == null || (r.metric ?? 0) < best.metric))
+                best = { metric: r.metric ?? 0, name: ifc.interface };
+    }
+    return best == null || (best.name in CELLULAR_UPLINKS);
+};
+
+// `Host: 192.168.64.20 ()	Ports: 22/open/tcp//ssh///, 80/closed/tcp//http///`
+// from nmap -oG, as {ip: [open ports]}. null when nmap did not finish: a scan
+// that did not run says nothing about what is closed.
+let parseScan = (text) => {
+    if (!match(text ?? '', /# Nmap done/)) return null;
+    let out = {};
+    for (let line in split(text, '\n')) {
+        let m = match(line, /^Host: ([0-9.]+) [^\t]*\tPorts: ([^\t]*)/);
+        if (!m) continue;
+        let open = out[m[1]] ??= [];
+        for (let entry in split(m[2], ', ')) {
+            let f = split(trim(entry), '/');
+            let port = int(f[0]);
+            if (f[1] == 'open' && f[2] == 'tcp' && (port in SCAN_PORTS) && !(port in open)) push(open, port);
+        }
+    }
+    for (let ip in keys(out)) out[ip] = sort(out[ip], (a, b) => a - b);
+    return out;
+};
+
+// The leases as a scan saw them, MAC and address only: a new one is a client
+// worth scanning before the fifteen minutes are up.
+let leaseMark = () => join(' ', sort(map(leases(), (l) => l.mac + '=' + l.ip)));
+
+let scan = () => {
+    if (!lanNet() || onCellular()) return null;
+    let targets = {};
+    let now = online();
+    for (let mac in keys(now))
+        if (normalMac(mac) && clientIp(now[mac]) && length(targets) < MAX_SCAN_HOSTS) targets[now[mac]] = mac;
+    let at = time(), was = readScan(), clients = {};
+    for (let mac in keys(was.clients ?? {}))
+        if (at - (was.clients[mac].at ?? 0) < SCAN_KEEP) clients[mac] = was.clients[mac];
+    if (length(targets)) {
+        let found = parseScan(capture(['nmap', '-n', '-Pn', '-sT', '-T2', '--max-retries', '1',
+                                       '--host-timeout', '60s', '-e', bridge(),
+                                       '-p', join(',', SCAN_PORTS), '-oG', '-', ...keys(targets)]));
+        if (found == null) return null;
+        for (let ip in keys(targets))
+            clients[targets[ip]] = { ip, open: found[ip] ?? [], at };
+    }
+    let doc = { at, leases: leaseMark(), clients };
+    fs.mkdir(SCAN_DIR);
+    fs.writefile(SCAN + '.tmp', sprintf('%J', doc));
+    fs.rename(SCAN + '.tmp', SCAN);
+    let same = (a, b) => sprintf('%J', map(sort(keys(a ?? {})), (m) => [m, a[m].open])) ==
+                         sprintf('%J', map(sort(keys(b ?? {})), (m) => [m, b[m].open]));
+    return { doc, changed: !same(was.clients, clients) };
+};
+
+let pushLan = () => {
+    if (cursor.get('pulzr', 'adoption', 'state') == 'adopted' && fs.access(AGENT, 'x'))
+        system([AGENT, '--push', 'lan']);
+};
+
 let status = () => {
     let lan = lanNet();
     if (!lan) return { configured: false };
@@ -565,6 +670,12 @@ let status = () => {
     for (let mac in keys(clients))
         clients[mac].port = behind[mac] ?? null;
 
+    // A client the last scans reached carries the ports it answered on; one
+    // no scan has reached carries none, which is unknown, not closed.
+    let scanned = readScan();
+    for (let mac in keys(scanned.clients ?? {}))
+        if (clients[mac]) clients[mac].services = scanned.clients[mac].open;
+
     let names = uplinkNames();
     let up = counters('usage_up', names), down = counters('usage_down', names);
     for (let mac in keys(clients)) {
@@ -588,6 +699,7 @@ let status = () => {
         // forward to it as well.
         exposedOn: map(links().expose, (e) => ({ uplink: e.uplink, address: e.address })),
         journal: journalTail(),
+        scannedAt: readScan().at ?? null,
     };
 };
 
@@ -774,6 +886,32 @@ let commands = {
         printf('%J\n', { port, closed: true });
     },
 
+    scan: () => {
+        let result = scan();
+        if (result?.changed) pushLan();
+        printf('%J\n', result?.doc ?? { skipped: true });
+    },
+
+    // Every fifteen minutes, and a minute or two after a new lease: a device
+    // just plugged in is the one somebody wants a terminal to. A first scan a
+    // few minutes after boot, once the clients have their leases again.
+    'scan-service': () => {
+        sleep((120 + time() % 120) * 1000);
+        while (true) {
+            // A fresh read each round: the LAN's address and the adoption
+            // can change under a loop that runs for weeks.
+            cursor = uci.cursor();
+            let last = readScan();
+            let due = time() - (last.at ?? 0) >= SCAN_EVERY ||
+                      (leaseMark() != (last.leases ?? '') && time() - (last.at ?? 0) >= SCAN_SOONEST);
+            if (due) {
+                let result = scan();
+                if (result?.changed) pushLan();
+            }
+            sleep(60 * 1000);
+        }
+    },
+
     // First and last DHCP contact, kept across reboots and upgrades: a lease
     // file says only when a lease ends, and nothing says when a device first
     // appeared. dnsmasq reports every interface it serves, the setup AP and
@@ -789,5 +927,5 @@ let commands = {
 };
 
 let cmd = commands[ARGV[0] ?? 'status'];
-cmd ?? die('usage: pulzr-lan {apply|status|policy|cellular|reserve|unreserve|forward|unforward|expose|unexpose|links|seen|isolate}', 2);
+cmd ?? die('usage: pulzr-lan {apply|status|policy|cellular|reserve|unreserve|forward|unforward|expose|unexpose|links|seen|isolate|scan|scan-service}', 2);
 call(cmd, null, null, ...slice(ARGV, 1));
