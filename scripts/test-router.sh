@@ -374,6 +374,7 @@ sed -e "s#'/etc/pulzr/lan'#'${T}/lan'#" \
     -e "s#'/proc/net/arp'#'${T}/arp'#" \
     -e "s#'/var/run/pulzr'#'${T}/run'#" \
     -e "s#'/usr/sbin/pulzr-mqtt-agent'#'${T}/agent'#" \
+    -e "s#'/proc/sys/kernel/random/boot_id'#'${T}/boot_id'#" \
     -e 's/, [0-9]*000)/)/' \
     "${ROOT}/feed/pulzr-lan/files/usr/sbin/pulzr-lan" > "${T}/lan.uc"
 grep -q "${T}/lan'" "${T}/lan.uc" || { echo "FAIL pulzr-lan's state path moved; update this script" >&2; exit 1; }
@@ -445,6 +446,7 @@ check "policy back to parkeze keeps the cellular rule" '"block"' \
 check "status: the client's cellular rule" '"block" "parkeze"' \
     "$(lan status | jq -c '.clients[0].cellular' | tr -d '\n') $(lan status | jq -c '.clients[0].policy')"
 lan cellular c2:6c:1d:d1:f7:b3 allow >/dev/null
+lan policy c2:6c:1d:d1:f7:b3 internet >/dev/null
 check "cellular: back to the default drops the section" 'null' "$(jq -c '.pulzr.lan_c26c1dd1f7b3' "${UCI_JSON}")"
 refuse_lan "a block that is not tcp or udp" cellular c2:6c:1d:d1:f7:b3 allow icmp:1
 refuse_lan "a backwards range" cellular c2:6c:1d:d1:f7:b3 allow udp:10-5
@@ -544,5 +546,90 @@ lan unexpose tcp 8554 >/dev/null
 lan address remove 10.20.0.2/24 >/dev/null
 check "address: the last one removed takes the interface" 'null' "$(jq -c '.network.devlan_extra' "${UCI_JSON}")"
 refuse_lan "removing one that is not there" address remove 10.20.0.2/24
+
+# ── lan: the internet by default, and each client's metered totals ─────────
+#
+# docs/src/content/docs/lan.md, Metering. The kernel's counters come from
+# $T/nft.set.*; a boot is $T/nft.absent and a new $T/boot_id.
+
+A=02:00:00:00:00:0a B=02:00:00:00:00:0b
+jq '.firewall = {
+  "devlan_pulzr_wan": {".type": "rule", ".name": "devlan_pulzr_wan", "dest": "wan", "target": "ACCEPT"},
+  "devlan_ntp_wan": {".type": "rule", ".name": "devlan_ntp_wan", "dest": "wan", "target": "ACCEPT"},
+  "devlan_pulzr_cellular": {".type": "rule", ".name": "devlan_pulzr_cellular", "dest": "cellular", "target": "ACCEPT"},
+  "devlan_ntp_cellular": {".type": "rule", ".name": "devlan_ntp_cellular", "dest": "cellular", "target": "ACCEPT"},
+  "lan_inet_02000000000b_wan": {".type": "rule", ".name": "lan_inet_02000000000b_wan", "dest": "wan", "src_mac": "02:00:00:00:00:0b", "target": "ACCEPT"},
+  "devlan_inet_wan": {".type": "rule", ".name": "devlan_inet_wan", "dest": "wan", "target": "ACCEPT"},
+  "devlan_inet_cellular": {".type": "rule", ".name": "devlan_inet_cellular", "dest": "cellular", "target": "ACCEPT"}}
+  | .pulzr = {}' "${UCI_JSON}" > "${UCI_JSON}.new" && mv "${UCI_JSON}.new" "${UCI_JSON}"
+printf '%s %s 192.168.64.70 cam-a *\n%s %s 192.168.64.71 plc-b *\n' \
+    "$(( $(date +%s) + 3600 ))" "${A}" "$(( $(date +%s) + 3600 ))" "${B}" > "${T}/leases"
+: > "${T}/arp"
+rm -f "${T}"/nft.set.*
+traffic() { lan status | jq -c --arg m "$1" '[.clients[] | select(.mac == $m)][0].traffic'; }
+counted() {
+    local set="$1"; shift
+    jq -nc --args '{nftables: [{set: {name: $ARGS.positional[0], elem: [$ARGS.positional[1:] | _nwise(3) |
+        {elem: {val: {concat: [.[0], .[1]]}, counter: {packets: 1, bytes: (.[2] | tonumber)}}}]}}]}' \
+        "${set}" "$@" > "${T}/nft.set.${set}"
+}
+
+echo boot-one > "${T}/boot_id"; touch "${T}/nft.absent"
+lan apply
+lan seen "${A}" 192.168.64.70; lan seen "${B}" 192.168.64.71
+epoch="$(lan status | jq -r .usageEpoch)"
+check "usage: a new table starts an epoch" 'true' "$([ -n "${epoch}" ] && [ "${epoch}" != null ] && echo true)"
+check "policy: the internet by default" '"internet"' "$(lan status | jq -c --arg m "${B}" '[.clients[] | select(.mac == $m)][0].policy')"
+check "policy: the per-client internet accepts from before go" 'null' "$(jq -c '.firewall.lan_inet_02000000000b_wan' "${UCI_JSON}")"
+
+counted usage_up 192.168.64.70 wwan0 100 192.168.64.70 phy0-sta0 50
+counted usage_down 192.168.64.70 wwan0 1000
+check "usage: per uplink, by its netifd name" '{"wwan":{"txBytes":100,"rxBytes":1000},"wwifi":{"txBytes":50,"rxBytes":0}}' "$(traffic "${A}")"
+
+lan save-usage
+check "usage: saved for the next boot" "\"${epoch}\" \"boot-one\" 1100" \
+    "$(jq -c '.epoch, .boot, (.clients["'"${A}"'"].wwan | .txBytes + .rxBytes)' "${T}/lan/usage.json" | paste -sd' ' -)"
+
+echo boot-two > "${T}/boot_id"; touch "${T}/nft.absent"; rm -f "${T}"/nft.set.*
+lan apply
+check "usage: a clean reboot keeps the epoch" "${epoch}" "$(lan status | jq -r .usageEpoch)"
+check "usage: and starts from the saved totals" '{"wwan":{"txBytes":100,"rxBytes":1000},"wwifi":{"txBytes":50,"rxBytes":0}}' "$(traffic "${A}")"
+check "usage: the saved copy is used once" 'gone' "$([ -e "${T}/lan/usage.json" ] || echo gone)"
+counted usage_up 192.168.64.70 wwan0 10
+check "usage: the kernel's counts add to them" '110' "$(traffic "${A}" | jq .wwan.txBytes)"
+
+: > "${T}/nft.log"
+printf '%s %s 192.168.64.72 cam-a *\n%s %s 192.168.64.71 plc-b *\n' \
+    "$(( $(date +%s) + 3600 ))" "${A}" "$(( $(date +%s) + 3600 ))" "${B}" > "${T}/leases"
+lan seen "${A}" 192.168.64.72
+check "usage: a new address keeps what the old one counted" '110' "$(traffic "${A}" | jq .wwan.txBytes)"
+check "usage: and the old address's counters are deleted" 'delete element inet pulzr_lan usage_up { 192.168.64.70 . "wwan0" }' \
+    "$(grep '^delete element' "${T}/nft.log")"
+lan seen "${B}" 192.168.64.70
+check "usage: whoever takes the address starts from nothing" '{}' "$(traffic "${B}")"
+
+echo boot-three > "${T}/boot_id"; touch "${T}/nft.absent"; rm -f "${T}"/nft.set.*
+lan apply
+check "usage: a power cut is a new epoch, from nothing" 'true {}' \
+    "$([ "$(lan status | jq -r .usageEpoch)" != "${epoch}" ] && echo true) $(traffic "${A}")"
+
+lan save-usage
+lan apply
+check "usage: a start without a reboot drops what the stop saved" 'gone' "$([ -e "${T}/lan/usage.json" ] || echo gone)"
+
+lan policy "${B}" parkeze >/dev/null
+check "policy: parkeze is a REJECT between Pulzar's accepts and the internet's" \
+    'devlan_pulzr_wan devlan_ntp_wan devlan_pulzr_cellular devlan_ntp_cellular lan_pulzr_02000000000b_wan devlan_inet_wan lan_pulzr_02000000000b_cellular devlan_inet_cellular' \
+    "$(jq -r '.firewall | keys_unsorted | join(" ")' "${UCI_JSON}")"
+check "policy: parkeze, rejected" 'REJECT 02:00:00:00:00:0b' \
+    "$(jq -r '.firewall.lan_pulzr_02000000000b_wan | "\(.target) \(.src_mac)"' "${UCI_JSON}")"
+check "status: parkeze" '"parkeze"' "$(lan status | jq -c --arg m "${B}" '[.clients[] | select(.mac == $m)][0].policy')"
+jq '.firewall = ({"lan_pulzr_02000000000b_wan": .firewall.lan_pulzr_02000000000b_wan} + .firewall)' "${UCI_JSON}" > "${UCI_JSON}.new" && mv "${UCI_JSON}.new" "${UCI_JSON}"
+lan apply
+check "policy: put back after an upgrade moved Pulzar's accepts below it" 'devlan_inet_wan' \
+    "$(jq -r '.firewall | keys_unsorted | . as $k | $k[($k | index("lan_pulzr_02000000000b_wan")) + 1]' "${UCI_JSON}")"
+lan policy "${B}" internet >/dev/null
+check "policy: back to the internet drops the rules and the section" 'null null' \
+    "$(jq -c '.firewall.lan_pulzr_02000000000b_wan, .pulzr.lan_02000000000b' "${UCI_JSON}" | paste -sd' ' -)"
 
 exit "${fail}"

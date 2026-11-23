@@ -20,9 +20,10 @@
 #   the tunnel     nothing. There is no devlan-to-mgmt forwarding, and a
 #                  forward the other way exists only while pulzr-lan holds
 #                  one open.
-#   out            Pulzar, NTP and DNS by default; everything, for a client
-#                  whose policy is internet. Over whichever uplink the route
-#                  metrics pick, masqueraded.
+#   out            everything by default, over whichever uplink the route
+#                  metrics pick, masqueraded, and counted per client
+#                  (pulzr-lan). Pulzar, NTP and DNS only, for a client whose
+#                  policy is parkeze. Never the tunnel.
 #
 # Pulzar is a set of addresses dnsmasq fills as it answers for Pulzar's
 # names, so it follows a move with no rule to change. The names come from
@@ -183,6 +184,20 @@ set firewall.devlan_ntp_${zone}.dest='${zone}'
 set firewall.devlan_ntp_${zone}.proto='udp'
 set firewall.devlan_ntp_${zone}.dest_port='123'
 set firewall.devlan_ntp_${zone}.target='ACCEPT'
+EOF
+done
+
+# The internet, for every client but those narrowed to Pulzar, whose REJECTs
+# pulzr-lan apply puts between the accepts above and these. Last, so a re-run
+# on upgrade keeps them after the rules above.
+for zone in wan cellular; do
+	uci -q batch <<EOF
+delete firewall.devlan_inet_${zone}
+set firewall.devlan_inet_${zone}=rule
+set firewall.devlan_inet_${zone}.name='Allow-LAN-internet-${zone}'
+set firewall.devlan_inet_${zone}.src='devlan'
+set firewall.devlan_inet_${zone}.dest='${zone}'
+set firewall.devlan_inet_${zone}.target='ACCEPT'
 EOF
 done
 

@@ -14,6 +14,8 @@
 //   pulzr-lan cellular <mac> allow|block [tcp:<port>[-<port>] udp:...]
 //   pulzr-lan links                          which devices are which uplink
 //   pulzr-lan seen <mac> <ip>                from a DHCP event
+//   pulzr-lan save-usage                     each client's counts, kept
+//                                              across the reboot to come
 //   pulzr-lan isolate                        port isolation on every member
 //   pulzr-lan address add|remove <a.b.c.d/nn>  another subnet on the bridge
 //   pulzr-lan scan                           which management ports each
@@ -111,13 +113,39 @@
 // The result is in /var/run, so a reboot forgets it and the first scan after
 // boot says it again; `status` carries each client's open ports.
 //
+// ── WHAT A CLIENT REACHES ──────────────────────────────────────────────────
+//
+// The internet, by default, straight out whichever uplink is routing,
+// masqueraded: never through the management tunnel or a relay. Pulzar meters
+// it (below) and a plan prices it. `pulzr-lan policy <mac> parkeze` narrows
+// one client to Pulzar, NTP and DNS, which is what every client got before
+// metering existed.
+//
 // ── COUNTING ───────────────────────────────────────────────────────────────
 //
 // Per client and per uplink, by nftables: a dynamic set keyed on the client's
 // address and the uplink device, with a counter on each element. Counted after
 // fw4 has filtered, so a blocked attempt is not traffic. nlbwmon counts per
 // client but not per uplink, and per uplink is the question: which client
-// spent the SIM's data. Since boot, because the counters live in the kernel.
+// spent the SIM's data, and which bytes a plan's allowance is spent on.
+//
+// The kernel counts per address since the table was made; `status` reports
+// per MAC, as running totals within an epoch (`usageEpoch`), and Pulzar Cloud
+// adds up the differences between reports. Three things keep a total from
+// going backwards inside an epoch, which the cloud would otherwise have to
+// guess about:
+//
+//   a reboot      the init script's stop writes every client's totals to
+//                 flash (save-usage), and the table made at the next boot
+//                 starts from them under the same epoch. One write per
+//                 shutdown, never on a timer. A power cut writes nothing, so
+//                 the next boot is a new epoch and what moved since the
+//                 cloud's last poll is lost: minutes, not a month.
+//   a new address the DHCP event that moves a MAC to another address, or an
+//                 address to another MAC, folds the old address's counters
+//                 into its owner's base and deletes them from the kernel, so
+//                 nobody inherits anybody else's bytes.
+//   a new table   a table remade by hand is a new epoch.
 
 let fs = require('fs');
 let uci = require('uci');
@@ -165,6 +193,13 @@ const SCAN_SOONEST = 120;
 const SCAN_KEEP = 7 * 86400;
 const MAX_SCAN_HOSTS = 64;
 const AGENT = '/usr/sbin/pulzr-mqtt-agent';
+// The epoch and each client's base are in RAM; the flash copy exists only
+// between a clean shutdown and the boot after it.
+const USAGE_DIR = SCAN_DIR + '/lan-usage';
+const USAGE_EPOCH = USAGE_DIR + '/epoch';
+const USAGE_BASE = USAGE_DIR + '/base.json';
+const USAGE_SAVED = STATE + '/usage.json';
+const BOOT_ID = '/proc/sys/kernel/random/boot_id';
 
 let cursor = uci.cursor();
 
@@ -302,6 +337,48 @@ table inet ${TABLE} {
 `, MARK, EXPOSE_MARK, MARK, bridge(), MARK, EXPOSE_MARK, EXPOSE_MARK,
    bridge(), bridge(), bridge(), bridge());
 
+// ── usage epochs ────────────────────────────────────────────────────────────
+
+let readJson = (path) => {
+    try { return json(fs.readfile(path) ?? 'null'); } catch (e) { return null; }
+};
+
+let writeJson = (path, doc) => {
+    fs.writefile(path + '.tmp', sprintf('%J', doc));
+    return fs.rename(path + '.tmp', path);
+};
+
+let bootId = () => trim(fs.readfile(BOOT_ID) ?? '');
+
+let usageEpoch = () => {
+    let epoch = trim(fs.readfile(USAGE_EPOCH) ?? '');
+    if (length(epoch)) return epoch;
+    // A table from before metering: its counters are real, but nothing was
+    // reported under an epoch yet, so this one starts now.
+    epoch = sprintf('%s-%x', substr(replace(bootId(), '-', ''), 0, 8) || 'boot', time());
+    fs.mkdir(SCAN_DIR);
+    fs.mkdir(USAGE_DIR);
+    fs.writefile(USAGE_EPOCH, epoch + '\n');
+    return epoch;
+};
+
+// A new table: the saved totals when the last boot ended cleanly, a new epoch
+// otherwise. The flash copy goes either way, so a later power cut cannot
+// bring back totals this boot has already counted past.
+let startUsage = () => {
+    let saved = readJson(USAGE_SAVED);
+    if (fs.access(USAGE_SAVED)) fs.unlink(USAGE_SAVED);
+    let restore = type(saved?.epoch) == 'string' && type(saved?.clients) == 'object' &&
+                  saved.boot && saved.boot != bootId();
+    fs.mkdir(SCAN_DIR);
+    fs.mkdir(USAGE_DIR);
+    fs.unlink(USAGE_EPOCH);
+    if (restore) fs.writefile(USAGE_EPOCH, saved.epoch + '\n');
+    writeJson(USAGE_BASE, restore ? saved.clients : {});
+    log(restore ? sprintf('usage: %d client(s) carried over in epoch %s', length(saved.clients), saved.epoch)
+                : sprintf('usage: new epoch %s', usageEpoch()));
+};
+
 // A table from before exposed ports has none of their sets. A gateway gets a
 // new one at the reboot an upgrade brings; this is for a package swapped in
 // by hand, and it closes any tunnel forward open at the time.
@@ -309,29 +386,60 @@ let ensureTable = () => {
     if (length(capture(['nft', 'list', 'set', 'inet', TABLE, 'uplink_in']))) return true;
     if (length(capture(['nft', 'list', 'table', 'inet', TABLE])))
         system(['nft', 'delete', 'table', 'inet', TABLE]);
-    return nftScript(table());
+    if (!nftScript(table())) return false;
+    startUsage();
+    return true;
 };
 
 // ── policy ────────────────────────────────────────────────────────────────
 //
-// pulzr is the default and has no rules of its own: the zone's rules let
-// every client reach Pulzar, NTP and DNS. internet is two rules per client,
-// one per uplink zone, matched on its MAC so a new lease does not lose it.
+// internet is the default and has no rules of its own: 25-pulzr-lan's
+// devlan_inet_<zone> accepts everything from the zone, after the rules that
+// let every client reach Pulzar and NTP. parkeze is one REJECT per client per
+// uplink zone, matched on its MAC so a new lease does not lose it, and it
+// only works between the two: after Pulzar's accepts and before the zone's.
+// fw4 matches in UCI order, and 25-pulzr-lan re-adds its rules at the end on
+// every upgrade, so each apply puts these back where they belong.
+//
+// Compat: before metering the default was parkeze, and internet was an
+// ACCEPT per client (lan_inet_*). Those go at the first apply.
 
 let UPLINK_ZONES = ['wan', 'cellular'];
+
+let ruleIndex = () => {
+    let out = {};
+    cursor.foreach('firewall', 'rule', (s) => out[s['.name']] = s['.index']);
+    return out;
+};
+
+// Each Pulzar-only rule below its zone's Pulzar and NTP accepts and above its
+// zone-wide one. True when anything moved.
+let placeRules = (names) => {
+    let moved = false;
+    for (let name in names) {
+        let zone = cursor.get('firewall', name, 'dest'), at = ruleIndex();
+        let pulzr = at['devlan_pulzr_' + zone] ?? -1, ntp = at['devlan_ntp_' + zone] ?? -1;
+        let floor = pulzr > ntp ? pulzr : ntp;
+        let ceiling = at['devlan_inet_' + zone];
+        if (ceiling == null || at[name] == null || (at[name] > floor && at[name] < ceiling)) continue;
+        cursor.reorder('firewall', name, at[name] < ceiling ? ceiling - 1 : ceiling);
+        moved = true;
+    }
+    return moved;
+};
 
 let applyPolicy = () => {
     let want = {};
     cursor.foreach('pulzr', 'lan_client', (s) => {
         let mac = normalMac(s.mac);
-        if (!mac || s.policy != 'internet') return;
+        if (!mac || s.policy != 'parkeze') return;
         for (let zone in UPLINK_ZONES)
-            want[sprintf('lan_inet_%s_%s', macId(mac), zone)] = { mac, zone };
+            want[sprintf('lan_pulzr_%s_%s', macId(mac), zone)] = { mac, zone };
     });
 
     let have = {};
     cursor.foreach('firewall', 'rule', (s) => {
-        if (index(s['.name'], 'lan_inet_') == 0)
+        if (index(s['.name'], 'lan_pulzr_') == 0 || index(s['.name'], 'lan_inet_') == 0)
             have[s['.name']] = { mac: s.src_mac, zone: s.dest };
     });
 
@@ -344,13 +452,14 @@ let applyPolicy = () => {
     for (let name in keys(want)) {
         if (have[name]?.mac == want[name].mac && have[name]?.zone == want[name].zone) continue;
         cursor.set('firewall', name, 'rule');
-        cursor.set('firewall', name, 'name', 'LAN-internet-' + macId(want[name].mac));
+        cursor.set('firewall', name, 'name', 'LAN-Pulzar-only-' + macId(want[name].mac));
         cursor.set('firewall', name, 'src', 'devlan');
         cursor.set('firewall', name, 'dest', want[name].zone);
         cursor.set('firewall', name, 'src_mac', want[name].mac);
-        cursor.set('firewall', name, 'target', 'ACCEPT');
+        cursor.set('firewall', name, 'target', 'REJECT');
         changed = true;
     }
+    if (placeRules(keys(want))) changed = true;
     if (changed) {
         cursor.commit('firewall');
         system('/etc/init.d/firewall reload >/dev/null 2>&1', 30000);
@@ -364,7 +473,7 @@ let saveClient = (mac, set) => {
     let name = 'lan_' + macId(mac);
     let s = cursor.get_all('pulzr', name) ?? {};
     set(s);
-    if (s.policy != 'internet' && s.cellular != 'block' && !length(s.cellular_block ?? [])) {
+    if (s.policy != 'parkeze' && s.cellular != 'block' && !length(s.cellular_block ?? [])) {
         cursor.delete('pulzr', name);
     } else {
         cursor.set('pulzr', name, 'lan_client');
@@ -554,6 +663,61 @@ let counters = (set, names) => {
     return out;
 };
 
+// ── usage ─────────────────────────────────────────────────────────────────
+
+let addTraffic = (into, from) => {
+    for (let uplink in keys(from ?? {})) {
+        into[uplink] ??= { txBytes: 0, rxBytes: 0 };
+        into[uplink].txBytes += from[uplink].txBytes ?? 0;
+        into[uplink].rxBytes += from[uplink].rxBytes ?? 0;
+    }
+    return into;
+};
+
+// {ip: {uplink: {txBytes, rxBytes}}} from both sets.
+let kernelTraffic = (names) => {
+    let up = counters('usage_up', names), down = counters('usage_down', names), out = {};
+    for (let ip in uniq([...keys(up), ...keys(down)])) {
+        out[ip] = {};
+        for (let uplink in uniq([...keys(up[ip] ?? {}), ...keys(down[ip] ?? {})]))
+            out[ip][uplink] = { txBytes: up[ip]?.[uplink]?.bytes ?? 0, rxBytes: down[ip]?.[uplink]?.bytes ?? 0 };
+    }
+    return out;
+};
+
+// What an address counted, moved into its owner's base and out of the
+// kernel. Deleted first and written second, so a status read in between
+// reports a little less, never twice: the next report makes it up.
+let foldAddress = (ip, mac) => {
+    let names = uplinkNames(), counted = kernelTraffic(names)[ip];
+    if (!counted) return;
+    let lines = [];
+    for (let set in ['usage_up', 'usage_down']) {
+        let doc = captureJson(['nft', '-j', 'list', 'set', 'inet', TABLE, set]);
+        for (let item in doc?.nftables ?? [])
+            for (let e in item.set?.elem ?? []) {
+                let key = e.elem?.val?.concat;
+                if (key && key[0] == ip)
+                    push(lines, sprintf('delete element inet %s %s { %s . "%s" }', TABLE, set, ip, key[1]));
+            }
+    }
+    if (length(lines)) nftScript(join('\n', lines) + '\n');
+    let base = readJson(USAGE_BASE) ?? {};
+    base[mac] = addTraffic(base[mac] ?? {}, counted);
+    fs.mkdir(SCAN_DIR);
+    fs.mkdir(USAGE_DIR);
+    writeJson(USAGE_BASE, base);
+};
+
+// {mac: {uplink: {txBytes, rxBytes}}}: each client's running totals in this
+// epoch, for the clients whose address is known.
+let usage = (ipOf) => {
+    let base = readJson(USAGE_BASE) ?? {}, kernel = kernelTraffic(uplinkNames()), out = {};
+    for (let mac in uniq([...keys(base), ...keys(ipOf)]))
+        out[mac] = addTraffic(addTraffic({}, base[mac]), ipOf[mac] ? kernel[ipOf[mac]] : null);
+    return out;
+};
+
 let forwards = () => {
     let out = [];
     let doc = captureJson(['nft', '-j', 'list', 'map', 'inet', TABLE, 'forward_to']);
@@ -664,7 +828,7 @@ let status = () => {
 
     let clients = {};
     let client = (mac) => (clients[mac] ??= { mac, ip: null, hostname: null, reserved: null,
-                                              policy: 'parkeze', cellular: 'allow', cellularBlock: [],
+                                              policy: 'internet', cellular: 'allow', cellularBlock: [],
                                               online: false,
                                               firstSeen: null, lastSeen: null, traffic: {} });
 
@@ -687,7 +851,7 @@ let status = () => {
         let mac = normalMac(s.mac);
         if (!mac) return;
         let c = client(mac);
-        if (s.policy == 'internet') c.policy = 'internet';
+        if (s.policy == 'parkeze') c.policy = 'parkeze';
         if (s.cellular == 'block') c.cellular = 'block';
         c.cellularBlock = filter(s.cellular_block ?? [], (t) => blockEntry(t));
     });
@@ -722,15 +886,12 @@ let status = () => {
     for (let mac in keys(scanned.clients ?? {}))
         if (clients[mac]) clients[mac].services = scanned.clients[mac].open;
 
-    let names = uplinkNames();
-    let up = counters('usage_up', names), down = counters('usage_down', names);
-    for (let mac in keys(clients)) {
-        let c = clients[mac];
-        if (!c.ip) continue;
-        for (let uplink in uniq([...keys(up[c.ip] ?? {}), ...keys(down[c.ip] ?? {})]))
-            c.traffic[uplink] = { txBytes: up[c.ip]?.[uplink]?.bytes ?? 0,
-                                  rxBytes: down[c.ip]?.[uplink]?.bytes ?? 0 };
-    }
+    let ipOf = {};
+    for (let mac in keys(clients))
+        if (clients[mac].ip) ipOf[mac] = clients[mac].ip;
+    let totals = usage(ipOf);
+    for (let mac in keys(clients))
+        clients[mac].traffic = totals[mac] ?? {};
 
     return {
         configured: true,
@@ -747,6 +908,7 @@ let status = () => {
         exposedOn: map(links().expose, (e) => ({ uplink: e.uplink, address: e.address })),
         journal: journalTail(),
         scannedAt: readScan().at ?? null,
+        usageEpoch: usageEpoch(),
     };
 };
 
@@ -812,6 +974,12 @@ let saveExtra = (texts) => {
 let commands = {
     apply: () => {
         if (!lanNet()) die('no LAN on this gateway');
+        // A start that finds the table already there followed a stop that
+        // was not a shutdown: the counters running now are newer than what
+        // that stop saved, which must never be restored. Only here: a
+        // shutdown's ifdown hotplugs reach ensureTable after the save.
+        if (length(capture(['nft', 'list', 'set', 'inet', TABLE, 'usage_up'])) && fs.access(USAGE_SAVED))
+            fs.unlink(USAGE_SAVED);
         ensureTable() || die('could not load the nftables table');
         loadSets() || die('could not load the exposed ports and cellular rules');
         applyPolicy();
@@ -862,7 +1030,7 @@ let commands = {
         mac = normalMac(mac) ?? die('a MAC address, like 00:11:22:33:44:55', 2);
         // Compat: `parkeze` is the policy value the cloud sends and reads.
         (policy == 'parkeze' || policy == 'internet') || die('policy is parkeze or internet', 2);
-        saveClient(mac, (s) => s.policy = policy == 'internet' ? policy : null);
+        saveClient(mac, (s) => s.policy = policy == 'parkeze' ? policy : null);
         applyPolicy();
         log(sprintf('%s policy %s', mac, policy));
         printf('%J\n', { mac, policy });
@@ -1031,16 +1199,43 @@ let commands = {
     // file says only when a lease ends, and nothing says when a device first
     // appeared. dnsmasq reports every interface it serves, the setup AP and
     // the USB port among them, so only a LAN address counts.
+    //
+    // Also the one place an address changes hands, so the counting follows
+    // it (COUNTING above): the address this MAC held before, and whoever
+    // held this one, keep what they counted.
     seen: (mac, ip) => {
         mac = normalMac(mac) ?? exit(0);
         clientIp(ip) || exit(0);
         let seen = readSeen(), at = time();
+        let counting = lanNet() && length(capture(['nft', 'list', 'set', 'inet', TABLE, 'usage_up']));
+        if (counting && seen[mac]?.ip && seen[mac].ip != ip) foldAddress(seen[mac].ip, mac);
+        for (let other in keys(seen)) {
+            if (other == mac || seen[other].ip != ip) continue;
+            if (counting) foldAddress(ip, other);
+            delete seen[other].ip;
+        }
         seen[mac] ??= { first: at };
         seen[mac].last = at;
+        seen[mac].ip = ip;
         writeSeen(seen);
+    },
+
+    // From the init script's stop, and pulzr-firmware before a sysupgrade:
+    // every client's totals, for the next boot's table to start from.
+    'save-usage': () => {
+        if (!lanNet() || !length(capture(['nft', 'list', 'set', 'inet', TABLE, 'usage_up']))) exit(0);
+        let ipOf = {};
+        for (let l in leases()) if (l.mac) ipOf[l.mac] = l.ip;
+        let seen = readSeen();
+        for (let mac in keys(seen)) if (seen[mac].ip) ipOf[mac] ??= seen[mac].ip;
+        let now = online();
+        for (let mac in keys(now)) ipOf[mac] ??= now[mac];
+        fs.mkdir(STATE);
+        writeJson(USAGE_SAVED, { epoch: usageEpoch(), boot: bootId(), at: time(), clients: usage(ipOf) });
+        system(['sync']);
     },
 };
 
 let cmd = commands[ARGV[0] ?? 'status'];
-cmd ?? die('usage: pulzr-lan {apply|status|policy|cellular|reserve|unreserve|forward|unforward|expose|unexpose|address|links|seen|isolate|scan|scan-service}', 2);
+cmd ?? die('usage: pulzr-lan {apply|status|policy|cellular|reserve|unreserve|forward|unforward|expose|unexpose|address|links|seen|isolate|scan|scan-service|save-usage}', 2);
 call(cmd, null, null, ...slice(ARGV, 1));

@@ -1,8 +1,23 @@
 #!/bin/sh
-# nftables for pulzr-lan: a script it loads is appended to $T/nft.log, its
-# table always exists, and every set and map lists empty.
+# nftables for pulzr-lan: a script it loads is appended to $T/nft.log, and
+# every set and map lists empty unless $T/nft.set.<name> holds its JSON.
+# $T/nft.absent is a boot: no table until the next load. A loaded
+# `delete element` takes the element out of that set's JSON, as the kernel
+# would its counter.
 case "$*" in
-	"-f "*) { echo "# load"; cat "$2"; } >> "${T}/nft.log" ;;
-	*" list "*|"list "*) echo '{"nftables": []}' ;;
+	"-f "*)
+		{ echo "# load"; cat "$2"; } >> "${T}/nft.log"
+		rm -f "${T}/nft.absent"
+		grep '^delete element ' "$2" | while read -r _ _ _ _ set _ ip _ dev _; do
+			f="${T}/nft.set.${set}"
+			[ -f "${f}" ] || continue
+			jq -c --arg ip "${ip}" --arg dev "$(echo "${dev}" | tr -d '"')" \
+				'(.nftables[] | select(.set) | .set.elem) |= map(select(.elem.val.concat != [$ip, $dev]))' \
+				"${f}" > "${f}.new" && mv "${f}.new" "${f}"
+		done ;;
+	*" list "*|"list "*)
+		[ -e "${T}/nft.absent" ] && exit 1
+		for last in "$@"; do :; done
+		if [ -f "${T}/nft.set.${last}" ]; then cat "${T}/nft.set.${last}"; else echo '{"nftables": []}'; fi ;;
 esac
 exit 0

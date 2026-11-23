@@ -40,7 +40,8 @@ behind a managed switch.
 |---|---|
 | Address | DHCP from `.100` to `.199`, 12 hour leases, or a reservation |
 | Router and DNS | the gateway |
-| Route out | whichever uplink the metrics pick (ethernet, WiFi once it reaches the internet, cellular), masqueraded |
+| Route out | whichever uplink the metrics pick (ethernet, WiFi once it reaches the internet, cellular), masqueraded; never the management tunnel |
+| The internet | by default, metered per device ([Metering](#metering)) |
 
 The ports form one bridge with port isolation, so devices on different ports
 cannot reach each other, and the zone forwards nothing back into itself.
@@ -49,12 +50,12 @@ switch; the gateway never sees that traffic.
 
 ## What a device can reach
 
-| Destination | `parkeze` (default) | `internet` |
+| Destination | `internet` (default) | `parkeze` |
 |---|---|---|
 | Pulzar, TCP 443 and 8883 | yes | yes |
 | NTP, UDP 123 | yes | yes |
 | DNS, on the gateway | yes | yes |
-| Anything else out an uplink | no | yes |
+| Anything else out an uplink | yes | no |
 | The console's sign-in, TCP 80, 443 and 8443 | yes | yes |
 | SSH, anything else on the gateway | no | no |
 | Other LAN devices | no | no |
@@ -73,9 +74,17 @@ What a device reaches is the sign-in page; see [auth.md](/PulzrOS/auth.html).
 The zone rejects rather than drops: this is our network, and a device refused
 gives up in a second where one dropped retries for a minute.
 
+`internet` is the default: a device behind the gateway gets the internet
+straight out the active uplink, as it would behind any router, and the gateway
+meters it. `parkeze` narrows one device to the rows above, which is what
+every device got before metering. In fw4 it is a `REJECT`
+per device per uplink zone, between the Pulzar and NTP accepts and the zone's
+`Allow-LAN-internet-<zone>`; `pulzr-lan apply` keeps it there, since an
+upgrade re-adds the zone's rules at the end.
+
 Traffic out over cellular is billed like anything else on the SIM. The
-`internet` policy is for devices that need it; the traffic report below says
-which device spent what, on which uplink.
+cellular rule below keeps a device off it; the report says which device
+spent what, on which uplink.
 
 ## Cellular, per device
 
@@ -107,6 +116,7 @@ pulzr-lan unexpose tcp|udp <port>
 pulzr-lan address add|remove <a.b.c.d/nn> another subnet on the bridge
 pulzr-lan links                           reload the uplinks' devices and addresses
 pulzr-lan scan                            scan the clients' management ports now
+pulzr-lan save-usage                      save each client's totals for the next boot
 ```
 
 In the console, Network > LAN (`lib/lan.uc`, `pages/network/Lan.tsx`): the
@@ -141,7 +151,7 @@ to stay under the agent's 8KB answer.
             { "name": "eth2", "up": false, "speed": null, "duplex": null, "carrierChanges": 0 }],
   "clients": [{
     "mac": "c2:6c:1d:d1:f7:b3", "ip": "192.168.64.50", "hostname": "plc-1",
-    "reserved": "192.168.64.50", "policy": "parkeze", "online": true, "port": "eth1",
+    "reserved": "192.168.64.50", "policy": "internet", "online": true, "port": "eth1",
     "cellular": "allow", "cellularBlock": ["tcp:554"],
     "firstSeen": 1793051334, "lastSeen": 1793051821, "leaseExpires": 1793094533,
     "services": [22, 80],
@@ -153,7 +163,8 @@ to stay under the agent's 8KB answer.
   "exposedOn": [{ "uplink": "wwifi", "address": "192.168.1.40" }],
   "journal": [{ "at": 1793051648, "op": "open", "port": 40000, "ip": "192.168.64.50",
                 "dport": 8080, "seconds": 3600, "id": "<request id>" }],
-  "scannedAt": 1793051700
+  "scannedAt": 1793051700,
+  "usageEpoch": "3f2a9c1e-6921b5c4"
 }
 ```
 
@@ -177,10 +188,11 @@ to stay under the agent's 8KB answer.
   upgrades. A device answering ARP right now is `online`, and its `lastSeen`
   is now.
 - `traffic` is per uplink, by the netifd interface that carried it (`wan`,
-  `wwifi`, `wwan`, `usbwan`), and `tunnel` for a forward's traffic. The
-  console's Cellular column is `wwan` and `usbwan` together. Counted after the
-  firewall, so a refused attempt is not traffic, and since boot. It lives in
-  PulzarOS's own nftables table, so a firewall reload does not zero it.
+  `wan_<port>`, `wwifi`, `wwan`, `usbwan`), and `tunnel` for a forward's
+  traffic. The console's Cellular column is `wwan` and `usbwan` together.
+  Counted after the firewall, so a refused attempt is not traffic. Running
+  totals within `usageEpoch`; see [Metering](#metering). It lives in
+  PulzrOS's own nftables table, so a firewall reload does not zero it.
 - `exposedOn` is where exposed ports answer now: each wired and WiFi
   uplink's address. A private one is behind a site router.
 - `journal` is the last twenty forwards opened and closed, and ports exposed
@@ -188,6 +200,35 @@ to stay under the agent's 8KB answer.
 - `services` is the management ports the client answered on at the last scan
   that reached it, and `scannedAt` when the last scan ran. A client no scan has
   reached has no `services`: unknown, not closed.
+
+## Metering
+
+Each device's internet use, per uplink, for a plan's data allowance. The
+kernel counts (nftables: a dynamic set keyed on the device's address and the
+uplink device, a counter on each element, after fw4 has filtered); nothing on
+the gateway adds bytes up by hand. nlbwmon counts per device but not per
+uplink, and which uplink carried the bytes is half the question.
+
+`traffic` in the report is a running total per device within `usageEpoch`.
+Pulzar Cloud adds up the differences between one report and the next, so
+the gateway sends no extra message for metering: it is the `lan` report the
+cloud already asks for. A total never goes backwards inside an epoch:
+
+| Event | What happens |
+|---|---|
+| Reboot, `reboot` or a power button | `pulzr-lan`'s init stop (`STOP=10`, before the network goes) writes every device's totals to `/etc/pulzr/lan/usage.json`; the next boot's table starts from them under the same epoch. One flash write per shutdown. |
+| Firmware upgrade | `pulzr-firmware pending` saves them the same way before sysupgrade, which kills services rather than stopping them; `/etc/pulzr/lan` is kept across the upgrade. |
+| Power cut | Nothing was saved, so the next boot is a new epoch from zero. What moved since the cloud's last report, at most its polling interval, is not metered. |
+| A device gets another address, or an address another device | The DHCP event (`pulzr-lan seen`) folds the old address's counters into its owner's total and deletes them from the kernel. |
+| The table is remade by hand | A new epoch. |
+
+The totals in RAM are `/var/run/pulzr/lan-usage/epoch` and `base.json`. The
+flash copy exists only between a clean shutdown and the next boot, and a
+start that finds the table already there (a stop that was not a shutdown)
+deletes it, since the counters running are newer.
+
+Wired and WiFi clients are metered alike: a WiFi access point serving devices
+is a member of `br-devlan` (Radios > WiFi, `ATTACH`).
 
 ## The port scan
 

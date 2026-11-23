@@ -3,8 +3,13 @@
 # The devlan zone's own nftables table and each client's policy rules: see
 # /usr/sbin/pulzr-lan. After the firewall and the network, since the policy
 # rules are fw4's and the isolation flags need the bridge.
+#
+# Stopped early at shutdown, while the counters are still in the kernel: stop
+# saves each client's metered totals for the next boot's table.
 
 START=21
+STOP=10
 
 start() { /usr/sbin/pulzr-lan apply; }
+stop() { /usr/sbin/pulzr-lan save-usage; }
 reload() { /usr/sbin/pulzr-lan apply; }

@@ -104,6 +104,11 @@ pending)
 
     target_sha="$(digest "${image}")"
 
+    # sysupgrade kills services rather than stopping them, so pulzr-lan's
+    # stop never runs: the LAN clients' metered totals are saved here, into
+    # /etc/pulzr/lan, which the upgrade keeps.
+    [ -x /usr/sbin/pulzr-lan ] && /usr/sbin/pulzr-lan save-usage 2>/dev/null
+
     # Whatever the last upgrade stashed is what this one can fall back to. On
     # the first run under this scheme there is nothing, which is recorded as
     # an empty from_image rather than left to look like an error.

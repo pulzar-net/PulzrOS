@@ -154,7 +154,8 @@ Three rules follow, and every router page keeps them:
   rather than leave on cellular. Customer traffic does not ride our tunnel
   or our SIM. See [lan.md](/PulzrOS/lan.html). Still no DMZ, no site VPN that reaches
   the LAN, and no firewall rule editor.
-- **Policy is per MAC**: `parkeze` or `internet`, through `pulzr-lan policy`,
+- **Policy is per MAC**: `internet` (the default, metered per device) or
+  `parkeze` (Pulzar, NTP and DNS only), through `pulzr-lan policy`,
   and a cellular rule beside it: allowed, blocked, or allowed but for some
   ports (`pulzr-lan cellular`). No blocklist, no allowlist, no per-client
   speed limit.
