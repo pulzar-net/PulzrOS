@@ -808,7 +808,7 @@ build_addons() {
   local out="${OUT_DIR}/addons"
   (
     # shellcheck disable=SC1091
-    . "${BOARDS_DIR}/rpi4/board.conf"
+    . "$(board_dir rpi4)/board.conf"
     fetch_imagebuilder
     "${ROOT_DIR}/scripts/build-addons.sh" "$(imagebuilder_dir)" "${BUILD_DIR}/feed" \
       "${out}" "${PULZR_ADDONS_TAG:-v${PULZR_VERSION}}"
