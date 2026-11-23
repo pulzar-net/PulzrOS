@@ -3,6 +3,7 @@
 [ "$1" = -q ] && shift
 case "$1 $2" in
     "get wireless.parkeze_sta.ssid") [ -n "${WIFI_SSID}" ] && echo "${WIFI_SSID}" ;;
+    "get wireless.pulzr_sta2.ssid") [ -n "${WIFI_SSID2}" ] && echo "${WIFI_SSID2}" ;;
     "get network.wwifi.metric") cat "${T}/metric" 2>/dev/null ;;
     "set network.wwifi.metric="*) echo "${2#*=}" > "${T}/metric" ;;
     "show wireless") echo "wireless.radio0=wifi-device" ;;

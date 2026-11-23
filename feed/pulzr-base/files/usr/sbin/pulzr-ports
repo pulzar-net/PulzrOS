@@ -721,7 +721,7 @@ let commands = {
         let provider = type(doc.provider) == 'object' ? doc.provider : null;
         system(['mkdir', '-p', '/var/run/pulzr']);
         fs.writefile(IDENTITY, sprintf('%J', {
-            via: match(doc.via ?? '', /^(wan(_[A-Za-z0-9_]+)?|wwifi|wwan|usbwan)$/) ? doc.via : null,
+            via: match(doc.via ?? '', /^(wan(_[A-Za-z0-9_]+)?|wwifi2?|wwan|usbwan)$/) ? doc.via : null,
             publicAddress: match(doc.publicAddress ?? '', /^[0-9a-fA-F.:]{3,45}$/) ? doc.publicAddress : null,
             provider: provider ? { name: clip(provider.name, 80), asn: type(provider.asn) == 'int' ? provider.asn : null } : null,
             routers,

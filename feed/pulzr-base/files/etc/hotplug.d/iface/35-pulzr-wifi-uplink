@@ -13,12 +13,18 @@
 # "offline" seconds after a good join — and the sweep would have left the
 # gateway off its WiFi for up to a minute on the strength of it.
 
-[ "${INTERFACE}" = "wwifi" ] && [ "${ACTION}" = "ifup" ] || exit 0
+#
+# wwifi2 too, a second radio's station: until this answers "open" it carries
+# nothing, and the radios page's handover waits on this answer before moving
+# the default route and the tunnel onto it.
+
+case "${INTERFACE}" in wwifi|wwifi2) ;; *) exit 0 ;; esac
+[ "${ACTION}" = "ifup" ] || exit 0
 
 (
     for wait in 2 8 20; do
         sleep "${wait}"
-        /usr/sbin/pulzr-wifi-uplink check
-        /usr/sbin/pulzr-wifi-uplink usable && break
+        /usr/sbin/pulzr-wifi-uplink check "${INTERFACE}"
+        /usr/sbin/pulzr-wifi-uplink usable "${INTERFACE}" && break
     done
 ) >/dev/null 2>&1 &

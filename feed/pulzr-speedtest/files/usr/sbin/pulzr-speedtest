@@ -170,7 +170,7 @@ let one = (iface) => {
         }
         return null;
     }
-    let kind = { wwifi: 'wifi', wwan: 'cellular', usbwan: 'usb-cellular' }[iface] ??
+    let kind = { wwifi: 'wifi', wwifi2: 'wifi', wwan: 'cellular', usbwan: 'usb-cellular' }[iface] ??
                (match(iface, /^wan(_[A-Za-z0-9_]+)?$/) ? 'ethernet' : null);
     let dev = kind ? device(iface) : null;
     return dev ? { iface, kind, device: dev, state: null } : null;

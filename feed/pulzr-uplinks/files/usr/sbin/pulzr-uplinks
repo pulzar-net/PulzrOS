@@ -46,7 +46,9 @@
 // its life, and pulzr-cellular-watchdog already keeps wwan carrying
 // traffic. The WiFi has its own check, pulzr-wifi-uplink, which also tells
 // a sign-in page from the internet; its answer is the WiFi's health here, and
-// it calls `apply` when the answer changes.
+// it calls `apply` when the answer changes. There can be two WiFi uplinks:
+// wwifi, and wwifi2 on a second radio (see /usr/share/pulzr/wifi.sh), each
+// with its own answer.
 //
 // The order and the tracking settings are in UCI (pulzr.uplinks), and
 // `status` is what the MQTT agent's `uplinks` op sends Pulzr Cloud, so an
@@ -58,8 +60,8 @@ let uci = require('uci');
 const STATE = '/var/run/pulzr/uplinks.json';
 // The wired ones are whatever pulzr-ports made: wan, and wan_<device>
 // for any other port or VLAN that is an uplink (see wired.sh).
-const KNOWN = ['wwifi', 'wwan', 'usbwan'];
-const KIND = { wwifi: 'wifi', wwan: 'cellular', usbwan: 'usb-cellular' };
+const KNOWN = ['wwifi', 'wwifi2', 'wwan', 'usbwan'];
+const KIND = { wwifi: 'wifi', wwifi2: 'wifi', wwan: 'cellular', usbwan: 'usb-cellular' };
 const METERED = { wwan: true, usbwan: true };
 const WIRED = /^wan(_[A-Za-z0-9_]+)?$/;
 const HEALTHY = 10;
@@ -105,6 +107,8 @@ let wired = (name) => !!match(name ?? '', WIRED);
 
 let kind = (name) => wired(name) ? 'ethernet' : KIND[name];
 
+let wifi = (name) => KIND[name] == 'wifi';
+
 let present = (cur) => {
     let out = [];
     cur.foreach('network', 'interface', (s) => {
@@ -136,7 +140,7 @@ let config = () => {
     return {
         order,
         // With nothing set, every wired uplink is tracked, as wan was.
-        track: filter(uniq(s.track == null ? filter(have, wired) : list(s.track)), (n) => n in have && n != 'wwifi'),
+        track: filter(uniq(s.track == null ? filter(have, wired) : list(s.track)), (n) => n in have && !wifi(n)),
         ips: length(ips) ? ips : ['1.1.1.1', '8.8.8.8'],
         interval: number(s.interval, 5, 300) ?? 10,
         down: number(s.down, 1, 10) ?? 3,
@@ -154,10 +158,11 @@ let writeState = (state) => {
     fs.rename(STATE + '.tmp', STATE);
 };
 
-let wifiUsable = () => system('/usr/sbin/pulzr-wifi-uplink usable >/dev/null 2>&1') == 0;
+// The name is one of KNOWN, never anybody's text.
+let wifiUsable = (name) => system(sprintf('/usr/sbin/pulzr-wifi-uplink usable %s >/dev/null 2>&1', name)) == 0;
 
 let healthy = (name, state) =>
-    name == 'wwifi' ? wifiUsable() : state[name]?.state != 'offline';
+    wifi(name) ? wifiUsable(name) : state[name]?.state != 'offline';
 
 // Each uplink's metric from its place in the order and its health. Writes and
 // reloads only when one differs: it is a write to flash and a network reload.
@@ -194,9 +199,9 @@ let active = (cfg, state, links) => {
     return null;
 };
 
-let wifiState = () => {
+let wifiState = (name) => {
     let out = null;
-    let proc = fs.popen('/usr/sbin/pulzr-wifi-uplink status 2>/dev/null', 'r');
+    let proc = fs.popen(sprintf('/usr/sbin/pulzr-wifi-uplink status %s 2>/dev/null', name), 'r');
     if (proc) { out = proc.read('all'); proc.close(); }
     try { return json(out ?? '{}')?.state ?? 'unchecked'; } catch (e) { return 'unchecked'; }
 };
@@ -208,7 +213,7 @@ let status = () => {
     for (let n in cfg.order) {
         let s = state[n] ?? {}, link = links[n], st;
         if (!link.up) st = 'down';
-        else if (n == 'wwifi') st = { open: 'online', portal: 'portal', offline: 'offline' }[wifiState()] ?? 'unchecked';
+        else if (wifi(n)) st = { open: 'online', portal: 'portal', offline: 'offline' }[wifiState(n)] ?? 'unchecked';
         else if (!(n in cfg.track)) st = 'untracked';
         else st = s.state ?? 'unchecked';
         push(uplinks, {
@@ -251,7 +256,7 @@ let round = () => {
     for (let n in keys(state))
         if (!(n in cfg.order)) delete state[n];
     for (let n in cfg.order) {
-        if (n == 'wwifi') continue;
+        if (wifi(n)) continue;
         let link = iface(n);
         if (!(n in cfg.track) || !link.up || !link.device) {
             if (state[n]?.state == 'offline') moved = true;
@@ -314,7 +319,7 @@ let commands = {
 
     track: (name, on) => {
         (name in present(uci.cursor())) || die(sprintf('%s is not an uplink here', name), 2);
-        name != 'wwifi' || die('the WiFi has its own check', 2);
+        !wifi(name) || die('the WiFi has its own check', 2);
         (on == 'on' || on == 'off') || die('on or off', 2);
         let track = filter(config().track, (n) => n != name);
         if (on == 'on') push(track, name);

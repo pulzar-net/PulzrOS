@@ -1,7 +1,10 @@
 #!/usr/bin/ucode
 // A name's IPv4 address as the WiFi network answers it.
 //
-//   pulzr-wifi-resolve <name>     prints the first address, or exits non-zero
+//   pulzr-wifi-resolve <name> [iface]   prints the first address, or exits non-zero
+//
+// iface is the WiFi uplink to ask through: wwifi (the default) or wwifi2, a
+// second radio's, which pulzr-wifi-uplink proves before it carries anything.
 //
 // On failure one line goes to stderr, which pulzr-wifi-uplink keeps as the
 // reason the WiFi is offline:
@@ -43,8 +46,9 @@ let fs = require('fs');
 let socket = require('socket');
 
 let name = ARGV[0];
-if (!name || !match(name, /^[A-Za-z0-9.-]{1,253}$/)) {
-    warn('usage: pulzr-wifi-resolve <name>\n');
+let wifi = ARGV[1] ?? 'wwifi';
+if (!name || !match(name, /^[A-Za-z0-9.-]{1,253}$/) || !(wifi in ['wwifi', 'wwifi2'])) {
+    warn('usage: pulzr-wifi-resolve <name> [wwifi|wwifi2]\n');
     exit(2);
 }
 
@@ -54,7 +58,7 @@ let fail = (code, line) => {
 };
 
 let status = null;
-let proc = fs.popen('ubus call network.interface.wwifi status 2>/dev/null', 'r');
+let proc = fs.popen(sprintf('ubus call network.interface.%s status 2>/dev/null', wifi), 'r');
 if (proc) {
     try { status = json(proc.read('all')); } catch (e) { status = null; }
     proc.close();

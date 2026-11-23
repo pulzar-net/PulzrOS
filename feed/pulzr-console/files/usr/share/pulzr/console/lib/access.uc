@@ -37,10 +37,16 @@ let status, key, setAp, raiseAp, lowerAp, scan, joinWifi, forgetWifi;
 let security, probeWifi, probeResult, wifiDetail, roam, roams, recordRoam, checkWifi;
 let uplinkReason, roamReason;
 let savedNetworks, findSaved, networkFromRequest, saveNetwork, applyNetwork,
-    radioName, commitAndReload;
+    radioName, commitAndReload, demote, removeStation;
 
 let run = _m_util.run;; let runJson = _m_util.runJson;
 let writefile = _m_fs.writefile;; let unlink = _m_fs.unlink;; let mkdir = _m_fs.mkdir;
+
+// The WiFi uplink this module looks after: the WiFi page's join, saved
+// networks, roaming, the portal. A second radio's station (pulzr_sta2,
+// wwifi2) is lib/radios.uc's, and joins through joinWifi with its own slot so
+// it is written exactly as this one is.
+const PRIMARY = { section: 'parkeze_sta', iface: 'wwifi' };
 
 const PROBE_REQ = '/tmp/pulzr-wifi-probe.req';
 const PROBE_OUT = '/tmp/pulzr-wifi-probe.json';
@@ -376,8 +382,10 @@ saveNetwork = function(uci, net) {
     uci.set('pulzr', name, 'last_joined', '' + time());
 };
 
-// Point the station at `net`. Writes, does not commit or reload.
-applyNetwork = function(uci, radio, net) {
+// Point the station at `net`. Writes, does not commit or reload. `slot` is
+// which station: this module's (the default), or radios.uc's second one.
+applyNetwork = function(uci, radio, net, slot) {
+    const sta = (slot ?? PRIMARY).section, wan = (slot ?? PRIMARY).iface;
     // Enabling the radio below also enables anything else on it, and OpenWrt
     // ships an open AP named "OpenWrt" on the LAN there. On a single-radio
     // chip it also drops this station every second. See 60-pulzr-ap.
@@ -389,36 +397,36 @@ applyNetwork = function(uci, radio, net) {
     });
     for (let name in foreign) uci.delete('wireless', name);
 
-    uci.set('wireless', 'parkeze_sta', 'wifi-iface');
-    uci.set('wireless', 'parkeze_sta', 'device', radio);
-    uci.set('wireless', 'parkeze_sta', 'mode', 'sta');
-    uci.set('wireless', 'parkeze_sta', 'network', 'wwifi');
-    uci.set('wireless', 'parkeze_sta', 'ssid', net.ssid);
+    uci.set('wireless', sta, 'wifi-iface');
+    uci.set('wireless', sta, 'device', radio);
+    uci.set('wireless', sta, 'mode', 'sta');
+    uci.set('wireless', sta, 'network', wan);
+    uci.set('wireless', sta, 'ssid', net.ssid);
     // One section, reused for whichever kind of network this is, so the
     // options of the other kind are cleared rather than left to confuse it.
     for (let option in ['key', 'eap_type', 'auth', 'identity',
                         'anonymous_identity', 'password', 'ca_cert'])
-        uci.delete('wireless', 'parkeze_sta', option);
+        uci.delete('wireless', sta, option);
     if (net.security == 'eap') {
         // 'wpa2' is WPA2-Enterprise to netifd; it also joins the WPA3
         // networks that still accept WPA2 clients, which is all of eduroam.
-        uci.set('wireless', 'parkeze_sta', 'encryption', 'wpa2');
-        uci.set('wireless', 'parkeze_sta', 'eap_type', net.eap_type);
-        uci.set('wireless', 'parkeze_sta', 'auth', net.auth || 'MSCHAPV2');
-        uci.set('wireless', 'parkeze_sta', 'identity', net.identity);
+        uci.set('wireless', sta, 'encryption', 'wpa2');
+        uci.set('wireless', sta, 'eap_type', net.eap_type);
+        uci.set('wireless', sta, 'auth', net.auth || 'MSCHAPV2');
+        uci.set('wireless', sta, 'identity', net.identity);
         if (net.anonymous_identity)
-            uci.set('wireless', 'parkeze_sta', 'anonymous_identity', net.anonymous_identity);
-        uci.set('wireless', 'parkeze_sta', 'password', net.password);
+            uci.set('wireless', sta, 'anonymous_identity', net.anonymous_identity);
+        uci.set('wireless', sta, 'password', net.password);
         // The server certificate itself, by hash: only that server gets the
         // password. When it is renewed the gateway stops connecting, and the
         // console shows the new certificate to be checked — the same thing a
         // phone asks, with somebody to look at it.
-        uci.set('wireless', 'parkeze_sta', 'ca_cert', 'hash://server/sha256/' + net.cert_hash);
+        uci.set('wireless', sta, 'ca_cert', 'hash://server/sha256/' + net.cert_hash);
     } else {
-        uci.set('wireless', 'parkeze_sta', 'encryption', net.key ? 'psk2' : 'none');
-        if (net.key) uci.set('wireless', 'parkeze_sta', 'key', net.key);
+        uci.set('wireless', sta, 'encryption', net.key ? 'psk2' : 'none');
+        if (net.key) uci.set('wireless', sta, 'key', net.key);
     }
-    uci.set('wireless', 'parkeze_sta', 'disabled', '0');
+    uci.set('wireless', sta, 'disabled', '0');
     // The radio as well as the interface. Stock OpenWrt ships the radio
     // disabled and only the setup AP ever turned it on, so a join on a
     // gateway whose AP had never been raised configured a network on a radio
@@ -429,9 +437,15 @@ applyNetwork = function(uci, radio, net) {
     // pulzr-wifi-uplink has seen it reach the internet, which moves it to
     // 15, between wired and cellular: better than paying for data, worse than
     // a cable. A guest network has a lease long before it carries anything.
-    uci.set('network', 'wwifi', 'interface');
-    uci.set('network', 'wwifi', 'proto', 'dhcp');
-    uci.set('network', 'wwifi', 'metric', '30');
+    //
+    // A second radio's station starts behind everything instead, whatever
+    // the order: it is joining beside a WiFi uplink that is carrying the
+    // traffic, at a metric that may be worse than 30 (40 for the fourth in
+    // the order), and must not take the default route before it is proven.
+    // pulzr-uplinks sets its real metric on the first answer.
+    uci.set('network', wan, 'interface');
+    uci.set('network', wan, 'proto', 'dhcp');
+    uci.set('network', wan, 'metric', wan == PRIMARY.iface ? '30' : '200');
 
     // Into the wan zone with the wired uplink. An interface in no zone falls
     // to fw4's default chains — safe, because 20-pulzr-network sets those to
@@ -439,8 +453,8 @@ applyNetwork = function(uci, radio, net) {
     // far side is somebody else's network exactly as the ethernet case is, so
     // it gets the same answer: nothing reachable inbound.
     const zone = uci.get('firewall', 'wan', 'network') || '';
-    if (index(zone, 'wwifi') < 0)
-        uci.set('firewall', 'wan', 'network', trim(zone + ' wwifi'));
+    if (!(wan in split(zone, ' ')))
+        uci.set('firewall', 'wan', 'network', trim(zone + ' ' + wan));
 };
 
 // The radio the uplink is on: `wanted` when it is one (the radios page
@@ -461,20 +475,47 @@ radioName = function(wanted) {
 // takes the caller's own connection with it if they are on the setup AP, and
 // the reply has to get out first. The tunnel is re-homed too — WiFi is an
 // egress it may use, and nothing else would tell it so until the next ifup.
-commitAndReload = function(uci) {
+//
+// Only the slot's own interface is ifup'd. /sbin/ifup is a down and an up,
+// and on the other WiFi uplink that would be the break this exists to avoid.
+// `wifi reload` restarts only the radios whose configuration changed.
+commitAndReload = function(uci, slot) {
+    const wan = (slot ?? PRIMARY).iface;
     uci.commit('wireless');
     uci.commit('network');
     uci.commit('firewall');
     uci.commit('pulzr');
-    run('(sleep 2; wifi reload; /sbin/ifup wwifi; /etc/init.d/firewall reload; '
-        + '/usr/sbin/pulzr-wireguard-route apply) >/dev/null 2>&1 &');
+    run(sprintf('(sleep 2; wifi reload; /sbin/ifup %s; /etc/init.d/firewall reload; '
+        + '/usr/sbin/pulzr-wireguard-route apply) >/dev/null 2>&1 &', wan));
     // pulzr-wifi-uplink's answer is about the network being left. Kept, it
     // was this one's until the next check, and roam() read a guest network's
     // portal as the verdict on the eduroam just joined in its place.
-    unlink('/var/run/pulzr/wifi-uplink.json');
+    unlink(wan == PRIMARY.iface ? '/var/run/pulzr/wifi-uplink.json' : sprintf('/var/run/pulzr/wifi-uplink-%s.json', wan));
 };
 
-joinWifi = function(req) {
+// A station, its interface and its place in the wan zone. Writes, does not
+// commit. The zone by word: a pattern for wwifi also matched inside wwifi2.
+removeStation = function(uci, slot) {
+    uci.delete('wireless', slot.section);
+    uci.delete('network', slot.iface);
+    const zone = uci.get('firewall', 'wan', 'network') || '';
+    uci.set('firewall', 'wan', 'network',
+            join(' ', filter(split(zone, ' '), (n) => length(n) && n != slot.iface)));
+};
+
+// Put a WiFi uplink last in the order before it goes, so the default route
+// and the tunnel move to whatever is next while it is still associated,
+// rather than after it has gone. pulzr-uplinks runs the tunnel's and LoRa's
+// apply when the metrics change.
+demote = function(wan) {
+    const st = runJson('/usr/sbin/pulzr-uplinks status 2>/dev/null');
+    const order = filter(st?.order ?? [], (n) => n != wan && match(n, /^[A-Za-z0-9_]{1,15}$/));
+    if (length(order) && wan in (st?.order ?? []))
+        run(sprintf('/usr/sbin/pulzr-uplinks order %s %s >/dev/null 2>&1', join(' ', order), wan));
+};
+
+// `slot` is for lib/radios.uc alone, never a request's: which station joins.
+joinWifi = function(req, slot) {
     const uci = cursor();
     let net;
     if (req.saved) {
@@ -493,9 +534,10 @@ joinWifi = function(req) {
     const radio = radioName(req.radio);
     if (!radio) return { error: req.radio != null ? 'No such radio.' : 'This board has no WiFi radio.' };
 
-    applyNetwork(uci, radio, net);
+    applyNetwork(uci, radio, net, slot);
     saveNetwork(uci, net);
-    commitAndReload(uci);
+    commitAndReload(uci, slot);
+    if (slot && slot.iface != PRIMARY.iface) return { ok: true, message: 'Joining ' + net.ssid + '.' };
     // A join starts roam()'s clock again and holds it off as a switch does.
     // The clock used to carry on from the network before: a gateway that had
     // sat behind a guest portal for an hour was joined to eduroam, and the
@@ -525,11 +567,9 @@ forgetWifi = function(req) {
 
     if (ssid != active) return { ok: true, message: 'Forgot ' + ssid + '.' };
 
-    uci.delete('wireless', 'parkeze_sta');
-    uci.delete('network', 'wwifi');
-    const zone = uci.get('firewall', 'wan', 'network') || '';
-    uci.set('firewall', 'wan', 'network',
-            trim(replace(zone, /\s*wwifi\s*/, ' ')));
+    // Another radio's WiFi uplink, or anything else, takes over first.
+    demote(PRIMARY.iface);
+    removeStation(uci, PRIMARY);
     uci.commit('wireless');
     uci.commit('network');
     uci.commit('firewall');
@@ -753,5 +793,5 @@ wifiDetail = function() {
 // its handler in TEMPLATE mode and loads anything else through loadfile(),
 // neither of which is module mode — `export` is a syntax error there. See the
 // header of api/index.uc for the full contract.
-return { checkWifi, forgetWifi, joinWifi, key, lowerAp, probeResult, probeWifi, raiseAp, roam,
-         roams, scan, setAp, status, wifiDetail };
+return { checkWifi, demote, forgetWifi, removeStation, joinWifi, key, lowerAp, probeResult, probeWifi, raiseAp, roam,
+         roams, scan, setAp, status, uplinkReason, wifiDetail };

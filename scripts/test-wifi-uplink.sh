@@ -73,6 +73,20 @@ check "open: usable" yes "${u}"
 WIFI_SSID=Guest up usable && u=yes || u=no
 check "an answer about another network is not usable" no "${u}"
 
+# A second radio's station: its own answer, about its own network, so it is
+# proven on its own and never inherits the first one's "open".
+WIFI_SSID2=Charter up check wwifi2
+check "a second station: its own answer, about its network" "open Charter" \
+    "$(jq -r '"\(.state) \(.ssid)"' "${T}/run/wifi-uplink-wwifi2.json")"
+check "a second station: the first one's answer untouched" "eduroam" "$(field ssid)"
+WIFI_SSID2=Charter up usable wwifi2 && u=yes || u=no
+check "a second station: usable on its own answer" yes "${u}"
+rm -f "${T}/run/wifi-uplink-wwifi2.json"
+WIFI_SSID2=Charter up usable wwifi2 && u=yes || u=no
+check "a second station unchecked is not usable, whatever the first says" no "${u}"
+up usable wwifi3 2>/dev/null && u=yes || u=no
+check "not a WiFi uplink: refused" no "${u}"
+
 reset; WIFI_GW='' up check
 check "no gateway in the lease" '{"state":"offline","step":"no_gateway","host":null,"detail":null}' "$(answer)"
 

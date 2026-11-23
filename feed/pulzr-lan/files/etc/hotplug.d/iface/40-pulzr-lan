@@ -8,5 +8,5 @@
 # A new lease is a new address, so every change reloads them.
 case "${INTERFACE}:${ACTION}" in
 	devlan:ifup|devlan:ifupdate) /usr/sbin/pulzr-lan isolate ;;
-	wan:if*|wan_*:if*|wwifi:if*|wwan:if*|usbwan:if*) /usr/sbin/pulzr-lan links ;;
+	wan:if*|wan_*:if*|wwifi:if*|wwifi2:if*|wwan:if*|usbwan:if*) /usr/sbin/pulzr-lan links ;;
 esac

@@ -115,10 +115,13 @@ if [ "$1" = "--any" ]; then
             exit 0
         fi
     done
-    if network_is_up wwifi && pulzr-wifi-uplink usable; then
-        echo wifi
-        exit 0
-    fi
+    # Either WiFi uplink: a second radio's station counts as the first's does.
+    for _iface in wwifi wwifi2; do
+        if network_is_up "${_iface}" && pulzr-wifi-uplink usable "${_iface}"; then
+            echo wifi
+            exit 0
+        fi
+    done
     _dev="$(cellular_device)"
     if [ -n "${_dev}" ] && connects "${_dev}"; then
         echo cellular

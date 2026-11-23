@@ -34,7 +34,8 @@ Below the topology there is one card per radio. Each card shows:
 
 | Role | What it is | Changed from |
 |---|---|---|
-| Uplink | the WiFi uplink's station (`parkeze_sta`) | Backhaul > WiFi; **Use for Uplink** moves it here |
+| Uplink | the WiFi uplink's station (`parkeze_sta`) | Backhaul > WiFi |
+| Uplink | a second radio's WiFi uplink (`pulzr_sta2`, interface `wwifi2`) | this page: **Use for Uplink**, remove |
 | Access point | an SSID onto a LAN-side network (`pulzr_ap_<n>`) | this page: edit, remove |
 | Setup network | the setup AP (`parkeze_ap`, `pulzr-ap`) | Access |
 | Mesh, monitor, client | anything made by hand | shown only |
@@ -82,9 +83,24 @@ Some radios can be a station and an access point at once. Then the access point 
 
 Whether a radio can do this is read from the radio itself (see below). A Raspberry Pi 3 can run one station and one AP. A radio that runs only one interface at a time cannot, and the page says to use two radios.
 
-### Moving the uplink
+### Another radio as the uplink
 
-**Use for Uplink** on another radio moves the uplink there by rejoining its saved network on that radio. Without a WiFi uplink yet, it opens the join wizard for that radio. A rejoin from Backhaul > WiFi, and a roam, keep the uplink on the radio it is on.
+**Use for Uplink** on a radio with no station joins that radio as a second WiFi uplink, onto the network the uplink is on now or another one (**Another network** opens the join wizard for that radio). Without a WiFi uplink yet, it opens the join wizard. A rejoin from Backhaul > WiFi, and a roam, keep the uplink on the radio it is on.
+
+The old uplink keeps carrying the traffic until the new one is proven. This is make-before-break:
+
+| Step | What happens | The old radio |
+|---|---|---|
+| 1 | The second station (`pulzr_sta2`, `wwifi2`) is written beside the first, at metric 200, behind every uplink. Only its own radio restarts. | carries traffic |
+| 2 | It associates and gets a lease. `pulzr-wifi-uplink check wwifi2` asks whether it reaches the internet, out of its own device. | carries traffic |
+| 3 | Once the answer is open, the handover puts `wwifi2` where the old WiFi uplink is in the uplink order, with the old one right behind it. `pulzr-uplinks` moves the metrics, then the tunnel and LoRa routing with one route replace each. | still associated |
+| 4 | The old station stays as the next uplink to fail over to. | fallback |
+
+If the new station is not open within two minutes, it is removed again and the page says why: wpa_supplicant's reason when it never associated (a wrong passphrase, the network not found), or the portal check's step when it did. Nothing about the old uplink changes.
+
+Each WiFi uplink has its own portal check answer (`/var/run/pulzr/wifi-uplink.json` for `wwifi`, `wifi-uplink-wwifi2.json` for `wwifi2`), and `pulzr-uplinks` judges each by its own answer. A WiFi `ifup` no longer restarts the tunnel when `wg0` is up. A restart deletes `wg0`, so a second radio coming up would drop the tunnel the first radio was carrying.
+
+A gateway has at most two WiFi uplinks. Roaming and portal sign-in belong to the first (Backhaul > WiFi). A second uplink is removed from its row's remove button: it moves to the back of the uplink order first, so the traffic is on the other uplink before it lets go.
 
 ## What the hardware allows
 
@@ -111,10 +127,11 @@ So a channel change that drops the laptop you are working from, or an uplink mov
 
 | Route | Does |
 |---|---|
-| `GET /api/radios` | the radios, their interfaces and clients, what each radio allows, the networks an AP may use, the route |
+| `GET /api/radios` | the radios, their interfaces and clients, what each radio allows, the networks an AP may use, the route, every WiFi uplink (`uplinks`) and the latest handover (`handover`) |
 | `POST /api/radios/radio` | `{radio, channel, width, txpower, country, enabled}` |
 | `POST /api/radios/ap` | `{id?, radio, ssid, security, key, network, hidden, isolate, enabled, allowOpen}` |
 | `POST /api/radios/ap/remove` | `{id}` |
-| `POST /api/radios/uplink` | a join (as `POST /api/access/wifi`) with `radio`, and optionally `ap` for a repeater |
+| `POST /api/radios/uplink` | a join (as `POST /api/access/wifi`) with `radio`, and optionally `ap` for a repeater; onto a radio with no station while another has one, a second uplink and a handover |
+| `POST /api/radios/uplink/remove` | `{radio}`: the second WiFi uplink off that radio |
 
-All of them need a session and the CSRF header, and every POST answers with the rollback window (`pending`). Every change is audited (`radio.set`, `radio.ap.add`, `radio.ap.edit`, `radio.ap.remove`, `radio.uplink`, `radio.repeater`). Tests: `scripts/test-radios.sh`.
+All of them need a session and the CSRF header, and every POST answers with the rollback window (`pending`). Every change is audited (`radio.set`, `radio.ap.add`, `radio.ap.edit`, `radio.ap.remove`, `radio.uplink`, `radio.uplink.remove`, `radio.repeater`). Tests: `scripts/test-radios.sh`.

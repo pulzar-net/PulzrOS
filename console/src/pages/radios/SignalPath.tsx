@@ -6,7 +6,7 @@ import Badge, { type Tone } from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
 import { signalBars } from '@/pages/backhaul/wifiFormat';
 import {
-  BAND_NAMES, ROLE_NAMES, channelText, gatewayMode, radioName, securityLabel,
+  BAND_NAMES, ROLE_NAMES, channelText, gatewayMode, joiningIface, radioName, securityLabel,
   type Radio, type RadioInterface, type RadiosStatus,
 } from './model';
 import styles from './SignalPath.module.css';
@@ -29,6 +29,8 @@ interface Upstream {
   key: string;
   kind: 'wifi' | 'ethernet' | 'cellular' | 'other' | 'none';
   carrying: boolean;
+  /** A second radio's station the handover is still proving. */
+  joining?: boolean;
   radio?: Radio;
   iface?: RadioInterface;
 }
@@ -55,7 +57,9 @@ export default function SignalPath({
   for (const radio of radios) {
     for (const iface of radio.interfaces) {
       if (iface.role !== 'uplink' && iface.role !== 'client') continue;
-      upstreams.push({ key: iface.id, kind: 'wifi', carrying: route.via === 'wifi' && iface.role === 'uplink', radio, iface });
+      // With two WiFi uplinks, the one whose interface has the default route.
+      const carrying = route.via === 'wifi' && iface.role === 'uplink' && iface.networks.some((n) => n.id === route.iface);
+      upstreams.push({ key: iface.id, kind: 'wifi', carrying, joining: joiningIface(status, iface), radio, iface });
     }
   }
   if (route.via && route.via !== 'wifi') {
@@ -218,7 +222,13 @@ function upstreamState(u: Upstream, wifi: AccessStatus['wifi'] | undefined): UpS
   if (u.kind !== 'wifi') return { link: 'live', badge: null, portal: false };
   const iface = u.iface!;
   if (!u.radio!.enabled || !iface.enabled) return { link: 'idle', badge: { label: 'Off', tone: 'neutral' }, portal: false };
+  if (u.joining) return { link: 'idle', badge: { label: 'Joining', tone: 'neutral' }, portal: false };
   if (!iface.up) return { link: 'down', badge: { label: 'Not connected', tone: 'error' }, portal: false };
+  // The WiFi page's answers (address, portal) are about its own station; a
+  // second radio's carries traffic only once proven, so up is all it needs.
+  if (iface.owner === 'radios') {
+    return { link: 'live', badge: u.carrying ? { label: 'Connected', tone: 'success' } : { label: 'Standby', tone: 'neutral' }, portal: false };
+  }
   if (iface.role !== 'uplink' || !wifi?.configured) return { link: 'live', badge: null, portal: false };
   if (!wifi.up) return { link: 'down', badge: { label: 'No address', tone: 'warning' }, portal: false };
   if (wifi.uplink === 'portal') return { link: 'live', badge: { label: 'Sign-in needed', tone: 'warning' }, portal: true };

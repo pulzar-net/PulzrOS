@@ -124,6 +124,23 @@ for bad in "1.1.1.300 10 3 3" "1.1.1.1 4 3 3" "1.1.1.1 10 0 3" "1.1.1.1,2.2.2.2,
 done
 up tracking 1.1.1.1,8.8.8.8 10 3 2 >/dev/null
 
+# Two WiFi uplinks, a second radio's beside the first: both WiFi, both judged
+# by pulzr-wifi-uplink (absent here, so neither is usable), and a new one goes
+# in at the back of the order until the radios page's handover moves it.
+cp "${UCI_JSON}" "${T}/uci.saved"
+jq '.network.wwifi = {".type": "interface", ".name": "wwifi"} | .network.wwifi2 = {".type": "interface", ".name": "wwifi2"}
+    | .pulzr.uplinks.order = ["wan", "wwifi", "wwan", "usbwan"]' "${T}/uci.saved" > "${UCI_JSON}"
+check "wifi: a second radio's uplink is WiFi, last until moved" \
+    '[["wan","ethernet"],["wwifi","wifi"],["wwan","cellular"],["usbwan","usb-cellular"],["wwifi2","wifi"]]' \
+    "$(up status | jq -c '[.uplinks[] | [.iface, .kind]]')"
+check "wifi: neither tracked by ping" '["wan"]' "$(up status | jq -c '[.uplinks[] | select(.tracked) | .iface]')"
+up track wwifi2 on >/dev/null 2>&1 && r=0 || r=$?
+check "wifi: the second has its own check too" '2' "${r}"
+up apply
+check "wifi: not proven, behind everything" '["110","140"]' "$(jq -c '[.network.wwifi.metric, .network.wwifi2.metric]' "${UCI_JSON}")"
+cp "${T}/uci.saved" "${UCI_JSON}"
+: > "${T}/events"
+
 # The Backhaul page's drag and drop, through the console API's own module:
 # the body it posts to /api/uplinks/order and /api/uplinks/track, into
 # pulzr-uplinks, and on to the metrics and the tracker. The order a person

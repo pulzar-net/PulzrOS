@@ -52,11 +52,13 @@
 # wired_gateway: the first usable wired uplink, of however many pulzr-ports
 # made.
 . /usr/share/pulzr/wired.sh
+# wifi_gateway: the first WiFi uplink pulzr-wifi-uplink has seen reach the
+# internet, of the one or two there are.
+. /usr/share/pulzr/wifi.sh
 
 MARK="${PULZR_LORA_MARK:-0x9800}"
 MASK="0xff00"
 TABLE="${PULZR_LORA_TABLE:-98}"
-WIFI_IFACE="${PULZR_WAN_WIFI_IFACE:-wwifi}"
 
 log() { logger -t lora-route -p daemon.info "$*"; }
 
@@ -90,23 +92,6 @@ allow_cellular() {
     local set; set="$(uci -q get pulzr.lorawan.allow_cellular)"
     [ -n "${set}" ] || set="${PULZR_LORA_ALLOW_CELLULAR:-1}"
     [ "${set}" = "1" ]
-}
-
-iface_gateway() {
-    local gw dev
-    network_get_gateway gw "$1" || return 1
-    network_get_device dev "$1" || return 1
-    [ -n "${gw}" ] && [ -n "${dev}" ] || return 1
-    echo "${gw} ${dev}"
-}
-
-# The WiFi's lease, only once pulzr-wifi-uplink has seen it reach the
-# internet: a guest network has a gateway before anybody has signed in, and
-# uplinks confined there went into its sign-in page. It re-runs `apply` when
-# its answer changes.
-wifi_gateway() {
-    /usr/sbin/pulzr-wifi-uplink usable 2>/dev/null || return 1
-    iface_gateway "${WIFI_IFACE}"
 }
 
 flush() {

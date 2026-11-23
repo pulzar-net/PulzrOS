@@ -18,11 +18,13 @@ import { useVendor } from '@/lib/oui';
 import JoinWizard from '@/pages/backhaul/JoinWizard';
 import { useWifiSignIn } from '@/pages/backhaul/signin';
 import { signalBars } from '@/pages/backhaul/wifiFormat';
-import type { WifiFailureInfo } from '@/pages/backhaul/WifiFailure';
+import { explain, type WifiFailureInfo } from '@/pages/backhaul/WifiFailure';
 import SignalPath from './SignalPath';
-import { ApDialog, MoveUplinkDialog, RadioDialog, RemoveApDialog, RepeaterDialog, type RepeaterPlan } from './dialogs';
 import {
-  BAND_NAMES, ROLE_NAMES, channelText, radioName, securityLabel,
+  ApDialog, RadioDialog, RemoveApDialog, RemoveUplinkDialog, RepeaterDialog, UplinkDialog, type RepeaterPlan,
+} from './dialogs';
+import {
+  BAND_NAMES, ROLE_NAMES, channelText, joiningIface, radioName, securityLabel,
   type Radio, type RadioClient, type RadioInterface, type RadiosStatus,
 } from './model';
 import styles from './Radios.module.css';
@@ -33,13 +35,18 @@ import styles from './Radios.module.css';
  *
  * The uplink's own page (Backhaul, WiFi) stays where the network it joins is
  * looked after: saved networks, 802.1X, roaming. This one decides which radio
- * it is on, and what the others do beside it.
+ * it is on, and what the others do beside it. A second radio joins as a
+ * second uplink, onto the same network or another, and takes the traffic
+ * only once it is online (the handover in lib/radios.uc).
  */
 export default function Radios() {
   const queryClient = useQueryClient();
   const change = useApplyChange();
   const [watchUntil, setWatchUntil] = useState(0);
-  const interval = () => (Date.now() < watchUntil ? 3000 : 15_000);
+  // Quick while a change settles, and while a handover runs: it can take two
+  // minutes, longer than the change's own watch.
+  const interval = () => (Date.now() < watchUntil
+    || queryClient.getQueryData<RadiosStatus>(['radios'])?.handover?.state === 'joining' ? 3000 : 15_000);
 
   const radios = useQuery({
     queryKey: ['radios'],
@@ -61,6 +68,7 @@ export default function Radios() {
   const [editRadio, setEditRadio] = useState<Radio | null>(null);
   const [apTarget, setApTarget] = useState<{ iface?: RadioInterface; radio?: Radio } | null>(null);
   const [removing, setRemoving] = useState<RadioInterface | null>(null);
+  const [removingUplink, setRemovingUplink] = useState<RadioInterface | null>(null);
   const [moving, setMoving] = useState<Radio | null>(null);
   const [repeater, setRepeater] = useState(false);
   const [wizard, setWizard] = useState<{ extra: Record<string, unknown>; rejoin?: string } | null>(null);
@@ -92,14 +100,18 @@ export default function Radios() {
     );
   }
 
+  // Another radio's uplink keeps carrying while this one joins, so there is
+  // a choice of network; with none, it is a plain join.
+  const otherUplink = (radio: Radio | null) => status.uplinks.find((u) => u.radio !== radio?.id) ?? null;
   const useForUplink = (radio: Radio) => {
-    if (current) setMoving(radio);
+    if (otherUplink(radio)) setMoving(radio);
     else setWizard({ extra: { radio: radio.id } });
   };
 
   return (
     <div className="fade-in">
       <ApplyChangeNotice change={change} />
+      <HandoverNotice status={status} />
       <Section
         title="Topology"
         icon={Wifi}
@@ -139,6 +151,7 @@ export default function Radios() {
           onAddAp={() => setApTarget({ radio })}
           onEditAp={(iface) => setApTarget({ iface, radio })}
           onRemoveAp={setRemoving}
+          onRemoveUplink={setRemovingUplink}
           onUseForUplink={() => useForUplink(radio)}
         />
       ))}
@@ -146,7 +159,18 @@ export default function Radios() {
       <RadioDialog status={status} radio={editRadio} onClose={() => setEditRadio(null)} onApplied={applied} />
       <ApDialog status={status} target={apTarget} onClose={() => setApTarget(null)} onApplied={applied} />
       <RemoveApDialog status={status} iface={removing} onClose={() => setRemoving(null)} onApplied={applied} />
-      <MoveUplinkDialog status={status} radio={moving} ssid={current} onClose={() => setMoving(null)} onApplied={applied} />
+      <UplinkDialog
+        status={status}
+        radio={moving}
+        ssid={otherUplink(moving)?.ssid ?? current}
+        onClose={() => setMoving(null)}
+        onApplied={applied}
+        onChooseNetwork={(radio) => {
+          setMoving(null);
+          setWizard({ extra: { radio: radio.id } });
+        }}
+      />
+      <RemoveUplinkDialog status={status} iface={removingUplink} onClose={() => setRemovingUplink(null)} onApplied={applied} />
       <RepeaterDialog
         status={status}
         open={repeater}
@@ -186,6 +210,7 @@ function RadioCard({
   onAddAp,
   onEditAp,
   onRemoveAp,
+  onRemoveUplink,
   onUseForUplink,
 }: {
   status: RadiosStatus;
@@ -194,6 +219,7 @@ function RadioCard({
   onAddAp: () => void;
   onEditAp: (iface: RadioInterface) => void;
   onRemoveAp: (iface: RadioInterface) => void;
+  onRemoveUplink: (iface: RadioInterface) => void;
   onUseForUplink: () => void;
 }) {
   const name = radioName(status.radios, radio.id);
@@ -254,7 +280,8 @@ function RadioCard({
       {radio.interfaces.length > 0 ? (
         <ul className={styles.ifaces}>
           {radio.interfaces.map((iface) => (
-            <InterfaceRow key={iface.id} iface={iface} radio={radio} onEdit={onEditAp} onRemove={onRemoveAp} />
+            <InterfaceRow key={iface.id} iface={iface} radio={radio} joining={joiningIface(status, iface)} onEdit={onEditAp}
+              onRemove={iface.owner === 'radios' ? onRemoveUplink : onRemoveAp} />
           ))}
         </ul>
       ) : (
@@ -282,11 +309,13 @@ function RadioCard({
 function InterfaceRow({
   iface,
   radio,
+  joining,
   onEdit,
   onRemove,
 }: {
   iface: RadioInterface;
   radio: Radio;
+  joining: boolean;
   onEdit: (iface: RadioInterface) => void;
   onRemove: (iface: RadioInterface) => void;
 }) {
@@ -318,6 +347,7 @@ function InterfaceRow({
         </div>
         <div className={styles.ifaceState}>
           {!iface.enabled ? <Badge tone="neutral">Off</Badge>
+            : joining ? <Badge tone="neutral">Joining</Badge>
             : !iface.up ? <Badge tone={radio.enabled ? 'error' : 'neutral'}>Down</Badge>
             : station ? (
               <span className={`${styles.reading} ${styles[bars.tone]} num`}>
@@ -346,6 +376,11 @@ function InterfaceRow({
               </button>
             </>
           )}
+          {iface.owner === 'radios' && (
+            <button className={styles.iconButton} onClick={() => onRemove(iface)} aria-label={`Remove ${iface.ssid}`}>
+              <Trash2 size={14} strokeWidth={2} />
+            </button>
+          )}
           {iface.owner === 'uplink' && <Link className={styles.rowLink} to="/backhaul/wifi">Network</Link>}
           {iface.owner === 'setup' && <Link className={styles.rowLink} to="/access">Access</Link>}
         </div>
@@ -357,6 +392,23 @@ function InterfaceRow({
       )}
     </li>
   );
+}
+
+/** The handover's state while it runs, and for a while after it failed. A
+    failure is over once nobody is waiting on it: fifteen minutes. */
+function HandoverNotice({ status }: { status: RadiosStatus }) {
+  const h = status.handover;
+  if (!h) return null;
+  const to = radioName(status.radios, h.radio);
+  const from = radioName(status.radios, h.fromRadio);
+  if (h.state === 'joining') {
+    return <Notice tone="info">{`${to} joining ${h.ssid}; ${from} carries traffic until then.`}</Notice>;
+  }
+  if (h.state === 'failed' && h.endedAt && Date.now() / 1000 - h.endedAt < 900) {
+    const why = h.failure ? `${explain(h.failure, h.ssid).title}.` : (h.reason ?? 'No internet.');
+    return <Notice tone="warning">{`${to} did not take over from ${from}: ${why}`}</Notice>;
+  }
+  return null;
 }
 
 /** One station on an AP, with its maker when the uplink in use is not

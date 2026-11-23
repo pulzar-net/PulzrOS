@@ -252,9 +252,10 @@ const MAX_EXPOSED = 32;
 const MAX_BLOCKS = 16;
 // Which netifd interfaces are which, as /usr/share/pulzr/wired.sh and
 // cellular.sh have them: wan and wan_<device> are wired (pulzr-ports),
-// wwifi the WiFi uplink, wwan the modem and usbwan a dongle or a phone.
+// wwifi the WiFi uplink (wwifi2 a second radio's, wifi.sh), wwan the modem
+// and usbwan a dongle or a phone.
 const CELLULAR_UPLINKS = ['wwan', 'usbwan'];
-let exposeUplink = (name) => name == 'wwifi' || name == 'wan' || index(name, 'wan_') == 0;
+let exposeUplink = (name) => name == 'wwifi' || name == 'wwifi2' || name == 'wan' || index(name, 'wan_') == 0;
 // The tunnel-side ports a forward is reached on. Sixteen at once is far more
 // than anybody opens; a full range is refused rather than grown.
 const FIRST_PORT = 40000;

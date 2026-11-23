@@ -16,7 +16,9 @@
 # for hostapd to fail on, a channel and width the regulatory domain does not
 # allow, an open AP onto the LAN by accident, an AP made on the radios page
 # deleted by the next WiFi join, and a rejoin putting the uplink back on the
-# radio the AP is on.
+# radio the AP is on. And the uplink moved to another radio by letting go of
+# the network on the old one first: a second station joins beside it, is
+# proven, and only then takes the traffic (handover), or is removed again.
 
 set -euo pipefail
 
@@ -33,7 +35,24 @@ export T UCI_JSON="${T}/uci.json"
 # The radios fixture first; the WiFi one has the uci and logger access.uc
 # calls from a shell.
 export PATH="${FIX}/bin:${ROOT}/scripts/wifi-fixture/bin:${PATH}"
-mkdir -p "${T}/run" "${T}/iwinfo" "${T}/assoc" "${T}/phy" "${T}/sys/class/ieee80211" "${T}/sys/devices"
+mkdir -p "${T}/run" "${T}/iwinfo" "${T}/assoc" "${T}/phy" "${T}/sys/class/ieee80211" "${T}/sys/devices" "${T}/bin"
+# pulzr-wifi-uplink's answers and pulzr-uplinks' order, from files; what they
+# were told to do, into the events.
+cat > "${T}/bin/pulzr-wifi-uplink" <<'STUB'
+#!/bin/sh
+case "$1" in
+    status) cat "${T}/verdict-$2.json" 2>/dev/null || echo '{"state":"unchecked"}' ;;
+    *) echo "pulzr-wifi-uplink $*" >> "${T}/events" ;;
+esac
+STUB
+cat > "${T}/bin/pulzr-uplinks" <<'STUB'
+#!/bin/sh
+case "$1" in
+    status) cat "${T}/uplinks.json" 2>/dev/null || echo '{"order":[]}' ;;
+    *) echo "pulzr-uplinks $*" >> "${T}/events" ;;
+esac
+STUB
+chmod +x "${T}/bin/pulzr-wifi-uplink" "${T}/bin/pulzr-uplinks"
 echo pulzr-1234ab > "${T}/hostname"
 
 fail=0
@@ -59,6 +78,9 @@ for f in "${ROOT}"/feed/pulzr-console/files/usr/share/pulzr/console/lib/*.uc; do
         -e "s#/tmp/pulzr-wifi-probe#${T}/probe#g" \
         -e "s#'/sys/class/#'${T}/sys/class/#g" \
         -e "s#/proc/sys/kernel/hostname#${T}/hostname#g" \
+        -e "s#/usr/sbin/pulzr-wifi-uplink#${T}/bin/pulzr-wifi-uplink#g" \
+        -e "s#/usr/sbin/pulzr-uplinks#${T}/bin/pulzr-uplinks#g" \
+        -e "s#/usr/share/pulzr/console/wifi-handover.uc#${T}/no-handover.uc#g" \
         "${f}" > "${LIB}/$(basename "${f}")"
 done
 # One call per run: `fn` with `req`, the answer as JSON.
@@ -68,6 +90,7 @@ let access = loadfile('${LIB}/access.uc', { raw_mode: true })();
 let call = json(ARGV[0]);
 let fns = { status: radios.status, setRadio: radios.setRadio, setAp: radios.setAp,
             removeAp: radios.removeAp, joinUplink: radios.joinUplink, joinWifi: access.joinWifi,
+            handover: radios.handover, removeUplink: radios.removeUplink,
             parsePhy: radios.parsePhy, fits: radios.fits, channelOk: radios.channelOk,
             widthsOf: radios.widthsOf };
 let out;
@@ -237,10 +260,86 @@ jq '.wireless.default_radio0 = {".type": "wifi-iface", ".name": "default_radio0"
 call joinWifi '{"ssid":"Site-Ops","saved":true}' >/dev/null
 check "join: OpenWrt's stock AP goes, this page's stays" '[null,"Shop"]' \
     "$(uci '[.wireless.default_radio0, .wireless.pulzr_ap_0.ssid]')"
+
+# ── the uplink onto the other radio, without a gap ──────────────────────────
+
+wwifi_before="$(uci .network.wwifi)"
 call joinUplink '{"radio":"radio1","ssid":"Site-Ops","saved":true}' >/dev/null
-check "move: the uplink onto the other radio, by rejoining it there" '"radio1"' "$(uci .wireless.parkeze_sta.device)"
+check "move: a second station on the other radio, the first left as it is" \
+    '["radio0","Site-Ops","radio1","Site-Ops","wwifi2","Shop"]' \
+    "$(uci '.wireless | [.parkeze_sta.device, .parkeze_sta.ssid, .pulzr_sta2.device, .pulzr_sta2.ssid, .pulzr_sta2.network, .pulzr_ap_0.ssid]')"
+check "move: its own interface, behind every uplink, in the wan zone" '["dhcp","200","wan wwifi wwifi2"]' \
+    "$(uci '[.network.wwifi2.proto, .network.wwifi2.metric, .firewall.wan.network]')"
+check "move: the first one's interface untouched" "${wwifi_before}" "$(uci .network.wwifi)"
+check "move: a handover from the WiFi carrying now" '["wwifi2","radio1","Site-Ops","wwifi","radio0","joining"]' \
+    "$(jq -c '[.iface, .radio, .ssid, .from, .fromRadio, .state]' "${T}/run/wifi-handover.json")"
 call joinWifi '{"ssid":"Site-Ops","saved":true}' >/dev/null
-check "join: a rejoin from the WiFi page leaves it on that radio" '"radio1"' "$(uci .wireless.parkeze_sta.device)"
+check "join: a rejoin from the WiFi page leaves both stations where they are" '["radio0","radio1"]' \
+    "$(uci '[.wireless.parkeze_sta.device, .wireless.pulzr_sta2.device]')"
+st="$(call status '{}')"
+check "status: both WiFi uplinks, the WiFi page's first" '[["parkeze_sta","wwifi","radio0"],["pulzr_sta2","wwifi2","radio1"]]' \
+    "$(jq -c '[.uplinks[] | [.id, .iface, .radio]]' <<< "${st}")"
+check "status: the second station is this page's, an uplink" '["uplink","radios"]' \
+    "$(jq -c '[.radios[1].interfaces[] | select(.id == "pulzr_sta2") | .role, .owner]' <<< "${st}")"
+check "status: the handover" "joining" "$(jq -r .handover.state <<< "${st}")"
+
+# Proven: up, and open on this network. It goes where the old one was in the
+# order, the old one right behind it, a cable ahead of both left ahead.
+now="$(date +%s)"
+echo '{"up":true}' > "${T}/wwifi2.json"
+echo "{\"state\":\"open\",\"ssid\":\"Site-Ops\",\"checkedAt\":${now}}" > "${T}/verdict-wwifi2.json"
+echo '{"order":["wan","wwifi","wwan"]}' > "${T}/uplinks.json"
+: > "${T}/events"
+out="$(call handover '"wwifi2"')"
+check "handover: done once it is open" "done" "$(jq -r .state <<< "${out}")"
+check "handover: first among the WiFi uplinks, behind the cable" "pulzr-uplinks order wan wwifi2 wwifi wwan" "$(cat "${T}/events")"
+check "handover: both stations stay" '["radio0","radio1"]' "$(uci '[.wireless.parkeze_sta.device, .wireless.pulzr_sta2.device]')"
+
+# Not proven in time: the new station goes, the old one was never touched.
+handover_again() {
+    jq -c ".state = \"joining\" | .startedAt = $(( now - 300 ))" "${T}/run/wifi-handover.json" > "${T}/h" \
+        && mv "${T}/h" "${T}/run/wifi-handover.json"
+    : > "${T}/events"
+}
+handover_again
+echo "{\"state\":\"offline\",\"step\":\"dns\",\"detail\":\"10.0.0.1\",\"ssid\":\"Site-Ops\",\"checkedAt\":${now}}" > "${T}/verdict-wwifi2.json"
+out="$(call handover '"wwifi2"')"
+check "handover: given up, with why" '["failed","DNS 10.0.0.1 did not answer."]' "$(jq -c '[.state, .reason]' <<< "${out}")"
+check "handover: the new station removed, the old one as it was" '[null,null,"wan wwifi","radio0","Site-Ops"]' \
+    "$(uci '[.wireless.pulzr_sta2, .network.wwifi2, .firewall.wan.network, .wireless.parkeze_sta.device, .wireless.parkeze_sta.ssid]')"
+check "handover: the order not touched" "" "$(grep 'pulzr-uplinks order' "${T}/events" || true)"
+
+call joinUplink '{"radio":"radio1","ssid":"Site-Ops","saved":true}' >/dev/null
+handover_again
+echo '{"up":false}' > "${T}/wwifi2.json"
+cp "${T}/wireless.json" "${T}/wireless.bak"
+jq '.radio1.interfaces += [{"section": "pulzr_sta2", "ifname": "phy1-sta0"}]' "${T}/wireless.bak" > "${T}/wireless.json"
+printf '%s\n' \
+    'Mon Nov 23 10:00:01 2026 daemon.notice wpa_supplicant[900]: phy1-sta0: CTRL-EVENT-SSID-TEMP-DISABLED id=0 ssid="Site-Ops" auth_failures=1 duration=10 reason=WRONG_KEY' \
+    'Mon Nov 23 10:00:02 2026 daemon.notice wpa_supplicant[901]: phy0-sta0: CTRL-EVENT-CONNECTED' > "${T}/logread"
+out="$(call handover '"wwifi2"')"
+check "handover: never associated, wpa_supplicant's reason for that station" '["failed","wrong_passphrase"]' \
+    "$(jq -c '[.state, .failure.code]' <<< "${out}")"
+rm -f "${T}/logread"
+mv "${T}/wireless.bak" "${T}/wireless.json"
+
+call joinUplink '{"radio":"radio1","ssid":"Site-Ops","saved":true}' >/dev/null
+jq 'del(.wireless.pulzr_sta2)' "${UCI_JSON}" > "${T}/u" && mv "${T}/u" "${UCI_JSON}"
+check "handover: the station undone under it, nothing to do" "null" "$(call handover '"wwifi2"')"
+check "handover: and no record left" "no" "$([ -f "${T}/run/wifi-handover.json" ] && echo yes || echo no)"
+
+# ── removing the second uplink ──────────────────────────────────────────────
+
+call joinUplink '{"radio":"radio1","ssid":"Site-Ops","saved":true}' >/dev/null
+echo '{"order":["wwifi2","wwifi","wwan"]}' > "${T}/uplinks.json"
+: > "${T}/events"
+check "remove: the WiFi page's station is forgotten there" "Forget this network on the WiFi page." \
+    "$(err removeUplink '{"radio":"radio0"}')"
+call removeUplink '{"radio":"radio1"}' >/dev/null
+check "remove: last in the order before it goes" "pulzr-uplinks order wwifi wwan wwifi2" "$(head -n1 "${T}/events")"
+check "remove: the station, its interface and its zone membership" '[null,null,"wan wwifi","radio0"]' \
+    "$(uci '[.wireless.pulzr_sta2, .network.wwifi2, .firewall.wan.network, .wireless.parkeze_sta.device]')"
+check "remove: nothing on a radio with no uplink" "No uplink on this radio." "$(err removeUplink '{"radio":"radio1"}')"
 
 # ── the one-step repeater ───────────────────────────────────────────────────
 

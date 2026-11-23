@@ -155,7 +155,7 @@ let ddnsUplinks = () => {
     let out = [];
     cursor.foreach('network', 'interface', (i) => {
         let n = i['.name'];
-        if ((n == 'wan' || index(n, 'wan_') == 0 || n == 'wwifi') && i.disabled != '1') push(out, n);
+        if ((n == 'wan' || index(n, 'wan_') == 0 || n == 'wwifi' || n == 'wwifi2') && i.disabled != '1') push(out, n);
     });
     return sort(out);
 };

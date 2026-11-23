@@ -118,6 +118,8 @@ const ACTIONS = {
           security: req.eap ? 'eap' : (req.key ? 'psk' : (req.saved ? 'saved' : 'open')),
           ap: req.ap ? { radio: req.ap.radio, ssid: req.ap.ssid, security: req.ap.security } : null },
         radios.joinUplink(req)),
+    removeRadioUplink: (req, s) => audited('radio.uplink.remove', { by: s.subject, radio: req.radio },
+                                           radios.removeUplink(req)),
 
     // ── lan ─────────────────────────────────────────────────────────────────
     setLanPolicy: (req, s) => audited('lan.policy', { by: s.subject, mac: req.mac, policy: req.policy },

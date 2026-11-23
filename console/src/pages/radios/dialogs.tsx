@@ -18,7 +18,7 @@ import styles from './Radios.module.css';
 
 /**
  * The radios page's dialogs: a radio's settings, an access point, the
- * one-step repeater and moving the uplink. Each posts its change and hands
+ * one-step repeater and an uplink on another radio. Each posts its change and hands
  * the answer's rollback window to the page (onApplied), which confirms it once
  * the browser reaches the gateway again; see useApplyChange.
  */
@@ -378,44 +378,114 @@ export function RemoveApDialog({
 
 // ── the uplink's radio ──────────────────────────────────────────────────────
 
-export function MoveUplinkDialog({
+/**
+ * The uplink onto a radio that has none, while another radio's carries it:
+ * the network the uplink is on now, rejoined here, or another one through the
+ * join wizard (onChooseNetwork). The radio carrying it now keeps carrying it
+ * until this one is online, then stays as the fallback (lib/radios.uc).
+ */
+export function UplinkDialog({
   status,
   radio,
   ssid,
   onClose,
   onApplied,
+  onChooseNetwork,
 }: {
   status: RadiosStatus;
   radio: Radio | null;
   ssid: string | null;
   onClose: () => void;
   onApplied: (pending?: Pending | null) => void;
+  onChooseNetwork: (radio: Radio) => void;
 }) {
   const post = usePost(onApplied, onClose);
-  useEffect(() => { post.reset(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [radio?.id]);
-  const from = status.radios.find((r) => r.id === status.uplink);
+  const [network, setNetwork] = useState<'keep' | 'new'>('keep');
+  useEffect(() => {
+    post.reset();
+    setNetwork(ssid ? 'keep' : 'new');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [radio?.id]);
+  const carrying = status.uplinks.find((u) => u.radio !== radio?.id);
+  const from = status.radios.find((r) => r.id === carrying?.radio);
   const name = (r?: Radio) => (r ? `${radioName(status.radios, r.id)}, ${BAND_NAMES[r.band]}` : '');
+  const keep = network === 'keep' && !!ssid;
   return (
     <Dialog
       open={!!radio}
       size="compact"
       onClose={onClose}
-      title={`Move Uplink to ${radio ? radioName(status.radios, radio.id) : ''}`}
+      title={`Uplink on ${radio ? radioName(status.radios, radio.id) : ''}`}
       footer={
         <>
           <Button variant="quiet" onClick={onClose}>Cancel</Button>
           <Button variant="primary" loading={post.isPending}
-            onClick={() => post.mutate({ path: '/radios/uplink', body: { radio: radio!.id, ssid, saved: true } })}>
-            Move
+            onClick={() => (keep
+              ? post.mutate({ path: '/radios/uplink', body: { radio: radio!.id, ssid, saved: true } })
+              : onChooseNetwork(radio!))}>
+            {keep ? 'Join' : 'Choose Network'}
+          </Button>
+        </>
+      }
+    >
+      {radio && (
+        <div className={styles.form}>
+          {ssid && (
+            <Labelled label="Network">
+              <Segmented
+                aria-label="Network"
+                value={network}
+                onChange={setNetwork}
+                options={[{ value: 'keep', label: ssid }, { value: 'new', label: 'Another network' }]}
+              />
+            </Labelled>
+          )}
+          <FactList>
+            <Fact label="Radio" value={name(radio)} />
+            {from && <Fact label="Fallback" value={name(from)} />}
+          </FactList>
+        </div>
+      )}
+      {post.isError && <Notice tone="error">{(post.error as Error).message}</Notice>}
+    </Dialog>
+  );
+}
+
+/** The second WiFi uplink off its radio. The WiFi page's own is forgotten
+    there. */
+export function RemoveUplinkDialog({
+  status,
+  iface,
+  onClose,
+  onApplied,
+}: {
+  status: RadiosStatus;
+  iface: RadioInterface | null;
+  onClose: () => void;
+  onApplied: (pending?: Pending | null) => void;
+}) {
+  const post = usePost(onApplied, onClose);
+  useEffect(() => { post.reset(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [iface?.id]);
+  const radio = status.radios.find((r) => r.interfaces.some((i) => i.id === iface?.id));
+  return (
+    <Dialog
+      open={!!iface}
+      size="compact"
+      onClose={onClose}
+      title={`Remove ${iface?.ssid ?? 'Uplink'}`}
+      footer={
+        <>
+          <Button variant="quiet" onClick={onClose}>Cancel</Button>
+          <Button variant="danger" loading={post.isPending}
+            onClick={() => post.mutate({ path: '/radios/uplink/remove', body: { radio: radio!.id } })}>
+            Remove
           </Button>
         </>
       }
     >
       {radio && (
         <FactList>
-          <Fact label="Network" value={ssid} />
-          <Fact label="From" value={name(from)} />
-          <Fact label="To" value={name(radio)} />
+          <Fact label="Radio" value={`${radioName(status.radios, radio.id)}, ${BAND_NAMES[radio.band]}`} />
         </FactList>
       )}
       {post.isError && <Notice tone="error">{(post.error as Error).message}</Notice>}

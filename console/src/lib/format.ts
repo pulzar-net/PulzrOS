@@ -87,7 +87,7 @@ export function portLabel(device: string | null | undefined): string {
   return vid ? `${name} VLAN ${vid}` : name;
 }
 
-const UPLINK_NAMES: Record<string, string> = { wwifi: 'WiFi', wwan: 'Cellular', usbwan: 'USB cellular' };
+const UPLINK_NAMES: Record<string, string> = { wwifi: 'WiFi', wwifi2: 'WiFi 2', wwan: 'Cellular', usbwan: 'USB cellular' };
 
 /** An uplink by name, a wired one by its port: wan_lan1 is "LAN 1". */
 export function uplinkName(iface: string, device?: string | null): string {

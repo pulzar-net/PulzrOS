@@ -23,8 +23,9 @@ export interface RadioInterface {
       station somebody made by hand. */
   role: 'uplink' | 'ap' | 'client' | 'mesh' | 'monitor' | 'adhoc' | 'other';
   /** Who may change it: the uplink's join flow, pulzr-ap's setup network,
-      this page, or nobody here. */
-  owner: 'uplink' | 'setup' | 'console' | 'other';
+      this page (an AP made here; `radios` a second WiFi uplink), or nobody
+      here. */
+  owner: 'uplink' | 'setup' | 'console' | 'radios' | 'other';
   mode: string;
   ssid: string | null;
   meshId: string | null;
@@ -73,6 +74,27 @@ export interface Radio {
   interfaces: RadioInterface[];
 }
 
+/**
+ * A second radio's station proven before it takes the traffic (handover() in
+ * lib/radios.uc): joining while the other WiFi uplink carries it, done once
+ * it reached the internet and moved ahead in the order, failed when it did
+ * not in time and was removed again.
+ */
+export interface Handover {
+  iface: string;
+  radio: string;
+  ssid: string;
+  from: string;
+  fromRadio: string;
+  state: 'joining' | 'done' | 'failed';
+  startedAt: number;
+  endedAt?: number;
+  /** Why it failed, from pulzr-wifi-uplink's answer. */
+  reason?: string;
+  /** Why it failed, from wpa_supplicant, when it never associated. */
+  failure?: { code: string; detail?: string | null; at: string };
+}
+
 export interface RadiosStatus {
   radios: Radio[];
   country: string | null;
@@ -80,8 +102,17 @@ export interface RadiosStatus {
   networks: { id: string; label: string; address: string | null }[];
   route: { via: 'wifi' | 'ethernet' | 'cellular' | 'usb-cellular' | 'other' | null; iface: string | null };
   hostname: string | null;
-  /** The radio the WiFi uplink is on, when one is configured. */
+  /** The radio the WiFi page's uplink is on, when one is configured. */
   uplink: string | null;
+  /** Every WiFi uplink, the WiFi page's first. */
+  uplinks: { id: string; iface: string; radio: string; ssid: string }[];
+  handover: Handover | null;
+}
+
+/** Whether this interface is the station a handover is waiting on. */
+export function joiningIface(status: RadiosStatus, iface: RadioInterface): boolean {
+  const h = status.handover;
+  return h?.state === 'joining' && iface.networks.some((n) => n.id === h.iface);
 }
 
 export const BAND_NAMES: Record<Band, string> = { '2g': '2.4 GHz', '5g': '5 GHz', '6g': '6 GHz', '60g': '60 GHz' };

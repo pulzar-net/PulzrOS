@@ -515,7 +515,8 @@ const ROUTES = {
     // Every change goes through the rollback window: a channel change drops
     // the clients of that radio, and the uplink on the wrong radio is the
     // tunnel gone. The uplink's join is access.joinWifi's, with its radio
-    // chosen and, for a repeater, an access point written with it.
+    // chosen and, for a repeater, an access point written with it; onto a
+    // second radio it is a second station, proven before it carries anything.
     'GET  /api/radios':           () => respond(200, radios.status()),
     'POST /api/radios/radio':     (env, req, s) => {
         const result = apply.guard(APPLY_WINDOW, s, () => actions.setRadio(req, s));
@@ -531,6 +532,10 @@ const ROUTES = {
     },
     'POST /api/radios/uplink':    (env, req, s) => {
         const result = apply.guard(APPLY_WINDOW, s, () => actions.joinRadioUplink(req, s));
+        return result.error ? error(400, result.error) : respond(200, result);
+    },
+    'POST /api/radios/uplink/remove': (env, req, s) => {
+        const result = apply.guard(APPLY_WINDOW, s, () => actions.removeRadioUplink(req, s));
         return result.error ? error(400, result.error) : respond(200, result);
     },
 

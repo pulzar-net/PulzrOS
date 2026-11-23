@@ -76,46 +76,20 @@ set -e
 # wired_gateway: the first usable wired uplink, of however many pulzr-ports
 # made.
 . /usr/share/pulzr/wired.sh
+# wifi_gateway: the first WiFi uplink pulzr-wifi-uplink has seen reach the
+# internet, of the one or two there are (wwifi, and wwifi2 on a second
+# radio), in the uplink order.
+. /usr/share/pulzr/wifi.sh
 
 TABLE_ID="${PULZR_WIREGUARD_TABLE:-97}"
 MARK="${PULZR_WIREGUARD_MARK:-0x9700}"
 MASK="0xff00"
-WIFI_IFACE="${PULZR_WAN_WIFI_IFACE:-wwifi}"
 # Where the last-applied egress is remembered, purely to notice a change.
 # tmpfs: forgetting it across a reboot means one extra report at most, not a
 # wrong answer.
 STATE=/var/run/pulzr/wireguard-egress
 
 log() { logger -t wireguard-route -p daemon.info "$*"; }
-
-# The L3 device and gateway of an interface, as netifd currently sees them.
-# Read live rather than from UCI: a lease that has not come up yet has a
-# configured interface and no gateway, and installing a default route to a
-# gateway that does not answer is worse than having no route. Shared between
-# wired and cellular — an interface is an interface once it has one.
-#
-# network_get_device (.l3_device), not network_get_physdev (.device): the
-# latter is only populated for an interface with a statically configured
-# device, which a DHCP-managed wired WAN happens to be and a modemmanager one
-# never is — wwan reported a real gateway and an empty device, so cellular
-# read as unusable even attached and registered. .l3_device is what netifd
-# actually ended up using either way.
-iface_gateway() {
-  local gw dev
-  network_get_gateway gw "$1" || return 1
-  network_get_device dev "$1" || return 1
-  [ -n "${gw}" ] && [ -n "${dev}" ] || return 1
-  echo "${gw} ${dev}"
-}
-
-# The WiFi's lease, only once pulzr-wifi-uplink has seen it reach the
-# internet. A guest network hands out a lease and a gateway before anybody has
-# signed in, and the tunnel pinned there sent its keepalives into the sign-in
-# page. pulzr-wifi-uplink re-runs `apply` when its answer changes.
-wifi_gateway() {
-  /usr/sbin/pulzr-wifi-uplink usable 2>/dev/null || return 1
-  iface_gateway "${WIFI_IFACE}"
-}
 
 # Tell Pulzr Cloud promptly when the tunnel's path actually changes, rather
 # than however long it takes the six-hourly report or a stale handshake to
@@ -142,8 +116,15 @@ apply() {
   # tunnel is kept off cellular is the bill — see the header — and joining
   # somebody's WiFi does not produce one. A gateway backhauled over WiFi with
   # no tunnel would be a gateway nobody can reach for no reason at all.
+  #
+  # Of two WiFi uplinks, the first usable one in the order. A second radio's
+  # station is not usable until pulzr-wifi-uplink has seen it reach the
+  # internet, so the tunnel stays on the old one while the new one joins, and
+  # moves when the radios page's handover puts the new one first: one route
+  # replace here, with the old radio still associated underneath it.
   elif spec="$(wifi_gateway)"; then
     via=wifi
+    spec="${spec% *}"
   elif [ "${PULZR_WIREGUARD_ALLOW_CELLULAR:-0}" = "1" ] \
        && spec="$(cellular_gateway)"; then
     via=cellular

@@ -18,7 +18,7 @@ started="$(uptime_s)"
 # nothing.
 unmetered() {
     local iface
-    for iface in wan wwifi; do
+    for iface in wan wwifi wwifi2; do
         ubus call "network.interface.${iface}" status 2>/dev/null \
             | jsonfilter -e '@["ipv4-address"][0].address' >/dev/null 2>&1 && return 0
     done

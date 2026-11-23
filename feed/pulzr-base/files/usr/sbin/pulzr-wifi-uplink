@@ -2,9 +2,17 @@
 #
 # Whether the WiFi uplink reaches the internet, or only a sign-in page.
 #
-#   pulzr-wifi-uplink check     ask once, out of the WiFi radio, and act on it
-#   pulzr-wifi-uplink usable    exit 0 when the WiFi may carry traffic
-#   pulzr-wifi-uplink status    the last answer, as JSON
+#   pulzr-wifi-uplink check [iface]     ask once, out of the WiFi radio, and act on it
+#   pulzr-wifi-uplink usable [iface]    exit 0 when the WiFi may carry traffic
+#   pulzr-wifi-uplink status [iface]    the last answer, as JSON
+#
+# iface is wwifi, the station the WiFi page joins (wireless.parkeze_sta), or
+# wwifi2, a second radio's station (wireless.pulzr_sta2, the radios page), and
+# wwifi when not given. `check` with no iface asks of every WiFi uplink there
+# is. Each has its own answer: a second radio joining a network is proved
+# here before it carries anything, while the first one keeps carrying
+# (radios.uc's handover), and one verdict for both would have let the new
+# station inherit the old one's "open".
 #
 # ── WHY ────────────────────────────────────────────────────────────────────
 #
@@ -90,9 +98,19 @@
 . /lib/functions/network.sh
 . /usr/share/libubox/jshn.sh
 
-IFACE=wwifi
-STATE=/var/run/pulzr/wifi-uplink.json
-BODY=/var/run/pulzr/wifi-uplink.body
+# Which station and answer file an interface has. wwifi keeps the file it
+# always had: signin.uc, access.uc and the report read it by that name.
+use() {
+    IFACE="$1"
+    case "${IFACE}" in
+        wwifi)  SECTION=parkeze_sta; STATE=/var/run/pulzr/wifi-uplink.json; LABEL='WiFi uplink' ;;
+        wwifi2) SECTION=pulzr_sta2; STATE=/var/run/pulzr/wifi-uplink-wwifi2.json; LABEL='Second WiFi uplink' ;;
+        *) echo "not a WiFi uplink: ${IFACE}" >&2; exit 2 ;;
+    esac
+    # Per process: the hotplug and the radios page's handover can ask about
+    # the same station at once.
+    BODY="${STATE%.json}.$$.body"
+}
 PROBE_URL="${PULZR_WIFI_PROBE_URL:-http://connectivitycheck.gstatic.com/generate_204}"
 PROBE_URL2="${PULZR_WIFI_PROBE_URL2:-http://cp.cloudflare.com/generate_204}"
 TLS_URL="${PULZR_WIFI_TLS_URL:-https://cp.cloudflare.com/generate_204}"
@@ -103,7 +121,7 @@ log() { logger -t wifi-uplink -p daemon.info "$*"; }
 
 last() { [ -f "${STATE}" ] && jsonfilter -i "${STATE}" -e "@.$1" 2>/dev/null; }
 
-ssid() { uci -q get wireless.parkeze_sta.ssid; }
+ssid() { uci -q get "wireless.${SECTION}.ssid"; }
 
 # A portal's address goes into a URL the console builds and in front of
 # whoever signs in, so it has to look like one and nothing else.
@@ -173,7 +191,7 @@ probe() {
     [ "${hostport}" = "${p_host}" ] || port="${hostport#*:}"
 
     why="$(mktemp)"
-    p_ip="$(/usr/sbin/pulzr-wifi-resolve "${p_host}" 2>"${why}")"
+    p_ip="$(/usr/sbin/pulzr-wifi-resolve "${p_host}" "${IFACE}" 2>"${why}")"
     rc=$?
     if [ "${rc}" != 0 ] || [ -z "${p_ip}" ]; then
         case "${rc}" in
@@ -292,10 +310,10 @@ check() {
 
     [ -n "${unchanged}" ] && return 0
     if [ "${verdict}" = "${previous}" ]; then
-        log "WiFi uplink ${net}: ${verdict}${reason:+ (${reason})}${url:+ ${url}}"
+        log "${LABEL} ${net}: ${verdict}${reason:+ (${reason})}${url:+ ${url}}"
         return 0
     fi
-    log "WiFi uplink ${net}: ${previous:-unchecked} -> ${verdict}${reason:+ (${reason})}${url:+ ${url}}"
+    log "${LABEL} ${net}: ${previous:-unchecked} -> ${verdict}${reason:+ (${reason})}${url:+ ${url}}"
     [ -x /usr/sbin/pulzr-wireguard-route ] && /usr/sbin/pulzr-wireguard-route apply >/dev/null 2>&1
     [ -x /usr/sbin/pulzr-lora-route ] && /usr/sbin/pulzr-lora-route apply >/dev/null 2>&1
     # Pulzr Cloud shows the answer beside the gateway. No-ops when unadopted.
@@ -304,9 +322,15 @@ check() {
 }
 
 case "${1:-status}" in
-    check)  check ;;
+    check)  if [ -n "$2" ]; then use "$2"; check
+            else
+                for _i in wwifi wwifi2; do
+                    [ "${_i}" = wwifi ] || [ "$(uci -q get "network.${_i}")" = interface ] || continue
+                    use "${_i}"; check
+                done
+            fi ;;
     # Only an answer about the network the radio is on now.
-    usable) [ "$(last state)" = open ] && [ "$(last ssid)" = "$(ssid)" ] ;;
-    status) [ -f "${STATE}" ] && cat "${STATE}" || echo '{"state":"unchecked"}' ;;
-    *) echo "usage: pulzr-wifi-uplink {check|usable|status}" >&2; exit 2 ;;
+    usable) use "${2:-wwifi}"; [ "$(last state)" = open ] && [ "$(last ssid)" = "$(ssid)" ] ;;
+    status) use "${2:-wwifi}"; [ -f "${STATE}" ] && cat "${STATE}" || echo '{"state":"unchecked"}' ;;
+    *) echo "usage: pulzr-wifi-uplink {check|usable|status} [wwifi|wwifi2]" >&2; exit 2 ;;
 esac

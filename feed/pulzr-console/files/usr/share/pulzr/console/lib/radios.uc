@@ -4,8 +4,12 @@
 // kinds belong to somebody already and keep their owner:
 //
 //   parkeze_sta    the WiFi uplink, access.uc's (the join flow, saved
-//                  networks, roaming, the captive portal). This moves it
-//                  between radios and nothing else.
+//                  networks, roaming, the captive portal). Joined onto a
+//                  radio here, written by access.joinWifi.
+//   pulzr_sta2     a second WiFi uplink, on another radio, onto the same
+//                  network or another one (interface wwifi2). This page's:
+//                  joined and removed here, written by access.joinWifi with
+//                  its own slot. No roaming and no portal sign-in.
 //   parkeze_ap     the setup AP, pulzr-ap's. Read here, never written.
 //   pulzr_ap_<n>   access points made here: an SSID onto a LAN-side network.
 //
@@ -28,6 +32,29 @@
 // channel set on that radio is ignored while it is joined. The status says so
 // (sharedChannel) and the console shows the channel as following the uplink.
 //
+// ── CHANGING THE UPLINK'S RADIO, WITHOUT A GAP ─────────────────────────────
+//
+// Moving the uplink to another radio used to rewrite parkeze_sta's device.
+// The old radio let go of the network at the reload, and for the ten seconds
+// the new one took to associate and get a lease the gateway had no uplink:
+// the tunnel moved to none and back. So a join on a radio with no station,
+// while another radio's station is up, is a second station instead
+// (pulzr_sta2), and the old one carries the traffic while it joins:
+//
+//   1. the new station is written beside the old one, held behind every
+//      uplink (access.applyNetwork), and only its radio restarts
+//   2. pulzr-wifi-uplink proves it reaches the internet, from its own
+//      device (35-pulzr-wifi-uplink, and handover() asks again)
+//   3. handover() puts it where the old one is in the uplink order, which
+//      moves the default route, and pulzr-uplinks re-homes the tunnel and
+//      LoRa with one route replace each, the old radio still associated
+//   4. the old station stays, behind it, as the next uplink to fail over to
+//
+// When step 2 does not come within HANDOVER_WAIT, the new station is removed
+// again and the record says why, for the console. Nothing about the old one
+// was ever changed. Two slots, so at most two WiFi uplinks: one per radio on
+// every board this runs on.
+//
 // ── APPLYING ───────────────────────────────────────────────────────────────
 //
 // Every setter here can take the caller's own connection with it: a channel
@@ -44,12 +71,14 @@ let _m_uci = require('uci');
 let cursor = _m_uci.cursor;
 let _m_util = loadfile('/usr/share/pulzr/console/lib/util.uc', { raw_mode: true })();
 let access = loadfile('/usr/share/pulzr/console/lib/access.uc', { raw_mode: true })();
+let wififail = loadfile('/usr/share/pulzr/console/lib/wififail.uc', { raw_mode: true })();
 
 // ucode does not hoist function declarations; see util.uc.
 let parsePhy, fits, bandOf, phyOf, radioInfo, widthsOf, familyOf, channelOk, maxDbm;
 let iftypeOf, roleOf, networksOf, attachable, interfaceView, counts, room, defaultRoute;
 let status, setRadio, setAp, removeAp, joinUplink, apFromRequest, checkAp, writeAp, reload, newApName;
 let devices, ifaces, saeCapable, cached;
+let slotOn, slotFor, configured, removeUplink, handover, readHandover, writeHandover, handoverWhy;
 
 let run = _m_util.run;; let runJson = _m_util.runJson;
 
@@ -57,6 +86,19 @@ const NAME = /^[A-Za-z0-9_]{1,32}$/;
 const IFNAME = /^[A-Za-z0-9._-]{1,32}$/;
 const AP_PREFIX = 'pulzr_ap_';
 const MAX_APS = 8;
+
+// The WiFi uplinks' stations, first the WiFi page's. See the header.
+const SLOTS = [
+    { section: 'parkeze_sta', iface: 'wwifi' },
+    { section: 'pulzr_sta2', iface: 'wwifi2' },
+];
+// The latest handover, for the console. tmpfs: a reboot ends one anyway.
+const HANDOVER = '/var/run/pulzr/wifi-handover.json';
+const HANDOVER_RUN = '/usr/share/pulzr/console/wifi-handover.uc';
+// Association, a lease, and pulzr-wifi-uplink's three tries at 2, 10 and 30
+// seconds after ifup, with room for a slow DHCP server. A network that has
+// not answered by then is not one to move the tunnel onto.
+const HANDOVER_WAIT = 120;
 
 // Networks an access point made here may serve, and what the console calls
 // them. Only the LAN side: an AP on the setup network is pulzr-ap's, and one
@@ -66,7 +108,7 @@ const MAX_APS = 8;
 const ATTACH = { devlan: 'LAN' };
 
 // What a network is called where an interface is shown, attachable or not.
-const LABELS = { devlan: 'LAN', setup: 'Setup network', wwifi: 'Uplink', lan: 'LAN' };
+const LABELS = { devlan: 'LAN', setup: 'Setup network', wwifi: 'Uplink', wwifi2: 'Uplink', lan: 'LAN' };
 
 // iw's names for the interface types UCI's modes become.
 const IFTYPE = { sta: 'managed', ap: 'AP', mesh: 'mesh point', adhoc: 'IBSS', monitor: 'monitor' };
@@ -304,6 +346,7 @@ iftypeOf = (s) => IFTYPE[s.mode ?? 'ap'] ?? s.mode;
 // Who owns an interface, which is what may be done with it here.
 roleOf = function(s) {
     if (s['.name'] == 'parkeze_sta') return { role: 'uplink', owner: 'uplink' };
+    if (s['.name'] == 'pulzr_sta2') return { role: 'uplink', owner: 'radios' };
     if (s['.name'] == 'parkeze_ap') return { role: 'ap', owner: 'setup' };
     const mode = s.mode ?? 'ap';
     const role = { ap: 'ap', sta: 'client', mesh: 'mesh', monitor: 'monitor', adhoc: 'adhoc' }[mode] ?? 'other';
@@ -339,9 +382,12 @@ counts = function(list, radio, skip) {
 };
 
 // Whether one more AP, or the uplink's station, fits beside what is there.
+// A join onto a radio replaces the station already on it.
 room = function(caps, list, radio) {
     if (!caps) return { ap: true, uplink: true, known: false };
-    const now = counts(list, radio, 'parkeze_sta');
+    let mine = null;
+    for (let s in list) if (s.device == radio && (s['.name'] == SLOTS[0].section || s['.name'] == SLOTS[1].section)) mine = s['.name'];
+    const now = counts(list, radio, mine);
     const withAp = { ...counts(list, radio, null) };
     withAp.AP = (withAp.AP ?? 0) + 1;
     const withSta = { ...now };
@@ -394,7 +440,7 @@ defaultRoute = function() {
     }
     if (!best) return { via: null, iface: null };
     const n = best.iface;
-    const via = n == 'wwifi' ? 'wifi' : (n == 'wwan' ? 'cellular' : (n == 'usbwan' ? 'usb-cellular'
+    const via = (n == 'wwifi' || n == 'wwifi2') ? 'wifi' : (n == 'wwan' ? 'cellular' : (n == 'usbwan' ? 'usb-cellular'
               : (match(n, /^wan(_|$)/) ? 'ethernet' : 'other')));
     return { via, iface: n };
 };
@@ -469,6 +515,12 @@ status = function() {
         route: defaultRoute(),
         hostname: trim(readfile('/proc/sys/kernel/hostname') ?? '') || null,
         uplink: uci.get('wireless', 'parkeze_sta', 'ssid') ? uci.get('wireless', 'parkeze_sta', 'device') : null,
+        // Every WiFi uplink, the WiFi page's first.
+        uplinks: map(filter(SLOTS, (sl) => configured(uci, sl)), (sl) => ({
+            id: sl.section, iface: sl.iface,
+            radio: uci.get('wireless', sl.section, 'device'), ssid: uci.get('wireless', sl.section, 'ssid'),
+        })),
+        handover: readHandover(),
     };
 };
 
@@ -659,13 +711,44 @@ removeAp = function(req) {
     return { ok: true };
 };
 
+// ── the WiFi uplinks ────────────────────────────────────────────────────────
+
+configured = (uci, slot) => !!uci.get('wireless', slot.section, 'ssid');
+
+// The slot whose station is on `radio`, or null.
+slotOn = function(uci, radio) {
+    for (let sl in SLOTS)
+        if (configured(uci, sl) && uci.get('wireless', sl.section, 'device') == radio) return sl;
+    return null;
+};
+
+// Where a join onto `radio` goes: the station already there, else the first
+// free slot. Null when both are on other radios.
+slotFor = function(uci, radio) {
+    const on = slotOn(uci, radio);
+    if (on) return on;
+    for (let sl in SLOTS) if (!configured(uci, sl)) return sl;
+    return null;
+};
+
+readHandover = function() {
+    try { return json(readfile(HANDOVER) ?? 'null'); } catch (e) { return null; }
+};
+
+writeHandover = function(h) {
+    _m_fs.mkdir('/var/run/pulzr');
+    _m_fs.writefile(HANDOVER + '.tmp', sprintf('%J', h));
+    _m_fs.rename(HANDOVER + '.tmp', HANDOVER);
+};
+
 // The uplink on a chosen radio, and in a repeater an AP with it, as one
 // change. Everything is checked first, the AP's fit beside the station
 // included, so a refusal changes nothing. Then the join (access.joinWifi:
 // saved networks, the portal and roaming all as from the WiFi page), then
 // the AP, committed before the join's reload two seconds on brings both up.
-// Moving the uplink to another radio is a rejoin of the saved network there
-// ({ssid, saved: true, radio}).
+// Onto a radio with no station while another radio has one, the join is a
+// second station and a handover (see the header): {ssid, saved: true, radio}
+// for the network the uplink is on now, or any network the wizard joins.
 joinUplink = function(req) {
     const uci = cursor();
     const radio = req?.radio;
@@ -673,6 +756,11 @@ joinUplink = function(req) {
         return { error: 'No such radio.' };
     const dev = uci.get_all('wireless', radio);
     const caps = radioInfo(radio, phyOf(dev, radioInfo(radio, null).phy)).caps;
+    const slot = slotFor(uci, radio);
+    if (!slot) return { error: 'Both WiFi uplinks are in use. Remove one first.' };
+    // The other WiFi uplink, which carries the traffic while this one joins.
+    let keep = null;
+    for (let sl in SLOTS) if (sl.section != slot.section && configured(uci, sl)) keep = sl;
 
     let ap = null;
     if (req.ap != null) {
@@ -685,7 +773,7 @@ joinUplink = function(req) {
     }
 
     if (caps) {
-        const wanted = counts(ifaces(uci), radio, 'parkeze_sta');
+        const wanted = counts(ifaces(uci), radio, slot.section);
         wanted.managed = (wanted.managed ?? 0) + 1;
         if (ap && ap.radio == radio && ap.enabled) wanted.AP = (wanted.AP ?? 0) + 1;
         const ok = fits(caps, wanted);
@@ -694,8 +782,17 @@ joinUplink = function(req) {
 
     const join = { ...req, radio };
     delete join.ap;
-    const joined = access.joinWifi(join);
-    if (joined.error || !ap) return joined;
+    const joined = access.joinWifi(join, slot);
+    if (joined.error) return joined;
+    if (keep) {
+        writeHandover({ iface: slot.iface, radio, ssid: cursor().get('wireless', slot.section, 'ssid'),
+                        from: keep.iface, fromRadio: uci.get('wireless', keep.section, 'device'),
+                        state: 'joining', startedAt: time() });
+        // After the join's reload, two seconds on, so the station it waits
+        // for exists.
+        run(sprintf('(sleep 4; ucode %s %s) >/dev/null 2>&1 &', HANDOVER_RUN, slot.iface));
+    }
+    if (!ap) return joined;
     // A cursor of its own: joinWifi committed through another, and this one
     // was read before that.
     const after = cursor();
@@ -704,8 +801,108 @@ joinUplink = function(req) {
     return { ...joined, ap: written.id };
 };
 
+// Why a station that was given HANDOVER_WAIT did not take over: wpa_supplicant's
+// failure when it never associated (lib/wififail.uc, its lines only), else
+// pulzr-wifi-uplink's answer in access.uplinkReason's words.
+handoverWhy = function(slot, link, verdict) {
+    if (!link.up) {
+        let ifname = null;
+        const live = runJson('ubus call network.wireless status') ?? {};
+        for (let r in keys(live))
+            for (let i in (live[r].interfaces ?? []))
+                if (i.section == slot.section && i.ifname && match(i.ifname, IFNAME)) ifname = i.ifname;
+        const log = ifname ? run(sprintf("logread | grep 'wpa_supplicant' | grep -F '%s:' | tail -n 200", ifname)) : null;
+        const failure = log ? wififail.last(log) : null;
+        return failure ? { failure } : { reason: 'Not connected.' };
+    }
+    if (verdict?.state == 'portal') return { reason: 'Sign-in page.' };
+    const why = verdict?.state ? access.uplinkReason(verdict) : null;
+    return { reason: why ? uc(substr(why, 0, 1)) + substr(why, 1) : 'No internet.' };
+};
+
+// Run by wifi-handover.uc, in the background, for the station joinUplink just
+// wrote: wait for it to be up and open, then put it first among the WiFi
+// uplinks; or give up, remove it, and say why. See the header.
+handover = function(iface) {
+    let h = readHandover();
+    if (h?.iface != iface || h.state != 'joining') return h;
+    let slot = null;
+    for (let sl in SLOTS) if (sl.iface == iface) slot = sl;
+    let asked = 0;
+    while (true) {
+        // Undone under it, by the rollback window or by hand: nothing to do.
+        if (cursor().get('wireless', slot.section, 'ssid') != h.ssid) {
+            _m_fs.unlink(HANDOVER);
+            return null;
+        }
+        const link = runJson(sprintf('ubus call network.interface.%s status', iface)) ?? {};
+        let verdict = runJson(sprintf('/usr/sbin/pulzr-wifi-uplink status %s', iface)) ?? {};
+        if (link.up && verdict.state == 'open' && verdict.ssid == h.ssid) break;
+        // The hotplug asks three times after ifup and then leaves it to the
+        // minute's sweep. Asked here as well, so a slow first lease is not
+        // judged on an answer from before it.
+        if (link.up && time() - asked >= 15 && time() - (verdict.checkedAt ?? 0) >= 15) {
+            asked = time();
+            run(sprintf('/usr/sbin/pulzr-wifi-uplink check %s >/dev/null 2>&1', iface));
+            continue;
+        }
+        if (time() - h.startedAt >= HANDOVER_WAIT) {
+            writeHandover({ ...h, state: 'failed', endedAt: time(), ...handoverWhy(slot, link, verdict) });
+            // The second station only. The WiFi page's own (a first station
+            // joined while the second carries) stays, as a join there does,
+            // and that page says why it is down.
+            if (slot.section != SLOTS[0].section) {
+                const uci = cursor();
+                access.removeStation(uci, slot);
+                uci.commit('wireless');
+                uci.commit('network');
+                uci.commit('firewall');
+                run('(wifi reload; /etc/init.d/firewall reload) >/dev/null 2>&1');
+            }
+            return readHandover();
+        }
+        sleep(3000);
+    }
+
+    // Where the old one is in the order, so a cable ahead of both stays
+    // ahead, and the old one right behind it. pulzr-uplinks moves the
+    // metrics, then the tunnel and LoRa (its hooks).
+    const st = runJson('/usr/sbin/pulzr-uplinks status') ?? {};
+    const order = filter(st.order ?? [], (n) => n != iface && match(n, /^[A-Za-z0-9_]{1,15}$/));
+    if (length(order)) {
+        let at = index(order, h.from);
+        splice(order, at < 0 ? 0 : at, 0, iface);
+        run(sprintf('/usr/sbin/pulzr-uplinks order %s >/dev/null 2>&1', join(' ', order)));
+    }
+    writeHandover({ ...h, state: 'done', endedAt: time() });
+    return readHandover();
+};
+
+// The second station off its radio. The WiFi page's own is forgotten there.
+// It goes last in the order first, so the traffic is on the other uplink
+// before this one lets go.
+removeUplink = function(req) {
+    const uci = cursor();
+    const radio = req?.radio;
+    if (type(radio) != 'string' || !match(radio, NAME)) return { error: 'No such radio.' };
+    const slot = slotOn(uci, radio);
+    if (!slot) return { error: 'No uplink on this radio.' };
+    if (slot.section == SLOTS[0].section) return { error: 'Forget this network on the WiFi page.' };
+    access.demote(slot.iface);
+    const after = cursor();
+    access.removeStation(after, slot);
+    after.commit('wireless');
+    after.commit('network');
+    after.commit('firewall');
+    _m_fs.unlink(sprintf('/var/run/pulzr/wifi-uplink-%s.json', slot.iface));
+    if (readHandover()?.iface == slot.iface) _m_fs.unlink(HANDOVER);
+    run('(sleep 2; wifi reload; /etc/init.d/firewall reload; /usr/sbin/pulzr-uplinks apply; '
+        + '/usr/sbin/pulzr-wireguard-route apply) >/dev/null 2>&1 &');
+    return { ok: true };
+};
+
 // ── module exports ──────────────────────────────────────────────────────────
 //
 // A returned object, not `export` statements; see the header of
 // api/index.uc.
-return { channelOk, fits, joinUplink, parsePhy, removeAp, setAp, setRadio, status, widthsOf };
+return { channelOk, fits, handover, joinUplink, parsePhy, removeAp, removeUplink, setAp, setRadio, status, widthsOf };

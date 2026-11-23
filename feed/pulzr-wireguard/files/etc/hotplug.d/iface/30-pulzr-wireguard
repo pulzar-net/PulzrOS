@@ -18,7 +18,6 @@
 [ "${PULZR_WIREGUARD_ENABLED:-1}" = "1" ] || exit 0
 
 CELL="${PULZR_WAN_CELL_IFACE:-wwan}"
-WIFI="${PULZR_WAN_WIFI_IFACE:-wwifi}"
 
 # Any wired uplink: wan, or wan_<device> for another port or a VLAN
 # (pulzr-ports).
@@ -29,11 +28,17 @@ if [ -n "${WIRED}" ]; then
         ifup)   /etc/init.d/pulzr-wireguard restart ;;
         ifdown) /usr/sbin/pulzr-wireguard-route apply ;;
     esac
-elif [ "${INTERFACE}" = "${WIFI}" ]; then
-    # Same as wired: WiFi is an egress the tunnel may use, so coming up on it
-    # is worth a restart to re-resolve the hub's endpoint on the new path.
+elif [ "${INTERFACE}" = wwifi ] || [ "${INTERFACE}" = wwifi2 ]; then
+    # WiFi is an egress the tunnel may use. A restart is for a tunnel that is
+    # not there yet (enrolment's retry, as on wired). Not for one that is up:
+    # restarting deletes wg0, so a second radio coming up beside the WiFi
+    # carrying the tunnel would take the tunnel down with it, for a station
+    # nobody has proven yet. apply re-homes it with one route replace once
+    # that station is usable and first in the order. The hub's name is the
+    # same hub over either path, so nothing is lost by not re-resolving it.
     case "${ACTION}" in
-        ifup)   /etc/init.d/pulzr-wireguard restart ;;
+        ifup)   if ip link show wg0 >/dev/null 2>&1; then /usr/sbin/pulzr-wireguard-route apply
+                else /etc/init.d/pulzr-wireguard restart; fi ;;
         ifdown) /usr/sbin/pulzr-wireguard-route apply ;;
     esac
 elif [ "${INTERFACE}" = "${CELL}" ] || [ "${INTERFACE}" = usbwan ]; then
