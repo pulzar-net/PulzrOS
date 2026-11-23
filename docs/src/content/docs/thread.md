@@ -12,8 +12,8 @@ mesh reported as Pulzar protocol v1.
 
 ## Radios
 
-A USB dongle running OpenThread's RCP firmware (Spinel over HDLC). Tested
-against OpenThread's simulated RCP in CI; on the bench:
+A USB dongle running OpenThread's RCP firmware (Spinel over HDLC). On the
+bench:
 
 | Dongle | Chip | Firmware |
 |---|---|---|
@@ -105,17 +105,6 @@ each router's route table and child table.
   child tables do not carry, is asked of the child once and kept by RLOC16
 
 The other border routers send only their own `bus` edge, with `complete` false, so they never prune the reporter's view.
-
-## Testing
-
-`.github/workflows/thread.yml`: `scripts/thread-sim.sh` builds otbr-agent at the
-commit the release's openthread-br pins (read from OpenWrt's recipe for
-`OPENWRT_VERSION`'s branch) and OpenThread's simulated RCP and FTD;
-`scripts/test-thread.py` runs two border routers in their own network and mount
-namespaces with the isolated backbone, forms, joins, commissions a device with
-its joining code, stops the device's parent border router while the device
-reports to the other, and checks it keeps reporting, the topology, that no
-output but `dataset` carries the key, and that the REST API is on loopback.
 
 ## Upstream
 
