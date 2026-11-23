@@ -217,7 +217,7 @@ export default function Lan() {
     <div className="fade-in">
       <Section title="LAN" icon={Cable}>
         <FactList>
-          <Fact label="Gateway" value={state.address} mono />
+          <Fact label="Gateway" value={[state.address, ...(state.addresses ?? [])].join(', ')} mono />
           {links.map((link) => (
             <Fact
               key={link.name}

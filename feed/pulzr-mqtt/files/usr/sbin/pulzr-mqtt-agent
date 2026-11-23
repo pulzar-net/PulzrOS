@@ -334,6 +334,13 @@ dispatch() {
             else
                 out="$(lan reserve "$(field mac)" "$(field ip)")"
             fi || { echo "${out}"; return 1; } ;;
+        # Another subnet on the LAN bridge, or with remove true, the end of one.
+        lan-address)
+            if [ "$(field remove)" = "true" ]; then
+                out="$(lan address remove "$(field address)")"
+            else
+                out="$(lan address add "$(field address)")"
+            fi || { echo "${out}"; return 1; } ;;
 
         # Last, and deliberately plain. A reboot takes the gateway away for a
         # couple of minutes; it is here because the alternative is a truck.

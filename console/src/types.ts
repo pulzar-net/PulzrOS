@@ -692,6 +692,8 @@ export interface LanStatus {
   address?: string;
   ports?: string[];
   links?: LanLink[];
+  /** The gateway's addresses on the bridge's other subnets, "10.0.0.2/24". */
+  addresses?: string[];
   clients?: LanClient[];
   forwards?: LanForward[];
   exposed?: LanExposed[];

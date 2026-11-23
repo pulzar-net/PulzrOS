@@ -104,6 +104,7 @@ pulzr-lan forward <ip> <port> <seconds>
 pulzr-lan unforward <tunnel port>
 pulzr-lan expose tcp|udp <port> <ip> [<client port>]
 pulzr-lan unexpose tcp|udp <port>
+pulzr-lan address add|remove <a.b.c.d/nn> another subnet on the bridge
 pulzr-lan links                           reload the uplinks' devices and addresses
 pulzr-lan scan                            scan the clients' management ports now
 ```
@@ -125,6 +126,7 @@ Over MQTT (`parkeze/gateway/<eui>/mgmt/request`, see `pulzr-mqtt-agent`):
 | `lan-reserve` | `mac`, `ip`, optional `name`; no `ip` releases it | `{mac, ip, name}` |
 | `lan-forward` | `ip`, `port`, `seconds` | `{port, ip, dport, expires}` |
 | `lan-unforward` | `port` | `{port, closed}` |
+| `lan-address` | `address` (`10.0.0.2/24`), optional `remove: true` | `{addresses}` |
 
 `lan` is not part of `all`: it grows with the number of devices, and `all` has
 to stay under the agent's 8KB answer.
@@ -134,6 +136,7 @@ to stay under the agent's 8KB answer.
 ```json
 {
   "configured": true, "address": "192.168.64.1", "ports": ["eth1", "eth2"],
+  "addresses": ["10.0.0.2/24"],
   "links": [{ "name": "eth1", "up": true, "speed": 100, "duplex": "full", "carrierChanges": 2 },
             { "name": "eth2", "up": false, "speed": null, "duplex": null, "carrierChanges": 0 }],
   "clients": [{
@@ -212,6 +215,23 @@ The gateway's own ports are never scanned. Every board's six-hourly report
 carries `listening`: the same six ports, for those something on the gateway
 listens on beyond loopback, read from the kernel's socket table
 (`pulzr-claim`). The console offers the gateway's Shell and Web UI by it.
+
+## Devices with static addresses
+
+A device set to a static address on another subnet, such as a camera at
+`10.0.0.112` from the factory, is on the bridge but nothing can reach it: the
+gateway has no address there. `pulzr-lan address add 10.0.0.2/24` gives it
+one, kept in `network.devlan_extra`, a second interface on `br-devlan`, so it
+survives reboots and upgrades. At most eight, from `/8` to `/30`, and none
+that overlaps the LAN, another of them, an uplink's or the tunnel's subnet,
+or the console, setup, USB or link-local networks.
+
+A device there is treated like any other client: the same zone, isolation,
+policy, cellular rules and counting, since every rule matches the bridge
+rather than a subnet. It can be reserved (the name resolves; no lease is
+served there), forwarded to and exposed. A subnet an exposed port points
+into cannot be removed until the port goes. The report lists them as
+`addresses`.
 
 ## The tunnel forward
 

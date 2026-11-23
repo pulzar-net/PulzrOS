@@ -15,6 +15,7 @@
 //   pulzr-lan links                          which devices are which uplink
 //   pulzr-lan seen <mac> <ip>                from a DHCP event
 //   pulzr-lan isolate                        port isolation on every member
+//   pulzr-lan address add|remove <a.b.c.d/nn>  another subnet on the bridge
 //   pulzr-lan scan                           which management ports each
 //                                              client answers on (nmap)
 //   pulzr-lan scan-service                   scan every so often (procd)
@@ -78,6 +79,23 @@
 // whatever the policy allows. REJECT, as the zone does: a client refused
 // fails at once rather than retrying into a link it may not use.
 //
+// ── MORE SUBNETS ───────────────────────────────────────────────────────────
+//
+// A device with a static address on another subnet (a camera set to
+// 10.0.0.112 at the factory) is on the bridge but unreachable: the gateway
+// has no address there. `address add 10.0.0.2/24` gives it one, as a second
+// netifd interface on br-devlan (devlan_extra, `list ipaddr` in CIDR), the
+// way the console's addresses share the uplink port. Not on network.devlan
+// itself: 25-pulzr-lan rebuilds that section on every upgrade, and every
+// reader of its ipaddr/netmask expects one address.
+//
+// Nothing else changes for those devices. Every rule here and in fw4's
+// devlan zone matches the bridge device, not a subnet, so the zone's policy,
+// isolation, the cellular rules and the counting hold for them as they do
+// for a leased client; clientIp() accepts their addresses, so a forward, a
+// reservation (the name resolves; dnsmasq leases nothing outside its range)
+// and an exposed port reach them. No DHCP is served there.
+//
 // ── THE PORT SCAN ──────────────────────────────────────────────────────────
 //
 // Which management ports each client answers on: SSH, telnet and web, so the
@@ -126,6 +144,11 @@ const STATE = '/etc/pulzr/lan';
 const JOURNAL = STATE + '/forwards.log';
 const SEEN = STATE + '/seen.json';
 const WIRE_ONLY_MAX = 8;
+const EXTRA = 'devlan_extra';
+const MAX_EXTRA = 8;
+// Subnets another subnet on the bridge may not touch even while they are
+// down: the console's, link-local, the setup AP's and the USB port's.
+const FIXED_NETS = ['192.168.61.1/24', '169.254.0.1/16', '192.168.62.1/24', '192.168.63.1/24'];
 const JOURNAL_KEEP = 200;
 const JOURNAL_REPORT = 20;
 const LEASES = '/tmp/dhcp.leases';
@@ -205,12 +228,35 @@ let lanNet = () => {
     return { addr, mask, net: addr & mask, bcast: (addr & mask) | (~mask & 0xffffffff) };
 };
 
-// A client address: inside the LAN, and neither the gateway, the network
-// nor the broadcast address.
+// "10.0.0.2/24" as lanNet() has it, or null. A /31 or /32 has no room for a
+// client, and nothing wider than /8 belongs on one bridge.
+let cidr = (text) => {
+    let m = match(text ?? '', /^([0-9.]+)\/([0-9]{1,2})$/);
+    let addr = m ? ipToInt(m[1]) : null, bits = m ? int(m[2]) : 0;
+    if (addr == null || bits < 8 || bits > 30) return null;
+    let mask = (0xffffffff << (32 - bits)) & 0xffffffff;
+    let net = addr & mask, bcast = net | (~mask & 0xffffffff);
+    if (addr == net || addr == bcast) return null;
+    return { addr, mask, bits, net, bcast,
+             text: sprintf('%d.%d.%d.%d/%d', (addr >> 24) & 255, (addr >> 16) & 255, (addr >> 8) & 255, addr & 255, bits) };
+};
+
+let asList = (v) => type(v) == 'array' ? v : (v == null ? [] : [v]);
+
+// The bridge's other subnets, as the gateway's own address on each.
+let extraNets = () => filter(map(asList(cursor.get('network', EXTRA, 'ipaddr')), cidr), (n) => n);
+
+// A client address: inside the LAN or one of its other subnets, and neither
+// one of the gateway's addresses, a network nor a broadcast address.
 let clientIp = (ip) => {
     let n = ipToInt(ip), lan = lanNet();
     if (n == null || !lan) return false;
-    return (n & lan.mask) == lan.net && n != lan.addr && n != lan.net && n != lan.bcast;
+    let nets = [lan, ...extraNets()];
+    for (let x in nets)
+        if (n == x.addr) return false;
+    for (let x in nets)
+        if ((n & x.mask) == x.net && n != x.net && n != x.bcast) return true;
+    return false;
 };
 
 let bridge = () => cursor.get('network', 'devlan_dev', 'name') ?? 'br-devlan';
@@ -697,6 +743,7 @@ let status = () => {
         // Where exposed ports answer now: the wired and WiFi uplinks'
         // addresses. A private one is behind a site router, which has to
         // forward to it as well.
+        addresses: map(extraNets(), (n) => n.text),
         exposedOn: map(links().expose, (e) => ({ uplink: e.uplink, address: e.address })),
         journal: journalTail(),
         scannedAt: readScan().at ?? null,
@@ -722,6 +769,44 @@ let keepExposed = (was, now) => {
         if (e.ip == was) die(sprintf('%s has exposed ports; remove them first', was), 3);
 };
 
+// Whether two subnets share an address.
+let overlap = (a, b) => {
+    let mask = a.mask & b.mask;
+    return (a.net & mask) == (b.net & mask);
+};
+
+// What a new subnet on the bridge may not overlap: the LAN, the others, the
+// fixed networks and every subnet the gateway holds now (uplinks, tunnel).
+let refuseExtra = (n) => {
+    if (overlap(n, lanNet())) return 'overlaps the LAN';
+    for (let x in extraNets())
+        if (overlap(n, x)) return sprintf('overlaps %s', x.text);
+    for (let f in FIXED_NETS)
+        if (overlap(n, cidr(f))) return sprintf('overlaps %s', f);
+    let dump = captureJson(['ubus', 'call', 'network.interface', 'dump']);
+    for (let ifc in dump?.interface ?? []) {
+        if (ifc.interface == 'devlan' || ifc.interface == EXTRA || ifc.interface == 'loopback') continue;
+        for (let a in ifc['ipv4-address'] ?? []) {
+            let x = cidr(sprintf('%s/%d', a.address, a.mask));
+            if (x && overlap(n, x)) return sprintf('overlaps %s (%s)', x.text, ifc.interface);
+        }
+    }
+    return null;
+};
+
+let saveExtra = (texts) => {
+    if (length(texts)) {
+        cursor.set('network', EXTRA, 'interface');
+        cursor.set('network', EXTRA, 'device', bridge());
+        cursor.set('network', EXTRA, 'proto', 'static');
+        cursor.set('network', EXTRA, 'ipaddr', texts);
+    } else {
+        cursor.delete('network', EXTRA);
+    }
+    cursor.commit('network');
+    system(['ubus', 'call', 'network', 'reload']);
+};
+
 // ── commands ──────────────────────────────────────────────────────────────
 
 let commands = {
@@ -734,6 +819,36 @@ let commands = {
     },
 
     isolate: () => isolate(),
+
+    // Another subnet on the bridge, for devices with static addresses.
+    address: (op, text) => {
+        lanNet() || die('no LAN on this gateway');
+        let n = cidr(text) ?? die('an address and prefix, like 10.0.0.2/24', 2);
+        let have = extraNets();
+        if (op == 'add') {
+            if (length(filter(have, (x) => x.text == n.text))) {
+                printf('%J\n', { addresses: map(have, (x) => x.text) });
+                return;
+            }
+            (length(have) < MAX_EXTRA) || die(sprintf('at most %d other subnets', MAX_EXTRA), 3);
+            let why = refuseExtra(n);
+            why && die(sprintf('%s %s', n.text, why), 3);
+            push(have, n);
+        } else if (op == 'remove') {
+            let kept = filter(have, (x) => x.text != n.text);
+            (length(kept) < length(have)) || die(sprintf('%s is not on the LAN', n.text), 3);
+            // An exposed port into it would point at nothing.
+            for (let e in exposed())
+                if ((ipToInt(e.ip) & n.mask) == n.net) die(sprintf('%s has exposed ports; remove them first', e.ip), 3);
+            have = kept;
+        } else {
+            die('address add|remove <a.b.c.d/nn>', 2);
+        }
+        let texts = map(have, (x) => x.text);
+        saveExtra(texts);
+        log(sprintf('address %s %s', op, n.text));
+        printf('%J\n', { addresses: texts });
+    },
 
     // An uplink came up, went down or changed address (hotplug).
     links: () => {
@@ -927,5 +1042,5 @@ let commands = {
 };
 
 let cmd = commands[ARGV[0] ?? 'status'];
-cmd ?? die('usage: pulzr-lan {apply|status|policy|cellular|reserve|unreserve|forward|unforward|expose|unexpose|links|seen|isolate|scan|scan-service}', 2);
+cmd ?? die('usage: pulzr-lan {apply|status|policy|cellular|reserve|unreserve|forward|unforward|expose|unexpose|address|links|seen|isolate|scan|scan-service}', 2);
 call(cmd, null, null, ...slice(ARGV, 1));

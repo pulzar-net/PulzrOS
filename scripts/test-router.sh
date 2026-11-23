@@ -516,4 +516,33 @@ lan scan >/dev/null
 check "scan: telnet appearing is pushed" '2 [22,23]' \
     "$(wc -l < "${T}/pushes" | tr -d ' ') $(lan status | jq -c '[.clients[] | select(.mac == "02:80:e1:9c:0f:3f")][0].services')"
 
+# ── lan: another subnet on the bridge ───────────────────────────────────────
+#
+# A camera with a static 10.20.0.112: the gateway takes 10.20.0.2/24 on
+# br-devlan, and the camera can then be reserved, forwarded to and exposed.
+refuse_lan "a subnet overlapping the LAN" address add 192.168.64.200/24
+refuse_lan "a subnet overlapping an uplink" address add 10.0.0.2/24
+refuse_lan "a subnet overlapping the console's" address add 192.168.61.5/24
+refuse_lan "a /32" address add 10.20.0.2/32
+refuse_lan "a network address" address add 10.20.0.0/24
+refuse_lan "a forward off every subnet" forward 10.20.0.112 80 600
+: > "${T}/events"
+lan address add 10.20.0.2/24 >/dev/null
+check "address: devlan_extra on the bridge" '["br-devlan","static",["10.20.0.2/24"]]' \
+    "$(jq -c '.network.devlan_extra | [.device, .proto, .ipaddr]' "${UCI_JSON}")"
+check "address: netifd reloaded" '1' "$(grep -cx reload "${T}/events")"
+check "address: adding it again changes nothing" '{"addresses":["10.20.0.2/24"]}' "$(lan address add 10.20.0.2/24 | jq -c .)"
+refuse_lan "a second subnet overlapping the first" address add 10.20.0.9/16
+check "status: the other subnets" '["10.20.0.2/24"]' "$(lan status | jq -c .addresses)"
+refuse_lan "the gateway's own address there" reserve 02:00:00:00:00:01 10.20.0.2
+check "a forward to a client there" '10.20.0.112' "$(lan forward 10.20.0.112 80 600 | jq -r .ip)"
+lan reserve f0:00:06:10:91:6b 10.20.0.112 cam >/dev/null
+lan expose tcp 8554 10.20.0.112 554 >/dev/null
+check "expose: a client there" '10.20.0.112' "$(jq -r '.pulzr.expose_tcp_8554.ip' "${UCI_JSON}")"
+refuse_lan "removing a subnet an exposed port points into" address remove 10.20.0.2/24
+lan unexpose tcp 8554 >/dev/null
+lan address remove 10.20.0.2/24 >/dev/null
+check "address: the last one removed takes the interface" 'null' "$(jq -c '.network.devlan_extra' "${UCI_JSON}")"
+refuse_lan "removing one that is not there" address remove 10.20.0.2/24
+
 exit "${fail}"
