@@ -1,0 +1,13 @@
+#!/bin/sh
+#
+# Whether IP requests can be made, for pulzr-addon's report.
+#
+#   exit 0  ok: running for the LAN
+#   exit 2  idle: no LAN on this gateway, or not adopted yet
+#   exit 1  failing: there is a LAN and the module is not running
+#
+# Reported, never acted on. The same test the init script starts on.
+ip -4 -o addr show dev br-devlan 2>/dev/null | grep -q ' inet ' || exit 2
+[ "$(uci -q get pulzr.adoption.state)" = adopted ] || exit 2
+/etc/init.d/pulzr-edge-ip running && exit 0
+exit 1

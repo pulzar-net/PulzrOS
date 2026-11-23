@@ -7,7 +7,8 @@ An add-on is a feed package with an `addon` file: something a gateway runs
 that is not in its image, installed on request from a signed repository
 built for exactly the release the gateway runs: pulzr-modbus (Modbus),
 pulzr-zigbee (Zigbee), pulzr-zwave (Z-Wave), pulzr-matter (Matter),
-pulzr-thread (Thread), pulzr-ble (Bluetooth) and pulzr-cellular (Cellular).
+pulzr-thread (Thread), pulzr-ble (Bluetooth), pulzr-ip (IP devices) and
+pulzr-cellular (Cellular).
 The RAK7289CV2 carries pulzr-modbus in its image instead
 (`PULZR_ADDONS_BUILTIN`), because its power board is already on a Modbus
 bus, and the RAKs with a soldered LTE modem carry pulzr-cellular.
@@ -27,10 +28,11 @@ installer's 2 MB to spare, while one module's binary is a few MB.
 | pulzr-zwave | `zwave` | `pulzr-edge-zwave` |
 | pulzr-matter | `matter` | `pulzr-edge-matter` |
 | pulzr-ble | `ble` | `pulzr-edge-ble` (little-endian only: not on big-endian mips) |
+| pulzr-ip | `ip` | `pulzr-edge-ip` (requests to LAN devices for their codecs) |
 | pulzr-thread | `thread` | OpenWrt's `openthread-br` |
 | pulzr-cellular | `cellular` | OpenWrt's `modemmanager`, `usb-modeswitch`, `usbmuxd` and the modem kmods |
 
-The first five are pulzr-edge built with that module's feature alone (the SDK recipe
+The first five, and pulzr-ip, are pulzr-edge built with that module's feature alone (the SDK recipe
 `sdk/packages/pulzr-edge`, which `ADDON_UPSTREAM` names). A radio runs where
 its protocol's binary is installed: `pulzr-radios runnable` lists the radios
 whose module is there and pulzr-edge-radios (in pulzr-probe, every image)
@@ -42,6 +44,16 @@ is kept by pulzr-probe. `scripts/check-addons.sh` refuses an add-on with other
 than one capability. A gateway that wanted pulzr-edge when it was the Modbus
 add-on wants pulzr-modbus after the upgrade
 (`/etc/uci-defaults/41-pulzr-addons-split`), so its buses keep running.
+
+pulzr-ip is what a LAN device that speaks its own protocol over IP needs, an
+IP camera's settings API say. Nothing on the gateway knows the device: its
+device type's codec runs in Pulzar and turns each command into `ip.http`,
+`ip.tcp` or `ip.udp` requests (pulzr-protocol, "IP requests"), and
+pulzr-edge-ip makes them against the address Pulzar names, only on one of the
+subnets the LAN bridge holds (`[ip] lan`, generated at every start from
+`br-devlan`, so a subnet added for a device with a static address counts),
+never the gateway's own; no redirects, 30 s and 48 KiB a request, nothing of
+either in the log. It restarts when the LAN's addresses change.
 
 pulzr-cellular is offered, not just listed: a modem plugged into a gateway
 that can take it is reported with its radios (`radios.modems`), and Pulzar

@@ -9,12 +9,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=pulzr-edge
-PKG_VERSION:=0.5.0
+PKG_VERSION:=0.5.1
 PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://codeload.github.com/pulzar-net/pulzr-edge/tar.gz/v$(PKG_VERSION)?
-PKG_HASH:=7e24f2fa4635a8ee337d56f694f1f817af655886de8ee0b2c2a9c199cfaa6581
+PKG_HASH:=af3ebc5d52186fa23d0c6401bfce68e3868dc4e850229c02a480e8860a279469
 
 PKG_MAINTAINER:=Joseph Telaak <joseph@pulzr.net>
 PKG_LICENSE:=Apache-2.0
@@ -51,6 +51,8 @@ define Build/Compile
 	mv -f $(PKG_INSTALL_DIR)/bin/pulzr-edge $(PKG_INSTALL_DIR)/bin/pulzr-edge-zwave
 	$(call Build/Compile/Cargo,crates/pulzr-edge,--force --no-default-features --features matter)
 	mv -f $(PKG_INSTALL_DIR)/bin/pulzr-edge $(PKG_INSTALL_DIR)/bin/pulzr-edge-matter
+	$(call Build/Compile/Cargo,crates/pulzr-edge,--force --no-default-features --features ip)
+	mv -f $(PKG_INSTALL_DIR)/bin/pulzr-edge $(PKG_INSTALL_DIR)/bin/pulzr-edge-ip
 	$(if $(NO_BLE),,$(call Build/Compile/Cargo,crates/pulzr-edge,--force --no-default-features --features ble))
 	$(if $(NO_BLE),true,mv -f $(PKG_INSTALL_DIR)/bin/pulzr-edge $(PKG_INSTALL_DIR)/bin/pulzr-edge-ble)
 	$(call Build/Compile/Cargo,crates/pulzr-edge,--force --no-default-features --features modbus)
@@ -62,6 +64,7 @@ define Package/pulzr-edge-bin/install
 	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/bin/pulzr-edge-zigbee $(1)/usr/sbin/pulzr-edge-zigbee
 	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/bin/pulzr-edge-zwave $(1)/usr/sbin/pulzr-edge-zwave
 	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/bin/pulzr-edge-matter $(1)/usr/sbin/pulzr-edge-matter
+	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/bin/pulzr-edge-ip $(1)/usr/sbin/pulzr-edge-ip
 	$(if $(NO_BLE),,$(INSTALL_BIN) $(PKG_INSTALL_DIR)/bin/pulzr-edge-ble $(1)/usr/sbin/pulzr-edge-ble)
 	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/bin/pulzr-probe $(1)/usr/sbin/pulzr-probe
 endef

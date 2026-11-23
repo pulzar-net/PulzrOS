@@ -135,7 +135,7 @@ grep -v '^#' "${HERE}/built" | while IFS= read -r name; do
   cp "${apk}" "${OUT}/${arch}/"
 done
 # pulzr-edge's binaries, one per module, for the add-ons' and pulzr-probe's fetch.
-for bin in pulzr-edge pulzr-edge-zigbee pulzr-edge-zwave pulzr-edge-matter pulzr-edge-ble pulzr-probe; do
+for bin in pulzr-edge pulzr-edge-zigbee pulzr-edge-zwave pulzr-edge-matter pulzr-edge-ip pulzr-edge-ble pulzr-probe; do
   # Bluetooth is little-endian only (bt-hci): no pulzr-edge-ble on mips.
   case "${bin}:${arch}" in pulzr-edge-ble:mips_*) continue ;; esac
   found="$(find build_dir -path "*pulzr-edge-bin/usr/sbin/${bin}" -type f | head -n1)"

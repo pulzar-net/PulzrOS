@@ -224,7 +224,7 @@ STAGE="${SANDBOX}/stage"
 # stub binaries stand in for them. <package>:<the binary its fetch takes>.
 SDK_STUB="${SANDBOX}/sdk"
 for pair in pulzr-modbus:pulzr-edge pulzr-zigbee:pulzr-edge-zigbee pulzr-zwave:pulzr-edge-zwave \
-            pulzr-matter:pulzr-edge-matter pulzr-ble:pulzr-edge-ble pulzr-probe:pulzr-probe; do
+            pulzr-matter:pulzr-edge-matter pulzr-ble:pulzr-edge-ble pulzr-ip:pulzr-edge-ip pulzr-probe:pulzr-probe; do
     pkg="${pair%%:*}" bin="${pair#*:}"
     while read -r arch _; do
         case "${arch}" in ''|'#'*) continue ;; esac
@@ -239,7 +239,7 @@ PULZR_SDK_OUT="${SDK_STUB}" bash "${ROOT_DIR}/scripts/build-feed.sh" "${ROOT_DIR
 # sysupgrade to PulzrOS has already dropped the image's old packages
 # (parkeze-ble was in the Pi images; pulzr-ble is an add-on). Listed by hand,
 # so a renamed package cannot drop out of this check by accident.
-NO_OLD_NAME="pulzr-probe pulzr-thread pulzr-modbus pulzr-zigbee pulzr-zwave pulzr-matter pulzr-ble pulzr-drivers"
+NO_OLD_NAME="pulzr-probe pulzr-thread pulzr-modbus pulzr-zigbee pulzr-zwave pulzr-matter pulzr-ble pulzr-ip"
 for dir in "${ROOT_DIR}"/feed/pulzr-*/; do
     n="$(basename "${dir}")"; old="parkeze-${n#pulzr-}"
     case " ${NO_OLD_NAME} " in *" ${n} "*) continue ;; esac

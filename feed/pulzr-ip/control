@@ -1,0 +1,10 @@
+Package: pulzr-ip
+Maintainer: Joseph Telaak <joseph@pulzr.net>
+License: Apache-2.0
+Architecture: @ARCH@
+Provides: pulzr-cap-ip
+Description: Requests to devices on the gateway's LAN for their codecs, on pulzr-edge.
+ A device that speaks its own protocol over IP (an IP camera's settings API)
+ is driven by its device type's codec in Pulzar, which turns each command into
+ HTTP, TCP or UDP requests; this makes them, against that device's address on
+ the LAN and nothing else. Nothing device-specific is on the gateway.

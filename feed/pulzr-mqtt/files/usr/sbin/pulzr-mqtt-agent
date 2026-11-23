@@ -137,12 +137,6 @@ op_uplinks()   { /usr/sbin/pulzr-uplinks status 2>/dev/null || echo '{}'; }
 op_ports()     { /usr/sbin/pulzr-ports status 2>/dev/null || echo '{}'; }
 op_speedtest() { /usr/sbin/pulzr-speedtest brief 2>/dev/null || echo '{"error":"this gateway does not run speed tests"}'; }
 op_addons()    { /usr/sbin/pulzr-addon status --brief 2>/dev/null || echo '{"error":"this gateway has no add-ons"}'; }
-# Pulzar changed a device driver this gateway runs, or one of its devices:
-# pull them now rather than before the next command (pulzr-drivers).
-op_drivers() {
-    [ -x /usr/sbin/pulzr-drivers ] || { echo '{"error":"this gateway runs no drivers"}'; return 0; }
-    /usr/sbin/pulzr-drivers sync 2>/dev/null
-}
 # What pulzr-probe last found, not a new scan: hotplug keeps the file current,
 # and a scan may probe a port, which is not what a read should do.
 op_radios()    { /usr/sbin/pulzr-radios list 2>/dev/null || echo '{"detected":[],"modems":[]}'; }
@@ -274,7 +268,6 @@ dispatch() {
         # request at a time, so installs and removals go through the console
         # API over gateway-link, where a person's session names who asked.
         addons)    out="$(bounded 10 op_addons)" ;;
-        drivers)   out="$(bounded 45 op_drivers)" ;;
         radios)    out="$(bounded 5 op_radios)" ;;
 
         # A person's decisions about a radio, from the gateway page: Identify
