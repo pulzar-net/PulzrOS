@@ -198,6 +198,14 @@ stage="$(mktemp -d)"
 log "Adding the target's packages and kmods to the ImageBuilder"
 tar --use-compress-program=unzstd -xf "${ib}" -C "${stage}"
 cp "${bin}"/packages/*.apk "${stage}/${ibname}/packages/"
+# And the busybox built above with its login banner compiled out. It is a
+# base-feed package, so it lands in bin/packages/<arch>/base/, not with the
+# target's; left there, the ImageBuilder installed the release's busybox from
+# the arch feed, and every GL-SFT1200 image since the quiet busybox failed
+# build.sh's check that it carries ours.
+quiet="$(ls bin/packages/*/base/busybox-[0-9]*.apk 2>/dev/null | head -n1)"
+[ -n "${quiet}" ] || die "the build made no busybox package in bin/packages/*/base"
+cp "${quiet}" "${stage}/${ibname}/packages/"
 sed -i "\|/targets/${TARGET}/${SUBTARGET}/|d" "${stage}/${ibname}/repositories"
 ( cd "${stage}" && tar -cf - "${ibname}" ) | zstd -qf -T0 -19 -o "${ib}"
 rm -rf "${stage}"
