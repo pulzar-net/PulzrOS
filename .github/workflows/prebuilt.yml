@@ -31,6 +31,7 @@ on:
       - 'boards/*/openwrt/**'
       - 'scripts/device-imagebuilder.sh'
       - 'scripts/device-imagebuilder-graft.sh'
+      - 'scripts/busybox-quiet-config.sh'
       - '.github/workflows/prebuilt.yml'
   # build.yml dispatches this for a build it finds missing (an evicted cache,
   # or a push that changed one before this ran), for the boards that wait.
