@@ -124,6 +124,11 @@ jobs:
           path: .build/sdk
           key: ${{ steps.key.outputs.key }}
 
+      - name: Cache size
+        if: steps.cached.outputs.cache-hit != 'true'
+        run: |
+          echo "${{ steps.key.outputs.key }}: $(du -sh .build/sdk | cut -f1)" >> "$GITHUB_STEP_SUMMARY"
+
       # The boards that waited on this build get it now, not on the next push.
       - name: Build the boards that waited
         if: steps.cached.outputs.cache-hit != 'true'
@@ -165,36 +170,58 @@ jobs:
             git libncurses-dev libssl-dev python3-dev python3-setuptools rsync swig \
             unzip zlib1g-dev file wget zstd
 
-      # Source tarballs only; the build itself does not fit a cache. Saved even
-      # when the build fails, so a retry does not download them again.
+      # OpenWrt's source tarballs, one cache per OpenWrt release for every
+      # board: they are the same sources, and one per board (1.2-1.4 GB each)
+      # filled the repository's 10 GB, so saving a build evicted the others
+      # and everything went cold. Linked in as the tree's dl/, which the
+      # device scripts keep across a fresh clone. The first board to finish
+      # saves it; a board whose sources it lacks downloads those, minutes
+      # against the hours of the build.
+      - id: release
+        if: steps.cached.outputs.cache-hit != 'true'
+        run: echo "openwrt=$(sed -n 's/^OPENWRT_VERSION="\(.*\)"/\1/p' boards/common/board.conf)" >> "$GITHUB_OUTPUT"
+
       - id: dl
         if: steps.cached.outputs.cache-hit != 'true'
         uses: actions/cache/restore@v4
         with:
-          path: |
-            .build/device/${{ matrix.device }}/openwrt/dl
-            .build/device/${{ matrix.device }}/grafts
-          key: device-dl-${{ matrix.device }}-${{ matrix.deviceKey }}
-          restore-keys: device-dl-${{ matrix.device }}-
+          path: .build/openwrt-dl
+          key: openwrt-dl-${{ steps.release.outputs.openwrt }}
+
+      - name: Link the shared sources
+        if: steps.cached.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p .build/openwrt-dl ".build/device/${{ matrix.device }}/openwrt"
+          rm -rf ".build/device/${{ matrix.device }}/openwrt/dl"
+          ln -s "${GITHUB_WORKSPACE}/.build/openwrt-dl" ".build/device/${{ matrix.device }}/openwrt/dl"
 
       - name: Build
         id: build
         if: steps.cached.outputs.cache-hit != 'true'
         run: scripts/device-imagebuilder.sh "${{ matrix.device }}" ".build/device-ib/${{ matrix.device }}"
 
+      # Saved even when the build fails or is cancelled, so a retry does not
+      # download them again. A cache key is written once: if another board
+      # saved it first, this is a no-op.
       - uses: actions/cache/save@v4
         if: always() && steps.cached.outputs.cache-hit != 'true' && steps.dl.outputs.cache-hit != 'true'
         with:
-          path: |
-            .build/device/${{ matrix.device }}/openwrt/dl
-            .build/device/${{ matrix.device }}/grafts
-          key: device-dl-${{ matrix.device }}-${{ matrix.deviceKey }}
+          path: .build/openwrt-dl
+          key: openwrt-dl-${{ steps.release.outputs.openwrt }}
 
       - uses: actions/cache/save@v4
         if: steps.build.outcome == 'success'
         with:
           path: .build/device-ib/${{ matrix.device }}
           key: device-ib-${{ matrix.device }}-${{ matrix.deviceKey }}
+
+      - name: Cache size
+        if: always() && steps.cached.outputs.cache-hit != 'true'
+        run: |
+          {
+            [ -d ".build/device-ib/${{ matrix.device }}" ] && echo "device-ib-${{ matrix.device }}-${{ matrix.deviceKey }}: $(du -sh ".build/device-ib/${{ matrix.device }}" | cut -f1)"
+            echo "openwrt-dl-${{ steps.release.outputs.openwrt }}: $(du -sh .build/openwrt-dl/ | cut -f1)"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build the boards that waited
         if: steps.build.outcome == 'success'

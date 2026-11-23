@@ -1,0 +1,98 @@
+# Keeps the Actions cache inside the repository's 10 GB.
+#
+# Past 10 GB GitHub evicts the least recently used entries, whatever they are.
+# On 23 Nov 2026 the cache held 9.7 GB, mostly entries no build could restore
+# any more (keys from before a change), and every new SDK or device build that
+# saved evicted the ones that mattered, so every build went cold. So after
+# every prebuilt run, and daily, this deletes what no current key can restore:
+#
+#   lora-*, device-ib-*, imagebuilder-*, openwrt-dl-*   anything but the keys
+#                                    this tree computes (sdk/key, device_key,
+#                                    the ImageBuilders, OPENWRT_VERSION)
+#   device-dl-*                      the per-board sources, replaced by one
+#                                    openwrt-dl per OpenWrt release
+#   anything else (node, host-ucode, ...)   the newest three of each kind
+#
+# and writes what is left, with sizes, to the run's summary.
+
+name: cache-cleanup
+
+on:
+  workflow_run:
+    workflows: [prebuilt, build]
+    types: [completed]
+    branches: [main]
+  schedule:
+    - cron: '17 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: cache-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    name: Clean up
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Delete what no build can restore
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          list="$(./build.sh --list-json)"
+          openwrt="$(sed -n 's/^OPENWRT_VERSION="\(.*\)"/\1/p' boards/common/board.conf)"
+          {
+            for t in $(sdk/targets); do sdk/key "${t}"; done
+            jq -r '.[] | select(.device != "") | "device-ib-\(.device)-\(.deviceKey)"' <<<"${list}"
+            jq -r '.[] | "imagebuilder-\(.imagebuilder)"' <<<"${list}"
+            echo "openwrt-dl-${openwrt}"
+          } | sort -u > current.txt
+
+          gh cache list -R "${GITHUB_REPOSITORY}" -L 500 --json id,key,sizeInBytes,lastAccessedAt \
+            > caches.json
+          jq -r '.[] | "\(.id)\t\(.key)\t\(.sizeInBytes)\t\(.lastAccessedAt)"' caches.json > caches.tsv
+
+          : > delete.tsv
+          # Computed keys: only the current ones stay.
+          while IFS=$'\t' read -r id key size _; do
+            case "${key}" in
+              device-dl-*) echo -e "${id}\t${key}\t${size}" >> delete.tsv ;;
+              lora-*|device-ib-*|imagebuilder-*|openwrt-dl-*)
+                grep -qxF "${key}" current.txt || echo -e "${id}\t${key}\t${size}" >> delete.tsv ;;
+            esac
+          done < caches.tsv
+          # Everything else: the newest three of each kind, the kind being the
+          # key without its trailing hash or number.
+          grep -v -E $'\t(device-dl|lora|device-ib|imagebuilder|openwrt-dl)-' caches.tsv \
+            | awk -F'\t' '{ k = $2; sub(/-[0-9a-fA-F]{6,}$/, "", k); sub(/-[0-9]+$/, "", k); print k "\t" $0 }' \
+            | sort -t$'\t' -k1,1 -k5,5r \
+            | awk -F'\t' '{ n[$1]++; if (n[$1] > 3) print $2 "\t" $3 "\t" $4 }' >> delete.tsv
+
+          freed=0
+          while IFS=$'\t' read -r id key size; do
+            [ -n "${id}" ] || continue
+            if gh cache delete "${id}" -R "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+              echo "deleted ${key} ($((size / 1048576)) MB)"
+              freed=$((freed + size))
+            fi
+          done < delete.tsv
+
+          left="$(gh cache list -R "${GITHUB_REPOSITORY}" -L 500 --json key,sizeInBytes)"
+          {
+            echo "### Actions cache"
+            echo
+            echo "Freed $((freed / 1048576)) MB. $(jq '[.[].sizeInBytes] | add // 0 | . / 1048576 | floor' <<<"${left}") MB of 10240 MB in use."
+            echo
+            echo '| Key | MB |'
+            echo '|---|---|'
+            jq -r 'sort_by(-.sizeInBytes)[] | "| `\(.key)` | \(.sizeInBytes / 1048576 | floor) |"' <<<"${left}"
+          } >> "$GITHUB_STEP_SUMMARY"
