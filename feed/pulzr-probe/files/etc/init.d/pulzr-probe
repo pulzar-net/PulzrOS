@@ -7,7 +7,7 @@
 START=95
 
 boot() {
-    ( /usr/sbin/pulzr-radios scan --quiet >/dev/null 2>&1 & )
+    ( /usr/sbin/pulzr-radios scan --quiet --boot >/dev/null 2>&1 & )
 }
 
 start() {

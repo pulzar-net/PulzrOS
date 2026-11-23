@@ -2,8 +2,11 @@
 #
 # The radios plugged into this gateway, around pulzr-probe.
 #
-#   pulzr-radios scan [--quiet]       scan now; unless --quiet, tell Pulzr
-#                                     Cloud when the list changed
+#   pulzr-radios scan [--quiet] [--boot]
+#                                     scan now; unless --quiet, tell Pulzr
+#                                     Cloud when the list changed; --boot
+#                                     also reads the board's SPI concentrator
+#                                     slot
 #   pulzr-radios hotplug              scan once hotplug has settled (background)
 #   pulzr-radios facts                {"detected":[...],"modems":[...],"networks":[...]}
 #                                     for the claim report, or null when there
@@ -71,6 +74,27 @@ digest() {
     cat "${REPORT}" "${MODEMS}" 2>/dev/null | md5sum | cut -d' ' -f1
 }
 
+# LoRaWAN concentrators. Once pulzr-lorawan is installed it owns them: its
+# concentratord resets them and talks to them, and a probe in the middle of
+# that would break it, so pulzr-probe names them and asks nothing (--claimed).
+# Before then, a kit board's SPI slot (a Pi's HAT) is read on the boot scan
+# alone: SPI has no hotplug, and the read pulses the module's reset. The lines
+# are the board's (PULZR_SX130X_*), the ones its most common HAT uses, never
+# a sweep. A board whose slots are fixed carries the add-on in its image.
+lora_args() {
+    if [ -e "${ADDON_HEALTH:-/usr/libexec/pulzr/addon-health}/pulzr-lorawan" ]; then
+        echo "--claimed lorawan"
+        return 0
+    fi
+    [ "$1" = 1 ] || return 0
+    (
+        . "${PULZR_BOARD_CONF:-/etc/pulzr/board.conf}"
+        case " ${PULZR_CONCENTRATOR_SLOTS:-} " in *" auto "*) ;; *) exit 0 ;; esac
+        [ -n "${PULZR_SPI_DEV:-}" ] && [ -c "${PULZR_SPI_DEV}" ] || exit 0
+        echo "--gpiochip /dev/${PULZR_GPIOCHIP:-gpiochip0} --spi ${PULZR_SPI_DEV}:${PULZR_SX130X_RESET_GPIO:--}:${PULZR_SX130X_POWER_EN_GPIO:--}"
+    )
+}
+
 modems() {
     local out
     out="$(pulzr-timeout 10 "${USB_MODEMS}" 2>/dev/null)"
@@ -79,11 +103,16 @@ modems() {
 }
 
 scan() {
-    local quiet="$1" before after
+    local quiet="" boot=0 before after arg
+    for arg in "$@"; do
+        case "${arg}" in --quiet) quiet=--quiet ;; --boot) boot=1 ;; esac
+    done
     mkdir -p "${RUN}"
     mdns
     before="$(digest)"
-    pulzr-timeout 60 pulzr-probe --report "${REPORT}" --lan "${MDNS}" >/dev/null || { log "pulzr-probe failed"; return 1; }
+    # shellcheck disable=SC2046  # the words are pulzr-probe's options
+    pulzr-timeout 60 pulzr-probe --report "${REPORT}" --lan "${MDNS}" $(lora_args "${boot}") >/dev/null \
+        || { log "pulzr-probe failed"; return 1; }
     modems
     after="$(digest)"
     [ "${before}" = "${after}" ] && return 0
@@ -248,14 +277,14 @@ valid_id() {
 }
 
 case "$1" in
-    scan) scan "$2" ;;
+    scan) shift; scan "$@" ;;
     hotplug) hotplug ;;
     facts) facts ;;
     list) l="$(listed)" && printf '%s}\n' "${l}" || echo '{"detected":[],"modems":[]}' ;;
     identify)
         valid_id "$2" || { echo "not a radio id" >&2; exit 1; }
         log "identify ${2}"
-        out="$(pulzr-timeout 60 pulzr-probe --report "${REPORT}" --lan "${MDNS}" identify "$2" 2>&1)" \
+        out="$(pulzr-timeout 60 pulzr-probe --report "${REPORT}" --lan "${MDNS}" $(lora_args 0) identify "$2" 2>&1)" \
             || { echo "${out}" | tail -n1 >&2; exit 1; }
         tell
         "$0" list
@@ -264,7 +293,7 @@ case "$1" in
         valid_id "$2" || { echo "not a radio id" >&2; exit 1; }
         case "$3" in modbus|none) ;; *) echo "assign takes modbus or none" >&2; exit 1 ;; esac
         log "assign ${2} ${3}"
-        out="$(pulzr-probe --report "${REPORT}" --lan "${MDNS}" assign "$2" "$3" 2>&1)" \
+        out="$(pulzr-probe --report "${REPORT}" --lan "${MDNS}" $(lora_args 0) assign "$2" "$3" 2>&1)" \
             || { echo "${out}" | tail -n1 >&2; exit 1; }
         tell
         "$0" list
@@ -293,5 +322,5 @@ case "$1" in
         # the platform asks for one when it finds its copy old.
         pulzr-claim radio-backup "$2" "${f}" && rm -f "${f}"
         ;;
-    *) echo "usage: pulzr-radios {scan [--quiet]|hotplug|facts|list|identify <id>|assign <id> modbus|none|use <id> zigbee|zwave|release <id>|backup <id>}" >&2; exit 1 ;;
+    *) echo "usage: pulzr-radios {scan [--quiet] [--boot]|hotplug|facts|list|identify <id>|assign <id> modbus|none|use <id> zigbee|zwave|release <id>|backup <id>}" >&2; exit 1 ;;
 esac

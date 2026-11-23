@@ -83,8 +83,8 @@ Board facts live in `board.conf`, regional facts in the region plan. Keeping the
 three apart is what lets a Pi 3 + WM1302 in the US and a RAK7268 in the EU share
 every line of code.
 
-If the part is on a bus the probe cannot interrogate (today: UART — see
-`sx130x_probe`), set the profile's `interface` accordingly; the console will
+If the part is on a bus the probe cannot interrogate (today: UART, whose
+framing nothing on the gateway speaks), set the profile's `interface` accordingly; the console will
 label it "manual only" rather than letting somebody select it and then wonder
 why detection disagrees.
 

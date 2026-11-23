@@ -47,7 +47,7 @@ supported = function() {
             chip: p.chip,
             interface: p.interface,
             knownAs: p.known_as,
-            // UART parts cannot be probed — see sx130x_probe. Surfaced so the
+            // UART parts cannot be probed: nothing here speaks their framing. Surfaced so the
             // menu can say so rather than letting somebody select one and
             // wonder why detection disagrees.
             detectable: p.interface != 'uart',

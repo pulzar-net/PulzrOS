@@ -12,5 +12,5 @@
     "RAK2287 USB",
     "WM1302 USB"
   ],
-  "comment": "The common Pi 4 build. Enumerates as a CP210x or FT2232H bridge, or, on the RAK5146 USB module's own STM32, as a CDC-ACM virtual COM port — see probe_usb() in pulzr-concentrator-detect."
+  "comment": "The common Pi 4 build. The RAK5146 USB module's own STM32, Semtech's USB reference design, enumerates as a CDC-ACM virtual COM port, which pulzr-probe names."
 }

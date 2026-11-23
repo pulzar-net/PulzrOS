@@ -64,6 +64,7 @@ probed either.
 | Z-Wave USB controllers (Aeotec, Zooz 500 series, UZB) | `0658:0200` | Z-Wave |
 | RTL8761B Bluetooth 5 adapters, ASUS USB-BT500 | `0bda:8771`, `0b05:190e` | Bluetooth |
 | CSR8510 Bluetooth 4 adapters | `0a12:0001` | Bluetooth |
+| LoRaWAN concentrators on Semtech's USB reference (RAK5146 USB) | `0483:5740` + product | LoRaWAN |
 
 Coordinators on the LAN that serve their serial port over TCP (SMLIGHT SLZB-06,
 UZG-01) are found by the mDNS answers `umdns` already collects on the LAN
@@ -140,11 +141,32 @@ resets a controller.
 | Zigbee, Silicon Labs (EZSP) | ASH reset, EZSP `version`, version info, EUI-64, manufacturer and board tokens | EmberZNet firmware, EZSP protocol version, board |
 | Z-Wave | `GET_SERIAL_API_CAPABILITIES`, then controller version, id, init data, capabilities and RF region | Serial API firmware, chip series (500, 700, 800) |
 | Thread (OpenThread RCP) | Spinel `NCP_VERSION` and `CAPS` | OpenThread firmware |
+| LoRaWAN concentrator on USB | the reference MCU's `REQ_PING` | MCU firmware |
+| LoRaWAN concentrator on SPI | one reset with the board's lines, the version register | SX1301, SX1302 or SX1303 |
 
 The Zigbee and Z-Wave probes come from the host stacks
 ([zigbee-bridge](https://github.com/pulzar-net/zigbee-bridge),
-[zwave-bridge](https://github.com/pulzar-net/zwave-bridge)); the Thread one is
-pulzr-probe's own.
+[zwave-bridge](https://github.com/pulzar-net/zwave-bridge)); the Thread and
+LoRaWAN ones are pulzr-probe's own.
+
+## Concentrators
+
+A LoRaWAN concentrator is offered the way a Zigbee stick is: pulzr-probe lists
+it (`protocol: lorawan`), and Pulzar Net offers the pulzr-lorawan add-on
+([concentrators.md](/PulzrOS/concentrators.html)). On USB it is named by its
+table entry like any radio. On SPI, which has no hotplug and no discovery,
+the boot scan alone reads the board's one slot (`PULZR_SPI_DEV`, with
+`PULZR_SX130X_RESET_GPIO` and `PULZR_SX130X_POWER_EN_GPIO`, the lines the
+board's most common HAT uses), and only on a kit board, whose slots are
+`auto`; a board with fixed slots has the add-on in its image. A slot is
+listed as `spi-spidev0.0` only when a real part answered; later scans keep
+what the boot scan found and pulse nothing.
+
+Once pulzr-lorawan is installed it owns its concentrators: every scan is told
+so (`--claimed lorawan`), and a concentrator is named and never asked again,
+because a probe in the middle of concentratord's own exchange would break it.
+The add-on's own detection reads the same report for its USB slots and asks
+pulzr-probe to read an SPI slot with the HAT profile somebody picked.
 
 ## Not yet
 

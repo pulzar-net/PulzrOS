@@ -95,24 +95,15 @@ flags=""
 case "${bus}" in
     spi) ;;
     usb) flags="\"USB\","
-         # ttyACM for the RAK5146 USB module's own STM32, which presents as
-         # CDC-ACM — see probe_usb() in pulzr-concentrator-detect. ttyUSB
-         # for the CP210x/FT2232H bridge chip the other USB variants (RAK2287
-         # USB, WM1302 USB) use instead, which is a different kernel driver
-         # and a different device node. Both are "sx1302_usb" to detection;
-         # only the actual /dev node tells them apart.
-         #
-         # A board that names its USB node keeps it. head -1 is only correct
-         # when there is exactly one concentrator to find — true on a Pi with a
-         # single USB stick, false on the RAK7289CV2, whose two RAK5146s are
-         # ttyACM0 and ttyACM1. Handing both slots head -1 pointed them at the
-         # same ttyACM0, so slot 1 fought slot 0 for one radio and the other
-         # eight channels never came up. A declared node ("usb:/dev/lora1:-"
-         # in board.conf, a ttyACM by its hub port) is recorded per slot by
-         # detection; only the kit's bare "usb" needs the guess.
+         # The node detection recorded for this slot: the board's own on a
+         # product ("usb:/dev/lora1:-", a ttyACM by its hub port), the one
+         # pulzr-probe named on a kit. Never a guess: the first ttyACM going
+         # was the RAK7289CV2's other slot once (both slots on ttyACM0, eight
+         # channels that never came up), and on a Pi with a Zigbee stick it
+         # can be the stick.
          case "${device}" in
              /dev/*) ;;
-             *) device="$(ls /dev/ttyACM* /dev/ttyUSB* 2>/dev/null | head -n1)" ;;
+             *) die "no USB device recorded; run pulzr-concentrator-detect" ;;
          esac ;;
     *)   die "bus '${bus}' is not supported by concentratord" ;;
 esac

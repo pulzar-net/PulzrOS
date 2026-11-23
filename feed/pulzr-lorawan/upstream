@@ -7,6 +7,4 @@ chirpstack-concentratord-sx1302
 chirpstack-concentratord-sx1301
 chirpstack-mqtt-forwarder
 mosquitto-ssl
-spi-tools
-gpiod-tools
 coreutils-stty

@@ -158,7 +158,7 @@ probe_nmea() {
 
 # ── candidates ──────────────────────────────────────────────────────────────
 
-# Is this tty a concentrator rather than something that might be a GNSS?
+# Is this tty a radio rather than something that might be a GNSS?
 #
 # A USB concentrator enumerates as a serial device, so it lands in the same
 # glob as a USB GNSS puck. Probing it is not harmless: probe_nmea opens the
@@ -177,33 +177,24 @@ probe_nmea() {
 # holds it yet, actually breaks. So the failure looked like "works when you
 # poke it", which sent me looking at ModemManager instead.
 #
-# Matched on the USB ids probe_usb() recognises in pulzr-concentrator-detect,
-# the same list as the ModemManager hotplug override in boards/common/files.
-# Three places now, and they have to agree: a concentrator one of them does not
-# know about is a concentrator something else will open.
+# Asked of pulzr-probe's report, which names every radio plugged in by its
+# table (pulzr-edge's radios.json): a tty it named, as a concentrator, a
+# Zigbee stick or anything else, or that a person said is a Modbus adapter, is
+# never a receiver to probe, and opening one at 9600 is the wedge above or
+# worse. It used to be a list of USB ids here, CP2102N, FT2232H and the STM32,
+# kept in step by hand with detection's. Without a report (pulzr-probe has
+# not scanned yet) no USB tty is probed at all: a GNSS puck waits one scan.
+PROBE_REPORT="${PULZR_PROBE_REPORT:-/var/run/pulzr-probe/radios.json}"
 is_concentrator_tty() {
-    local port="$1" node ids
+    local port="$1"
     case "${port}" in
         /dev/ttyACM*|/dev/ttyUSB*) ;;
         *) return 1 ;;
     esac
-
-    node="/sys/class/tty/${port#/dev/}/device"
-    [ -e "${node}" ] || return 1
-    node="$(readlink -f "${node}" 2>/dev/null)" || return 1
-
-    while [ -n "${node}" ] && [ "${node}" != "/sys" ] && [ "${node}" != "/" ]; do
-        if [ -f "${node}/idVendor" ] && [ -f "${node}/idProduct" ]; then
-            ids="$(cat "${node}/idVendor" 2>/dev/null):$(cat "${node}/idProduct" 2>/dev/null)"
-            case "${ids}" in
-                # CP2102N, FT2232H, STM32 CDC-ACM — see probe_usb().
-                10c4:ea60|0403:6010|0483:5740) return 0 ;;
-            esac
-            return 1
-        fi
-        node="$(dirname "${node}")"
-    done
-    return 1
+    [ -s "${PROBE_REPORT}" ] || return 0
+    # Named, identified or assigned is any state but unidentified.
+    [ -n "$(jsonfilter -i "${PROBE_REPORT}" \
+        -e "@.detected[@.path=\"${port}\" && @.state!=\"unidentified\"].id" 2>/dev/null)" ]
 }
 
 candidates() {
@@ -218,7 +209,7 @@ candidates() {
     for tty in /dev/ttyUSB* /dev/ttyACM*; do
         [ -c "${tty}" ] || continue
         if is_concentrator_tty "${tty}"; then
-            log "skipping ${tty} — it is the concentrator, not a receiver"
+            log "skipping ${tty} — it is a radio, not a receiver"
             continue
         fi
         echo "${tty}"

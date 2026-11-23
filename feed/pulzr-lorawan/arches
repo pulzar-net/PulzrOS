@@ -11,16 +11,14 @@
 #   mosquitto-ssl                     the local broker that holds them when
 #                                     they cannot be sent (pulzr-lora-buffer);
 #                                     -ssl, since its bridge out is TLS on 8883
-#   spi-tools                         spi-pipe, which sx130x_probe reads the
-#                                     chip version register with
-#   gpiod-tools                       gpioset, for the SX130x reset line (the
-#                                     package is not libgpiod-utils, which no
-#                                     release since 24.10 has)
+#
+# Detection is pulzr-probe's, in every image: its SPI read and USB ping need
+# no tools of their own.
 #
 # The MIPS boards are RAK, Dragino and Seeed units with an SX1302 soldered in,
 # and carry no SX1301 build.
-mipsel_24kc          chirpstack-concentratord-sx1302, chirpstack-mqtt-forwarder, mosquitto-ssl, spi-tools, gpiod-tools
-mips_24kc            chirpstack-concentratord-sx1302, chirpstack-mqtt-forwarder, mosquitto-ssl, spi-tools, gpiod-tools
-aarch64_cortex-a53   chirpstack-concentratord-sx1302, chirpstack-concentratord-sx1301, chirpstack-mqtt-forwarder, mosquitto-ssl, spi-tools, gpiod-tools
-aarch64_cortex-a72   chirpstack-concentratord-sx1302, chirpstack-concentratord-sx1301, chirpstack-mqtt-forwarder, mosquitto-ssl, spi-tools, gpiod-tools
-aarch64_cortex-a76   chirpstack-concentratord-sx1302, chirpstack-concentratord-sx1301, chirpstack-mqtt-forwarder, mosquitto-ssl, spi-tools, gpiod-tools
+mipsel_24kc          chirpstack-concentratord-sx1302, chirpstack-mqtt-forwarder, mosquitto-ssl
+mips_24kc            chirpstack-concentratord-sx1302, chirpstack-mqtt-forwarder, mosquitto-ssl
+aarch64_cortex-a53   chirpstack-concentratord-sx1302, chirpstack-concentratord-sx1301, chirpstack-mqtt-forwarder, mosquitto-ssl
+aarch64_cortex-a72   chirpstack-concentratord-sx1302, chirpstack-concentratord-sx1301, chirpstack-mqtt-forwarder, mosquitto-ssl
+aarch64_cortex-a76   chirpstack-concentratord-sx1302, chirpstack-concentratord-sx1301, chirpstack-mqtt-forwarder, mosquitto-ssl

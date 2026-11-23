@@ -234,7 +234,7 @@ export interface SupportedPart {
   chip: string;
   interface: 'spi' | 'usb' | 'uart';
   knownAs?: string[];
-  /** False for UART parts, which cannot be probed — see sx130x_probe. */
+  /** False for UART parts, which cannot be probed: their framing is one nothing on the gateway speaks. */
   detectable: boolean;
 }
 

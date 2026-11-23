@@ -35,7 +35,6 @@ that source available.
 | `boards/common/files/etc/hotplug.d/tty/25-modemmanager-tty` | GPL-2.0-only | A modified copy of OpenWrt's modemmanager hotplug script (Velocloud Inc, Aleksander Morgado); it replaces the package's copy at image assembly and stays under its original licence |
 | `feed/pulzr-base/files/usr/share/pulzr/fonts/slant.flf` | FIGlet font licence (modification permitted with the modifier named in a comment) | "Slant", Glenn Chappell, Paul Burton |
 | `feed/pulzr-base/files/usr/sbin/pulzr-figlet` | Apache-2.0 | A renderer written against FIGlet's published layout rules; tested for identical output against figlet 2.2.5 (BSD-2-Clause) in `scripts/test-figlet.sh`, which is not shipped |
-| `feed/pulzr-lorawan/files/usr/sbin/pulzr-sx130x-reset` | Apache-2.0 | The reset sequence follows Semtech's `reset_lgw.sh` reference design (BSD-3-Clause) |
 | `feed/pulzr-lorawan/files/usr/share/pulzr/region/*/region.toml`, `channels.toml` | MIT | ChirpStack Concentratord examples, unmodified |
 
 ## The console (`console/`)

@@ -330,6 +330,39 @@ assert m["1-1.1"]["driver"] == "qmi_wwan" and m["2-1"]["driver"] is None
 assert m["2-1"]["id"] == "usb-1199_9071-lf1" and m["1-1.1"]["id"] == "usb-2c7c_0125-1-1.1"
 assert m["2-1"]["label"] == "Sierra Wireless EM7455"' "${found}"
 
+# LoRaWAN concentrators. A kit board's SPI slot is read on the boot scan
+# alone, with the board's own lines; once pulzr-lorawan is installed every
+# scan, Identify included, says it owns them.
+echo '{"detected":[]}' > "${FAKE_LIST}"
+mkdir -p "${SANDBOX}/health"
+export ADDON_HEALTH="${SANDBOX}/health" PULZR_BOARD_CONF="${SANDBOX}/board.conf"
+cat > "${PULZR_BOARD_CONF}" <<'EOF'
+PULZR_CONCENTRATOR_SLOTS='auto'
+PULZR_SPI_DEV='/dev/null'
+PULZR_SX130X_RESET_GPIO='17'
+PULZR_SX130X_POWER_EN_GPIO='18'
+EOF
+fresh; radios scan --quiet
+check "a hotplug scan reads no SPI slot" [ "$(calls probe '--spi')" = 0 ]
+fresh; radios scan --quiet --boot
+check "the boot scan reads the kit's SPI slot with the board's lines" \
+    [ "$(calls probe '--gpiochip /dev/gpiochip0 --spi /dev/null:17:18')" = 1 ]
+echo "PULZR_GPIOCHIP='gpiochip4'" >> "${PULZR_BOARD_CONF}"
+fresh; radios scan --quiet --boot
+check "on the board's own gpiochip" [ "$(calls probe '--gpiochip /dev/gpiochip4 ')" = 1 ]
+sed -i.bak "s/'auto'/'spi:\/dev\/null:17'/" "${PULZR_BOARD_CONF}"
+fresh; radios scan --quiet --boot
+check "a board with fixed slots reads none" [ "$(calls probe '--spi')" = 0 ]
+touch "${ADDON_HEALTH}/pulzr-lorawan"
+sed -i.bak "s/'spi:\/dev\/null:17'/'auto'/" "${PULZR_BOARD_CONF}"
+fresh; radios scan --quiet --boot
+check "with LoRaWAN installed the boot scan claims it and reads nothing" \
+    [ "$(calls probe '--claimed lorawan')" = 1 ] && [ "$(calls probe '--spi')" = 0 ]
+fresh; radios identify usb-10c4_ea60-x
+check "Identify is told LoRaWAN owns its radios" [ "$(calls probe '--claimed lorawan identify')" = 1 ]
+rm -f "${ADDON_HEALTH}/pulzr-lorawan"
+unset ADDON_HEALTH PULZR_BOARD_CONF
+
 # The USB hotplug hook: a device, never its interfaces.
 HOOK="${ROOT_DIR}/feed/pulzr-probe/files/etc/hotplug.d/usb/40-pulzr-probe"
 check "the USB hook scans on a device" grep -q 'DEVTYPE}" = usb_device' "${HOOK}"

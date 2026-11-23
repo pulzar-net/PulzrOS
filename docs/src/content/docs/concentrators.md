@@ -65,6 +65,14 @@ a way to break a working gateway.
 order is cheapest-first — it is about how long detection takes, not about which
 hardware we expect — and an operator override always wins.
 
+Detection is pulzr-probe's, which is in every image whether or not LoRaWAN is
+([usb-radios.md](/PulzrOS/usb-radios.html)): a Pi with a HAT and no add-on has
+its concentrator listed in Pulzar Net, which offers the add-on.
+`pulzr-concentrator-detect`, in the add-on, assigns what it finds to slots: a
+USB slot is the tty pulzr-probe named (never a bare CP210x, and never the
+first ttyACM going), and an SPI slot is read by `pulzr-probe sx130x` with the
+pins of the profile the slot uses.
+
 ## Partial detection
 
 A two-slot gateway with one working concentrator is its own state, `partial`,

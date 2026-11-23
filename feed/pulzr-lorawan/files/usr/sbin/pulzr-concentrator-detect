@@ -53,55 +53,33 @@ PROFILE_DIR=/usr/share/pulzr/concentrator
 # profile produces a gateway that detects hardware and then cannot configure
 # it, so keep the two in step.
 
+# The radios pulzr-probe found (pulzr-probe in every image, see
+# pulzr-radios). Scanned first, so a stick plugged in a second ago is in it;
+# with this add-on installed the scan names a concentrator and never asks it
+# anything (--claimed lorawan), so it is cheap and harmless to repeat.
+PROBE_REPORT="${PULZR_PROBE_REPORT:-/var/run/pulzr-probe/radios.json}"
+
 probe_usb() {
-    # RAK5146 / RAK2287 USB and the WM1302 USB variant present as one of a
-    # CP210x bridge, an FTDI FT2232H bridge, or — the RAK5146 revision
-    # actually seen on a Pi 4 in the field — an onboard STM32 running its own
-    # firmware and exposing a CDC-ACM virtual COM port rather than a bridge
-    # chip in front of the SX1302 at all. The USB IDs are the reliable
-    # discriminator in every case; the concentrator itself is invisible until
-    # whichever interface it presents is up.
-    #
-    # Enumerated per-device rather than by grepping all the idVendor files at
-    # once: several devices are always attached, and we need each device's
-    # vendor paired with its own product, not the set of both.
-    for dev in /sys/bus/usb/devices/*/; do
-        [ -f "${dev}/idVendor" ] || continue
-        local vid pid product
-        vid="$(cat "${dev}/idVendor")"; pid="$(cat "${dev}/idProduct")"
-        case "${vid}:${pid}" in
-            # Silicon Labs CP2102N — RAK5146 USB, RAK2287 USB adapter.
-            10c4:ea60)
-                product="$(cat "${dev}/product" 2>/dev/null || echo '')"
-                case "${product}" in
-                    *WisGate*|*RAK*|*LoRa*|*Concentrator*) echo "sx1302_usb"; return 0 ;;
-                esac
-                log "unlabelled CP210x at ${dev} — assuming concentrator"
-                echo "sx1302_usb"; return 0
-                ;;
-            # FTDI FT2232H — WM1302 USB and some RAK2245 breakouts.
-            0403:6010) echo "sx1302_usb"; return 0 ;;
-            # STMicroelectronics CDC-ACM — the RAK5146 USB module's own STM32,
-            # not a bridge chip. Its descriptor says "STM32 Virtual ComPort"
-            # and nothing more specific to LoRa, the same way an unlabelled
-            # CP210x does not either — there being nothing this fleet plugs
-            # into a Pi's USB port that shares this VID:PID is the actual
-            # discriminator, same as that case.
-            0483:5740)
-                log "STM32 CDC-ACM at ${dev} — assuming RAK5146"
-                echo "sx1302_usb"; return 0
-                ;;
-        esac
-    done
-    return 1
+    # A concentrator on USB is one pulzr-probe names: Semtech's USB reference
+    # design, as a RAK5146 USB enumerates (radios.json in pulzr-edge). Never a
+    # bare CP210x or CH9102: those are in Zigbee sticks and RS-485 adapters as
+    # well, and this used to take an unlabelled CP210x for a concentrator.
+    # Echoes the model id and the device node, which pulzr-lora-config hands
+    # concentratord: the node pulzr-probe saw, never the first ttyACM going,
+    # which on a gateway with a Zigbee stick as well could be the stick.
+    pulzr-radios scan --quiet >/dev/null 2>&1
+    local path
+    path="$(jsonfilter -i "${PROBE_REPORT}" \
+        -e '@.detected[@.protocol="lorawan" && @.bus="usb"].path' 2>/dev/null | head -n1)"
+    [ -n "${path}" ] && [ -c "${path}" ] || return 1
+    echo "sx1302_usb ${path}"
 }
 
 probe_spi() {
-    # An SX130x on SPI cannot be enumerated: SPI has no discovery. So we do the
-    # only thing that actually answers the question — reset the part with the
-    # pins one specific profile claims, and read its version register.
-    # Anything else (checking that spidev exists, checking for a HAT EEPROM)
-    # tests the wiring, not the chip.
+    # An SX130x on SPI cannot be enumerated: SPI has no discovery. pulzr-probe
+    # resets the part with the pins one specific profile claims and reads its
+    # version register (pulzr-probe sx130x), holding the lines only for the
+    # read, so concentratord finds them free.
     #
     # One profile's pins, not a sweep of plausible ones. That used to mean
     # trying GPIO 4-27 in turn to find whichever line the fitted HAT actually
@@ -110,32 +88,22 @@ probe_spi() {
     # where the sweep put its own GNSS into standby, because the same pins
     # this scheme was guessing through are the HAT's GNSS control lines. A
     # profile carries exactly the pins its part uses and nothing it does not.
-    local spidev="$1" reset="$2" power="$3" sx1261="$4" ad5338r="$5"
+    local spidev="$1" reset="$2" power="$3" sx1261="$4" ad5338r="$5" chip
     [ -c "${spidev}" ] || { log "no ${spidev}"; return 1; }
-
-    PULZR_SX130X_RESET_GPIO="${reset}" \
-    PULZR_SX130X_POWER_EN_GPIO="${power}" \
-    PULZR_SX1261_RESET_GPIO="${sx1261}" \
-    PULZR_AD5338R_RESET_GPIO="${ad5338r}" \
-        pulzr-sx130x-reset || { log "reset on GPIO${reset} failed"; return 1; }
-
-    local version
-    version="$(sx130x_probe "${spidev}" 2>/dev/null)" || return 1
-    case "${version}" in
-        # What sx130x_probe returns: the SX1302/3 version register (0x5606)
-        # or the SX1301's (register 1). These used to be off by one part —
-        # 0x10 mapped to the SX1301 — so every SX1302 HAT probed as the wrong
-        # chip once the probe started reading real registers.
-        0x10) echo "sx1302_spi"; return 0 ;;
-        0x12) echo "sx1303_spi"; return 0 ;;
-        0x67) echo "sx1301_spi"; return 0 ;;
-        *) log "SPI ${spidev} answered with unknown version ${version}"; return 1 ;;
+    chip="$(pulzr-probe sx130x --gpiochip "/dev/${PULZR_GPIOCHIP:-gpiochip0}" \
+        --spi "${spidev}:${reset:--}:${power:--}${sx1261:+:${sx1261}}${ad5338r:+:${ad5338r}}" 2>/dev/null \
+        | jsonfilter -e '@.chip' 2>/dev/null)"
+    case "${chip}" in
+        SX1302) echo "sx1302_spi" ;;
+        SX1303) echo "sx1303_spi" ;;
+        SX1301) echo "sx1301_spi" ;;
+        *) log "nothing answered on ${spidev} with reset GPIO${reset:-none}"; return 1 ;;
     esac
 }
 
 probe_uart() {
     # The UART parts speak the register protocol wrapped in a framing layer
-    # sx130x_probe does not implement, so this cannot confirm one is there.
+    # nothing here implements, so this cannot confirm one is there.
     #
     # It is NOT skipped for that reason though — a UART concentrator is a
     # perfectly normal thing to have on a Pi, and the honest handling is to
@@ -154,7 +122,7 @@ probe_uart() {
 #   spec: "auto" | "<bus>:<device>:<reset>[:<power>]"
 detect_slot() {
     local index="$1" spec="$2"
-    local bus device reset power detected=""
+    local bus device reset power found detected=""
 
     if [ "${spec}" = "auto" ]; then
         # A kit. Probe every bus in the configured order.
@@ -212,7 +180,7 @@ detect_slot() {
             esac
             log "slot ${index}: probing ${try}"
             case "${try}" in
-                usb)  detected="$(probe_usb)" && bus=usb  && device="usb" ;;
+                usb)  found="$(probe_usb)" && bus=usb && detected="${found%% *}" && device="${found#* }" ;;
                 spi)  detected="$(probe_spi "${PULZR_SPI_DEV:-/dev/spidev0.0}" \
                                             "${reset}" "${power}" "${sx1261}" "${ad5338r}")" \
                           && bus=spi && device="${PULZR_SPI_DEV:-/dev/spidev0.0}" ;;
@@ -236,7 +204,7 @@ detect_slot() {
         #
         # It used to read the chip version here as well, so a dead part would
         # show as broken rather than present-and-silent. That read is
-        # sx130x_probe's full-duplex spi-pipe transfer, which the MT7628's
+        # a full-duplex spi-pipe transfer, which the MT7628's
         # half-duplex SPI controller rejects outright, so on a RAK every
         # working concentrator was recorded as absent and nothing started. A
         # dead part now shows up where it actually fails: concentratord does
@@ -405,9 +373,6 @@ else
 fi
 
 [ "${changed}" = 1 ] && uci commit pulzr
-# The probe is done with the reset and power lines, and concentratord claims
-# the same ones. Holding them past here is what makes it crash-loop.
-pulzr-sx130x-reset --release 2>/dev/null
 
 log "detection complete: ${present}/${total} slots, ${channels} channels"
 

@@ -53,12 +53,13 @@
 # We require a device name
 [ -n "$DEVNAME" ] || exit
 
-# ── the concentrator is not a modem ────────────────────────────────────────
+# ── a radio is not a modem ─────────────────────────────────────────────────
 #
-# Matched on the USB ids probe_usb() recognises in pulzr-concentrator-detect:
-# CP2102N (RAK5146/RAK2287 USB), FT2232H (WM1302 USB), and the STM32 CDC-ACM
-# that is the RAK5146 module's own MCU. Keep the two lists together — a
-# concentrator this file does not know about is one ModemManager will take.
+# The STM32 CDC-ACM of Semtech's USB reference design, a RAK5146 USB's own MCU
+# (the concentrator pulzr-probe names, radios.json in pulzr-edge), and the
+# CP2102N and FT2232H bridge chips, which are in Zigbee sticks and RS-485
+# adapters and in no modem. A concentrator this file does not know about is
+# one ModemManager will take.
 case "${DEVNAME}" in
     ttyACM*|ttyUSB*)
         __pkz_node="/sys${DEVPATH}"
@@ -68,7 +69,7 @@ case "${DEVNAME}" in
                 case "${__pkz_ids}" in
                     10c4:ea60|0403:6010|0483:5740)
                         logger -t concentrator -p daemon.info \
-                            "${DEVNAME} is a concentrator (${__pkz_ids}); not reporting it to ModemManager"
+                            "${DEVNAME} is a radio (${__pkz_ids}); not reporting it to ModemManager"
                         exit 0
                         ;;
                 esac

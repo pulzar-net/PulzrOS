@@ -140,12 +140,6 @@ start_slot() {
     # A concentrator that will not initialise usually will not initialise on
     # the next try either. Back off rather than spinning: a tight respawn loop
     # on a cellular gateway fills the log partition.
-    # Concentratord claims the reset and power-enable lines itself. Detection
-    # releases them, but a reset run by hand from the console would not, and
-    # the failure is a crash loop on "Resource busy" rather than anything that
-    # names a pin. Cheap to be certain here.
-    pulzr-sx130x-reset --release 2>/dev/null
-
     procd_open_instance "concentratord${index}"
     procd_set_param command "/usr/bin/chirpstack-concentratord-${chipset}" \
         -c "${dir}/concentratord.toml" -c "${dir}/region.toml" -c "${dir}/channels.toml"
