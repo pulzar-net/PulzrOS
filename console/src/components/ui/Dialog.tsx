@@ -20,7 +20,7 @@ export default function Dialog({
   title: string;
   actions?: ReactNode;
   footer?: ReactNode;
-  // compact sizes to its content: a question with a couple of facts, not a
+  // compact is narrow: a question with a couple of facts, not a
   // table that needs the screen.
   size?: 'large' | 'compact';
   children: ReactNode;

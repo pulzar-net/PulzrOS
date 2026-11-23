@@ -93,6 +93,8 @@ export const NAV_GROUPS: NavGroup[] = [
         children: [
           { path: '/network/ports', label: 'Ports', wide: true },
           { path: '/network/lan', label: 'LAN', feature: 'lan', wide: true },
+          { path: '/network/tunnels', label: 'Tunnels', feature: 'lan' },
+          { path: '/network/forwarding', label: 'Port Forwarding', feature: 'lan' },
           { path: '/network/dns', label: 'DNS', feature: 'dns' },
           { path: '/network/speed', label: 'Speed Test', feature: 'speedtest' },
         ],

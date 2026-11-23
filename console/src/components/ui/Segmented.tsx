@@ -15,16 +15,19 @@ export default function Segmented<V extends string | number>({
   options,
   onChange,
   disabled,
+  size,
   'aria-label': ariaLabel,
 }: {
   value: V;
   options: SegmentedOption<V>[];
   onChange: (value: V) => void;
   disabled?: boolean;
+  /** small fits a table row at the table's own height. */
+  size?: 'small';
   'aria-label': string;
 }) {
   return (
-    <div className={styles.segmented} role="group" aria-label={ariaLabel}>
+    <div className={`${styles.segmented} ${size ? styles.small : ''}`} role="group" aria-label={ariaLabel}>
       {options.map((option) => (
         <button
           key={option.value}

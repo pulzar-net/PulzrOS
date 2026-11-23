@@ -34,7 +34,9 @@ The gateway at a glance: uplink in use, LoRaWAN and radio state, resources, firm
 | **Backhaul > Tracking** | tracking on or off per uplink, its ping targets and thresholds | `failover` |
 | **Network** | every port with its role, link and speed; every client on the LAN and the access points, with its MAC, address, port or SSID, the services the LAN port scan found open and when it was last seen | every board; clients with `lan` or `wifi` |
 | **Network > Ports** | each port an uplink, a LAN port or unused; tagged VLANs. Undone unless confirmed. | every board |
-| **Network > LAN** | clients, reservations, per-device policy and cellular rule, exposed ports | `lan` |
+| **Network > LAN** | the LAN ports, clients, reservations, per-device policy and cellular rule | `lan` |
+| **Network > Tunnels** | WireGuard tunnels to a customer's own servers: what each reaches, the internet through it | `lan` |
+| **Network > Port Forwarding** | exposed ports on the uplinks, and the tunnel forwards Pulzr Cloud opens | `lan` |
 | **Network > DNS** | upstream servers, local names, rebind protection, dynamic DNS | `dns` |
 | **Network > Speed Test** | a test out of each uplink, never cellular | `speedtest` |
 | **Access** | the setup access point and its passphrase, the management tunnel | every board |

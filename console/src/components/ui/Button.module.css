@@ -46,3 +46,12 @@
 }
 
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* In a table row: as tall as the row's text, so the row is no taller than
+   one without a button. */
+.small {
+  padding: 1px 9px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 18px;
+}

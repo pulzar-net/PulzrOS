@@ -1,8 +1,12 @@
 .dialog {
   width: min(1100px, calc(100vw - 32px));
-  height: min(760px, calc(100vh - 48px));
+  /* Every dialog is as tall as what it holds, up to the window, so it sits
+     in the middle of the screen. A fixed height (760px for the large one)
+     drew short content at the top of a mostly empty box. Not auto: a modal
+     dialog is pinned top and bottom, and auto stretches it between them. */
+  height: fit-content;
   max-width: none;
-  max-height: none;
+  max-height: calc(100vh - 48px);
   padding: 0;
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-lg);
@@ -13,28 +17,19 @@
 
 .compact {
   width: min(480px, calc(100vw - 32px));
-  /* Not auto: a modal dialog is pinned top and bottom, and auto stretches it
-     between them. */
-  height: fit-content;
-  max-height: calc(100vh - 48px);
-}
-
-/* The frame's height: 100% is for the large dialog, whose height is fixed.
-   Against fit-content it is a cycle, and Safari resolves the cycle to zero:
-   the compact dialog drew as a single line, its border, with the question
-   and its buttons inside it out of reach. */
-.compact .frame {
-  height: auto;
 }
 
 .dialog::backdrop {
   background: rgba(15, 23, 42, 0.35);
 }
 
+/* Not height: 100%. Against fit-content that is a cycle, and Safari
+   resolves it to zero: the dialog drew as a single line, its border, with
+   the question and its buttons inside it out of reach. */
 .frame {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  max-height: calc(100vh - 50px);
 }
 
 .header {
@@ -74,6 +69,7 @@
   flex-direction: column;
   flex: 1;
   min-height: 0;
+  overflow: auto;
   padding: 14px 18px 18px;
 }
 
