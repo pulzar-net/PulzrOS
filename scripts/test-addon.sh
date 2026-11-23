@@ -159,7 +159,8 @@ FEED="${T}/feed"
 mkdir -p "${FEED}/pulzr-modbus/files/lib/upgrade/keep.d" "${FEED}/pulzr-meter"
 cp "${ROOT_DIR}"/feed/pulzr-modbus/{addon,control} "${FEED}/pulzr-modbus/"
 cp "${ROOT_DIR}"/feed/pulzr-modbus/files/lib/upgrade/keep.d/* "${FEED}/pulzr-modbus/files/lib/upgrade/keep.d/"
-printf 'ADDON_TITLE="Meter"\nADDON_CAPS="meter"\nADDON_FEATURE=""\nADDON_BOARDS="*"\n' > "${FEED}/pulzr-meter/addon"
+# Its ADDON_CONFIG stands for LoRaWAN's pulzr.concentrator.present.
+printf 'ADDON_TITLE="Meter"\nADDON_CAPS="meter"\nADDON_FEATURE=""\nADDON_BOARDS="*"\nADDON_CONFIG="pulzr.meter.present"\n' > "${FEED}/pulzr-meter/addon"
 
 # A package's payload, packed as the stand-in apk unpacks it. The init script
 # and uci-defaults only say they ran; the health script is pulzr-modbus's own.
@@ -421,8 +422,44 @@ reset
 jq -c '.pulzr_addons.main.wanted = ["pulzr-modbus"]' "${UCI_JSON}" > "${T}/u.json" && mv "${T}/u.json" "${UCI_JSON}"
 rm -rf "${SERVE}"
 addon restore; rc=$?
-check "restore: an unreachable repository is tried again later" "75 failed" "${rc} $(item pulzr-modbus state)"
+check "restore: an unreachable repository is tried again later, pending meanwhile" "75 pending-restore" "${rc} $(item pulzr-modbus state)"
+check "restore: saying why" yes "$([ -n "$(item pulzr-modbus error)" ] && echo yes)"
 check "restore: still wanted" '["pulzr-modbus"]' "$(wanted)"
+
+# ── in use by its configuration ─────────────────────────────────────────────
+
+# What a Pi upgraded out of an image that carried LoRaWAN looks like: its
+# configuration says a concentrator answered, no package, nothing wanted.
+reset
+jq -c '.pulzr.meter = {".type":"meter","present":"1","region":"EU868"}' "${UCI_JSON}" > "${T}/u.json" && mv "${T}/u.json" "${UCI_JSON}"
+addon restore; rc=$?
+check "config: an add-on in use by the config is wanted and installed" '0 installed ["pulzr-meter"]' \
+  "${rc} $(item pulzr-meter state) $(wanted)"
+check "config: with what it depends on" "pulzr-meter pulzr-modbus" \
+  "$(cut -d' ' -f1 "${T}/apk/installed" | sort | tr '\n' ' ' | sed 's/ $//')"
+check "config: journaled as wanted by the config" 1 "$(grep -c '"result": *"wanted"' "${R}/etc/pulzr/addons/journal")"
+addon remove pulzr-meter tester
+check "config: removing it clears the option, not the other settings" "none EU868" \
+  "$(jq -r '.pulzr.meter.present // "none"' "${UCI_JSON}") $(jq -r '.pulzr.meter.region' "${UCI_JSON}")"
+addon restore
+check "config: and the next restore leaves it removed" "none []" "$(item pulzr-meter state) $(wanted)"
+
+reset
+jq -c '.pulzr.meter = {".type":"meter","present":"1"}' "${UCI_JSON}" > "${T}/u.json" && mv "${T}/u.json" "${UCI_JSON}"
+rm -rf "${SERVE}"
+addon restore; rc=$?
+check "config: no repository yet shows it pending and tries again" "75 pending-restore" "${rc} $(item pulzr-meter state)"
+check "config: still wanted" '["pulzr-meter"]' "$(wanted)"
+
+reset
+jq -c '.pulzr.meter = {".type":"meter","present":"0"}' "${UCI_JSON}" > "${T}/u.json" && mv "${T}/u.json" "${UCI_JSON}"
+addon restore
+check "config: 0 is not in use" "none []" "$(item pulzr-meter state) $(wanted)"
+
+reset
+jq -c '.pulzr.meter = {".type":"meter","present":"1"} | .pulzr_addons.main.deny = ["meter"]' "${UCI_JSON}" > "${T}/u.json" && mv "${T}/u.json" "${UCI_JSON}"
+addon restore
+check "config: a capability locked off is not wanted by its config" "[]" "$(wanted)"
 
 # ── an add-on that may be the backhaul: kmods, and carried across an upgrade ─
 

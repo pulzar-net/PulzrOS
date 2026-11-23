@@ -116,10 +116,13 @@ status. It is the add-on pulzr-lorawan, with the `lorawan` word:
   without it.
 - **Offered** on a kit, the Pis, when pulzr-probe finds a concentrator on SPI
   or USB, the way a Zigbee stick is.
-- **Carried over** once, on a Pi upgrading from an image that had the word:
-  `43-pulzr-lorawan-addon` adds it to `wanted` when a concentrator had
-  answered there, and the restore after the firmware is confirmed installs
-  it, keeping the region and slots `/etc/config/pulzr` kept.
+- **Kept by its configuration** on a Pi, across any upgrade: its
+  `ADDON_CONFIG` is `pulzr.concentrator.present`, the slots that answered,
+  which `/etc/config/pulzr` keeps as it keeps the WiFi the gateway joins. A
+  gateway whose configuration says a concentrator answered and that has no
+  package (one upgraded from an image that carried LoRaWAN) downloads it once
+  the firmware is confirmed, retrying with backoff and showing it pending
+  meanwhile, and finds its region and slots where they were.
 
 Not the Opal: its target is source-only, and no OpenWrt SDK builds ChirpStack
 for its architecture.

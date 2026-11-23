@@ -267,6 +267,24 @@ The MQTT agent's `addons` op answers with the same document, and `all` (and
 so the retained `state`) includes it as `"addons"`. A read only: an install
 takes minutes and the agent answers one request at a time.
 
+## In use by its configuration
+
+An add-on may name one UCI option, `ADDON_CONFIG`, that says the gateway uses
+it: pulzr-lorawan's is `pulzr.concentrator.present`, the slots that answered.
+`/etc/config` is kept across a sysupgrade, as the WiFi a gateway joins is, so
+the option outlives the package. Every restore (each boot, and after
+`pulzr-firmware confirm`) adds an add-on whose option is set to anything but
+empty or `0`, and that is not installed, built in or locked off, to `wanted`;
+the restore then installs it from this release's repository like any wanted
+add-on. It is `pending-restore` meanwhile, with the last try's error while the
+repository cannot be reached, and the restore tries again from 15 minutes,
+doubling to six hours. Nothing in it names a release or a board: a Pi
+upgraded out of an image that carried LoRaWAN, and a gateway whose package
+was lost, are the same case.
+
+Removing the add-on deletes that one option and keeps every other setting, so
+the next restore leaves it removed and a later install finds its settings.
+
 ## Features
 
 `system.features()` adds each installed add-on's `ADDON_FEATURE` word
@@ -278,8 +296,9 @@ the package. See [features.md](/PulzrOS/features.html).
 
 1. A feed package with an `arches` file covering every board its
    `ADDON_BOARDS` allows, and an `addon` file: `ADDON_TITLE`, `ADDON_CAPS`,
-   `ADDON_FEATURE` (or empty), `ADDON_BOARDS`, and `ADDON_CARRY="1"` if a
-   gateway's backhaul may depend on it. An architecture on which every
+   `ADDON_FEATURE` (or empty), `ADDON_BOARDS`, `ADDON_CARRY="1"` if a
+   gateway's backhaul may depend on it, and `ADDON_CONFIG` if one UCI option
+   says the gateway uses it. An architecture on which every
    allowed board carries it built in is not published.
 2. `Provides: pulzr-cap-<cap>` in its control file for each cap.
 3. `files/usr/libexec/pulzr/addon-health/<name>`, executable.

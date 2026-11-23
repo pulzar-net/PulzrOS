@@ -76,6 +76,20 @@
 // deletes the copy. It costs the overlay and the upgrade's backup in RAM the
 // add-on's size, a few MB, and the link nothing it would not spend after.
 //
+// ── IN USE BY ITS CONFIGURATION ────────────────────────────────────────────
+//
+// An add-on's ADDON_CONFIG names one UCI option, and a gateway whose option is
+// set to anything but empty or 0 uses that add-on, wherever the package went:
+// LoRaWAN's is pulzr.concentrator.present, the slots that answered. /etc/config
+// outlives a sysupgrade, as the WiFi it joins does, so a gateway upgraded into
+// a release that no longer carries the add-on in its image (a Pi, once
+// LoRaWAN stopped being part of every Pi image), or whose package was lost,
+// still says so. Every restore adds such an add-on to `wanted`, and the
+// restore then installs it from the release's repository like any wanted one,
+// with the same backoff, showing pending-restore until it is in. Removing the
+// add-on clears that one option and keeps every other setting, so a removal
+// sticks and a reinstall finds its region and plan.
+//
 // ── COST ───────────────────────────────────────────────────────────────────
 //
 // pulzr-edge is about 1.6 MB of .apk on mipsel, plus a few KB of catalog and
@@ -193,6 +207,7 @@ let release = () => {
             title: f[4],
             keep: filter(split(f[5] ?? '', ' '), (p) => length(p) > 0),
             carry: f[6] == '1',
+            config: match(f[7] ?? '', /^[a-z0-9_]+\.[a-z0-9_]+\.[a-z0-9_]+$/) ? f[7] : null,
         };
     }
     return out;
@@ -493,6 +508,19 @@ let freeBytes = () => {
 //
 // Each is one sentence, because it is what the person who asked reads.
 
+// The add-on's ADDON_CONFIG option, as a value: null when it names none or
+// the option is unset.
+let configValue = (rel, name) => {
+    let o = rel[name]?.config;
+    if (!o) return null;
+    let p = split(o, '.');
+    return uci.cursor().get(p[0], p[1], p[2]);
+};
+let inUse = (rel, name) => {
+    let v = configValue(rel, name);
+    return v != null && v != '' && v != '0';
+};
+
 let lockedOff = (rel, name, deny) => {
     for (let c in rel[name]?.caps ?? [])
         if (c in deny) return sprintf('%s is locked off on this gateway.', title(rel, name));
@@ -527,9 +555,13 @@ let refusal = (action, name, ignoreLock) => {
 // request could get past later (a download, a gateway that cannot reach
 // Pulzr Cloud right now); restore tries those again, and nothing else.
 
+// A restore that will be tried again (no link yet, the repository out of
+// reach) is still pending, with why it has not finished: the loop retries
+// it. A person's install that failed has failed.
 let fail = (name, by, action, error, transient, state) => {
-    record(name, state ?? 'failed', error);
-    journal({ action, name, by, result: state ?? 'failed', error });
+    state ??= (transient && action == 'restore') ? 'pending-restore' : 'failed';
+    record(name, state, error);
+    journal({ action, name, by, result: state, error });
     log(sprintf('%s %s refused: %s', action, name, error));
     return { error, transient: !!transient };
 };
@@ -662,6 +694,12 @@ let remove = (name, by, purge) => {
     if (purge)
         for (let p in rel[name]?.keep ?? [])
             if (purgeable(p)) run(['rm', '-rf', ROOT + p]);
+    // Not in use any more, or the next restore would put it back.
+    if (configValue(rel, name) != null) {
+        let p = split(rel[name].config, '.'), c = uci.cursor();
+        c.delete(p[0], p[1], p[2]);
+        c.commit(p[0]);
+    }
     unwant(name);
     forget(name);
     journal({ action: 'remove', name, by, result: 'removed', purged: !!purge });
@@ -679,6 +717,17 @@ let remove = (name, by, purge) => {
 
 let restore = () => {
     let builtin = builtins();
+    // See IN USE BY ITS CONFIGURATION: wanted from now on, so the platform and
+    // the console see it pending like any other. Not one locked off: that is
+    // refused below, and would be recorded failed at every boot.
+    let rel0 = release(), deny0 = denied();
+    for (let n in sort(keys(rel0))) {
+        if (n in builtin || n in wanted() || installed(n) || !inUse(rel0, n) || lockedOff(rel0, n, deny0)) continue;
+        want(n);
+        journal({ action: 'restore', name: n, by: 'restore', result: 'wanted',
+                  error: sprintf('%s is in use by this gateway\'s configuration (%s).', title(rel0, n), rel0[n].config) });
+        log(sprintf('restore %s: in use by %s', n, rel0[n].config));
+    }
     let missing = filter(wanted(), (n) => match(n, NAME) && !(n in builtin) && !installed(n));
     if (!length(missing)) return { transient: false };
     if (firmwarePending()) return { transient: true };
@@ -842,7 +891,8 @@ let restoreLoop = () => {
 //   reverted         installed, then undone because the gateway stopped
 //                    reaching Pulzr Cloud
 //   failed           the last attempt did not install it; `error` says why
-//   pending-restore  wanted, missing, and a restore has yet to put it back
+//   pending-restore  wanted, missing, and a restore has yet to put it back;
+//                    `error` says why the last try did not, if one has
 //   unavailable      wanted, and this release does not build it here
 
 let state = (name, rel, w, built, rec, busy) => {

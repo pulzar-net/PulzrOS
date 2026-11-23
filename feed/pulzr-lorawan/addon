@@ -13,4 +13,11 @@ ADDON_FEATURE="lorawan"
 # Not the GL-SFT1200: its target is source-only (boards/gl-sft1200/openwrt),
 # so no OpenWrt SDK builds ChirpStack for its mipsel_24kc_24kf, and a build
 # for the soft-float mipsel_24kc is a package apk would refuse there.
+# A gateway whose configuration says a concentrator answered there (detection
+# counts the slots that did) has LoRaWAN in use: one upgraded from an image
+# that carried it, or whose add-on was lost, gets it back from the repository
+# (pulzr-addon, "IN USE BY ITS CONFIGURATION"). Not the section itself: every
+# gateway built before LoRaWAN was an add-on has pulzr.concentrator, the Opal
+# included.
+ADDON_CONFIG="pulzr.concentrator.present"
 ADDON_BOARDS="rpi3 rpi4 rpi5 rak7391 rak7266 rak7267 rak7268c rak7268cv2 rak7268v2 rak7289cv2 rak7289v2 dragino-lps8n sensecap-m2"
