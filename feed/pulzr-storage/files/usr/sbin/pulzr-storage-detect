@@ -166,11 +166,11 @@ blocks_mb() {
     df -k "${MOUNT_POINT}" 2>/dev/null | awk 'NR == 2 { printf "%d %d\n", $2 / 1024, $4 / 1024 }'
 }
 
-# Committing rewrites the package file even when no value differs, and procd's
-# config.change trigger on "pulzr" watches it — which restarts the LoRa stack.
-# This script runs from hotplug, so a card that re-enumerates a few times on a
-# bad contact would otherwise restart the forwarder once per event. See
-# pulzr-gps-detect for the version of this that ate itself in a loop.
+# Committing rewrites the package file even when no value differs. This script
+# runs from hotplug, so a card that re-enumerates a few times on a bad contact
+# would otherwise write flash once per event for nothing. An unchanged commit
+# does not fire procd's config.change on its own; see the note in
+# pulzr-gps-detect for what does.
 changed=0
 put() {
     [ "$(uci -q get "pulzr.$1")" = "$2" ] && return 0

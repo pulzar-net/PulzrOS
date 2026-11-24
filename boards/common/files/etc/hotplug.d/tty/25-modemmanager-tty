@@ -43,9 +43,12 @@
 # exit the chain, cannot unset DEVNAME for this one, and cannot influence it
 # at all. Filtering has to happen in the script that does the reporting.
 #
-# ModemManager has no udev on OpenWrt (it is not in its dependencies), so
-# ID_MM_DEVICE_IGNORE is not available either, and its init script exposes no
-# filter-policy option.
+# Not ID_MM_DEVICE_IGNORE in a rules file, though ModemManager 1.24 reads
+# /lib/udev/rules.d without udev (mm-kernel-device-generic.c) and would honour
+# it for the vendor IDs. The power board is matched by the USB port board.conf
+# names, and its rule engine has no KERNELS match to say that with. Half the
+# filter in a rules file and half here would be two places to look, for a
+# filter that is proven on the bench as it is.
 
 # Load hotplug common utilities
 . /usr/share/ModemManager/modemmanager.common

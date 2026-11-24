@@ -279,20 +279,22 @@ fi
 
 # ── record, but only if it differs ──────────────────────────────────────────
 #
-# `uci commit` rewrites the package file whether or not any value actually
-# changed, and procd's config.change trigger on "pulzr" watches that file.
-# This script runs from pulzr-packet-forwarder's start_service, so an
-# unconditional commit restarts the service that just called it — which calls
-# it again. It is a loop with nothing to stop it.
+# `uci commit` rewrites the package file whether or not any value changed,
+# which on flash is a write for nothing on nearly every boot. It does not by
+# itself restart anything: procd's config.change comes from reload_config,
+# which compares each package's `uci show` against a checksum, or from rpcd's
+# ubus commit and apply (LuCI). Neither runs here. This script runs from
+# pulzr-packet-forwarder's start_service, though, and that service restarts on
+# config.change for "pulzr", so anything that does run reload_config after a
+# real change restarts the service that called this.
 #
-# Found on a Pi4 that had never forwarded a single uplink: the cycle ran every
-# ten seconds and chirpstack-mqtt-forwarder never stayed alive long enough to
-# finish connecting to the broker. Nothing in the log said "restarting", so it
-# read as a broken forwarder rather than as a config trigger eating itself.
+# This note used to blame the unchanged commit for a Pi4 that restarted its
+# LoRa stack every ten seconds and never forwarded an uplink. The loop was
+# real, and comparing first was in place when it stopped, but an unchanged
+# commit cannot fire that trigger, so what drove it is not established.
 #
-# Comparing before setting is what breaks it: on the boots where detection
-# finds what it found last time — which is nearly all of them — there is
-# nothing to commit and the trigger never fires.
+# Comparing before setting means the boots where detection finds what it
+# found last time, which is nearly all of them, write nothing.
 changed=0
 put() {
     [ "$(uci -q get "pulzr.$1")" = "$2" ] && return 0

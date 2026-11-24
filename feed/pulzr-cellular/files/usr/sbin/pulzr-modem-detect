@@ -327,12 +327,11 @@ if [ "${current}" != "${device_path}" ]; then
 fi
 
 # Only if something differs. This script runs from hotplug.d/iface, so it
-# re-runs on every interface event — and on a gateway whose wwan cannot bind
-# ModemManager, netifd retries that interface continuously. Committing
-# unconditionally turned each of those retries into a `config.change` on
-# "pulzr", which restarts the packet forwarder, which is how a Pi4 ended up
-# restarting its LoRa stack every ten seconds and never forwarding an uplink.
-# These values — model, IMEI, ICCID — do not change between runs anyway.
+# re-runs on every interface event, and on a gateway whose wwan cannot bind
+# ModemManager netifd retries that interface continuously. Each unconditional
+# commit is a flash write, and these values (model, IMEI, ICCID) do not change
+# between runs. An unchanged commit does not fire procd's config.change on its
+# own; see the note in pulzr-gps-detect for what does.
 changed=0
 put() {
     [ "$(uci -q get "pulzr.$1")" = "$2" ] && return 0

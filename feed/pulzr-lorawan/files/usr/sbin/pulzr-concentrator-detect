@@ -293,14 +293,11 @@ detect_slot() {
 
 # ── Every slot ──────────────────────────────────────────────────────────────
 #
-# `uci commit` rewrites the package file whether or not any value differs, and
-# procd's config.change trigger on "pulzr" watches that file. This script
-# runs from pulzr-packet-forwarder's start_service, so committing when
-# nothing changed restarts the service that just called it, which calls it
-# again — see the same note in pulzr-gps-detect, where the loop was found.
-#
-# Detection is overwhelmingly stable: the same board finds the same part on
-# every boot. Comparing first means the common case writes nothing at all.
+# `uci commit` rewrites the package file whether or not any value differs.
+# Detection is overwhelmingly stable, the same board finding the same part on
+# every boot, so comparing first means the common case writes nothing to
+# flash. An unchanged commit does not fire procd's config.change on its own;
+# see the note in pulzr-gps-detect for what does.
 changed=0
 put() {
     [ "$(uci -q get "pulzr.$1")" = "$2" ] && return 0

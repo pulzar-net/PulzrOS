@@ -32,6 +32,14 @@
 # A plain reset with the network answering recovers in 15 seconds through
 # 10-report-down alone. It takes a refusal longer than that one retry.
 #
+# Not the proto's force_connection option, which turns a failed registration
+# or connect into MM_INTERFACE_RESTART instead of a blocked restart. netifd
+# sets an autostart interface up again the moment it goes down (interface.c,
+# interface_handle_config_change), so a SIM the network keeps refusing would
+# re-attach back to back for as long as it is refused, the signalling the
+# backoff below exists to avoid. The SIM-missing and failed-modem paths block
+# regardless of the option.
+#
 # ── WHAT IT DOES ───────────────────────────────────────────────────────────
 #
 # Once a minute, by what netifd and ModemManager say:
