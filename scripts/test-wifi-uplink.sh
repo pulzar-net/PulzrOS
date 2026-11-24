@@ -44,6 +44,9 @@ check() {
 
 # ── pulzr-wifi-uplink check ─────────────────────────────────────────────────
 
+# A fixed clock for the program and the test alike (wifi-fixture/bin/date).
+export FAKE_NOW=1795500000
+
 sed -e "s#/lib/functions/network.sh#${FIX}/network.sh#" \
     -e "s#/usr/share/libubox/jshn.sh#${FIX}/jshn.sh#" \
     -e "s#/var/run/pulzr/#${T}/run/#g" \
@@ -194,6 +197,8 @@ rm -f "${T}/run/wifi-uplink.bounced"
 
 reset; WIFI_DEV='' up check
 check "not associated: no answer kept" "gone" "$([ -f "${T}/run/wifi-uplink.json" ] && echo kept || echo gone)"
+
+unset FAKE_NOW
 
 # ── pulzr-wifi-resolve ──────────────────────────────────────────────────────
 

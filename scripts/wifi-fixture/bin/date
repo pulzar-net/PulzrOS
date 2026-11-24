@@ -1,0 +1,11 @@
+#!/bin/sh
+# The test's clock. With FAKE_NOW set, `date +%s` answers it, so the uplink's
+# age of an outage is what the test wrote: on the real clock a second could
+# tick between the test writing `since` and the program reading the time, and
+# "offline for 200 s" came out 201 (CI, 24 Nov 2026). Anything else is the
+# real date.
+if [ -n "${FAKE_NOW:-}" ] && [ "$*" = "+%s" ]; then
+    echo "${FAKE_NOW}"
+    exit 0
+fi
+exec /bin/date "$@"
