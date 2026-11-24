@@ -134,10 +134,11 @@ case "${args[0]}" in
       plan+=("${n}")
     }
     for n in "${args[@]:1}"; do resolve "${n}"; done
-    i=0
+    i=0 total="${#plan[@]}"
     for n in "${plan[@]}"; do
       i=$((i + 1)); v="$(offered "${n}" | cut -d" " -f2)"
-      echo "(${i}/${#plan[@]}) Installing ${n} (${v})"
+      # Padded to the width of the total, as apk does: "( 1/11)".
+      printf "(%*d/%d) Installing %s (%s)\n" "${#total}" "${i}" "${total}" "${n}" "${v}"
       [ "${sim}" = 1 ] && continue
       f="$(dirname "${index}")/${n}-${v}.apk"
       [ -f "${f}" ] || { echo "ERROR: ${n}-${v}: No such file or directory"; exit 1; }
@@ -481,24 +482,31 @@ kpayload() {
   ( cd "${dir}" && tar -cf "$2" . )
 }
 
+CELL_LIBS="libm1 libm2 libm3 libm4 libm5 libm6 libm7"
+
 # The CDN for release $1 (package version $2), with pulzr-cell beside the rest.
 serve_cell() {
   local v="$1" pv="$2" repo="${SERVE}/v$1/${ARCH}" n f entries=() up=()
   mkdir -p "${repo}"
   payload pulzr-cell "${repo}/pulzr-cell-${pv}.apk"
   kpayload kmod-usb-net-modem "${repo}/kmod-usb-net-modem-6.12-r1.apk"
-  kpayload modemd "${repo}/modemd-1.0-r1.apk"
+  # A snapshot version, as OpenWrt's usb-modeswitch has: "~" in the file name.
+  kpayload modemd "${repo}/modemd-1.0~abc123-r1.apk"
   kpayload kmod-other "${repo}/kmod-other-6.12-r1.apk"
+  # Seven libraries, so the install is eleven packages and apk pads its
+  # counter, "( 1/11)", as it did for LoRaWAN on Downey.
+  for n in ${CELL_LIBS}; do kpayload "${n}" "${repo}/${n}-1.0-r1.apk"; done
   { echo "pulzr-cell ${pv} modemd kmod-usb-net-modem pulzr-base=${pv}"
+    echo "modemd 1.0~abc123-r1 ${CELL_LIBS}"
     # The trailing space is "no dependencies" to the stand-in apk.
-    echo "modemd 1.0-r1 "
+    for n in ${CELL_LIBS}; do echo "${n} 1.0-r1 "; done
     echo "kmod-usb-net-modem 6.12-r1 "
     echo "kmod-other 6.12-r1 "; } > "${repo}/packages.adb"
   f="${repo}/pulzr-cell-${pv}.apk"
   entries+=("$(jq -nc --arg a "${ARCH}" --arg file "pulzr-cell-${pv}.apk" --arg sha "$(sha "${f}")" \
                 --argjson bytes "$(wc -c < "${f}")" \
                 '{name:"pulzr-cell", arches:{($a):{file:$file, bytes:$bytes, installedBytes:$bytes, sha256:$sha}}}')")
-  for n in modemd-1.0-r1 kmod-usb-net-modem-6.12-r1 kmod-other-6.12-r1; do
+  for n in modemd-1.0~abc123-r1 $(printf '%s-1.0-r1 ' ${CELL_LIBS}) kmod-usb-net-modem-6.12-r1 kmod-other-6.12-r1; do
     f="${repo}/${n}.apk"
     up+=("$(jq -nc --arg n "${n%-*-*}" --arg a "${ARCH}" --arg file "${n}.apk" --arg sha "$(sha "${f}")" \
               --argjson bytes "$(wc -c < "${f}")" \
@@ -520,7 +528,7 @@ reset_cell() {
 reset_cell
 addon install pulzr-cell alice; rc=$?
 check "kmods: an add-on's own kmods install with it" "0 installed" "${rc} $(item pulzr-cell state)"
-check "kmods: and what it brings" "kmod-usb-net-modem modemd pulzr-cell" \
+check "kmods: and what it brings, all eleven" "kmod-usb-net-modem ${CELL_LIBS} modemd pulzr-cell" \
   "$(cut -d' ' -f1 "${T}/apk/installed" | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')"
 check "kmods: loaded once, before its scripts" "1" "$(wc -l < "${T}/kmodloader.log" | tr -d ' ')"
 
@@ -550,7 +558,7 @@ check "carry: refused when the overlay cannot hold it" "1 yes" "${rc} $(err | gr
 echo 500000 > "${T}/free_kb"
 out="$(pulzr-addon carry "${NEXT}")"; rc=$?
 check "carry: the next release's add-on and what it brings" \
-  "0 kmod-usb-net-modem-6.12-r1.apk modemd-1.0-r1.apk pulzr-cell-${NEXTPKG}.apk" \
+  "0 kmod-usb-net-modem-6.12-r1.apk $(printf '%s-1.0-r1.apk ' ${CELL_LIBS})modemd-1.0~abc123-r1.apk pulzr-cell-${NEXTPKG}.apk" \
   "${rc} $(cd "${CARRY}" && ls ./*.apk | sed 's#^\./##' | sort | tr '\n' ' ' | sed 's/ $//')"
 check "carry: not a kmod it does not bring" no "$([ -e "${CARRY}/kmod-other-6.12-r1.apk" ] && echo yes || echo no)"
 check "carry: with that release's signed index" yes "$(cmp -s "${CARRY}/packages.adb" "${SERVE}/v${NEXT}/${ARCH}/packages.adb" && echo yes)"

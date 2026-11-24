@@ -571,6 +571,19 @@ let fail = (name, by, action, error, transient, state) => {
     return { error, transient: !!transient };
 };
 
+// The packages an apk add would install, from its output. apk pads the
+// counter to the total's width, "( 1/11)", so a pattern without the spaces
+// read only the last two of an eleven-package LoRaWAN, downloaded those, and
+// the install then could not find the other nine.
+let planned = (out) => {
+    let pkgs = [];
+    for (let line in split(out, '\n')) {
+        let m = match(line, /^\( *[0-9]+\/[0-9]+\) (Installing|Upgrading|Downgrading|Replacing|Reinstalling) ([^ ]+) /);
+        if (m) push(pkgs, m[2]);
+    }
+    return pkgs;
+};
+
 let install = (name, by, action) => {
     let rel = release(), b = board(), a = arch();
     let deny = denied();
@@ -622,11 +635,7 @@ let install = (name, by, action) => {
             return fail(name, by, action, sprintf('%s was not built for the firmware this gateway runs.', title(rel, name)));
         return fail(name, by, action, why);
     }
-    let pkgs = [];
-    for (let line in split(sim.out, '\n')) {
-        let m = match(line, /^\([0-9]+\/[0-9]+\) (Installing|Upgrading|Downgrading|Replacing|Reinstalling) ([^ ]+) /);
-        if (m) push(pkgs, m[2]);
-    }
+    let pkgs = planned(sim.out);
     // Every check below reads this list, so an answer it cannot read is a
     // refusal, not an empty list waved through.
     if (!(name in pkgs))
@@ -651,7 +660,7 @@ let install = (name, by, action) => {
 
     for (let p in pkgs) {
         let e = entry(p);
-        if (!match(e.file ?? '', /^[A-Za-z0-9._+-]+\.apk$/) || !match(e.sha256 ?? '', /^[0-9a-f]{64}$/))
+        if (!match(e.file ?? '', /^[A-Za-z0-9._+~-]+\.apk$/) || !match(e.sha256 ?? '', /^[0-9a-f]{64}$/))
             return fail(name, by, action, sprintf('The catalog entry for %s is malformed.', p));
         err = fetchPackage(sprintf('%s/%s/%s', url, a, e.file), dir + '/' + e.file, e.sha256);
         if (err) return fail(name, by, action, err, true);
@@ -659,7 +668,12 @@ let install = (name, by, action) => {
 
     record(name, 'installing');
     let add = run(['apk', 'add', ...repo(index), name]);
-    if (add.code != 0) return fail(name, by, action, apkError(add.out));
+    if (add.code != 0) {
+        // apk commits what it could: without this the add-on stays installed
+        // without what it needs, and reads as installed to everything else.
+        run(['apk', 'del', '--no-interactive', '--repositories-file', '/dev/null', name]);
+        return fail(name, by, action, apkError(add.out));
+    }
     activateAll(pkgs);
 
     if (!judged()) {
@@ -819,7 +833,7 @@ let carry = (version) => {
         return undo(sprintf('Taking %s across the upgrade needs %d KB and this gateway has %d KB free.',
                             join(', ', map(names, (n) => title(rel, n))), (bytes + SPARE) / 1024, free / 1024));
     for (let e in files) {
-        if (!match(e.file ?? '', /^[A-Za-z0-9._+-]+\.apk$/) || !match(e.sha256 ?? '', /^[0-9a-f]{64}$/))
+        if (!match(e.file ?? '', /^[A-Za-z0-9._+~-]+\.apk$/) || !match(e.sha256 ?? '', /^[0-9a-f]{64}$/))
             return undo(sprintf('The catalog entry for %s is malformed.', e.file ?? '?'));
         err = fetchPackage(sprintf('%s/%s/%s', url, a, e.file), dir + '/' + e.file, e.sha256);
         if (err) return undo(err);
@@ -852,17 +866,14 @@ let restoreCarried = () => {
         let add = sim.code == 0 ? run(['apk', 'add', ...repo(dir + '/packages.adb'), n]) : sim;
         if (add.code != 0) {
             let why = apkError(add.out);
+            // As install(): not left half installed.
+            run(['apk', 'del', '--no-interactive', '--repositories-file', '/dev/null', n]);
             record(n, 'pending-restore', why);
             journal({ action: 'restore', name: n, by: 'carried', result: 'failed', error: why });
             log(sprintf('restore %s from the carried copy failed: %s', n, why));
             continue;
         }
-        let pkgs = [];
-        for (let line in split(sim.out, '\n')) {
-            let m = match(line, /^\([0-9]+\/[0-9]+\) (Installing|Upgrading|Downgrading|Replacing|Reinstalling) ([^ ]+) /);
-            if (m) push(pkgs, m[2]);
-        }
-        activateAll(pkgs);
+        activateAll(planned(sim.out));
         record(n, 'installed');
         journal({ action: 'restore', name: n, by: 'carried', result: 'installed', version: installed(n) });
         log(sprintf('restore %s from the copy carried across the upgrade', n));
