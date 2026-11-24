@@ -215,9 +215,14 @@ let release = () => {
 
 let title = (rel, name) => rel[name]?.title ?? name;
 
+// OpenWrt's package architecture (aarch64_cortex-a53), which the catalog and
+// the repository's directories are keyed by: the first line of /etc/apk/arch,
+// as apk itself installs against. Not `apk --print-arch`, which prints the
+// machine's (aarch64), and so made every restore on the first gateway to try
+// one, Downey on 0.4.0-rc.12, read as "has no LoRaWAN for this gateway".
 let arch = () => {
-    let r = run(['apk', '--print-arch']);
-    return r.code == 0 && match(r.out, /^[A-Za-z0-9_-]+$/) ? r.out : null;
+    let a = trim(split(fs.readfile(ROOT + '/etc/apk/arch') ?? '', '\n')[0]);
+    return match(a, /^[A-Za-z0-9_-]+$/) ? a : null;
 };
 
 let tag = (b) => 'v' + (b.PULZR_VERSION ?? 'unknown');

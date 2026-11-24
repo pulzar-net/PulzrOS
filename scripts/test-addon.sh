@@ -96,7 +96,8 @@ DB="${T}/apk/installed" FILES="${T}/apk/files"
 index="" sim=0 args=()
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --print-arch) echo "${ARCH}"; exit 0 ;;
+    # As the real one: the machine, not the package arch the catalog uses.
+    --print-arch) echo aarch64; exit 0 ;;
     --repositories-file) shift ;;
     --repository) index="$2"; shift ;;
     --simulate) sim=1 ;;
@@ -204,7 +205,9 @@ serve() {
 
 reset() {
   rm -rf "${R}" "${T}/apk" "${T}"/*.log "${T}"/uci-defaults-* "${T}/cut"
-  mkdir -p "${R}/etc/pulzr" "${R}/etc/config" "${R}/overlay" "${T}/apk/files"
+  mkdir -p "${R}/etc/pulzr" "${R}/etc/config" "${R}/etc/apk" "${R}/overlay" "${T}/apk/files"
+  # OpenWrt's package arch, which the catalog is keyed by.
+  echo "${ARCH}" > "${R}/etc/apk/arch"
   : > "${T}/apk/installed"
   printf "BOARD_ID='rpi4'\nPULZR_VERSION='%s'\nPULZR_ADDONS_URL='%s'\nPULZR_ADDONS_BUILTIN='%s'\n" \
     "${VERSION}" "${BASE_URL}" "${1:-}" > "${R}/etc/pulzr/board.conf"
