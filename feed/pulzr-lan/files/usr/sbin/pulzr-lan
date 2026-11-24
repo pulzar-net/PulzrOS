@@ -26,6 +26,9 @@
 //   pulzr-lan scan                           which management ports each
 //                                              client answers on (nmap)
 //   pulzr-lan scan-service                   scan every so often (procd)
+//   pulzr-lan announce get <mac>             an SDK device's announce, CSR and
+//                                              all (announce.uc)
+//   pulzr-lan announce answer <mac> <json>   Pulzr's enroll answer for it
 //
 // ── THE TUNNEL FORWARD ─────────────────────────────────────────────────────
 //
@@ -293,6 +296,7 @@ const SCAN_SOONEST = 120;
 const SCAN_KEEP = 7 * 86400;
 const MAX_SCAN_HOSTS = 64;
 const AGENT = '/usr/sbin/pulzr-mqtt-agent';
+const ANNOUNCE = '/usr/share/pulzr/lan/announce.uc';
 // The epoch and each client's base are in RAM; the flash copy exists only
 // between a clean shutdown and the boot after it.
 const USAGE_DIR = SCAN_DIR + '/lan-usage';
@@ -1198,6 +1202,9 @@ let status = () => {
         journal: journalTail(),
         scannedAt: readScan().at ?? null,
         usageEpoch: usageEpoch(),
+        // SDK devices not enrolled yet that announced themselves here, for
+        // Pulzr Cloud to offer for adoption (announce.uc).
+        announces: fs.access(ANNOUNCE) ? loadfile(ANNOUNCE, { raw_mode: true })().list() : [],
     };
 };
 
@@ -1593,6 +1600,23 @@ let commands = {
         printf('%J\n', result?.doc ?? { skipped: true });
     },
 
+    announce: (what, mac, doc) => {
+        let a = loadfile(ANNOUNCE, { raw_mode: true })();
+        if (what == 'get') {
+            let r = a.get(mac);
+            r ?? die('no announce from that MAC', 3);
+            printf('%J\n', r);
+        } else if (what == 'answer') {
+            let parsed = null;
+            try { parsed = json(doc ?? ''); } catch (e) { }
+            let r = a.answer(mac, parsed);
+            r.error && die(r.error, 3);
+            printf('%J\n', r);
+        } else {
+            die('usage: pulzr-lan announce get <mac> | answer <mac> <json>', 2);
+        }
+    },
+
     // Every fifteen minutes, and a minute or two after a new lease: a device
     // just plugged in is the one somebody wants a terminal to. A first scan a
     // few minutes after boot, once the clients have their leases again.
@@ -1667,5 +1691,5 @@ let commands = {
 };
 
 let cmd = commands[ARGV[0] ?? 'status'];
-cmd ?? die('usage: pulzr-lan {apply|status|policy|cellular|reserve|unreserve|forward|unforward|expose|unexpose|tunnel|address|links|seen|isolate|scan|scan-service|save-usage}', 2);
+cmd ?? die('usage: pulzr-lan {apply|status|policy|cellular|reserve|unreserve|forward|unforward|expose|unexpose|tunnel|address|links|seen|isolate|scan|scan-service|save-usage|announce}', 2);
 call(cmd, null, null, ...slice(ARGV, 1));

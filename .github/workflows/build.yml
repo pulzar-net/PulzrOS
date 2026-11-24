@@ -212,6 +212,11 @@ jobs:
       - name: Uplinks and DNS
         run: UCODE=/tmp/ucode/build/ucode scripts/test-router.sh
 
+      # An SDK device announcing itself on the LAN: believed only for the MAC
+      # the ARP table gives its address on the bridge (announce.uc).
+      - name: Device announces
+        run: UCODE=/tmp/ucode/build/ucode scripts/test-announce.sh
+
       # The WiFi uplink's verdict, its resolver and roam(): one blocked host or
       # one lost DNS datagram used to read as offline, and a join used to be
       # undone by roam() within the minute. Against a fake netifd, curl, DNS

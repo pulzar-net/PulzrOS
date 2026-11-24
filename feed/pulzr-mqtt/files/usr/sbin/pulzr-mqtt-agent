@@ -322,6 +322,14 @@ dispatch() {
             out="$(lan forward "$(field ip)" "$(field port)" "$(field seconds)" "${id}")" || { echo "${out}"; return 1; } ;;
         lan-unforward)
             out="$(lan unforward "$(field port)" "${id}")" || { echo "${out}"; return 1; } ;;
+        # An SDK device that announced itself on the LAN (pulzr-lan announce):
+        # its CSR, for Pulzr Cloud to sign when somebody adopts it, and then
+        # the enroll answer, held for the device's next announce. Nothing in
+        # either is a secret: a certificate request and a certificate.
+        lan-announce)
+            out="$(lan announce get "$(field mac)")" || { echo "${out}"; return 1; } ;;
+        lan-adopted)
+            out="$(lan announce answer "$(field mac)" "$(field answer)")" || { echo "${out}"; return 1; } ;;
         lan-policy)
             out="$(lan policy "$(field mac)" "$(field policy)")" || { echo "${out}"; return 1; } ;;
         # A reservation, or with no ip, the end of one.

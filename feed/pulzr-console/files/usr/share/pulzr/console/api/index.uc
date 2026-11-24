@@ -78,6 +78,11 @@ const PUBLIC = {
     'POST /api/auth/recovery/verify': true,
     'GET  /api/health': true,
 
+    // An SDK device on the LAN that is not enrolled says it is here
+    // (/usr/share/pulzr/lan/announce.uc). Believed only from the LAN bridge,
+    // for the MAC the kernel's ARP entry gives the caller's address.
+    'POST /api/announce': true,
+
     // The captive portal renders before anybody has signed in, and needs to
     // know what it is looking at. Kept deliberately thin — see access.uc: it
     // reports whether an AP is up and whether DHCP is being served, and
@@ -240,6 +245,13 @@ function radioPost(op) {
 // ── routing ─────────────────────────────────────────────────────────────────
 
 const ROUTES = {
+    'POST /api/announce': (env, req) => {
+        const path = '/usr/share/pulzr/lan/announce.uc';
+        if (!_m_fs.stat(path)) return error(404, 'No LAN on this gateway.');
+        const bridge = cursor().get('network', 'devlan_dev', 'name') ?? 'br-devlan';
+        const r = loadfile(path, { raw_mode: true })().receive(env.REMOTE_ADDR, req, bridge);
+        return respond(r[0], r[1]);
+    },
     'GET  /api/health': () => respond(200, { ok: true }),
 
     'GET  /api/auth/methods': (env) => respond(200, auth.loginMethods(env.SERVER_ADDR)),

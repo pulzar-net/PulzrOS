@@ -322,6 +322,34 @@ until the port goes. A forward, reservation or exposed port to an address on
 no subnet of the LAN is refused with `<ip> is on no subnet of the LAN: add
 one for it first`.
 
+## Devices that announce themselves
+
+A device running the Pulzr SDK that is not enrolled yet says it is here, so the
+organization that owns the gateway can adopt it from Pulzr Net without anybody
+typing a code into it:
+
+```
+POST https://<the gateway's LAN address>/api/announce
+{ "mac": "02:80:e1:9c:0f:3f", "csr": "-----BEGIN CERTIFICATE REQUEST-----...",
+  "eui": "...", "hw": { "model", "mac", "fw" }, "package": "sha256:..." }
+```
+
+| Answer | |
+|---|---|
+| `202 {"retryAfter": 300}` | Heard, not adopted yet |
+| `200` | Adopted: the body Pulzr Net's `POST /api/v1/devices/enroll` answers, once |
+| `403` | The caller's address is not that MAC on the LAN bridge |
+| `400`, `429` | Malformed; again within 20 seconds, or four already waiting |
+
+A MAC is no secret, so the gateway believes an announce only from the LAN
+bridge, for the MAC its own ARP table gives the caller's address. Faking one
+takes being on this LAN. The device's own key is what Pulzr signs on adoption,
+so the answer is no use to anybody else. Up to four wait at a time, in
+`/var/run/pulzr/announce`, for an hour after the last one; `pulzr-lan status`
+lists them without the CSR, and the agent's `lan-announce` (the CSR) and
+`lan-adopted` (the answer) carry the rest. The module is
+`/usr/share/pulzr/lan/announce.uc`; `scripts/test-announce.sh` checks it.
+
 ## Devices a codec drives (pulzr-ip)
 
 A device that speaks its own protocol over IP instead of Pulzr's (an IP
