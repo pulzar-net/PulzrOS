@@ -12,9 +12,6 @@
 #   rust-*                           the same, by release and SDK target
 #   device-dl-*                      the per-board sources, replaced by one
 #                                    openwrt-dl per OpenWrt release
-#   sccache-*                        the newest of each SDK target: every run
-#                                    saves its own, and only the newest is
-#                                    restored
 #   codeql-*                         the newest three of each language: the
 #                                    CodeQL action saves one per commit, and
 #                                    84 of them held 883 MB on 23 Nov 2026
@@ -86,15 +83,14 @@ jobs:
                 fi ;;
             esac
           done < caches.tsv
-          # Everything else by kind, newest first: one sccache per target, three
-          # CodeQL databases per language, three of anything else. The kind is
-          # the key without what each run adds to it: the run id (sccache), the
-          # commit and run (CodeQL), a trailing hash or number (the rest).
+          # Everything else by kind, newest first: three CodeQL databases per
+          # language, three of anything else. The kind is the key without what
+          # each run adds to it: the commit and run (CodeQL), a trailing hash or
+          # number (the rest).
           grep -v -E $'\t(device-dl|lora|rust|device-ib|imagebuilder|openwrt-dl)-' caches.tsv \
             | awk -F'\t' '{
                 k = $2; keep = 3
-                if (k ~ /^sccache-/) { sub(/-[0-9]+$/, "", k); keep = 1 }
-                else if (k ~ /^codeql-/) sub(/-[0-9a-f]{40}-[0-9]+-[0-9]+$/, "", k)
+                if (k ~ /^codeql-/) sub(/-[0-9a-f]{40}-[0-9]+-[0-9]+$/, "", k)
                 else { sub(/-[0-9a-fA-F]{6,}$/, "", k); sub(/-[0-9]+$/, "", k) }
                 n[k]++; if (n[k] > keep) print $1 "\t" $2 "\t" $3
               }' >> delete.tsv

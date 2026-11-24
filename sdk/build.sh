@@ -141,16 +141,6 @@ fi
 # longer needed once Rust is installed into the SDK.
 find "${rust_build}" -mindepth 1 -maxdepth 1 -not \( -type f -name '.*' -size 0 \) -exec rm -rf {} +
 
-# OpenWrt's own sccache hook (lang/rust's Config.in) for the Rust packages,
-# when prebuilt.yml hands a cache directory over. Only now: the hook wraps the
-# compiler's own build too, and the compiler is cached whole above.
-if [ -n "${SDK_SCCACHE_DIR:-}" ]; then
-  command -v sccache >/dev/null || { echo "SDK_SCCACHE_DIR is set and sccache is not installed" >&2; exit 1; }
-  { echo 'CONFIG_RUST_SCCACHE=y'; echo "CONFIG_RUST_SCCACHE_DIR=\"${SDK_SCCACHE_DIR}\""; } >> .config
-  make defconfig
-  grep -q '^CONFIG_RUST_SCCACHE=y' .config || { echo "defconfig dropped CONFIG_RUST_SCCACHE" >&2; exit 1; }
-fi
-
 # ── BusyBox ────────────────────────────────────────────────────────────────
 # OpenWrt's busybox, built from its own recipe at the release's commit with the
 # release's configuration and one option changed: FEATURE_SH_EXTRA_QUIET, so
@@ -219,8 +209,3 @@ done
 flash="$(xz -9e -c "${OUT}/${arch}/pulzr-probe" | wc -c)"
 [ "${flash}" -le 512000 ] || { echo "pulzr-probe is ${flash} bytes on flash on ${arch}, over 500 KB" >&2; exit 1; }
 ls -l "${OUT}/${arch}"
-
-if [ -n "${SDK_SCCACHE_DIR:-}" ]; then
-  SCCACHE_DIR="${SDK_SCCACHE_DIR}" sccache --show-stats || true
-  SCCACHE_DIR="${SDK_SCCACHE_DIR}" sccache --stop-server >/dev/null 2>&1 || true
-fi

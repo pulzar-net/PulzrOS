@@ -8,20 +8,24 @@
 #
 # A cold build is hours: the SDK compiles Rust and LLVM, a device ImageBuilder
 # the toolchain and kernel. The Rust compiler is cached on its own (rust-*,
-# by release and target), the Rust packages' crates through sccache, and a
-# device build takes the release's prebuilt eBPF LLVM, so what is left of a
-# rebuild is the packages and the kernel. They used to run inside build.yml, whose
-# cancel-in-progress drops a superseded run, and a cache is only saved when its
-# job finishes: on 23 Nov 2026 four pushes in an hour cancelled the LoRa builds
-# four times, and the cache was never saved. Here each target and each device
-# is its own concurrency group that never cancels a running job, and each job
-# saves its cache the moment it is built. build.yml only restores; a board
-# whose build is not cached yet waits, and says so, without holding up the
-# boards whose builds are.
+# by release and target), and a device build takes the release's prebuilt eBPF
+# LLVM, so what is left of a rebuild is the packages and the kernel. They used
+# to run inside build.yml, whose cancel-in-progress drops a superseded run, and
+# a cache is only saved when its job finishes: on 23 Nov 2026 four pushes in
+# an hour cancelled the LoRa builds four times, and the cache was never saved.
+# Here each target and each device is its own concurrency group that never
+# cancels a running job, and each job saves its cache the moment it is built.
+# build.yml only restores; a board whose build is not cached yet waits, and
+# says so, without holding up the boards whose builds are.
 #
 # The keys are sdk/key and build.sh's device_key, which hash everything that
 # decides what is built, so a push here that changes none of it finds every
 # cache and does nothing in a minute.
+#
+# The Rust packages' crates are not cached. sccache took bcm2711's packages
+# from 40 minutes to 22, but held 1 GB per target, and with it the
+# repository's caches went past GitHub's 10 GB (24 Nov 2026), where the first
+# evicted are the least used: the Rust compilers, each worth one to two hours.
 
 name: prebuilt
 
@@ -110,15 +114,13 @@ jobs:
         with:
           tool-cache: true
 
-      # OpenWrt's build prerequisites for Ubuntu, clang for bindgen, and
-      # sccache for the Rust packages.
+      # OpenWrt's build prerequisites for Ubuntu, and clang for bindgen.
       - name: Install the SDK's prerequisites
         if: steps.cached.outputs.cache-hit != 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential clang libclang-dev flex bison g++ gawk gettext git \
-            libncurses-dev libssl-dev python3-setuptools rsync swig unzip zlib1g-dev file wget zstd \
-            sccache
+            libncurses-dev libssl-dev python3-setuptools rsync swig unzip zlib1g-dev file wget zstd
 
       # The Rust compiler, two hours of a cold build, decided by the release and
       # the target alone (sdk/build.sh, Rust): a change to the packages takes
@@ -136,21 +138,10 @@ jobs:
           path: .build/rust/${{ steps.rust.outputs.target }}
           key: ${{ steps.rust.outputs.key }}
 
-      # The Rust packages' compiled crates. A key is written once, so each run
-      # saves its own and the next takes the newest; cache-cleanup keeps one.
-      - uses: actions/cache/restore@v4
-        if: steps.cached.outputs.cache-hit != 'true'
-        with:
-          path: .build/sccache/${{ steps.rust.outputs.target }}
-          key: sccache-${{ steps.rust.outputs.target }}-${{ github.run_id }}
-          restore-keys: sccache-${{ steps.rust.outputs.target }}-
-
       - name: Build
         if: steps.cached.outputs.cache-hit != 'true'
         env:
           RUST_CACHE: ${{ github.workspace }}/.build/rust/${{ steps.rust.outputs.target }}
-          SDK_SCCACHE_DIR: ${{ github.workspace }}/.build/sccache/${{ steps.rust.outputs.target }}
-          SCCACHE_CACHE_SIZE: 1G
         run: sdk/build.sh '${{ matrix.target }}' .build/sdk
 
       - uses: actions/cache/save@v4
@@ -165,19 +156,12 @@ jobs:
           path: .build/rust/${{ steps.rust.outputs.target }}
           key: ${{ steps.rust.outputs.key }}
 
-      - uses: actions/cache/save@v4
-        if: always() && steps.cached.outputs.cache-hit != 'true'
-        with:
-          path: .build/sccache/${{ steps.rust.outputs.target }}
-          key: sccache-${{ steps.rust.outputs.target }}-${{ github.run_id }}
-
       - name: Cache size
         if: steps.cached.outputs.cache-hit != 'true'
         run: |
           {
             echo "${{ steps.key.outputs.key }}: $(du -sh .build/sdk | cut -f1)"
             echo "${{ steps.rust.outputs.key }}: $(du -sh .build/rust | cut -f1)$([ '${{ steps.rust-cache.outputs.cache-hit }}' = true ] && echo ', restored')"
-            echo "sccache-${{ steps.rust.outputs.target }}: $(du -sh .build/sccache | cut -f1)"
           } >> "$GITHUB_STEP_SUMMARY"
 
       # The boards that waited on this build get it now, not on the next push.
