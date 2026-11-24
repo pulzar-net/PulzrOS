@@ -192,8 +192,8 @@
 // ── WHAT A CLIENT REACHES ──────────────────────────────────────────────────
 //
 // The internet, by default, straight out whichever uplink is routing,
-// masqueraded: never through the management tunnel or a relay. Pulzr meters
-// it (below) and a plan prices it. `pulzr-lan policy <mac> parkeze` narrows
+// masqueraded: never through the management tunnel or a relay. Pulzr counts
+// it (below) and shows it; it is not billed. `pulzr-lan policy <mac> parkeze` narrows
 // one client to Pulzr, NTP and DNS, which is what every client got before
 // metering existed.
 //
@@ -203,7 +203,7 @@
 // address and the uplink device, with a counter on each element. Counted after
 // fw4 has filtered, so a blocked attempt is not traffic. nlbwmon counts per
 // client but not per uplink, and per uplink is the question: which client
-// spent the SIM's data, and which bytes a plan's allowance is spent on.
+// spent the SIM's data, and which went out the site's own connection.
 //
 // The kernel counts per address since the table was made; `status` reports
 // per MAC, as running totals within an epoch (`usageEpoch`), and Pulzr Cloud

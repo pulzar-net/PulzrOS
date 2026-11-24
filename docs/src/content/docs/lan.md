@@ -220,7 +220,8 @@ to stay under the agent's 8KB answer.
 
 ## Metering
 
-Each device's internet use, per uplink, for a plan's data allowance. The
+Each device's internet use, per uplink, which Pulzr shows per device and does
+not bill (a private tunnel's traffic is counted as that tunnel). The
 kernel counts (nftables: a dynamic set keyed on the device's address and the
 uplink device, a counter on each element, after fw4 has filtered); nothing on
 the gateway adds bytes up by hand. nlbwmon counts per device but not per
