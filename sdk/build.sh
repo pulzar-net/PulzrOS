@@ -71,10 +71,16 @@ cd "${sdk}"
   echo '# CONFIG_ALL_NONSHARED is not set'
   echo '# CONFIG_ALL_KMODS is not set'
   echo '# CONFIG_SIGNED_PACKAGES is not set'
+  # The SDK turns AUTOREMOVE on, and with it a finished host build deletes
+  # everything in its build dir but the stamps: Rust's build/dist went with it
+  # before it could be kept below, which cost a cold build its cache. Rust's
+  # build dir is pruned by hand once its archives are kept.
+  echo '# CONFIG_AUTOREMOVE is not set'
   grep -v '^#' "${HERE}/built" | sed 's/^\(.*\)$/CONFIG_PACKAGE_\1=m/'
   echo 'CONFIG_PACKAGE_pulzr-edge-bin=m'
 } > .config
 make defconfig
+! grep -q '^CONFIG_AUTOREMOVE=y' .config || { echo "defconfig turned AUTOREMOVE back on" >&2; exit 1; }
 
 # ── Rust ───────────────────────────────────────────────────────────────────
 # The Rust compiler is two of a cold build's three hours: the release's recipe
@@ -131,6 +137,9 @@ if [ -n "${RUST_CACHE:-}" ] && [ -z "${rust_restored}" ]; then
   cp -a "${rust_build}"/build/dist/*.tar.gz "${keep}/build/dist/"
   du -sh "${keep}"
 fi
+# What AUTOREMOVE would have done: tens of GB of LLVM and rustc objects, no
+# longer needed once Rust is installed into the SDK.
+find "${rust_build}" -mindepth 1 -maxdepth 1 -not \( -type f -name '.*' -size 0 \) -exec rm -rf {} +
 
 # OpenWrt's own sccache hook (lang/rust's Config.in) for the Rust packages,
 # when prebuilt.yml hands a cache directory over. Only now: the hook wraps the
