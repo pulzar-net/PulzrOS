@@ -1,11 +1,48 @@
 #!/usr/bin/env bash
-# The cache key for one target's packages: the target, and everything in sdk/
-# and the OpenWrt release that decides what they are.
+# The cache key for one target's packages: the target, and only what decides
+# what they are. A cold build is an hour or more on every target, so an edit
+# that cannot change a package must not change the key: it once hashed every
+# file in sdk/, and deleting a lookup helper from it (sdk/targets, 23 Nov 2026)
+# sent all five targets cold.
 #
 #   sdk/key <target>/<subtarget>
+#
+# What does decide them: the OpenWrt release; sdk/build.sh, which configures
+# and builds; the feeds it pins and the list it collects (feeds, built); the
+# recipes under packages/; and scripts/busybox-quiet-config.sh, which sets the
+# busybox. In the scripts, the lists and the recipes' Makefiles, comment lines
+# and blank lines are left out, so neither rebuilds anything. Everything else
+# under packages/ (files/, patches) goes into a package as it is, comments
+# included, and is hashed whole.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "${HERE}/.." && pwd)"
 target="${1:?usage: sdk/key <target>/<subtarget>}"
-sum="$(cd "${HERE}" && { grep '^OPENWRT_VERSION=' ../boards/common/board.conf; \
-  find . -type f ! -name '*.md' | LC_ALL=C sort | xargs sha256sum; } | sha256sum | cut -c1-16)"
+
+inputs() {
+  ( cd "${ROOT}" && {
+      echo sdk/build.sh; echo sdk/feeds; echo sdk/built
+      echo scripts/busybox-quiet-config.sh
+      find sdk/packages -type f
+    } | LC_ALL=C sort )
+}
+
+code() {
+  case "$1" in
+    sdk/build.sh|sdk/feeds|sdk/built|scripts/*.sh|sdk/packages/*/Makefile) return 0 ;;
+  esac
+  return 1
+}
+
+sum="$( {
+  grep '^OPENWRT_VERSION=' "${ROOT}/boards/common/board.conf"
+  for f in $(inputs); do
+    if code "${f}"; then
+      h="$(grep -v -E '^[[:space:]]*(#([^!]|$)|$)' "${ROOT}/${f}" | sha256sum | cut -c1-64)"
+    else
+      h="$(sha256sum < "${ROOT}/${f}" | cut -c1-64)"
+    fi
+    printf '%s %s\n' "${f}" "${h}"
+  done
+} | sha256sum | cut -c1-16)"
 echo "lora-${target//\//-}-${sum}"

@@ -76,6 +76,55 @@ cd "${sdk}"
 } > .config
 make defconfig
 
+# ── Rust ───────────────────────────────────────────────────────────────────
+# The Rust compiler is two of a cold build's three hours: the release's recipe
+# builds it and its LLVM from source (llvm.download-ci-llvm=false). Only the
+# release and the target decide it, so prebuilt.yml keeps it apart from
+# sdk/key (RUST_CACHE), and a change here rebuilds the packages, not Rust.
+# What is kept is what the recipe's own Host/Install unpacks, build/dist/*.tar.gz,
+# with the recipe's stamps, so OpenWrt installs it as it would have after
+# compiling it.
+#
+# The prepared stamp's name hashes the recipe's files with their mtimes
+# (find_md5), and a fresh clone of the feed dates them now. So on every build,
+# cold or not, they are dated to the feed's commit first, and the name comes
+# out the same each time.
+rust_recipe="feeds/packages/lang/rust"
+rust_version="$(sed -n 's/^PKG_VERSION:=//p' "${rust_recipe}/Makefile")"
+[ -n "${rust_version}" ] || { echo "no PKG_VERSION in ${rust_recipe}/Makefile" >&2; exit 1; }
+rust_build="build_dir/host/rustc-${rust_version}-src"
+find "${rust_recipe}" -exec touch -h -d "@$(git -C feeds/packages log -1 --format=%ct)" {} +
+rust_restored=""
+if [ -n "${RUST_CACHE:-}" ] && [ -f "${RUST_CACHE}/rustc-${rust_version}-src/.built" ]; then
+  mkdir -p build_dir/host
+  rm -rf "${rust_build}"
+  cp -a "${RUST_CACHE}/rustc-${rust_version}-src" build_dir/host/
+  # The source is a prerequisite of the prepared stamp (download.mk), so it is
+  # fetched, and checked, before the stamps are dated after it, in the order
+  # the recipe would have written them.
+  make package/feeds/packages/rust/download
+  touch "${rust_build}"/.prepared*
+  touch "${rust_build}/.configured"
+  touch "${rust_build}/.built"
+  rust_restored=1
+  echo "rust ${rust_version}: the release's build for ${TARGET}, from the cache"
+fi
+make -j"$(nproc)" package/feeds/packages/rust/host/compile
+[ -x staging_dir/host/bin/rustc ] || { echo "the SDK has no rustc after rust/host/compile" >&2; exit 1; }
+if [ -n "${rust_restored}" ] && [ -d "${rust_build}/build/x86_64-unknown-linux-gnu" ]; then
+  echo "::warning::the cached Rust ${rust_version} was not taken: OpenWrt compiled it again"
+fi
+
+# OpenWrt's own sccache hook (lang/rust's Config.in) for the Rust packages,
+# when prebuilt.yml hands a cache directory over. Only now: the hook wraps the
+# compiler's own build too, and the compiler is cached whole above.
+if [ -n "${SDK_SCCACHE_DIR:-}" ]; then
+  command -v sccache >/dev/null || { echo "SDK_SCCACHE_DIR is set and sccache is not installed" >&2; exit 1; }
+  { echo 'CONFIG_RUST_SCCACHE=y'; echo "CONFIG_RUST_SCCACHE_DIR=\"${SDK_SCCACHE_DIR}\""; } >> .config
+  make defconfig
+  grep -q '^CONFIG_RUST_SCCACHE=y' .config || { echo "defconfig dropped CONFIG_RUST_SCCACHE" >&2; exit 1; }
+fi
+
 # ── BusyBox ────────────────────────────────────────────────────────────────
 # OpenWrt's busybox, built from its own recipe at the release's commit with the
 # release's configuration and one option changed: FEATURE_SH_EXTRA_QUIET, so
@@ -144,3 +193,16 @@ done
 flash="$(xz -9e -c "${OUT}/${arch}/pulzr-probe" | wc -c)"
 [ "${flash}" -le 512000 ] || { echo "pulzr-probe is ${flash} bytes on flash on ${arch}, over 500 KB" >&2; exit 1; }
 ls -l "${OUT}/${arch}"
+
+# The Rust that was just compiled, for the next build of this target.
+if [ -n "${RUST_CACHE:-}" ] && [ -z "${rust_restored}" ] && [ -f "${rust_build}/.built" ]; then
+  keep="${RUST_CACHE}/rustc-${rust_version}-src"
+  rm -rf "${keep}"; mkdir -p "${keep}/build/dist"
+  cp -a "${rust_build}"/.prepared* "${rust_build}/.configured" "${rust_build}/.built" "${keep}/"
+  cp -a "${rust_build}"/build/dist/*.tar.gz "${keep}/build/dist/"
+  du -sh "${keep}"
+fi
+if [ -n "${SDK_SCCACHE_DIR:-}" ]; then
+  SCCACHE_DIR="${SDK_SCCACHE_DIR}" sccache --show-stats || true
+  SCCACHE_DIR="${SDK_SCCACHE_DIR}" sccache --stop-server >/dev/null 2>&1 || true
+fi

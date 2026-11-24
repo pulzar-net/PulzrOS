@@ -110,6 +110,22 @@ curl -fsSL -o feeds.conf "${RELEASE}/feeds.buildinfo"
 ./scripts/feeds update -a >/dev/null
 ./scripts/feeds install -a >/dev/null
 
+# The release's own LLVM for eBPF, which its buildbot builds and publishes
+# beside the ImageBuilder. Built here it was 61 minutes of the SenseCAP M2's
+# 182 (tools/llvm-bpf, 23 Nov 2026). With llvm-bpf/.llvm-version in the tree,
+# defconfig picks BPF_TOOLCHAIN_PREBUILT itself: config.buildinfo does not pin
+# the choice. A release without one builds it, as before.
+read -r bpf_sha bpf_file < <(curl -fsSL "${RELEASE}/sha256sums" \
+  | awk '$2 ~ /^\*llvm-bpf-.*\.Linux-x86_64\.tar\.zst$/ { sub(/^\*/, "", $2); print $1, $2 }') || true
+rm -rf llvm-bpf llvm-bpf-*
+if [ -n "${bpf_file:-}" ]; then
+  log "Taking the release's eBPF toolchain (${bpf_file})"
+  curl -fsSL --retry 3 -o "${ROOT}/${bpf_file}" "${RELEASE}/${bpf_file}"
+  echo "${bpf_sha}  ${ROOT}/${bpf_file}" | sha256sum -c - >/dev/null || die "${bpf_file} does not match the release's sha256sums"
+  tar --zstd -xf "${ROOT}/${bpf_file}"
+  [ -f llvm-bpf/.llvm-version ] || die "${bpf_file} has no llvm-bpf/.llvm-version"
+fi
+
 log "Configuring from the release's config.buildinfo"
 curl -fsSL -o .config "${RELEASE}/config.buildinfo"
 # The release config names every device in the target explicitly, so they are
@@ -180,6 +196,11 @@ fatal="$(grep -E '^[-+]CONFIG' "${ROOT}/kernel-diff" | grep -vxF -e "${extra:-^}
 if [ -n "${fatal}" ]; then
   echo "${fatal}" | head -60
   die "the kernel-side config still differs from the release's (- release, + this build); its vermagic would not match"
+fi
+
+if [ -n "${bpf_file:-}" ] && grep -q '^CONFIG_NEED_BPF_TOOLCHAIN=y' .config; then
+  grep -q '^CONFIG_BPF_TOOLCHAIN_PREBUILT=y' .config \
+    || die "the release's eBPF toolchain is in the tree, but defconfig did not choose it"
 fi
 
 log "Building the toolchain and the kernel"
