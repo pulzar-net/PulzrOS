@@ -160,7 +160,7 @@ jobs:
           key: ${{ steps.key.outputs.key }}
 
       - uses: actions/cache/save@v4
-        if: steps.cached.outputs.cache-hit != 'true' && steps.rust-cache.outputs.cache-hit != 'true'
+        if: always() && steps.cached.outputs.cache-hit != 'true' && steps.rust-cache.outputs.cache-hit != 'true' && hashFiles(format('.build/rust/{0}/*/build/dist/*.tar.gz', steps.rust.outputs.target)) != ''
         with:
           path: .build/rust/${{ steps.rust.outputs.target }}
           key: ${{ steps.rust.outputs.key }}

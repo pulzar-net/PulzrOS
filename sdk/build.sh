@@ -110,9 +110,21 @@ if [ -n "${RUST_CACHE:-}" ] && [ -f "${RUST_CACHE}/rustc-${rust_version}-src/.bu
   echo "rust ${rust_version}: the release's build for ${TARGET}, from the cache"
 fi
 make -j"$(nproc)" package/feeds/packages/rust/host/compile
-[ -x staging_dir/host/bin/rustc ] || { echo "the SDK has no rustc after rust/host/compile" >&2; exit 1; }
+# The recipe installs to $(STAGING_DIR)/host, and a package's STAGING_DIR is the
+# target's, not staging_dir/host: checking there failed every cold build.
+compgen -G 'staging_dir/target-*/host/bin/rustc' >/dev/null \
+  || { echo "the SDK has no rustc after rust/host/compile" >&2; exit 1; }
 if [ -n "${rust_restored}" ] && [ -d "${rust_build}/build/x86_64-unknown-linux-gnu" ]; then
   echo "::warning::the cached Rust ${rust_version} was not taken: OpenWrt compiled it again"
+fi
+# Kept now, not after the packages: two hours of compiler survive a package
+# that fails to build (prebuilt.yml saves it either way).
+if [ -n "${RUST_CACHE:-}" ] && [ -z "${rust_restored}" ] && [ -f "${rust_build}/.built" ]; then
+  keep="${RUST_CACHE}/rustc-${rust_version}-src"
+  rm -rf "${keep}"; mkdir -p "${keep}/build/dist"
+  cp -a "${rust_build}"/.prepared* "${rust_build}/.configured" "${rust_build}/.built" "${keep}/"
+  cp -a "${rust_build}"/build/dist/*.tar.gz "${keep}/build/dist/"
+  du -sh "${keep}"
 fi
 
 # OpenWrt's own sccache hook (lang/rust's Config.in) for the Rust packages,
@@ -194,14 +206,6 @@ flash="$(xz -9e -c "${OUT}/${arch}/pulzr-probe" | wc -c)"
 [ "${flash}" -le 512000 ] || { echo "pulzr-probe is ${flash} bytes on flash on ${arch}, over 500 KB" >&2; exit 1; }
 ls -l "${OUT}/${arch}"
 
-# The Rust that was just compiled, for the next build of this target.
-if [ -n "${RUST_CACHE:-}" ] && [ -z "${rust_restored}" ] && [ -f "${rust_build}/.built" ]; then
-  keep="${RUST_CACHE}/rustc-${rust_version}-src"
-  rm -rf "${keep}"; mkdir -p "${keep}/build/dist"
-  cp -a "${rust_build}"/.prepared* "${rust_build}/.configured" "${rust_build}/.built" "${keep}/"
-  cp -a "${rust_build}"/build/dist/*.tar.gz "${keep}/build/dist/"
-  du -sh "${keep}"
-fi
 if [ -n "${SDK_SCCACHE_DIR:-}" ]; then
   SCCACHE_DIR="${SDK_SCCACHE_DIR}" sccache --show-stats || true
   SCCACHE_DIR="${SDK_SCCACHE_DIR}" sccache --stop-server >/dev/null 2>&1 || true
