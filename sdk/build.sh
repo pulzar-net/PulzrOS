@@ -92,13 +92,19 @@ make defconfig
 rust_recipe="feeds/packages/lang/rust"
 rust_version="$(sed -n 's/^PKG_VERSION:=//p' "${rust_recipe}/Makefile")"
 [ -n "${rust_version}" ] || { echo "no PKG_VERSION in ${rust_recipe}/Makefile" >&2; exit 1; }
-rust_build="build_dir/host/rustc-${rust_version}-src"
+# A package's BUILD_DIR and STAGING_DIR are the target's (rules.mk), so the
+# recipe builds in build_dir/<target>/host and installs to
+# staging_dir/<target>/host, not build_dir/host or staging_dir/host: both were
+# assumed once, and two cold builds lost their compiler to it.
+target_dir="$(basename "$(compgen -G 'staging_dir/target-*' | head -n1)")"
+[ "${target_dir}" != . ] && [ -n "${target_dir}" ] || { echo "the SDK has no staging_dir/target-*" >&2; exit 1; }
+rust_build="build_dir/${target_dir}/host/rustc-${rust_version}-src"
 find "${rust_recipe}" -exec touch -h -d "@$(git -C feeds/packages log -1 --format=%ct)" {} +
 rust_restored=""
 if [ -n "${RUST_CACHE:-}" ] && [ -f "${RUST_CACHE}/rustc-${rust_version}-src/.built" ]; then
-  mkdir -p build_dir/host
+  mkdir -p "$(dirname "${rust_build}")"
   rm -rf "${rust_build}"
-  cp -a "${RUST_CACHE}/rustc-${rust_version}-src" build_dir/host/
+  cp -a "${RUST_CACHE}/rustc-${rust_version}-src" "$(dirname "${rust_build}")/"
   # The source is a prerequisite of the prepared stamp (download.mk), so it is
   # fetched, and checked, before the stamps are dated after it, in the order
   # the recipe would have written them.
@@ -110,16 +116,15 @@ if [ -n "${RUST_CACHE:-}" ] && [ -f "${RUST_CACHE}/rustc-${rust_version}-src/.bu
   echo "rust ${rust_version}: the release's build for ${TARGET}, from the cache"
 fi
 make -j"$(nproc)" package/feeds/packages/rust/host/compile
-# The recipe installs to $(STAGING_DIR)/host, and a package's STAGING_DIR is the
-# target's, not staging_dir/host: checking there failed every cold build.
-compgen -G 'staging_dir/target-*/host/bin/rustc' >/dev/null \
+[ -x "staging_dir/${target_dir}/host/bin/rustc" ] \
   || { echo "the SDK has no rustc after rust/host/compile" >&2; exit 1; }
+[ -f "${rust_build}/.built" ] || { echo "rust/host/compile left no ${rust_build}/.built" >&2; exit 1; }
 if [ -n "${rust_restored}" ] && [ -d "${rust_build}/build/x86_64-unknown-linux-gnu" ]; then
   echo "::warning::the cached Rust ${rust_version} was not taken: OpenWrt compiled it again"
 fi
 # Kept now, not after the packages: two hours of compiler survive a package
 # that fails to build (prebuilt.yml saves it either way).
-if [ -n "${RUST_CACHE:-}" ] && [ -z "${rust_restored}" ] && [ -f "${rust_build}/.built" ]; then
+if [ -n "${RUST_CACHE:-}" ] && [ -z "${rust_restored}" ]; then
   keep="${RUST_CACHE}/rustc-${rust_version}-src"
   rm -rf "${keep}"; mkdir -p "${keep}/build/dist"
   cp -a "${rust_build}"/.prepared* "${rust_build}/.configured" "${rust_build}/.built" "${keep}/"
