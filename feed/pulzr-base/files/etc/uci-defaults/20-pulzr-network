@@ -52,6 +52,13 @@
 # netifd is happy to carry several logical interfaces on one device, so the
 # three below coexist: the dhcp client negotiates its lease while the two
 # static addresses stay up regardless of whether it ever gets one.
+# What the wan zone held before this ran. An upgrade runs every uci-defaults
+# script again with the gateway's configuration kept, and the zone line below
+# then dropped a WiFi or USB uplink from it: rc.14 left Cigar Curer's wwifi out,
+# and its LAN clients lost the internet (no NAT, no forwarding) while the
+# gateway itself, the tunnel included, still reached it over WiFi.
+kept_zone="$(uci -q get firewall.wan.network)"
+
 uci -q batch <<EOF
 delete network.lan
 delete network.wan
@@ -151,6 +158,15 @@ set firewall.wan.masq='1'
 set firewall.wan.mtu_fix='1'
 set firewall.wan.network='wan console linklocal'
 EOF
+
+# Every other interface the zone held, where it still exists: a WiFi uplink
+# (wwifi, wwifi2), a USB modem (usbwan), a wired uplink pulzr-ports added.
+zone='wan console linklocal'
+for n in ${kept_zone}; do
+	case " ${zone} " in *" ${n} "*) continue ;; esac
+	uci -q get "network.${n}" >/dev/null && zone="${zone} ${n}"
+done
+uci -q set firewall.wan.network="${zone}"
 
 # ── Local console access ────────────────────────────────────────────────────
 #
