@@ -628,6 +628,31 @@ check "usage: the saved copy is used once" 'gone' "$([ -e "${T}/lan/usage.json" 
 counted usage_up 192.168.64.70 wwan0 10
 check "usage: the kernel's counts add to them" '110' "$(traffic "${A}" | jq .wwan.txBytes)"
 
+# The usage push: once an hour (six on a SIM), only when a byte moved, and
+# never on the first look after a boot.
+PUSHED="${T}/run/lan-usage-pushed.json"
+pushes() { wc -l < "${T}/pushes" | tr -d ' '; }
+adopted="$(jq -c '.pulzr.adoption // null' "${UCI_JSON}")"
+jq '.pulzr.adoption = {".type": "adoption", ".name": "adoption", "state": "adopted"}' "${UCI_JSON}" > "${T}/u" && mv "${T}/u" "${UCI_JSON}"
+rm -f "${PUSHED}"; before="$(pushes)"
+check "usage push: the first look only remembers" '{"due":false,"pushed":false} '"${before}" "$(lan usage-push | jq -c .) $(pushes)"
+check "usage push: not again within the hour" '{"due":false}' "$(lan usage-push | jq -c .)"
+jq '.at -= 3700' "${PUSHED}" > "${PUSHED}.n" && mv "${PUSHED}.n" "${PUSHED}"
+check "usage push: an hour on with nothing moved, nothing sent" '{"due":true,"pushed":false} '"${before}" "$(lan usage-push | jq -c .) $(pushes)"
+counted usage_up 192.168.64.70 wwan0 25
+jq '.at -= 3700' "${PUSHED}" > "${PUSHED}.n" && mv "${PUSHED}.n" "${PUSHED}"
+check "usage push: an hour on with bytes moved, one push" '{"due":true,"pushed":true} '"$((before + 1))" "$(lan usage-push | jq -c .) $(pushes)"
+check "usage push: it is the LAN" '--push lan' "$(tail -n1 "${T}/pushes")"
+jq '.wwan.route = [{"target": "0.0.0.0", "mask": 0, "metric": 0}]' "${NET_JSON}" > "${T}/n" && mv "${T}/n" "${NET_JSON}"
+counted usage_up 192.168.64.70 wwan0 40
+jq '.at -= 3700' "${PUSHED}" > "${PUSHED}.n" && mv "${PUSHED}.n" "${PUSHED}"
+check "usage push: on a SIM an hour is not enough" '{"due":false}' "$(lan usage-push | jq -c .)"
+jq '.at -= 18000' "${PUSHED}" > "${PUSHED}.n" && mv "${PUSHED}.n" "${PUSHED}"
+check "usage push: six hours is" '{"due":true,"pushed":true}' "$(lan usage-push | jq -c .)"
+jq '.wwan.route = [{"target": "0.0.0.0", "mask": 0, "metric": 10}]' "${NET_JSON}" > "${T}/n" && mv "${T}/n" "${NET_JSON}"
+jq --argjson a "${adopted}" 'if $a == null then del(.pulzr.adoption) else .pulzr.adoption = $a end' "${UCI_JSON}" > "${T}/u" && mv "${T}/u" "${UCI_JSON}"
+counted usage_up 192.168.64.70 wwan0 10
+
 : > "${T}/nft.log"
 printf '%s %s 192.168.64.72 cam-a *\n%s %s 192.168.64.71 plc-b *\n' \
     "$(( $(date +%s) + 3600 ))" "${A}" "$(( $(date +%s) + 3600 ))" "${B}" > "${T}/leases"

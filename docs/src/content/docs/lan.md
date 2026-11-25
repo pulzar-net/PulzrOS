@@ -228,15 +228,19 @@ the gateway adds bytes up by hand. nlbwmon counts per device but not per
 uplink, and which uplink carried the bytes is half the question.
 
 `traffic` in the report is a running total per device within `usageEpoch`.
-Pulzr Cloud adds up the differences between one report and the next, so
-the gateway sends no extra message for metering: it is the `lan` report the
-cloud already asks for. A total never goes backwards inside an epoch:
+Pulzr Cloud adds up the differences between one report and the next. The
+report is the `lan` push the gateway already makes when a lease moves or a
+scan finds something; on a quiet LAN, `pulzr-lan usage-push` (run by the scan
+service every minute) pushes it once an hour, every six on a SIM, and only if
+a byte moved since the last look. Pulzr Cloud asks for it itself only when
+somebody opens the gateway's page, or once it has gone a day unheard. A total
+never goes backwards inside an epoch:
 
 | Event | What happens |
 |---|---|
 | Reboot, `reboot` or a power button | `pulzr-lan`'s init stop (`STOP=10`, before the network goes) writes every device's totals to `/etc/pulzr/lan/usage.json`; the next boot's table starts from them under the same epoch. One flash write per shutdown. |
 | Firmware upgrade | `pulzr-firmware pending` saves them the same way before sysupgrade, which kills services rather than stopping them; `/etc/pulzr/lan` is kept across the upgrade. |
-| Power cut | Nothing was saved, so the next boot is a new epoch from zero. What moved since the cloud's last report, at most its polling interval, is not metered. |
+| Power cut | Nothing was saved, so the next boot is a new epoch from zero. What moved since the last push, at most an hour (six on a SIM), is not metered. |
 | A device gets another address, or an address another device | The DHCP event (`pulzr-lan seen`) folds the old address's counters into its owner's total and deletes them from the kernel. |
 | The table is remade by hand | A new epoch. |
 

@@ -517,6 +517,62 @@ cellular-only gateway simply never completes a handshake, at no cost — its
 packets have no route. The one thing that can escape is the DNS lookup for the
 hub's name when the tunnel starts, a few bytes.
 
+## What a LoRaWAN gateway spends on a SIM
+
+Pulzr Cloud asks a gateway nothing on a timer: what it needs to know, the
+gateway watches for and pushes, and liveness comes from the traffic the gateway
+sends anyway (its stats, its agent's broker session, its reports).
+
+Measured on a Pi with a concentrator on the bench, hearing no devices, with
+byte counters on its uplink (nftables, by port and by the broker bridge's
+uid), and on the broker for a RAK on a SIM. Bytes on the wire: IP, TCP and
+TLS included, both directions. A month is 30 days.
+
+| What, per month | Before | After | How |
+|---|---|---|---|
+| LNS connection behind the buffer: stats, PUBACKs, pings | 67 MB | 10 MB | stats every 300 s on a SIM (`pulzr-lora-profile`), bridge keepalive 120 s (`pulzr-lora-buffer`) |
+| LNS connection straight to the broker (no SD card) | 67 MB | 14 MB | the same stats, forwarder keepalive 60 s on a SIM |
+| Management agent keepalive | 8.8 MB | 2.2 MB | 240 s on a SIM, not 60 (`pulzr-mqtt-agent`) |
+| Management answers Pulzr Cloud asks for, a router | 190 MB | about 1 MB | `lan`, `uplinks` and `dns` were asked for every five minutes, each answer a new TLS session (about 7.4 KB); the gateway pushes them when they change, and its clients' bytes once every six hours on a SIM if they moved (`pulzr-lan usage-push`) |
+| The same, a LoRaWAN gateway on 0.3.x | 64 MB | 0.2 MB | 0.3.x has no `lan` operation and was asked for it every five minutes; now once a day |
+| Log shipping | 15 MB | 6.3 MB | every 30 min on a SIM; a RAK or a Pi sent it every minute, having no `pulzr-uplinks` to say "metered" |
+| Report, every 6 h | 1.3 MB | 1.3 MB | 10.5 KB each |
+| DNS | 0.4 MB | 0.4 MB | a lookup or two for each new TLS session, cached by dnsmasq |
+| NTP | 0.5 MB | 0.5 MB | BusyBox ntpd's own backoff |
+| WireGuard keepalive | 0 | 0 | the tunnel does not run over cellular; 13 MB if `PULZR_WIREGUARD_ALLOW_CELLULAR` |
+| OTA and package checks | 0 | 0 | nothing polls; an upgrade or an add-on is sent when asked for |
+| Uplinks | a few KB a device a day | the same | every frame with a good CRC is still sent |
+
+The stats are the cost, not the uplinks. Each is 530 bytes of protobuf, 200 of
+them the facts (`pulzr-gateway-facts`), and about 780 bytes on the wire with
+the bridge's PUBACK. They cannot be made smaller by sending the facts less
+often: the LNS replaces a gateway's properties with each stats message's
+metadata. So they are sent less often, and the facts say how often
+(`stats_interval`), which is what Pulzr Cloud judges the gateway's liveness by:
+online within two intervals, an outage after eleven minutes instead of three.
+
+The profile is `auto` by default (`pulzr.lorawan.profile`, or `standard` or
+`cellular`): cellular while a SIM has the route and no free uplink does
+(`on_cellular`, `/usr/share/pulzr/cellular.sh`). A new stats interval needs
+concentratord restarted, about ten seconds deaf, so it changes only once the
+uplink has stayed what it is for ten minutes, or with the restart NTP's first
+sync already makes. The buffer broker is never restarted for it.
+
+Every keepalive stays under 1NCE's TCP idle timeout, 350 s (600 s on its older
+core), past which its NAT drops the flow.
+
+Not done, and why:
+
+- **No DevAddr, JoinEUI or `lorawan_only` filter.** A prefix filter has to know
+  every network a site's devices join, and a wrong one drops uplinks in
+  silence; `lorawan_only` drops a LoRaWAN 1.1 rejoin request and a mesh relay's
+  proprietary frames. CRC-failed and CRC-less frames were already dropped.
+- **No TLS session resumption.** Each `mosquitto_pub` and `curl` is a new
+  process, and this curl has no session export. The broker's RSA chain is
+  4.7 KB of every new MQTT session; an ECDSA one would be about 2 KB.
+- **JSON or compression.** The forwarder already sends protobuf; the agent's
+  JSON answers are a few hundred bytes and now rare.
+
 ## Seeing which path works, for free
 
 `GET /api/v1/gateway-ops/<eui>/backhaul` answers entirely from what the cloud

@@ -26,6 +26,7 @@
 //   pulzr-lan scan                           which management ports each
 //                                              client answers on (nmap)
 //   pulzr-lan scan-service                   scan every so often (procd)
+//   pulzr-lan usage-push                     push the LAN if its clients' bytes moved, when due
 //   pulzr-lan announce get <mac>             an SDK device's announce, CSR and
 //                                              all (announce.uc)
 //   pulzr-lan announce answer <mac> <json>   Pulzr's enroll answer for it
@@ -296,6 +297,10 @@ const SCAN_SOONEST = 120;
 const SCAN_KEEP = 7 * 86400;
 const MAX_SCAN_HOSTS = 64;
 const AGENT = '/usr/sbin/pulzr-mqtt-agent';
+// How often the clients' byte counts are pushed when they moved: see usagePush.
+const USAGE_PUSH_EVERY = 3600;
+const USAGE_PUSH_EVERY_CELLULAR = 6 * 3600;
+const USAGE_PUSHED = SCAN_DIR + '/lan-usage-pushed.json';
 const ANNOUNCE = '/usr/share/pulzr/lan/announce.uc';
 // The epoch and each client's base are in RAM; the flash copy exists only
 // between a clean shutdown and the boot after it.
@@ -1080,6 +1085,41 @@ let pushLan = () => {
         system([AGENT, '--push', 'lan']);
 };
 
+// Every client's bytes so far, base and kernel, as one number: whether
+// anything moved since the last look, not what.
+let usageTotal = () => {
+    let total = 0;
+    let add = (t) => {
+        for (let uplink in keys(t ?? {})) total += (t[uplink].txBytes ?? 0) + (t[uplink].rxBytes ?? 0);
+    };
+    let kernel = kernelTraffic(uplinkNames()), base = readJson(USAGE_BASE) ?? {};
+    for (let ip in keys(kernel)) add(kernel[ip]);
+    for (let mac in keys(base)) add(base[mac]);
+    return total;
+};
+
+// Each client's internet use rides every LAN push, and Pulzr Cloud counts it
+// by the day (net-api utils/internet_usage.py). Pulzr Cloud used to ask every
+// gateway with a LAN for it every five minutes; a lease change or a scan that
+// found something pushes it now, but a quiet LAN whose devices keep their
+// leases would go a day between counts. So once an hour, every six on a SIM,
+// the totals are compared with the last look and the LAN is pushed only if a
+// byte moved: a sum of counters already in memory, and one push at most.
+//
+// The first look after a boot only remembers: the agent pushes everything
+// when it connects.
+let usagePush = () => {
+    if (!lanNet()) return { skipped: true };
+    let at = time(), last = readJson(USAGE_PUSHED);
+    let every = onCellular() ? USAGE_PUSH_EVERY_CELLULAR : USAGE_PUSH_EVERY;
+    if (last != null && at - (last.at ?? 0) < every) return { due: false };
+    let total = usageTotal(), moved = last != null && total != last.total;
+    if (moved) pushLan();
+    fs.mkdir(SCAN_DIR);
+    writeJson(USAGE_PUSHED, { at, total });
+    return { due: last != null, pushed: moved };
+};
+
 // The tunnels as `status` reports them: the settings, this gateway's public
 // key, the last handshake (Unix seconds, null before the first) and the
 // bytes through it. Never a private key: `wg show <dev> dump` prints it
@@ -1633,6 +1673,7 @@ let commands = {
                 let result = scan();
                 if (result?.changed) pushLan();
             }
+            usagePush();
             sleep(60 * 1000);
         }
     },
@@ -1676,6 +1717,10 @@ let commands = {
 
     // From the init script's stop, and pulzr-firmware before a sysupgrade:
     // every client's totals, for the next boot's table to start from.
+    'usage-push': () => {
+        printf('%J\n', usagePush());
+    },
+
     'save-usage': () => {
         if (!lanNet() || !length(capture(['nft', 'list', 'set', 'inet', TABLE, 'usage_up']))) exit(0);
         let ipOf = {};
@@ -1691,5 +1736,5 @@ let commands = {
 };
 
 let cmd = commands[ARGV[0] ?? 'status'];
-cmd ?? die('usage: pulzr-lan {apply|status|policy|cellular|reserve|unreserve|forward|unforward|expose|unexpose|tunnel|address|links|seen|isolate|scan|scan-service|save-usage|announce}', 2);
+cmd ?? die('usage: pulzr-lan {apply|status|policy|cellular|reserve|unreserve|forward|unforward|expose|unexpose|tunnel|address|links|seen|isolate|scan|scan-service|usage-push|save-usage|announce}', 2);
 call(cmd, null, null, ...slice(ARGV, 1));
