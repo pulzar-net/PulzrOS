@@ -1,0 +1,29 @@
+#!/bin/sh
+#
+# The platform's names are pulzr.net's. A gateway adopted or enrolled before
+# they were still holds the broker and WireGuard hub it was given then, under
+# parkeze.com, and keeps them across upgrades (they are its state, not the
+# image's). Point it at the same broker and hub under the new names, on the
+# first boot of every image, after 01-pulzr-migrate has moved a ParkezeOS
+# gateway's state to where this reads it.
+#
+# Nothing else changes: the broker's certificate names both, and a WireGuard
+# endpoint is only where to send. This is the one place PulzrOS spells out
+# the old names, to map them.
+
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+
+R="${PULZR_ROOT:-}"
+
+if [ "$(uci -q get pulzr.mqtt.host)" = "mqtt.parkeze.com" ]; then
+	uci set pulzr.mqtt.host='mqtt.pulzr.net'
+	uci commit pulzr
+fi
+
+tunnel="${R}/etc/pulzr/wireguard/tunnel.json"
+if [ -f "${tunnel}" ] && grep -q '"wg\.net\.parkeze\.com:' "${tunnel}"; then
+	sed 's/"wg\.net\.parkeze\.com:/"wg.pulzr.net:/' "${tunnel}" > "${tunnel}.new" \
+		&& mv "${tunnel}.new" "${tunnel}"
+fi
+
+exit 0

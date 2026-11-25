@@ -62,7 +62,7 @@ switch; the gateway never sees that traffic.
 | The management tunnel | no | no |
 
 "Pulzr" is the domains of `PULZR_NET_URL` and `PULZR_MQTT_HOST`
-(`parkeze.com` today). dnsmasq adds each address it answers for those names to
+(`pulzr.net` today). dnsmasq adds each address it answers for those names to
 an nftables set, so the rule follows a move without anybody changing it. A
 device that ignores the gateway's DNS and asks its own resolver reaches none
 of Pulzr.

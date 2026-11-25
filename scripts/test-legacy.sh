@@ -253,6 +253,36 @@ for dir in "${ROOT_DIR}"/feed/pulzr-*/; do
     check "${n} conflicts with ${old}" grep -q "^depends:.*!${old}\( \|\$\)" <<<"${info}"
 done
 
+# ── the old hostnames ──────────────────────────────────────────────────────
+#
+# 02-pulzr-hosts, against a fake root and a uci that keeps one value in a file.
+
+H="${SANDBOX}/hosts"
+mkdir -p "${H}/bin" "${H}/root/etc/pulzr/wireguard"
+cat > "${H}/bin/uci" <<'UCI'
+#!/bin/sh
+f="$(dirname "$0")/../mqtt.host"
+case "$1 $2" in
+    "-q get") cat "$f" 2>/dev/null ;;
+    "set "*) echo "${2#*=}" | tr -d "'" > "$f" ;;
+esac
+exit 0
+UCI
+chmod +x "${H}/bin/uci"
+hosts() { PATH="${H}/bin:${PATH}" PULZR_ROOT="${H}/root" sh "${ROOT_DIR}/feed/pulzr-base/files/etc/uci-defaults/02-pulzr-hosts"; }
+
+echo mqtt.parkeze.com > "${H}/mqtt.host"
+printf '{"endpoint":"wg.net.parkeze.com:51820","address":"10.99.4.17"}\n' > "${H}/root/etc/pulzr/wireguard/tunnel.json"
+hosts
+check "an old broker name becomes mqtt.pulzr.net" grep -qx 'mqtt.pulzr.net' "${H}/mqtt.host"
+check "an old hub name becomes wg.pulzr.net, the port and address kept" \
+    grep -qx '{"endpoint":"wg.pulzr.net:51820","address":"10.99.4.17"}' "${H}/root/etc/pulzr/wireguard/tunnel.json"
+echo mqtt.example.net > "${H}/mqtt.host"
+hosts
+check "any other broker is left alone" grep -qx 'mqtt.example.net' "${H}/mqtt.host"
+check "and a second run changes nothing" grep -q '"wg.pulzr.net:51820"' "${H}/root/etc/pulzr/wireguard/tunnel.json"
+check "it runs after the migration" test "$(ls "${ROOT_DIR}/feed/pulzr-base/files/etc/uci-defaults" | sort | sed -n 2p)" = 02-pulzr-hosts
+
 # ── mDNS, SSH, boot-time pieces ────────────────────────────────────────────
 
 check "mDNS answers pulzr.local" grep -q '"pulzr.local"' "${ROOT_DIR}/feed/pulzr-console/files/etc/umdns/pulzr-local.json"

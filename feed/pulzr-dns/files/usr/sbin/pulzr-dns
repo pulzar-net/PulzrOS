@@ -15,7 +15,7 @@
 //
 // Nothing under a Pulzr domain. A LAN client whose policy is parkeze may
 // reach exactly the addresses dnsmasq has answered for Pulzr's names
-// (pulzr_dst, 25-pulzr-lan), so a local name for net.parkeze.com would
+// (pulzr_dst, 25-pulzr-lan), so a local name for app.pulzr.net would
 // be a way to give that client any address on the internet. Nor a
 // reservation's name, which pulzr-lan already serves for that client.
 //
@@ -231,7 +231,7 @@ let commands = {
                 || die(sprintf('one to %d servers, or auto', MAX_SERVERS), 2);
             for (let ip in servers) ipv4(ip) || die(sprintf('%s is not an IPv4 address', ip), 2);
             length(uniq(servers)) == length(servers) || die('a server is named twice', 2);
-            let probe = board('PULZR_MQTT_HOST') ?? 'mqtt.parkeze.com';
+            let probe = board('PULZR_MQTT_HOST') ?? 'mqtt.pulzr.net';
             let answered = false;
             for (let ip in servers)
                 if (!answered && system(sprintf("nslookup '%s' '%s' >/dev/null 2>&1", probe, ip), 10000) == 0)

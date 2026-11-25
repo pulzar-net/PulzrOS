@@ -28,8 +28,9 @@ Everything a gateway needs to be itself, byte for byte:
 
 SSH host keys (`/etc/ssh`, `/etc/dropbear`), the SSH CA, the fleet and recovery
 keys, and the firmware signing key are not touched or renamed in value. The
-broker and tunnel hosts a gateway was given at adoption (`mqtt.parkeze.com`,
-`wg.net.parkeze.com`) are stored as given and are not rewritten.
+broker and tunnel hosts a gateway was given at adoption are stored as given;
+the first boot of every image then moves the old broker and hub names to
+`mqtt.pulzr.net` and `wg.pulzr.net` (02-pulzr-hosts), the same broker and hub.
 
 `board.conf` and `firmware.pub` describe the image and always come from the new
 one.
@@ -76,8 +77,6 @@ the previous image after a rollback, reads them:
 - the keys `parkeze_version` and `parkeze_build` in the gateway facts;
 - the wireless section ids `parkeze_sta` and `parkeze_ap`, so saved Wi-Fi
   survives an upgrade and a rollback;
-- the endpoints `net.parkeze.com`, `mqtt.parkeze.com` and `wg.net.parkeze.com`,
-  where a gateway's own configuration names them.
 
 The aliases and shims (`parkeze.local`, the `parkeze` SSH account,
 `/usr/libexec/parkeze-tui-console`, the old-path copies) are meant to go once no

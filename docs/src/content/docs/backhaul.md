@@ -450,9 +450,9 @@ server, and each gateway has one peer — the hub — at a single `/32`.
 
 **Which hub.** The cloud picks the hub at enrolment and the gateway takes
 whatever endpoint, hub key and hub address the answer gives, so nothing here
-differs by organization. A gateway keeps the hub host it was given: one
-enrolled before the rename may name `wg.net.parkeze.com:51820`, and that name
-keeps answering.
+differs by organization. A gateway keeps the hub host it was given; one
+given the hub's old name is moved to `wg.pulzr.net` at boot (02-pulzr-hosts),
+the same hub.
 
 **Enrollment.** The gateway generates its keypair on first start
 (`/etc/pulzr/wireguard/`, private half 0600) and only the public half ever

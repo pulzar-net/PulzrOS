@@ -193,7 +193,7 @@ check "link down: shown as down, cellular carrying" 'down wwan' "$(up status | j
 
 # ── dns ─────────────────────────────────────────────────────────────────────
 
-printf 'PULZR_NET_URL="https://net.parkeze.com"\nPULZR_MQTT_HOST="mqtt.parkeze.com"\n' > "${T}/board.conf"
+printf 'PULZR_NET_URL="https://app.pulzr.net"\nPULZR_MQTT_HOST="mqtt.pulzr.net"\n' > "${T}/board.conf"
 printf '# Interface wan\nnameserver 192.168.1.1\n# Interface wwan\nnameserver 10.0.0.53\nnameserver 192.168.1.1\n' > "${T}/resolv"
 cat > "${UCI_JSON}" <<'EOF'
 {"dhcp": {"cfg01411c": {".type": "dnsmasq", ".name": "cfg01411c", "rebind_protection": "1",
@@ -212,7 +212,7 @@ check "upstream: custom, ahead of the per-domain server" \
     "$(dnsmasq)"
 out="$(dns upstream 10.9.9.9 2>&1)" && r=0 || r=$?
 check "upstream: a server that cannot resolve Pulzr is refused" \
-    '3 no answer from 10.9.9.9 for mqtt.parkeze.com' "${r} ${out}"
+    '3 no answer from 10.9.9.9 for mqtt.pulzr.net' "${r} ${out}"
 for bad in "1.2.3" "1.1.1.1 1.1.1.1" "1.1.1.1 2.2.2.2 3.3.3.3 4.4.4.4"; do
     # shellcheck disable=SC2086
     dns upstream ${bad} >/dev/null 2>&1 && r=0 || r=$?
@@ -227,19 +227,19 @@ dns host nas-2.site 192.168.70.21 >/dev/null
 dns host nas.2.site 192.168.70.22 >/dev/null
 check "hosts: a-b and a.b stay two names" \
     '["nas","nas-2.site","nas.2.site"]' "$(dns status | jq -c '[.hosts[].name]')"
-for bad in net.parkeze.com x.mqtt.PARKEZE.com parkeze.com; do
+for bad in app.pulzr.net x.mqtt.PULZR.net pulzr.net; do
     out="$(dns host "${bad}" 1.2.3.4 2>&1)" && r=0 || r=$?
-    check "hosts: ${bad} is Pulzr's" "2 names under parkeze.com are Pulzr's" "${r} ${out}"
+    check "hosts: ${bad} is Pulzr's" "2 names under pulzr.net are Pulzr's" "${r} ${out}"
 done
 out="$(dns host plc-1 1.2.3.4 2>&1)" && r=0 || r=$?
 check "hosts: a reservation's name is refused" "3 plc-1 is a reservation's name" "${r} ${out}"
 dns host -bad 1.2.3.4 >/dev/null 2>&1 && r=0 || r=$?
 check "hosts: a label may not start with a hyphen" '2' "${r}"
-dns host evilparkeze.com 1.2.3.4 >/dev/null && r=0 || r=$?
+dns host evilpulzr.net 1.2.3.4 >/dev/null && r=0 || r=$?
 check "hosts: a lookalike is not Pulzr's" '0' "${r}"
 dns unhost nas >/dev/null
 dns unhost nas >/dev/null 2>&1 && r=0 || r=$?
-check "unhost: gone, and a second time refused" '3 ["evilparkeze.com","nas-2.site","nas.2.site"]' \
+check "unhost: gone, and a second time refused" '3 ["evilpulzr.net","nas-2.site","nas.2.site"]' \
     "${r} $(dns status | jq -c '[.hosts[].name]')"
 
 dns rebind on corp.local site.internal >/dev/null
@@ -272,7 +272,7 @@ check "ddns: status says a token is set and not what it is" 'true 0' \
 dns ddns example.com example.com wan >/dev/null
 check "ddns: the zone's own name" '"@example.com"' "$(jq -c .ddns.pulzr.domain "${UCI_JSON}")"
 for bad in "cam.example.com example.com wwan" "cam.example.com example.com usbwan" \
-           "cam.other.com example.com wan" "cam.parkeze.com parkeze.com wan" "cam.example.com com wan"; do
+           "cam.other.com example.com wan" "cam.pulzr.net pulzr.net wan" "cam.example.com com wan"; do
     # shellcheck disable=SC2086
     dns ddns ${bad} >/dev/null 2>&1 && r=0 || r=$?
     check "ddns: refuses ${bad}" 'nonzero' "$([ "${r}" -ne 0 ] && echo nonzero || echo 0)"

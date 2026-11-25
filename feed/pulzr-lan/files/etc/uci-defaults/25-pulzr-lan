@@ -60,8 +60,8 @@
 
 # The registrable domain of each Pulzr endpoint, and dnsmasq matches a domain's
 # subdomains too. The image's own endpoints and the broker the gateway was
-# actually given: an upgraded gateway keeps the host adoption handed it, which
-# may be an older name (net.parkeze.com, mqtt.parkeze.com) than the image's.
+# actually given: an adopted gateway keeps the host adoption handed it, which
+# may differ from the image's default.
 domains=""
 for host in "${PULZR_NET_URL}" "${PULZR_MQTT_HOST}" "$(uci -q get pulzr.mqtt.host)"; do
 	[ -n "${host}" ] || continue
