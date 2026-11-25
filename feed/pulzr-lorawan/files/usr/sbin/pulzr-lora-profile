@@ -1,0 +1,179 @@
+#!/bin/sh
+#
+# Which LoRa profile this gateway should run, and putting it into effect.
+#
+#   pulzr-lora-profile want      standard or cellular, for the uplink in use now
+#   pulzr-lora-profile running   the profile the running slots were rendered with
+#   pulzr-lora-profile status    both, and the stats interval, as JSON
+#   pulzr-lora-profile interval  the running stats interval in seconds
+#   pulzr-lora-profile apply     re-render each running slot; restart what changed
+#   pulzr-lora-profile settle    apply once `want` has held for ten minutes
+#
+# ── WHY A PROFILE ──────────────────────────────────────────────────────────
+#
+# Measured on a gateway hearing nothing, the LoRa stack's biggest cost is not
+# uplinks. It is the stats message concentratord emits every interval: 530
+# bytes of protobuf, about 200 of them the facts pulzr-gateway-facts attaches,
+# and some 780 bytes on the wire with TCP, TLS and the broker's PUBACK. Every
+# 30 seconds that is 2.2 MB a day, 67 MB a month, on a SIM, to say the gateway
+# is still there. Uplinks from a site's devices are a few kilobytes a day.
+#
+# The facts cannot be sent less often than the stats: the LNS replaces a
+# gateway's properties with each stats message's metadata, so one without them
+# blanks them. Fewer stats is the only lever.
+#
+# So on a SIM the interval is five minutes, and Pulzr Cloud judges the
+# gateway's liveness from the interval it reports (`stats_interval` in the
+# facts): offline after two missed, not after six 30-second ones. On a free
+# link it stays 30 seconds, because there it costs nothing and an outage is
+# noticed in three minutes rather than eleven.
+#
+# 300 seconds, not more: 1NCE's NAT drops a TCP flow idle for 350 (600 on the
+# older core). The bridge's keepalive covers the gaps either way, but a stats
+# message inside the window is one more thing keeping the mapping alive.
+#
+# ── WHAT CHANGING IT COSTS ─────────────────────────────────────────────────
+#
+# Concentratord reads its config only at start, so a new interval is a
+# concentratord restart: about ten seconds deaf, which drops whatever is sent
+# in them. That is why `settle` waits for the uplink to have stayed what it is
+# for ten minutes before it changes anything: a failover that lasts minutes
+# costs no restart at all, and a gateway that has really moved onto its SIM,
+# or off it, pays ten seconds once.
+#
+# A gateway on a SIM alone pays nothing extra. It boots with no route, so the
+# first render is standard, and NTP's first sync re-renders concentratord
+# anyway (hotplug.d/ntp/40-pulzr-lora-time, for the timestamps) by which time
+# the SIM is the route. That one restart carries both changes.
+#
+# The buffer broker is never restarted here. Its queue may be only in RAM,
+# and the moment a backhaul changes is exactly when it is full.
+#
+# ── THE SETTING ────────────────────────────────────────────────────────────
+#
+# pulzr.lorawan.profile: auto (the default), standard or cellular. auto asks
+# on_cellular (/usr/share/pulzr/cellular.sh): a SIM has the route and no free
+# uplink does.
+
+. "${PULZR_BOARD_CONF:-/etc/pulzr/board.conf}"
+. "${PULZR_SHARE:-/usr/share/pulzr}/cellular.sh"
+
+RUN="${PULZR_RUN:-/var/run/pulzr}/lora"
+CONFIG="${PULZR_LORA_CONFIG:-/usr/sbin/pulzr-lora-config}"
+HOLD="${PULZR_LORA_PROFILE_HOLD:-600}"
+STEP="${PULZR_LORA_PROFILE_STEP:-60}"
+# kill is a builtin; a path here is what the tests watch.
+KILL="${PULZR_KILL:-kill}"
+
+log() { logger -t lora -p daemon.info "$*"; }
+
+want() {
+    local set
+    set="$(uci -q get pulzr.lorawan.profile)"
+    set="${set:-${PULZR_LORA_PROFILE:-auto}}"
+    case "${set}" in
+        standard|cellular) echo "${set}" ;;
+        *) if on_cellular; then echo cellular; else echo standard; fi ;;
+    esac
+}
+
+# From the rendered file, not from UCI: what is running is what was rendered
+# when the slot last started, which is the question.
+running() {
+    sed -n 's/^# profile: \([a-z]*\)$/\1/p' "${RUN}/slot0/concentratord.toml" 2>/dev/null | head -n1
+}
+
+interval() {
+    sed -n 's/^stats_interval="\([0-9]*\)s"$/\1/p' "${RUN}/slot0/concentratord.toml" 2>/dev/null | head -n1
+}
+
+# The pid of one slot's process, by the config it was started with: two slots
+# run two of each, and only the one whose file changed is restarted.
+pid_of() {
+    pgrep -f "$1" 2>/dev/null | head -n1
+}
+
+# SIGINT is concentratord's stop signal: it stops the radio before exiting.
+# SIGTERM ends it without that. A stop still running after 5s gets SIGTERM,
+# by pid, so the respawned process is never the one killed. procd respawns
+# either with the new file after its respawn delay (pulzr-packet-forwarder).
+restart() {
+    local pid="$1" signal="$2"
+    [ -n "${pid}" ] || return 0
+    ${KILL} "-${signal}" "${pid}" 2>/dev/null
+    sleep 5
+    ${KILL} -0 "${pid}" 2>/dev/null && ${KILL} "${pid}" 2>/dev/null
+    return 0
+}
+
+same() { [ "$(md5sum < "$1")" = "$(md5sum < "$2" 2>/dev/null)" ]; }
+
+# Rendered aside and copied over, so a render that fails leaves the running
+# config intact rather than a truncated file for the respawn to choke on.
+apply() {
+    local slots i dir tmp changed=0
+    slots="$(uci -q get pulzr.concentrator.slots || echo 0)"
+    tmp="$(mktemp -d)"
+    i=0
+    while [ "${i}" -lt "${slots}" ]; do
+        dir="${RUN}/slot${i}"
+        if [ -s "${dir}/concentratord.toml" ] \
+            && "${CONFIG}" "${i}" "${tmp}" >/dev/null 2>&1 \
+            && [ -s "${tmp}/concentratord.toml" ] && [ -s "${tmp}/mqtt-forwarder.toml" ]; then
+            if ! same "${tmp}/concentratord.toml" "${dir}/concentratord.toml"; then
+                cp "${tmp}/concentratord.toml" "${dir}/concentratord.toml"
+                restart "$(pid_of "concentratord-.* -c ${dir}/concentratord.toml")" INT
+                changed=1
+            fi
+            # Only a forwarder talking to the broker directly has anything
+            # profile-dependent in its file (its keepalive); one behind the
+            # buffer talks to loopback, and its file stays the same.
+            if ! same "${tmp}/mqtt-forwarder.toml" "${dir}/mqtt-forwarder.toml"; then
+                cp "${tmp}/mqtt-forwarder.toml" "${dir}/mqtt-forwarder.toml"
+                chmod 0600 "${dir}/mqtt-forwarder.toml"
+                restart "$(pid_of "mqtt-forwarder -c ${dir}/mqtt-forwarder.toml")" TERM
+                changed=1
+            fi
+        fi
+        rm -f "${tmp}"/*
+        i=$((i + 1))
+    done
+    rm -rf "${tmp}"
+    [ "${changed}" = 1 ] && log "LoRa profile $(running): stats every $(interval)s"
+    return 0
+}
+
+case "${1:-status}" in
+    want)    want ;;
+    running) running ;;
+    interval) interval ;;
+    status)
+        every="$(interval)"
+        printf '{"want":"%s","running":"%s","statsInterval":%s}\n' \
+            "$(want)" "$(running)" "${every:-null}"
+        ;;
+    apply)   apply ;;
+    settle)
+        # One waiter at a time: the hotplug fires for every interface that
+        # moves, and each event during the hold would otherwise start its own
+        # clock. The waiter there already re-reads `want` every step.
+        mkdir -p "${RUN}"
+        mkdir "${RUN}/settle.lock" 2>/dev/null || exit 0
+        trap 'rmdir "${RUN}/settle.lock" 2>/dev/null' EXIT
+        held=0; last=""
+        while :; do
+            now="$(want)"; current="$(running)"
+            # Not running, or already what it should be (a failover that
+            # came back inside the hold): nothing to do.
+            [ -n "${current}" ] && [ "${now}" != "${current}" ] || break
+            if [ "${now}" = "${last}" ]; then held=$((held + STEP)); else held=0; fi
+            last="${now}"
+            [ "${held}" -ge "${HOLD}" ] && { apply; break; }
+            sleep "${STEP}"
+        done
+        ;;
+    *)
+        echo "usage: pulzr-lora-profile {want|running|status|interval|apply|settle}" >&2
+        exit 2
+        ;;
+esac

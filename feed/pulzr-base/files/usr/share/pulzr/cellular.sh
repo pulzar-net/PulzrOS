@@ -36,6 +36,22 @@ cellular_gateway() {
     return 1
 }
 
+# Whether this gateway's traffic is going out over a SIM right now: a billed
+# interface has a default route and no free one (a usable wired uplink, a WiFi
+# that reaches the internet) does. What the cellular profiles key on: the
+# LoRa stack's stats interval (pulzr-lora-profile), the management agent's
+# keepalive and how often the log is sent.
+#
+# Not pulzr-uplinks' `metered`: that is the failover package, on the Opal
+# alone, and asking it on a RAK or a Pi answered "free" for a SIM-only
+# gateway, which then sent its log every minute.
+on_cellular() {
+    command -v wired_gateway >/dev/null 2>&1 || . "${PULZR_SHARE:-/usr/share/pulzr}/wired.sh"
+    command -v wifi_gateway >/dev/null 2>&1 || . "${PULZR_SHARE:-/usr/share/pulzr}/wifi.sh"
+    cellular_gateway >/dev/null || return 1
+    ! wired_gateway >/dev/null 2>&1 && ! wifi_gateway >/dev/null 2>&1
+}
+
 # The device of the first billed interface that is up, gateway or not.
 cellular_device() {
     local iface dev

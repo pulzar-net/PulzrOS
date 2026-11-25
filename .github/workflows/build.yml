@@ -180,6 +180,7 @@ jobs:
           ./scripts/test-ble-config.sh
           ./scripts/test-lan-push.sh
           ./scripts/test-logship.sh
+          ./scripts/test-lora-profile.sh
 
       # The reset button, the setup AP and which uplinks count: shell that
       # otherwise only runs on a gateway, behind a physical button.

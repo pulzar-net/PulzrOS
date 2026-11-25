@@ -20,34 +20,8 @@ logger -t lora -p daemon.info "clock set by NTP (stratum ${stratum}); uplinks no
 # whose queue may only be in RAM — this can fire the moment the network comes
 # back, which is exactly when that queue is full.
 #
-# Rendered aside and copied over, so a render that fails leaves the running
-# config intact rather than a truncated file for the respawn to choke on.
-slots="$(uci -q get pulzr.concentrator.slots || echo 0)"
-tmp="$(mktemp -d)"
-i=0
-while [ "${i}" -lt "${slots}" ]; do
-    dir="/var/run/pulzr/lora/slot${i}"
-    if [ -s "${dir}/concentratord.toml" ] \
-        && /usr/sbin/pulzr-lora-config "${i}" "${tmp}" >/dev/null 2>&1 \
-        && [ -s "${tmp}/concentratord.toml" ]; then
-        cp "${tmp}/concentratord.toml" "${dir}/concentratord.toml"
-    fi
-    i=$((i + 1))
-done
-rm -rf "${tmp}"
-
-# It reads its config only at start. procd respawns it with the new file after
-# its respawn delay (pulzr-packet-forwarder): ~10s deaf, once per boot.
-#
-# SIGINT is concentratord's stop signal: it stops the radio before exiting.
-# SIGTERM ends it without that. A stop still running after 5s gets SIGTERM,
-# by pid, so the respawned process is never the one killed.
-pids="$(pgrep -f '^/usr/bin/chirpstack-concentratord-')"
-for pid in ${pids}; do
-    kill -INT "${pid}" 2>/dev/null
-done
-sleep 5
-for pid in ${pids}; do
-    kill -0 "${pid}" 2>/dev/null && kill "${pid}" 2>/dev/null
-done
-exit 0
+# It reads its config only at start, so this is ~10s deaf, once per boot.
+# The same re-render picks up the LoRa profile: on a gateway with a SIM alone
+# the first sync comes over the SIM, so this one restart is also the one that
+# moves its stats to five minutes (pulzr-lora-profile).
+exec /usr/sbin/pulzr-lora-profile apply

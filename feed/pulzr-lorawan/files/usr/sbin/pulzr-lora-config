@@ -34,11 +34,11 @@ set -e
 SLOT="${1:?slot index}"
 OUT="${2:?output dir}"
 
-. /etc/pulzr/board.conf
+. "${PULZR_BOARD_CONF:-/etc/pulzr/board.conf}"
 
-PROFILE_DIR=/usr/share/pulzr/concentrator
-REGION_DIR=/usr/share/pulzr/region
-STATE_DIR=/var/run/pulzr/lora
+PROFILE_DIR="${PULZR_SHARE:-/usr/share/pulzr}/concentrator"
+REGION_DIR="${PULZR_SHARE:-/usr/share/pulzr}/region"
+STATE_DIR="${PULZR_RUN:-/var/run/pulzr}/lora"
 
 die() { echo "slot ${SLOT}: $*" >&2; exit 1; }
 
@@ -141,14 +141,25 @@ chip="/dev/${PULZR_GPIOCHIP:-gpiochip0}"
 # it falls back to its own receive time, which is at least honest.
 # /etc/hotplug.d/ntp/40-pulzr-lora-time turns this on at first sync.
 time_fallback=false
-[ -f /var/run/pulzr/clock-synced ] && time_fallback=true
+[ -f "${PULZR_RUN:-/var/run/pulzr}/clock-synced" ] && time_fallback=true
+
+# How often concentratord reports, by the uplink in use: pulzr-lora-profile
+# has why five minutes on a SIM, and what changing it costs. The profile is
+# written into the file because the file is what is running; `running` reads
+# it back from there.
+lora_profile="$("${PULZR_LORA_PROFILE_CMD:-/usr/sbin/pulzr-lora-profile}" want 2>/dev/null || true)"
+case "${lora_profile}" in
+    cellular) stats="${PULZR_LORA_STATS_INTERVAL_CELLULAR:-300}" ;;
+    *)        lora_profile=standard; stats="${PULZR_LORA_STATS_INTERVAL:-30}" ;;
+esac
 
 {
     cat <<EOF
+# profile: ${lora_profile}
 [concentratord]
 log_level="INFO"
 log_to_syslog=true
-stats_interval="30s"
+stats_interval="${stats}s"
 disable_crc_filter=false
 
 [concentratord.api]
@@ -257,12 +268,21 @@ if [ "${buffer}" = "1" ]; then
     mqtt_pass=""
     mqtt_qos=1
     mqtt_ca=""
+    # Loopback: a ping costs nothing, and 30s finds a broker restart quickly.
+    mqtt_keepalive=30
 else
     mqtt_server="ssl://${host}:${port}"
     mqtt_user="$(get pulzr.mqtt.username)"
     mqtt_pass="$(get pulzr.mqtt.password)"
     mqtt_qos=0
     mqtt_ca="/etc/ssl/certs/ca-certificates.crt"
+    # Straight to the broker. On a free link 30s, as it always was: a dead
+    # session is found before many uplinks go into it, and with no buffer an
+    # uplink published into one is lost. On a SIM the stats are five minutes
+    # apart, so the keepalive is most of what the connection sends: 60s halves
+    # it and still finds a dead session within two minutes.
+    mqtt_keepalive=30
+    [ "${lora_profile}" = cellular ] && mqtt_keepalive=60
 fi
 
 cat > "${OUT}/mqtt-forwarder.toml" <<EOF
@@ -278,7 +298,7 @@ username="${mqtt_user}"
 password="${mqtt_pass}"
 qos=${mqtt_qos}
 clean_session=false
-keep_alive_interval="30s"
+keep_alive_interval="${mqtt_keepalive}s"
 client_id="${eui}-${section}"
 ca_cert="${mqtt_ca}"
 # A broker that is down or refusing us should not be retried every second: it
@@ -287,6 +307,20 @@ reconnect_interval="30s"
 
 [backend]
 enabled="concentratord"
+
+# Frames the LNS would only throw away are never sent: a CRC that failed or is
+# missing. These are the forwarder's defaults, written out so they are not lost
+# to somebody's edit; on a SIM each such frame is billed for nothing.
+#
+# Not lorawan_only. Its filter (lrwn-filters) keeps join requests and data
+# uplinks and drops every other message type, which includes a LoRaWAN 1.1
+# device's rejoin request and the proprietary frames a mesh relay sends. And no
+# DevAddr or JoinEUI filter: either has to know every network a site's devices
+# join, and one wrong prefix is uplinks dropped in silence.
+[backend.filters]
+forward_crc_ok=true
+forward_crc_invalid=false
+forward_crc_missing=false
 
 [backend.concentratord]
 event_url="${events}"

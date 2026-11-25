@@ -5,6 +5,7 @@
 #   pulzr-logship           follow the log and send it, until killed (procd)
 #   pulzr-logship filter    `logread -t` lines on stdin into the spool
 #   pulzr-logship flush     send what is spooled, once
+#   pulzr-logship interval  how many seconds apart batches go now
 #
 # ── WHY ────────────────────────────────────────────────────────────────────
 #
@@ -28,9 +29,13 @@
 #
 # Held to a token bucket: 60 lines at once, then 10 a minute (600 an hour).
 # A daemon in a crash loop costs that and one line saying how many more there
-# were. Sent every minute, or every five on a metered uplink, or sooner once
-# 100 lines are waiting: one HTTPS POST each, which on a SIM is the cost that
-# counts. Pulzr Cloud has its own ceiling as well, whatever firmware sends.
+# were. Sent every minute, or every thirty on a SIM, or sooner once 100 lines
+# are waiting: one HTTPS POST each, about 6.6 KB on the wire whatever it
+# carries, which on a SIM is the cost that counts. Measured on a Pi over a
+# day: lines came in 75 separate minutes, 52 five-minute windows and 32
+# thirty-minute ones, so thirty is about 9 MB a month less than every minute.
+# A log read in the cloud half an hour late is still the log that survives the
+# reboot. Pulzr Cloud has its own ceiling as well, whatever firmware sends.
 #
 # Proved the way a report is, by the claim secret (pulzr-claim syslog), over
 # the same HTTPS: no second credential, no second connection held open.
@@ -143,11 +148,18 @@ filter() {
     }'
 }
 
-# The uplink in use is metered (a SIM): send less often.
+# The traffic is on a SIM: send less often. on_cellular, not pulzr-uplinks:
+# that is the failover package, on the Opal alone, and asking it on a RAK or a
+# Pi with a SIM said "free", so their log went out every minute.
 metered() {
-    local active
-    active="$(pulzr-uplinks status 2>/dev/null)" || return 1
-    [ "$(echo "${active}" | jsonfilter -e "@.uplinks[@.iface='$(echo "${active}" | jsonfilter -e '@.active' 2>/dev/null)'].metered" 2>/dev/null)" = true ]
+    local helper="${PULZR_SHARE:-/usr/share/pulzr}/cellular.sh"
+    [ -f "${helper}" ] || return 1
+    command -v on_cellular >/dev/null 2>&1 || . "${helper}"
+    on_cellular
+}
+
+interval() {
+    if metered; then echo "${PULZR_LOGSHIP_INTERVAL_CELLULAR:-1800}"; else echo "${PULZR_LOGSHIP_INTERVAL:-60}"; fi
 }
 
 # Everything waiting, oldest first, as one request: {"lines":[...],"dropped":n}.
@@ -196,8 +208,7 @@ run() {
         while sleep 10; do
             now="$(date +%s)"
             waiting="$(cat "${SPOOL}" 2>/dev/null | grep -c '"t":')"
-            interval=60
-            metered && interval=300
+            interval="$(interval)"
             if [ "${waiting:-0}" -ge "${BATCH}" ] || [ $((now - sent)) -ge "${interval}" ]; then
                 flush
                 sent="${now}"
@@ -222,5 +233,6 @@ case "${1:-run}" in
     run)    run ;;
     filter) filter ;;
     flush)  flush ;;
-    *)      echo "usage: pulzr-logship [run|filter|flush]" >&2; exit 2 ;;
+    interval) interval ;;
+    *)      echo "usage: pulzr-logship [run|filter|flush|interval]" >&2; exit 2 ;;
 esac

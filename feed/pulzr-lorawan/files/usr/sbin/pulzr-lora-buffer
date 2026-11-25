@@ -113,7 +113,7 @@ persistence_dir() {
 # only on its first connect attempt, then "1" on each connect, and the "0" for
 # a drop is a will on the remote broker. Locally, a bridge that was up once
 # reads "1" through every outage after it. Lags a real drop by up to ~1.5x the
-# bridge keepalive (60s), until TCP gives up on a peer that has gone quiet.
+# bridge keepalive (120s), until TCP gives up on a peer that has gone quiet.
 bridge_up() {
     local pid="$1" port inodes
     port="$(printf ':%04X' "$2")"
@@ -212,6 +212,14 @@ bridge_insecure false
 # still owes those messages. With a clean session every reconnect would start
 # empty, which is the queue quietly not existing.
 cleansession false
+
+# 120s, not mosquitto's 60. On a free link the stats every 30s keep the
+# session busy and no ping is ever sent, so this only bounds how long a dead
+# session goes unnoticed, and the queue holds what arrives meanwhile. On a SIM
+# the stats are five minutes apart (pulzr-lora-profile) and the pings are most
+# of what the bridge sends: about 200 bytes each with TCP and TLS, so half as
+# many is 3.5 MB a month. Well inside 1NCE's 350s TCP idle timeout.
+keepalive_interval 120
 
 # Exactly the topics the gateway's own credentials are allowed to use, in the
 # directions they are allowed to use them — see mqtt-authorizer. A wildcard

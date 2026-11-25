@@ -6,6 +6,7 @@
 #   pulzr-mqtt-agent                  listen for requests until killed
 #   pulzr-mqtt-agent --once           answer nothing; print what `status` would say
 #   pulzr-mqtt-agent --publish-state  publish the retained state again and exit
+#   pulzr-mqtt-agent --keepalive      print the keepalive the next connection uses
 #   pulzr-mqtt-agent --push lan|uplinks|dns
 #                                     publish what changed without being asked
 #
@@ -58,7 +59,7 @@
 # saving. Responses are capped, because "tail the log" over cellular is how a
 # convenience becomes a bill.
 
-. /etc/pulzr/board.conf
+. "${PULZR_BOARD_CONF:-/etc/pulzr/board.conf}"
 
 # Compat: the topic root is a wire contract with the broker's ACLs and the cloud's
 # subscriptions, and keeps its ParkezeOS spelling.
@@ -74,10 +75,19 @@ STATE_DIR=/var/run/pulzr/mqtt
 # agent held a dead TCP session until the broker reaped it and did not
 # reconnect for six minutes.
 #
-# A ping is a two-byte packet. At 60s that is roughly 1440 a day, which
-# against a 1NCE plan is noise, and it buys back five minutes of blindness
-# every time a gateway fails over.
+# A ping is a two-byte packet, but measured on the wire, with TCP, TLS and
+# the ACK, a round is about 200 bytes: at 60s, 290 KB a day, 9 MB a month.
+# That is the price of reconnecting quickly after a failover, and only a
+# gateway with something to fail over from gets anything for it. One whose
+# traffic is on its SIM (on_cellular) when this connects has nowhere to fail
+# over to, so it pings every 240s: a quarter of the cost, inside 1NCE's 350s
+# TCP idle timeout. Chosen per connection: procd starts this again when the
+# subscription ends, which is what a change of uplink does to it.
 KEEPALIVE="${PULZR_MQTT_KEEPALIVE:-60}"
+CELLULAR_SH="${PULZR_SHARE:-/usr/share/pulzr}/cellular.sh"
+if [ -f "${CELLULAR_SH}" ] && . "${CELLULAR_SH}" && on_cellular; then
+    KEEPALIVE="${PULZR_MQTT_KEEPALIVE_CELLULAR:-240}"
+fi
 # A response is meant to be a handful of facts. Anything larger is either a
 # mistake or a log somebody should be pulling over the tunnel instead.
 MAX_RESPONSE=8192
@@ -448,6 +458,11 @@ push_all() {
 }
 
 # ── the loop ────────────────────────────────────────────────────────────────
+
+if [ "$1" = "--keepalive" ]; then
+    echo "${KEEPALIVE}"
+    exit 0
+fi
 
 if [ "$1" = "--once" ]; then
     dispatch all ""
