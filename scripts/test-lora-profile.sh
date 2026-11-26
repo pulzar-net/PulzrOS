@@ -218,6 +218,10 @@ cat > "${SANDBOX}/procs" <<EOF
 EOF
 expect "running reads the rendered file" standard "$(profile running)"
 expect "interval reads the rendered file" 30 "$(profile interval)"
+expect "reported is the running interval when nothing is pending" 30 "$(profile reported)"
+echo yes > "${SANDBOX}/cellular"
+expect "and the cellular one while a switch to it is pending" 300 "$(profile reported)"
+echo no > "${SANDBOX}/cellular"
 expect "status is JSON" '{"want":"standard","running":"standard","statsInterval":30}' "$(profile status)"
 
 # apply uses the real pulzr-lora-config, whose own `want` is the stub file.
@@ -231,6 +235,7 @@ expect "a new interval restarts concentratord, with its stop signal, and the for
     "-INT 4000001 -TERM 4000002" "$(tr '\n' ' ' < "${SANDBOX}/killed" | sed 's/ $//')"
 expect "and the slot now runs cellular" cellular "$(profile running)"
 expect "every 300s" 300 "$(profile interval)"
+expect "a pending switch back reports the running 300s" 300 "$(profile reported)"
 
 # Behind the buffer only concentratord has anything to change.
 echo "pulzr.lorawan.buffer=1" >> "${SANDBOX}/uci"
@@ -275,7 +280,7 @@ expect "and every 60s otherwise" 60 "$(PULZR_SHARE="${PSHARE}" sh "${AGENT}" --k
 expect "the bridge pings every 120s" "keepalive_interval 120" \
     "$(grep '^keepalive_interval' "${LORA}/usr/sbin/pulzr-lora-buffer")"
 expect "the facts carry the interval" 1 \
-    "$(grep -c 'echo "stats_interval=${every}"' "${BASE}/usr/sbin/pulzr-gateway-facts")"
+    "$(grep -c 'every="$(/usr/sbin/pulzr-lora-profile reported' "${BASE}/usr/sbin/pulzr-gateway-facts")"
 expect "the NTP hook re-renders through the profile" 1 \
     "$(grep -c '^exec /usr/sbin/pulzr-lora-profile apply$' "${LORA}/etc/hotplug.d/ntp/40-pulzr-lora-time")"
 expect "an uplink change starts a settle" 1 \

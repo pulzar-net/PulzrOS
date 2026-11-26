@@ -6,6 +6,7 @@
 #   pulzr-lora-profile running   the profile the running slots were rendered with
 #   pulzr-lora-profile status    both, and the stats interval, as JSON
 #   pulzr-lora-profile interval  the running stats interval in seconds
+#   pulzr-lora-profile reported  the interval the facts give: see reported()
 #   pulzr-lora-profile apply     re-render each running slot; restart what changed
 #   pulzr-lora-profile settle    apply once `want` has held for ten minutes
 #
@@ -87,6 +88,29 @@ interval() {
     sed -n 's/^stats_interval="\([0-9]*\)s"$/\1/p' "${RUN}/slot0/concentratord.toml" 2>/dev/null | head -n1
 }
 
+# What the facts say (`stats_interval`, pulzr-gateway-facts), which is what
+# Pulzr Cloud times an outage by: the longer of the running interval and the
+# one `want` would render. Concentratord's first stats after a start come one
+# interval later, so the switch to five minutes is five minutes of silence
+# after stats that said thirty seconds: the bench Pi was called offline for
+# six minutes by the change that was meant to keep it online. Saying five
+# minutes from the moment it is wanted means the last stats before the restart
+# already say so. The other way, thirty seconds after a restart, needs nothing.
+seconds_of() {
+    case "$1" in
+        cellular) echo "${PULZR_LORA_STATS_INTERVAL_CELLULAR:-300}" ;;
+        *)        echo "${PULZR_LORA_STATS_INTERVAL:-30}" ;;
+    esac
+}
+
+reported() {
+    local now next
+    now="$(interval)"
+    [ -n "${now}" ] || return 0
+    next="$(seconds_of "$(want)")"
+    if [ "${next}" -gt "${now}" ]; then echo "${next}"; else echo "${now}"; fi
+}
+
 # The pid of one slot's process, by the config it was started with: two slots
 # run two of each, and only the one whose file changed is restarted.
 pid_of() {
@@ -147,6 +171,7 @@ case "${1:-status}" in
     want)    want ;;
     running) running ;;
     interval) interval ;;
+    reported) reported ;;
     status)
         every="$(interval)"
         printf '{"want":"%s","running":"%s","statsInterval":%s}\n' \
@@ -173,7 +198,7 @@ case "${1:-status}" in
         done
         ;;
     *)
-        echo "usage: pulzr-lora-profile {want|running|status|interval|apply|settle}" >&2
+        echo "usage: pulzr-lora-profile {want|running|status|interval|reported|apply|settle}" >&2
         exit 2
         ;;
 esac
