@@ -523,21 +523,23 @@ Pulzr Cloud asks a gateway nothing on a timer: what it needs to know, the
 gateway watches for and pushes, and liveness comes from the traffic the gateway
 sends anyway (its stats, its agent's broker session, its reports).
 
-Measured on a Pi with a concentrator on the bench, hearing no devices, with
-byte counters on its uplink (nftables, by port and by the broker bridge's
-uid), and on the broker for a RAK on a SIM. Bytes on the wire: IP, TCP and
-TLS included, both directions. A month is 30 days.
+Measured for an hour each way on a Pi with a concentrator on Wi-Fi, hearing
+no devices, the hour after on the cellular profile, with byte counters on its uplink
+(nftables, by port and by the broker bridge's uid), and on the broker for a
+RAK on a SIM; the rows marked estimated are worked out from those. Bytes on
+the wire: IP, TCP and TLS included, both directions. A month is 30 days.
 
 | What, per month | Before | After | How |
 |---|---|---|---|
-| LNS connection behind the buffer: stats, PUBACKs, pings | 67 MB | 10 MB | stats every 300 s on a SIM (`pulzr-lora-profile`), bridge keepalive 120 s (`pulzr-lora-buffer`) |
-| LNS connection straight to the broker (no SD card) | 67 MB | 14 MB | the same stats, forwarder keepalive 60 s on a SIM |
+| LNS connection behind the buffer: stats, PUBACKs, pings | 68 MB | 11 MB | stats every 300 s on a SIM (`pulzr-lora-profile`), bridge keepalive 120 s (`pulzr-lora-buffer`) |
+| LNS connection straight to the broker (no SD card), estimated | 67 MB | 14 MB | the same stats, forwarder keepalive 60 s on a SIM |
 | Management agent keepalive | 8.8 MB | 2.2 MB | 240 s on a SIM, not 60 (`pulzr-mqtt-agent`) |
 | Management answers Pulzr Cloud asks for, a router | 190 MB | about 1 MB | `lan`, `uplinks` and `dns` were asked for every five minutes, each answer a new TLS session (about 7.4 KB); the gateway pushes them when they change, and its clients' bytes once every six hours on a SIM if they moved (`pulzr-lan usage-push`) |
 | The same, a LoRaWAN gateway on 0.3.x | 64 MB | 0.2 MB | 0.3.x has no `lan` operation and was asked for it every five minutes; now once a day |
-| Log shipping | 15 MB | 6.3 MB | every 30 min on a SIM; a RAK or a Pi sent it every minute, having no `pulzr-uplinks` to say "metered" |
+| Log shipping | 41 MB | 9 MB | every 30 min on a SIM, each about 6.6 KB; a RAK or a Pi sent whenever there were new lines, up to every minute (nine an hour on the bench), having no `pulzr-uplinks` to say "metered" |
 | Report, every 6 h | 1.3 MB | 1.3 MB | 10.5 KB each |
-| DNS | 0.4 MB | 0.4 MB | a lookup or two for each new TLS session, cached by dnsmasq |
+| DNS, estimated | 0.5 MB | 0.5 MB | a lookup or two for each new TLS session, cached by dnsmasq; the bench's 8 MB is nearly all the Wi-Fi uplink's probe, below |
+| Wi-Fi uplink probe | 0 | 0 | `pulzr-wifi-uplink` asks two `generate_204` URLs out of the Wi-Fi device alone (32 MB a month on the bench), never the SIM |
 | NTP | 0.5 MB | 0.5 MB | BusyBox ntpd's own backoff |
 | WireGuard keepalive | 0 | 0 | the tunnel does not run over cellular; 13 MB if `PULZR_WIREGUARD_ALLOW_CELLULAR` |
 | OTA and package checks | 0 | 0 | nothing polls; an upgrade or an add-on is sent when asked for |
@@ -547,16 +549,24 @@ The stats are the cost, not the uplinks. Each is 530 bytes of protobuf, 200 of
 them the facts (`pulzr-gateway-facts`), and about 780 bytes on the wire with
 the bridge's PUBACK. They cannot be made smaller by sending the facts less
 often: the LNS replaces a gateway's properties with each stats message's
-metadata. So they are sent less often, and the facts say how often
-(`stats_interval`), which is what Pulzr Cloud judges the gateway's liveness by:
-online within two intervals, an outage after eleven minutes instead of three.
+metadata. So they are sent less often.
+
+How often is the gateway's record in the LNS (`statsInterval`): the LNS puts
+it in every configuration it sends, and concentratord follows it over its own
+file, which stays at 30 s. So the gateway asks in its facts
+(`stats_interval`, 300 on a SIM) and Pulzr Cloud sets what it asks for on that
+record, then times an outage by it: the LNS calls the gateway online within
+two intervals, and Pulzr Cloud opens an outage after eleven minutes instead of
+three. A gateway that stops asking goes back to 30 s. The change lands with
+the next stats; nothing on the gateway restarts for it.
 
 The profile is `auto` by default (`pulzr.lorawan.profile`, or `standard` or
 `cellular`): cellular while a SIM has the route and no free uplink does
-(`on_cellular`, `/usr/share/pulzr/cellular.sh`). A new stats interval needs
-concentratord restarted, about ten seconds deaf, so it changes only once the
-uplink has stayed what it is for ten minutes, or with the restart NTP's first
-sync already makes. The buffer broker is never restarted for it.
+(`on_cellular`, `/usr/share/pulzr/cellular.sh`). It changes once the uplink has
+stayed what it is for ten minutes, and at boot at once (`pulzr-lora-profile
+settle`). What else it sets, the forwarder's keepalive when it talks straight
+to the broker, restarts the forwarder alone; concentratord and the buffer
+broker are left running.
 
 Every keepalive stays under 1NCE's TCP idle timeout, 350 s (600 s on its older
 core), past which its NAT drops the flow.
