@@ -8,13 +8,14 @@
 # What it must do:
 #   - on_cellular: a SIM with the route and no free uplink is cellular; a cable
 #     or a WiFi that reaches the internet is not; a WiFi behind a portal is.
-#   - pulzr-lora-config: stats every 30s on standard, 300s on cellular, the
-#     profile written into the file; the direct forwarder's keepalive 30s,
-#     60s on cellular, 30s behind the buffer whatever the profile; CRC filters
-#     written out, and no lorawan_only (it drops rejoin requests).
-#   - pulzr-lora-profile: the setting overrides auto; apply restarts only the
-#     process whose file changed, and nothing when nothing did; settle applies
-#     only a change that has held, and never runs twice at once.
+#   - pulzr-lora-config: 30s in concentratord's file whatever the profile
+#     (the LNS sets the interval); the direct forwarder's keepalive 30s, 60s
+#     on cellular, 30s behind the buffer; CRC filters written out, and no
+#     lorawan_only (it drops rejoin requests).
+#   - pulzr-lora-profile: the setting overrides auto; the first settle after a
+#     boot is at once, a later one only once the change has held, never two at
+#     once; the facts ask for 300s on cellular; apply restarts only the
+#     process whose file changed, and nothing when nothing did.
 #   - pulzr-logship sends every 30 min on a SIM, every minute otherwise.
 #   - pulzr-mqtt-agent pings every 240s on a SIM, every 60s otherwise.
 #   - the buffer's bridge keepalive is 120s.
@@ -166,15 +167,13 @@ render() { # profile -> renders slot 0 into $SANDBOX/out
 setting() { sed -n "s/^$1=\"*\([^\"]*\)\"*$/\1/p" "${SANDBOX}/out/$2" | head -n1; }
 
 render standard
-expect "standard: stats every 30s" 30s "$(setting stats_interval concentratord.toml)"
-expect "standard: the profile is in the file" "# profile: standard" "$(head -n1 "${SANDBOX}/out/concentratord.toml")"
+expect "the file's stats interval is 30s: the LNS sets the real one" 30s "$(setting stats_interval concentratord.toml)"
 expect "standard: the direct keepalive stays 30s" 30s "$(setting keep_alive_interval mqtt-forwarder.toml)"
 render cellular
-expect "cellular: stats every 300s" 300s "$(setting stats_interval concentratord.toml)"
-expect "cellular: the profile is in the file" "# profile: cellular" "$(head -n1 "${SANDBOX}/out/concentratord.toml")"
+expect "cellular: the file still says 30s" 30s "$(setting stats_interval concentratord.toml)"
 expect "cellular: the direct keepalive is 60s" 60s "$(setting keep_alive_interval mqtt-forwarder.toml)"
 render nonsense
-expect "an unknown answer renders standard" 30s "$(setting stats_interval concentratord.toml)"
+expect "an unknown answer is the standard keepalive" 30s "$(setting keep_alive_interval mqtt-forwarder.toml)"
 expect "CRC-failed frames are not forwarded" false "$(setting forward_crc_invalid mqtt-forwarder.toml)"
 expect "frames with no CRC are not forwarded" false "$(setting forward_crc_missing mqtt-forwarder.toml)"
 expect "no lorawan_only: it drops rejoin requests" "" "$(grep '^lorawan_only' "${SANDBOX}/out/mqtt-forwarder.toml")"
@@ -191,13 +190,17 @@ sed -i.bak '/pulzr.lorawan.buffer/d' "${SANDBOX}/uci"
 # ── pulzr-lora-profile ──────────────────────────────────────────────────────
 #
 # Its own `want` reads the stubbed on_cellular through a cellular.sh that
-# answers from $SANDBOX/cellular.
+# answers from $SANDBOX/cellular. The config it re-renders with asks the same
+# script for `current`.
 PROFILE="${LORA}/usr/sbin/pulzr-lora-profile"
 PSHARE="${SANDBOX}/pshare"
 mkdir -p "${PSHARE}"
 printf 'on_cellular() { [ "$(cat "${SANDBOX}/cellular" 2>/dev/null)" = yes ]; }\n' > "${PSHARE}/cellular.sh"
 ln -s "${SHARE}/concentrator" "${SHARE}/region" "${PSHARE}/"
 profile() { PULZR_SHARE="${PSHARE}" sh "${PROFILE}" "$@"; }
+printf '#!/bin/sh\nPULZR_SHARE="%s" exec sh "%s" "$@"\n' "${PSHARE}" "${PROFILE}" > "${STUBS}/want"
+chmod +x "${STUBS}/want"
+settle() { PULZR_LORA_PROFILE_HOLD=3 PULZR_LORA_PROFILE_STEP=1 PULZR_SHARE="${PSHARE}" sh "${PROFILE}" settle; }
 
 echo yes > "${SANDBOX}/cellular"
 expect "auto on a SIM wants cellular" cellular "$(profile want)"
@@ -206,60 +209,43 @@ expect "auto on a free link wants standard" standard "$(profile want)"
 echo "pulzr.lorawan.profile=cellular" >> "${SANDBOX}/uci"
 expect "the setting overrides auto" cellular "$(profile want)"
 sed -i.bak '/pulzr.lorawan.profile/d' "${SANDBOX}/uci"
-expect "nothing running reads as no profile" "" "$(profile running)"
+expect "before any is settled, current is what is wanted" standard "$(profile current)"
+expect "and the facts ask for 30s" 30 "$(profile reported)"
 
 # A running slot 0, rendered standard, with its two processes.
 SLOT="${RUN}/lora/slot0"
 render standard
 mkdir -p "${SLOT}"; cp "${SANDBOX}/out/"* "${SLOT}/"
-cat > "${SANDBOX}/procs" <<EOF
-4000001 /usr/bin/chirpstack-concentratord-sx1302 -c ${SLOT}/concentratord.toml -c ${SLOT}/region.toml
-4000002 /usr/bin/chirpstack-mqtt-forwarder -c ${SLOT}/mqtt-forwarder.toml
-EOF
-expect "running reads the rendered file" standard "$(profile running)"
-expect "interval reads the rendered file" 30 "$(profile interval)"
-expect "reported is the running interval when nothing is pending" 30 "$(profile reported)"
-echo yes > "${SANDBOX}/cellular"
-expect "and the cellular one while a switch to it is pending" 300 "$(profile reported)"
-echo no > "${SANDBOX}/cellular"
-expect "status is JSON" '{"want":"standard","running":"standard","statsInterval":30}' "$(profile status)"
-
-# apply uses the real pulzr-lora-config, whose own `want` is the stub file.
+printf '4000001 /usr/bin/chirpstack-concentratord-sx1302 -c %s/concentratord.toml -c %s/region.toml\n4000002 /usr/bin/chirpstack-mqtt-forwarder -c %s/mqtt-forwarder.toml\n' \
+    "${SLOT}" "${SLOT}" "${SLOT}" > "${SANDBOX}/procs"
 : > "${SANDBOX}/killed"
-echo standard > "${SANDBOX}/want"
+
+# The first settle after a boot is at once.
+echo yes > "${SANDBOX}/cellular"
+settle
+expect "the first settle takes the wanted profile at once" cellular "$(cat "${RUN}/lora/profile")"
+expect "and the facts ask the LNS for 300s" 300 "$(profile reported)"
+expect "status is JSON" '{"want":"cellular","current":"cellular","statsInterval":300}' "$(profile status)"
+expect "only the direct forwarder restarts, for its keepalive; concentratord is left alone" \
+    "-TERM 4000002" "$(tr '\n' ' ' < "${SANDBOX}/killed" | sed 's/ $//')"
+expect "and its keepalive is now 60s" 60s "$(sed -n 's/^keep_alive_interval="\([^"]*\)"$/\1/p' "${SLOT}/mqtt-forwarder.toml")"
+
+: > "${SANDBOX}/killed"
 profile apply
 expect "apply with nothing changed restarts nothing" "" "$(cat "${SANDBOX}/killed")"
-echo cellular > "${SANDBOX}/want"
-profile apply
-expect "a new interval restarts concentratord, with its stop signal, and the forwarder whose keepalive changed" \
-    "-INT 4000001 -TERM 4000002" "$(tr '\n' ' ' < "${SANDBOX}/killed" | sed 's/ $//')"
-expect "and the slot now runs cellular" cellular "$(profile running)"
-expect "every 300s" 300 "$(profile interval)"
-expect "a pending switch back reports the running 300s" 300 "$(profile reported)"
+settle
+expect "settle with want and current agreeing does nothing" "" "$(cat "${SANDBOX}/killed")"
 
-# Behind the buffer only concentratord has anything to change.
-echo "pulzr.lorawan.buffer=1" >> "${SANDBOX}/uci"
-echo "listener 18831 127.0.0.1" > "${RUN}/lora/mosquitto.conf"
-echo standard > "${SANDBOX}/want"
-profile apply
-: > "${SANDBOX}/killed"
-echo cellular > "${SANDBOX}/want"
-profile apply
-expect "behind the buffer a profile change restarts concentratord alone" "-INT 4000001" "$(tr '\n' ' ' < "${SANDBOX}/killed" | sed 's/ $//')"
-
-# settle: profile's own want (the stubbed on_cellular) against the running file.
-echo yes > "${SANDBOX}/cellular"; echo cellular > "${SANDBOX}/want"; profile apply
-: > "${SANDBOX}/killed"
-PULZR_LORA_PROFILE_HOLD=3 PULZR_LORA_PROFILE_STEP=1 profile settle
-expect "settle with want and running agreeing does nothing" "" "$(cat "${SANDBOX}/killed")"
-echo no > "${SANDBOX}/cellular"; echo standard > "${SANDBOX}/want"
-PULZR_LORA_PROFILE_HOLD=3 PULZR_LORA_PROFILE_STEP=1 profile settle
-expect "settle applies a change that held" standard "$(profile running)"
+echo no > "${SANDBOX}/cellular"
+expect "a change of uplink is wanted, not yet current" "standard cellular 300" \
+    "$(profile want) $(profile current) $(profile reported)"
+settle
+expect "settle takes it once it has held" "standard 30" "$(profile current) $(profile reported)"
 expect "settle leaves no lock behind" no "$([ -d "${RUN}/lora/settle.lock" ] && echo yes || echo no)"
-echo yes > "${SANDBOX}/cellular"; echo cellular > "${SANDBOX}/want"
+echo yes > "${SANDBOX}/cellular"
 mkdir "${RUN}/lora/settle.lock"
-PULZR_LORA_PROFILE_HOLD=3 PULZR_LORA_PROFILE_STEP=1 profile settle
-expect "a second settle while one waits does nothing" standard "$(profile running)"
+settle
+expect "a second settle while one waits does nothing" standard "$(profile current)"
 rmdir "${RUN}/lora/settle.lock"
 
 # ── the other connections ───────────────────────────────────────────────────
@@ -279,8 +265,8 @@ expect "and every 60s otherwise" 60 "$(PULZR_SHARE="${PSHARE}" sh "${AGENT}" --k
 
 expect "the bridge pings every 120s" "keepalive_interval 120" \
     "$(grep '^keepalive_interval' "${LORA}/usr/sbin/pulzr-lora-buffer")"
-expect "the facts carry the interval" 1 \
-    "$(grep -c 'every="$(/usr/sbin/pulzr-lora-profile reported' "${BASE}/usr/sbin/pulzr-gateway-facts")"
+expect "the facts carry the interval asked for" 1 \
+    "$(grep -cF 'pulzr-lora-profile reported 2>/dev/null' "${BASE}/usr/sbin/pulzr-gateway-facts")"
 expect "the NTP hook re-renders through the profile" 1 \
     "$(grep -c '^exec /usr/sbin/pulzr-lora-profile apply$' "${LORA}/etc/hotplug.d/ntp/40-pulzr-lora-time")"
 expect "an uplink change starts a settle" 1 \

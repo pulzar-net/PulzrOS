@@ -17,7 +17,8 @@ esac
 
 /usr/sbin/pulzr-lora-route apply >/dev/null 2>&1
 
-# And whether the stats interval should follow: not now, but once the uplink
-# has stayed what it is for ten minutes, so a short failover restarts nothing
-# (pulzr-lora-profile). In the background: hotplug waits for its scripts.
+# And whether the LoRa profile should follow: at once the first time after a
+# boot, otherwise once the uplink has stayed what it is for ten minutes, so a
+# short failover changes nothing (pulzr-lora-profile). In the background:
+# hotplug waits for its scripts.
 ( /usr/sbin/pulzr-lora-profile settle </dev/null >/dev/null 2>&1 & )

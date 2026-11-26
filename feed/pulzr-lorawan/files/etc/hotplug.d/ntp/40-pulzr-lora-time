@@ -21,7 +21,5 @@ logger -t lora -p daemon.info "clock set by NTP (stratum ${stratum}); uplinks no
 # back, which is exactly when that queue is full.
 #
 # It reads its config only at start, so this is ~10s deaf, once per boot.
-# The same re-render picks up the LoRa profile: on a gateway with a SIM alone
-# the first sync comes over the SIM, so this one restart is also the one that
-# moves its stats to five minutes (pulzr-lora-profile).
+# pulzr-lora-profile apply re-renders each slot and restarts only what changed.
 exec /usr/sbin/pulzr-lora-profile apply

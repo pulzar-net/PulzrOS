@@ -1,14 +1,13 @@
 #!/bin/sh
 #
-# Which LoRa profile this gateway should run, and putting it into effect.
+# Which LoRa profile this gateway is on, and what follows from it.
 #
 #   pulzr-lora-profile want      standard or cellular, for the uplink in use now
-#   pulzr-lora-profile running   the profile the running slots were rendered with
-#   pulzr-lora-profile status    both, and the stats interval, as JSON
-#   pulzr-lora-profile interval  the running stats interval in seconds
-#   pulzr-lora-profile reported  the interval the facts give: see reported()
+#   pulzr-lora-profile current   the profile settled on (want, before the first)
+#   pulzr-lora-profile reported  the stats interval the facts ask the LNS for
+#   pulzr-lora-profile status    all three, as JSON
 #   pulzr-lora-profile apply     re-render each running slot; restart what changed
-#   pulzr-lora-profile settle    apply once `want` has held for ten minutes
+#   pulzr-lora-profile settle    settle on `want` once it has held ten minutes
 #
 # ── WHY A PROFILE ──────────────────────────────────────────────────────────
 #
@@ -23,32 +22,31 @@
 # gateway's properties with each stats message's metadata, so one without them
 # blanks them. Fewer stats is the only lever.
 #
-# So on a SIM the interval is five minutes, and Pulzr Cloud judges the
-# gateway's liveness from the interval it reports (`stats_interval` in the
-# facts): offline after two missed, not after six 30-second ones. On a free
-# link it stays 30 seconds, because there it costs nothing and an outage is
-# noticed in three minutes rather than eleven.
+# So on a SIM the interval is five minutes; on a free link it stays 30
+# seconds, because there it costs nothing and an outage is noticed in three
+# minutes rather than eleven. 300 seconds, not more: 1NCE's NAT drops a TCP
+# flow idle for 350 (600 on the older core).
 #
-# 300 seconds, not more: 1NCE's NAT drops a TCP flow idle for 350 (600 on the
-# older core). The bridge's keepalive covers the gaps either way, but a stats
-# message inside the window is one more thing keeping the mapping alive.
+# ── WHO SETS IT ────────────────────────────────────────────────────────────
 #
-# ── WHAT CHANGING IT COSTS ─────────────────────────────────────────────────
+# Not this gateway. The LNS sends every gateway a configuration whose stats
+# interval is the gateway's record in the LNS (30 s, set at adoption), and
+# concentratord takes it over its own file: a 300 s rendered here was measured
+# running at 30 s. So the gateway asks: `reported` goes out in the facts as
+# `stats_interval`, Pulzr Cloud sets that on the gateway's record in the LNS
+# (net-api utils/gateway_liveness.py), and the LNS's next configuration carries
+# it. The gateway decides, because only it knows its uplink; the record that
+# takes effect is where it always was.
 #
-# Concentratord reads its config only at start, so a new interval is a
-# concentratord restart: about ten seconds deaf, which drops whatever is sent
-# in them. That is why `settle` waits for the uplink to have stayed what it is
-# for ten minutes before it changes anything: a failover that lasts minutes
-# costs no restart at all, and a gateway that has really moved onto its SIM,
-# or off it, pays ten seconds once.
+# A new interval reconfigures concentratord, a few seconds deaf, so the
+# profile settles only once the uplink has stayed what it is for ten minutes:
+# a failover that lasts minutes changes nothing. The first decision after a
+# boot is taken at once: a gateway that boots on its SIM asks for five minutes
+# with its first stats.
 #
-# A gateway on a SIM alone pays nothing extra. It boots with no route, so the
-# first render is standard, and NTP's first sync re-renders concentratord
-# anyway (hotplug.d/ntp/40-pulzr-lora-time, for the timestamps) by which time
-# the SIM is the route. That one restart carries both changes.
-#
-# The buffer broker is never restarted here. Its queue may be only in RAM,
-# and the moment a backhaul changes is exactly when it is full.
+# What does follow locally is the forwarder's keepalive when it talks to the
+# broker directly (no buffer, pulzr-lora-config): `apply` restarts the
+# forwarder alone, never the buffer broker, whose queue may be only in RAM.
 #
 # ── THE SETTING ────────────────────────────────────────────────────────────
 #
@@ -60,6 +58,7 @@
 . "${PULZR_SHARE:-/usr/share/pulzr}/cellular.sh"
 
 RUN="${PULZR_RUN:-/var/run/pulzr}/lora"
+STATE="${RUN}/profile"
 CONFIG="${PULZR_LORA_CONFIG:-/usr/sbin/pulzr-lora-config}"
 HOLD="${PULZR_LORA_PROFILE_HOLD:-600}"
 STEP="${PULZR_LORA_PROFILE_STEP:-60}"
@@ -78,37 +77,20 @@ want() {
     esac
 }
 
-# From the rendered file, not from UCI: what is running is what was rendered
-# when the slot last started, which is the question.
-running() {
-    sed -n 's/^# profile: \([a-z]*\)$/\1/p' "${RUN}/slot0/concentratord.toml" 2>/dev/null | head -n1
-}
-
-interval() {
-    sed -n 's/^stats_interval="\([0-9]*\)s"$/\1/p' "${RUN}/slot0/concentratord.toml" 2>/dev/null | head -n1
-}
-
-# What the facts say (`stats_interval`, pulzr-gateway-facts), which is what
-# Pulzr Cloud times an outage by: the longer of the running interval and the
-# one `want` would render. Concentratord's first stats after a start come one
-# interval later, so the switch to five minutes is five minutes of silence
-# after stats that said thirty seconds: the bench Pi was called offline for
-# six minutes by the change that was meant to keep it online. Saying five
-# minutes from the moment it is wanted means the last stats before the restart
-# already say so. The other way, thirty seconds after a restart, needs nothing.
-seconds_of() {
-    case "$1" in
-        cellular) echo "${PULZR_LORA_STATS_INTERVAL_CELLULAR:-300}" ;;
-        *)        echo "${PULZR_LORA_STATS_INTERVAL:-30}" ;;
+current() {
+    local settled
+    settled="$(cat "${STATE}" 2>/dev/null)"
+    case "${settled}" in
+        standard|cellular) echo "${settled}" ;;
+        *) want ;;
     esac
 }
 
 reported() {
-    local now next
-    now="$(interval)"
-    [ -n "${now}" ] || return 0
-    next="$(seconds_of "$(want)")"
-    if [ "${next}" -gt "${now}" ]; then echo "${next}"; else echo "${now}"; fi
+    case "$(current)" in
+        cellular) echo "${PULZR_LORA_STATS_INTERVAL_CELLULAR:-300}" ;;
+        *)        echo "${PULZR_LORA_STATS_INTERVAL:-30}" ;;
+    esac
 }
 
 # The pid of one slot's process, by the config it was started with: two slots
@@ -135,7 +117,7 @@ same() { [ "$(md5sum < "$1")" = "$(md5sum < "$2" 2>/dev/null)" ]; }
 # Rendered aside and copied over, so a render that fails leaves the running
 # config intact rather than a truncated file for the respawn to choke on.
 apply() {
-    local slots i dir tmp changed=0
+    local slots i dir tmp
     slots="$(uci -q get pulzr.concentrator.slots || echo 0)"
     tmp="$(mktemp -d)"
     i=0
@@ -147,37 +129,35 @@ apply() {
             if ! same "${tmp}/concentratord.toml" "${dir}/concentratord.toml"; then
                 cp "${tmp}/concentratord.toml" "${dir}/concentratord.toml"
                 restart "$(pid_of "concentratord-.* -c ${dir}/concentratord.toml")" INT
-                changed=1
             fi
-            # Only a forwarder talking to the broker directly has anything
-            # profile-dependent in its file (its keepalive); one behind the
-            # buffer talks to loopback, and its file stays the same.
             if ! same "${tmp}/mqtt-forwarder.toml" "${dir}/mqtt-forwarder.toml"; then
                 cp "${tmp}/mqtt-forwarder.toml" "${dir}/mqtt-forwarder.toml"
                 chmod 0600 "${dir}/mqtt-forwarder.toml"
                 restart "$(pid_of "mqtt-forwarder -c ${dir}/mqtt-forwarder.toml")" TERM
-                changed=1
             fi
         fi
         rm -f "${tmp}"/*
         i=$((i + 1))
     done
     rm -rf "${tmp}"
-    [ "${changed}" = 1 ] && log "LoRa profile $(running): stats every $(interval)s"
     return 0
 }
 
+settle_on() {
+    mkdir -p "${RUN}"
+    echo "$1" > "${STATE}"
+    log "LoRa profile $1: asking the LNS for stats every $(reported)s"
+    apply
+}
+
 case "${1:-status}" in
-    want)    want ;;
-    running) running ;;
-    interval) interval ;;
+    want)     want ;;
+    current)  current ;;
     reported) reported ;;
     status)
-        every="$(interval)"
-        printf '{"want":"%s","running":"%s","statsInterval":%s}\n' \
-            "$(want)" "$(running)" "${every:-null}"
+        printf '{"want":"%s","current":"%s","statsInterval":%s}\n' "$(want)" "$(current)" "$(reported)"
         ;;
-    apply)   apply ;;
+    apply)    apply ;;
     settle)
         # One waiter at a time: the hotplug fires for every interface that
         # moves, and each event during the hold would otherwise start its own
@@ -185,20 +165,19 @@ case "${1:-status}" in
         mkdir -p "${RUN}"
         mkdir "${RUN}/settle.lock" 2>/dev/null || exit 0
         trap 'rmdir "${RUN}/settle.lock" 2>/dev/null' EXIT
+        [ -s "${STATE}" ] || { settle_on "$(want)"; exit 0; }
         held=0; last=""
         while :; do
-            now="$(want)"; current="$(running)"
-            # Not running, or already what it should be (a failover that
-            # came back inside the hold): nothing to do.
-            [ -n "${current}" ] && [ "${now}" != "${current}" ] || break
+            now="$(want)"
+            [ "${now}" != "$(current)" ] || break
             if [ "${now}" = "${last}" ]; then held=$((held + STEP)); else held=0; fi
             last="${now}"
-            [ "${held}" -ge "${HOLD}" ] && { apply; break; }
+            [ "${held}" -ge "${HOLD}" ] && { settle_on "${now}"; break; }
             sleep "${STEP}"
         done
         ;;
     *)
-        echo "usage: pulzr-lora-profile {want|running|status|interval|reported|apply|settle}" >&2
+        echo "usage: pulzr-lora-profile {want|current|reported|status|apply|settle}" >&2
         exit 2
         ;;
 esac

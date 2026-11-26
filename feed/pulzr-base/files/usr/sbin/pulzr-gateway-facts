@@ -52,10 +52,10 @@ tunnel="$(jsonfilter -i /etc/pulzr/wireguard/tunnel.json -e '@.address' 2>/dev/n
 # absent without pulzr-lorawan: there is nothing to detect.
 if [ -e /usr/libexec/pulzr/addon-health/pulzr-lorawan ]; then
     echo "concentrator=$(uci -q get pulzr.concentrator.status || echo unknown)"
-    # How often these stats come: five minutes on a SIM, thirty seconds
-    # otherwise, and the longer one while a switch is pending
-    # (pulzr-lora-profile reported). Pulzr Cloud calls the gateway offline
-    # after two missed, so it has to know.
+    # How often this gateway asks to send these stats: five minutes on a SIM,
+    # thirty seconds otherwise (pulzr-lora-profile reported). Pulzr Cloud sets
+    # it on the gateway's record in the LNS, whose configuration is what
+    # concentratord follows.
     every="$(/usr/sbin/pulzr-lora-profile reported 2>/dev/null)"
     [ -n "${every}" ] && echo "stats_interval=${every}"
 else

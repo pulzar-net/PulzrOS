@@ -143,23 +143,18 @@ chip="/dev/${PULZR_GPIOCHIP:-gpiochip0}"
 time_fallback=false
 [ -f "${PULZR_RUN:-/var/run/pulzr}/clock-synced" ] && time_fallback=true
 
-# How often concentratord reports, by the uplink in use: pulzr-lora-profile
-# has why five minutes on a SIM, and what changing it costs. The profile is
-# written into the file because the file is what is running; `running` reads
-# it back from there.
-lora_profile="$("${PULZR_LORA_PROFILE_CMD:-/usr/sbin/pulzr-lora-profile}" want 2>/dev/null || true)"
-case "${lora_profile}" in
-    cellular) stats="${PULZR_LORA_STATS_INTERVAL_CELLULAR:-300}" ;;
-    *)        lora_profile=standard; stats="${PULZR_LORA_STATS_INTERVAL:-30}" ;;
-esac
+# The LoRa profile this gateway settled on (pulzr-lora-profile): standard or
+# cellular. It sets the direct forwarder's keepalive below. Not the stats
+# interval: the LNS sends its own with every configuration and concentratord
+# takes that over this file, so the 30s here only lasts until the first one.
+lora_profile="$("${PULZR_LORA_PROFILE_CMD:-/usr/sbin/pulzr-lora-profile}" current 2>/dev/null || true)"
 
 {
     cat <<EOF
-# profile: ${lora_profile}
 [concentratord]
 log_level="INFO"
 log_to_syslog=true
-stats_interval="${stats}s"
+stats_interval="30s"
 disable_crc_filter=false
 
 [concentratord.api]
