@@ -1,0 +1,36 @@
+{
+  "name": "RAKwireless RAK7268V2",
+  "form": "indoor",
+  "antennas": 1,
+  "ethernet": [
+    {
+      "name": "eth0",
+      "label": "Ethernet",
+      "poe": true
+    }
+  ],
+  "connectors": [
+    {
+      "kind": "lora",
+      "label": "LoRa"
+    },
+    {
+      "kind": "wifi",
+      "label": "Wi-Fi"
+    },
+    {
+      "kind": "sd",
+      "label": "SD"
+    },
+    {
+      "kind": "power",
+      "label": "USB-C power"
+    }
+  ],
+  "photo": {
+    "file": "photo.webp",
+    "credit": "RAKwireless",
+    "license": "Used with attribution; trimmed and resized",
+    "source": "https://github.com/RAKWireless/rakwireless-docs/blob/master/docs/.vuepress/public/assets/images/wisgate/rak7268/datasheet/RAK7268.png"
+  }
+}

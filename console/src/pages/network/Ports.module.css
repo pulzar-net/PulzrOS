@@ -1,64 +1,6 @@
-/* ── the port strip ─────────────────────────────────────────────────────────
-   The device's jacks in a row, as on the case: each one a tile coloured by
-   what its link negotiated, the way a switch's own page shows them. */
-.strip {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  padding: 4px 0 18px;
-}
-
-.jack {
-  display: grid;
-  justify-items: center;
-  gap: 6px;
-  width: 76px;
-  padding: 10px 6px 8px;
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-md);
-  background: var(--bg-secondary);
-  color: var(--text-tertiary);
-  font: inherit;
-  cursor: pointer;
-  transition: border-color 0.12s, background 0.12s;
-}
-
-.jack:hover { border-color: var(--border-secondary); background: var(--bg-tertiary); }
-.jack.selected { border-color: var(--tone, var(--accent)); box-shadow: 0 0 0 1px var(--tone, var(--accent)); }
-.jack.lit {
-  border-color: var(--tone, var(--accent));
-  background: color-mix(in srgb, var(--tone, var(--accent)) 10%, var(--bg-secondary));
-}
-
-.socket {
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 32px;
-  border-radius: 6px;
-  background: var(--bg-tertiary);
-}
-
-.gigabit .socket { background: color-mix(in srgb, var(--status-success) 18%, transparent); color: var(--status-success); }
-.fast .socket { background: color-mix(in srgb, var(--status-warning) 20%, transparent); color: var(--status-warning); }
-
-.jackName {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.jackSpeed {
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-secondary);
-}
-
-.jackRole {
-  font-size: 10.5px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-tertiary);
+/* The face above the table. */
+.face {
+  padding: 4px 0 16px;
 }
 
 /* ── the table ─────────────────────────────────────────────────────────── */

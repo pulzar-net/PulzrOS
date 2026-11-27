@@ -1,0 +1,39 @@
+{
+  "name": "Dragino LPS8N",
+  "form": "puck",
+  "antennas": 1,
+  "ethernet": [
+    {
+      "name": "wan",
+      "label": "WAN"
+    },
+    {
+      "name": "lan",
+      "label": "LAN"
+    }
+  ],
+  "connectors": [
+    {
+      "kind": "lora",
+      "label": "LoRa"
+    },
+    {
+      "kind": "wifi",
+      "label": "Wi-Fi"
+    },
+    {
+      "kind": "usb",
+      "label": "USB"
+    },
+    {
+      "kind": "power",
+      "label": "USB-C power"
+    }
+  ],
+  "photo": {
+    "file": "photo.webp",
+    "credit": "Dragino",
+    "license": "Used with attribution; trimmed and resized",
+    "source": "https://www.dragino.com/products/lora-lorawan-gateway/item/200-lps8n.html"
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "name": "RAKwireless RAK7289CV2",
+  "form": "outdoor",
+  "antennas": 4,
+  "ethernet": [
+    {
+      "name": "eth0",
+      "label": "Ethernet",
+      "poe": true
+    }
+  ],
+  "connectors": [
+    {
+      "kind": "lora",
+      "label": "LoRa 1"
+    },
+    {
+      "kind": "lora",
+      "label": "LoRa 2"
+    },
+    {
+      "kind": "lte",
+      "label": "LTE"
+    },
+    {
+      "kind": "gnss",
+      "label": "GNSS"
+    },
+    {
+      "kind": "wifi",
+      "label": "Wi-Fi"
+    },
+    {
+      "kind": "sim",
+      "label": "SIM"
+    },
+    {
+      "kind": "power",
+      "label": "PoE or 12 V"
+    }
+  ],
+  "photo": {
+    "file": "photo.webp",
+    "credit": "RAKwireless",
+    "license": "Used with attribution; trimmed and resized",
+    "source": "https://github.com/RAKWireless/rakwireless-docs/blob/master/docs/.vuepress/public/assets/images/wisgate/rak7289/RAK7289.png"
+  }
+}

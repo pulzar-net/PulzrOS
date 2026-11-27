@@ -1,0 +1,39 @@
+{
+  "name": "Raspberry Pi 4",
+  "form": "sbc",
+  "antennas": 0,
+  "ethernet": [
+    {
+      "name": "eth0",
+      "label": "Ethernet"
+    }
+  ],
+  "connectors": [
+    {
+      "kind": "wifi",
+      "label": "Wi-Fi"
+    },
+    {
+      "kind": "bluetooth",
+      "label": "Bluetooth"
+    },
+    {
+      "kind": "usb",
+      "label": "USB × 4"
+    },
+    {
+      "kind": "sd",
+      "label": "microSD"
+    },
+    {
+      "kind": "power",
+      "label": "USB-C power"
+    }
+  ],
+  "photo": {
+    "file": "photo.webp",
+    "credit": "Raspberry Pi Ltd",
+    "license": "CC BY-SA 4.0; trimmed and resized",
+    "source": "https://github.com/raspberrypi/documentation/blob/master/documentation/asciidoc/computers/sbcs/images/rpi4b.jpg"
+  }
+}

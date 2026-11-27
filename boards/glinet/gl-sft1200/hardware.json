@@ -1,0 +1,39 @@
+{
+  "name": "GL.iNet GL-SFT1200 Opal",
+  "form": "router",
+  "antennas": 2,
+  "ethernet": [
+    {
+      "name": "wan",
+      "label": "WAN"
+    },
+    {
+      "name": "lan1",
+      "label": "LAN 1"
+    },
+    {
+      "name": "lan2",
+      "label": "LAN 2"
+    }
+  ],
+  "connectors": [
+    {
+      "kind": "wifi",
+      "label": "Wi-Fi"
+    },
+    {
+      "kind": "usb",
+      "label": "USB"
+    },
+    {
+      "kind": "power",
+      "label": "USB-C power"
+    }
+  ],
+  "photo": {
+    "file": "photo.webp",
+    "credit": "GL.iNet",
+    "license": "Used with attribution; trimmed and resized",
+    "source": "https://www.gl-inet.com/products/gl-sft1200/"
+  }
+}

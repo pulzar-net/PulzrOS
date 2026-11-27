@@ -39,6 +39,8 @@ import { bitrate, bytes, count, duration, inUnit } from '@/lib/format';
 import { uplinkRows, type LinkRow } from '@/lib/uplinks';
 import { useFeatures } from '@/hooks/useFeatures';
 import { useCellular } from '@/hooks/useCellular';
+import { useHardware } from '@/hooks/useHardware';
+import { DeviceImage } from '@pulzr/ui';
 import styles from './Overview.module.css';
 
 /**
@@ -409,6 +411,7 @@ function AddonsCard({ items }: { items: Record<string, AddonItem> | undefined })
 
 function GatewayCard({ system }: { system: SystemSummary }) {
   const { identity, adoption } = system;
+  const hardware = useHardware();
   return (
     <Section
       title="Gateway"
@@ -419,12 +422,15 @@ function GatewayCard({ system }: { system: SystemSummary }) {
           : <Badge tone="warning">Not adopted</Badge>
       }
     >
-      <FactList>
-        <Fact label="Gateway EUI" value={identity.gatewayEui} mono />
-        <Fact label="Serial" value={identity.serial} mono />
-        <Fact label="Board" value={identity.boardName ?? identity.board} />
-        {adoption.state === 'adopted' && adoption.org && <Fact label="Organization" value={adoption.org} />}
-      </FactList>
+      <div className={styles.identity}>
+        <DeviceImage hardware={hardware} name={identity.boardName ?? identity.board ?? undefined} size="md" />
+        <FactList>
+          <Fact label="Gateway EUI" value={identity.gatewayEui} mono />
+          <Fact label="Serial" value={identity.serial} mono />
+          <Fact label="Board" value={identity.boardName ?? identity.board} />
+          {adoption.state === 'adopted' && adoption.org && <Fact label="Organization" value={adoption.org} />}
+        </FactList>
+      </div>
     </Section>
   );
 }

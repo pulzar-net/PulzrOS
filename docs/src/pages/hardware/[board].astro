@@ -4,13 +4,14 @@
 import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
 import { Code } from '@astrojs/starlight/components';
 import { StatusBadge } from '@pulzr/docs-theme/components';
-import { BASE, REPO, boards, built, code, facts, inline, notes, statusText } from '../../boards.mjs';
+import { BASE, REPO, boards, built, code, facts, hardwareOf, inline, notes, statusText } from '../../boards.mjs';
 
 export function getStaticPaths() {
 	return boards().map((b) => ({ params: { board: b.id }, props: { b } }));
 }
 
 const { b } = Astro.props;
+const photo = hardwareOf(b)?.photo;
 const [summary, ...rest] = b.header.split('\n');
 const blocks = notes(rest.join('\n').replace(/^\s*\n/, ''));
 const headings = [
@@ -32,6 +33,13 @@ const headings = [
 		<StatusBadge label={statusText(b)} tone={built(b) ? 'tested' : 'progress'} />
 	</p>
 	<p set:html={inline(summary)} />
+
+	{photo && (
+		<figure class="pz-board-photo">
+			<img src={`${BASE}/boards/${b.id}.webp`} alt={b.name} width="240" loading="lazy" />
+			<figcaption>Photo: <a href={photo.source}>{photo.credit}</a>, {photo.license}</figcaption>
+		</figure>
+	)}
 
 	<table class="pz-facts">
 		<tbody>
@@ -106,5 +114,19 @@ const headings = [
 	.pz-facts th {
 		width: 11rem;
 		white-space: nowrap;
+	}
+	.pz-board-photo {
+		margin: 1rem 0;
+	}
+	.pz-board-photo img {
+		display: block;
+		padding: 12px;
+		border-radius: 8px;
+		background: #ffffff;
+	}
+	.pz-board-photo figcaption {
+		margin-top: 0.25rem;
+		font-size: var(--sl-text-xs);
+		color: var(--sl-color-gray-3);
 	}
 </style>

@@ -848,6 +848,16 @@ render_board_files() {
   [ -d "${BOARDS_DIR}/common/files" ] && cp -a "${BOARDS_DIR}/common/files/." "${files}/"
   local own; own="$(board_dir "${BOARD_ID}")/files"
   [ -d "${own}" ] && cp -a "${own}/." "${files}/"
+
+  # How the console draws this board (its case, connectors and photo with its
+  # credit), beside the console. Only this board's: a 32 MB NOR part has no
+  # room for every maker's photo.
+  local dir; dir="$(board_dir "${BOARD_ID}")"
+  if [ -f "${dir}/hardware.json" ]; then
+    mkdir -p "${files}/www/pulzr/hardware"
+    cp "${dir}/hardware.json" "${files}/www/pulzr/hardware/"
+    [ -f "${dir}/photo.webp" ] && cp "${dir}/photo.webp" "${files}/www/pulzr/hardware/"
+  fi
   return 0
 }
 

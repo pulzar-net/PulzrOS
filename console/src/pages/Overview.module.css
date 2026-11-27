@@ -110,3 +110,16 @@ a.row:hover { background: var(--bg-secondary); }
 @media (max-width: 420px) {
   .rates { display: none; }
 }
+
+/* The board's picture beside what identifies it. */
+.identity {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+}
+
+.identity > :last-child {
+  flex: 1 1 220px;
+  min-width: 0;
+}

@@ -13,6 +13,9 @@ export default defineConfig({
   resolve: {
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
   },
+  // @pulzr/ui ships TypeScript and CSS modules; pre-bundling would skip the
+  // CSS-module step, so it goes through the normal pipeline like our own src.
+  optimizeDeps: { exclude: ['@pulzr/ui'] },
   build: {
     // build.sh points this straight at the package payload.
     outDir: process.env.PULZR_CONSOLE_OUT || 'dist',

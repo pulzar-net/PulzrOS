@@ -1,0 +1,52 @@
+{
+  "name": "RAKwireless RAK7391",
+  "form": "indoor",
+  "antennas": 2,
+  "ethernet": [
+    {
+      "name": "wan",
+      "label": "WAN",
+      "poe": true
+    },
+    {
+      "name": "lan1",
+      "label": "LAN 1"
+    }
+  ],
+  "connectors": [
+    {
+      "kind": "lora",
+      "label": "LoRa"
+    },
+    {
+      "kind": "lte",
+      "label": "LTE"
+    },
+    {
+      "kind": "gnss",
+      "label": "GNSS"
+    },
+    {
+      "kind": "wifi",
+      "label": "Wi-Fi"
+    },
+    {
+      "kind": "bluetooth",
+      "label": "Bluetooth"
+    },
+    {
+      "kind": "usb",
+      "label": "USB 3"
+    },
+    {
+      "kind": "power",
+      "label": "DC power"
+    }
+  ],
+  "photo": {
+    "file": "photo.webp",
+    "credit": "RAKwireless",
+    "license": "Used with attribution; trimmed and resized",
+    "source": "https://github.com/RAKWireless/rakwireless-docs/blob/master/docs/.vuepress/public/assets/images/wisgate/rak7391/RAK7391.png"
+  }
+}

@@ -1,155 +1,34 @@
 /* ================================================================
-   PulzrOS gateway console — design tokens
+   PulzrOS gateway console: its own tokens
 
-   Lifted verbatim from the Pulzr Cloud console's design tokens, so the
-   gateway console and the cloud console read as one product.
-   Do not drift: if a token changes there, change it here.
-
-   Everything below this block is the gateway console's own, and is
-   deliberately small — components use the tokens directly rather
-   than building a second design system on top of them.
+   The shared ones (surfaces, text, borders, cards, status, accent, hues,
+   radios, signal, labels, radii) come from @pulzr/ui, imported first in
+   index.css, so this console and Pulzr Cloud's are one product by
+   construction rather than by copying. What is below is this console's
+   alone.
    ================================================================ */
 
 :root {
-  /* ---- surfaces ---- */
-  --bg-primary:     #ffffff;
-  --bg-secondary:   #f8fafc;
-  --bg-tertiary:    #f1f5f9;
-  --bg-elevated:    #ffffff;
-  --bg-modal:       #ffffff;
-
-  /* ---- text ---- */
-  --text-primary:   #0f172a;
-  --text-secondary: #475569;
-  --text-tertiary:  #94a3b8;
-  --text-inverse:   #ffffff;
-
-  /* ---- borders ---- */
-  --border-primary:   #e2e8f0;
-  --border-secondary: #cbd5e1;
-  --border-focus:     #10b981;
-
-  /* ---- cards ---- */
-  --card-bg:       #ffffff;
-  --card-border:   #e2e8f0;
-  --card-shadow:   0 1px 2px rgba(0,0,0,.04), 0 1px 3px rgba(0,0,0,.06);
-  --card-shadow-hover: 0 4px 12px -2px rgba(0,0,0,.08), 0 2px 4px rgba(0,0,0,.04);
-
-  /* ---- status ---- */
-  --status-success: #10b981;
-  --status-warning: #f59e0b;
-  --status-error:   #ef4444;
-  --status-info:    #3b82f6;
-
-  /* ---- accent ---- */
-  --accent:         #10b981;
-  --accent-hover:   #059669;
-  --accent-subtle:  rgba(16,185,129,.08);
-
-  /* ---- radius ---- */
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
-  --radius-xl: 18px;
-
-  /* ---- layout ---- */
-  --header-bar-height: 36px;
-  /* Every text box, dropdown and inline control on a form is this tall.
-     Named because a form whose fields disagree by two pixels reads as
-     broken, and they used to. */
+  /* Every text box, dropdown and inline control on a form is this tall. */
   --control-height: 34px;
-
-  /* ---- network signal scale ----
-     RSSI / SNR quality, weak → strong. Net-specific: the dashboard has no
-     equivalent, but these are derived from the shared status colors so a
-     coverage map still reads as Pulzr. */
-  --signal-none:   #cbd5e1;
-  --signal-weak:   #ef4444;
-  --signal-fair:   #f59e0b;
-  --signal-good:   #84cc16;
-  --signal-strong: #10b981;
+  --header-bar-height: 36px;
 
   /* ---- charts ----
      Run through the dataviz palette validator against this surface, light and
-     dark. The accent itself is too light to draw with on white (2.5:1), so a
-     single series uses its darker step. Down and up are the reference palette's
-     first two categorical slots. */
-  --chart-1:     #059669;
+     dark. A single series uses the accent's darker step; down and up are the
+     reference palette's first two categorical slots. */
+  --chart-1:     #0e8a58;
   --chart-down:  #2a78d6;
   --chart-up:    #eb6834;
-  --chart-grid:  #edf1f5;
-
-  /* ---- hues ----
-     One per area of the console (nav.ts `tone`): its sidebar icon, its cards'
-     icon chips and its tables' headers carry it, so Backhaul reads blue and
-     Network violet at a glance. Status keeps its own colours; the brand green
-     stays the accent for actions. */
-  --hue-green:  #059669;
-  --hue-blue:   #2563eb;
-  --hue-violet: #7c3aed;
-  --hue-teal:   #0d9488;
-  --hue-amber:  #d97706;
-  --hue-rose:   #e11d48;
-  --hue-sky:    #0284c7;
-  --hue-indigo: #4f46e5;
-  --hue-slate:  #64748b;
+  --chart-grid:  #edf0f3;
 }
 
-/* The same values Pulzr Cloud hangs on html.dark, keyed to the OS instead.
-   Nothing here ever set that class, so they never applied; a gateway console
-   has no account to remember a choice against, and the technician's phone
-   already says which one they want. */
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg-primary:     #0c111d;
-    --bg-secondary:   #141a27;
-    --bg-tertiary:    #1c2333;
-    --bg-elevated:    #1a2235;
-    --bg-modal:       #141a27;
-
-    --text-primary:   #e8edf5;
-    --text-secondary: #8b99b0;
-    --text-tertiary:  #5b6a82;
-    --text-inverse:   #0c111d;
-
-    --border-primary:   #1e2a3a;
-    --border-secondary: #2a3a4e;
-    --border-focus:     #10b981;
-
-    --card-bg:       #141a27;
-    --card-border:   #1e2a3a;
-    --card-shadow:   0 1px 2px rgba(0,0,0,.2), 0 2px 6px rgba(0,0,0,.15);
-    --card-shadow-hover: 0 4px 16px rgba(0,0,0,.3), 0 2px 6px rgba(0,0,0,.2);
-
-    --status-success: #34d399;
-    --status-warning: #fbbf24;
-    --status-error:   #f87171;
-    --status-info:    #60a5fa;
-
-    --accent:         #34d399;
-    --accent-hover:   #10b981;
-    --accent-subtle:  rgba(52,211,153,.08);
-
-    --signal-none:   #2a3a4e;
-    --signal-weak:   #f87171;
-    --signal-fair:   #fbbf24;
-    --signal-good:   #a3e635;
-    --signal-strong: #34d399;
-
-    --chart-1:     #12a676;
+    --chart-1:     #2fb77a;
     --chart-down:  #3987e5;
     --chart-up:    #d95926;
-    --chart-grid:  #1f2738;
-
-    --hue-green:  #34d399;
-    --hue-blue:   #60a5fa;
-    --hue-violet: #a78bfa;
-    --hue-teal:   #2dd4bf;
-    --hue-amber:  #fbbf24;
-    --hue-rose:   #fb7185;
-    --hue-sky:    #38bdf8;
-    --hue-indigo: #818cf8;
-    --hue-slate:  #94a3b8;
+    --chart-grid:  #1c2129;
   }
 }
 
@@ -192,15 +71,7 @@
   --band-6g:  var(--hue-violet);
   --band-60g: var(--hue-slate);
 
-  --page-bg:    #f4f6f9;
-  --sidebar-bg: #ffffff;
-  --rule:       #e6eaf0;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --page-bg:    #0c111d;
-    --sidebar-bg: #0f1522;
-    --rule:       #1c2636;
-  }
+  --page-bg:    var(--bg-canvas);
+  --sidebar-bg: var(--bg-panel);
+  --rule:       var(--border-primary);
 }

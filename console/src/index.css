@@ -1,3 +1,4 @@
+@import '@pulzr/ui/tokens.css';
 @import './tokens.css';
 
 /* Base. Component styling lives in CSS modules beside each component, the way

@@ -7,6 +7,7 @@
 // board's page (src/pages/hardware/[board].astro).
 
 import { execFileSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 export const REPO = 'https://github.com/pulzar-net/PulzrOS';
@@ -132,4 +133,31 @@ export function notes(header) {
 		}
 	}
 	return out;
+}
+
+// How the consoles draw each board: its hardware.json, with the photo's file
+// turned into its URL on this site (src/pages/boards/).
+function readHardware(b) {
+	const file = path.join(ROOT, b.dir, 'hardware.json');
+	if (!existsSync(file)) return null;
+	const h = JSON.parse(readFileSync(file, 'utf8'));
+	if (h.photo) {
+		const { file: _, ...credit } = h.photo;
+		h.photo = { src: `https://oss.pulzr.net${BASE}/boards/${b.id}.webp`, ...credit };
+	}
+	return h;
+}
+
+export function hardware() {
+	return Object.fromEntries(boards().map((b) => [b.id, readHardware(b)]).filter(([, h]) => h));
+}
+
+export function hardwareOf(b) {
+	return readHardware(b);
+}
+
+export function photoFiles() {
+	return boards()
+		.map((b) => ({ id: b.id, file: path.join(ROOT, b.dir, 'photo.webp') }))
+		.filter(({ file }) => existsSync(file));
 }

@@ -1,0 +1,26 @@
+{
+  "name": "RAKwireless RAK7266",
+  "form": "outdoor",
+  "antennas": 2,
+  "ethernet": [
+    {
+      "name": "eth0",
+      "label": "Ethernet",
+      "poe": true
+    }
+  ],
+  "connectors": [
+    {
+      "kind": "lora",
+      "label": "LoRa"
+    },
+    {
+      "kind": "wifi",
+      "label": "Wi-Fi"
+    },
+    {
+      "kind": "power",
+      "label": "PoE"
+    }
+  ]
+}

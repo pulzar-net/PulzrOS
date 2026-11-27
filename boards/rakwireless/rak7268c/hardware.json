@@ -1,0 +1,48 @@
+{
+  "name": "RAKwireless RAK7268C",
+  "form": "indoor",
+  "antennas": 2,
+  "ethernet": [
+    {
+      "name": "eth0",
+      "label": "Ethernet",
+      "poe": true
+    }
+  ],
+  "connectors": [
+    {
+      "kind": "lora",
+      "label": "LoRa"
+    },
+    {
+      "kind": "lte",
+      "label": "LTE"
+    },
+    {
+      "kind": "gnss",
+      "label": "GNSS"
+    },
+    {
+      "kind": "wifi",
+      "label": "Wi-Fi"
+    },
+    {
+      "kind": "sim",
+      "label": "SIM"
+    },
+    {
+      "kind": "sd",
+      "label": "SD"
+    },
+    {
+      "kind": "power",
+      "label": "USB-C power"
+    }
+  ],
+  "photo": {
+    "file": "photo.webp",
+    "credit": "RAKwireless",
+    "license": "Used with attribution; trimmed and resized",
+    "source": "https://github.com/RAKWireless/rakwireless-docs/blob/master/docs/.vuepress/public/assets/images/wisgate/rak7268/datasheet/RAK7268.png"
+  }
+}

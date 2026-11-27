@@ -1,0 +1,35 @@
+{
+  "name": "RAKwireless RAK7267",
+  "form": "indoor",
+  "antennas": 1,
+  "ethernet": [
+    {
+      "name": "eth0",
+      "label": "Ethernet"
+    }
+  ],
+  "connectors": [
+    {
+      "kind": "lora",
+      "label": "LoRa"
+    },
+    {
+      "kind": "gnss",
+      "label": "GNSS"
+    },
+    {
+      "kind": "wifi",
+      "label": "Wi-Fi"
+    },
+    {
+      "kind": "power",
+      "label": "USB-C power"
+    }
+  ],
+  "photo": {
+    "file": "photo.webp",
+    "credit": "RAKwireless",
+    "license": "Used with attribution; trimmed and resized",
+    "source": "https://github.com/RAKWireless/rakwireless-docs/blob/master/docs/.vuepress/public/assets/images/wisgate/rak7267/RAK7267.png"
+  }
+}
