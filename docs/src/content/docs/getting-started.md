@@ -40,7 +40,7 @@ The initial password is on the card's boot partition as `pulzr-initial-password.
 
 ## 4. Adopt
 
-The console, the serial banner and the SSH banner all show a claim code. Scan it or enter it at `https://app.pulzr.net/adopt`, sign in and pick the organization. The gateway finishes adopting itself: it takes its MQTT credentials, enrols its management tunnel and turns off local password sign-in. See [One-touch provisioning](/PulzrOS/provisioning.html).
+The console, and the terminal UI on serial, HDMI or the USB cable, show a claim code. Scan it or enter it at `https://app.pulzr.net/adopt`, sign in and pick the organization. The gateway finishes adopting itself: it takes its MQTT credentials, enrols its management tunnel and turns off local password sign-in. See [One-touch provisioning](/PulzrOS/provisioning.html).
 
 To adopt into your own cloud instead, build with your own endpoints: see [Building from source](/PulzrOS/building.html#adopting-into-your-own-cloud).
 

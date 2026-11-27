@@ -106,9 +106,9 @@ below are for when that has not happened.
 | **Password** | On the boot partition as `pulzr-initial-password.txt` — the card mounts on any laptop. Or set your own before first boot by writing `pulzr-password.txt` there; it is applied and then deleted. |
 | **Ethernet** | `https://pulzr-<serial>.local/`, or `https://192.168.61.1/` if mDNS is blocked. The gateway never hands out an address — your laptop will self-assign `169.254.x.x` and say it has no internet, which is expected. See [`access.md`](/PulzrOS/access.html). |
 | **WiFi** | off by default. `pulzr_<mac>`, open while the gateway is unadopted, once somebody enables it from the console or Pulzr Cloud. |
-| **Serial** | 115200 8N1 on the GPIO header. The banner prints the console address and the initial password. |
+| **Serial** | 115200 8N1 on the GPIO header. The terminal UI, behind the console's sign-in; an unadopted gateway shows its claim code first. |
 
-All three show the same claim code. Scan it or enter it at
+All of them show the same claim code. Scan it or enter it at
 `https://app.pulzr.net/adopt`, pick the organization, and the gateway finishes
 adopting itself — see [`provisioning.md`](/PulzrOS/provisioning.html).
 

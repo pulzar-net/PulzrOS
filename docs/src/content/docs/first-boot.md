@@ -21,9 +21,17 @@ Everything below is for when that has not happened.
 
 ## The password
 
-On a Pi, the initial password is on the card's boot partition as `pulzr-initial-password.txt`; the card mounts on any laptop. To set your own before first boot, write `pulzr-password.txt` there: it is applied and deleted. The serial banner prints the console address and the initial password too.
+On a Pi, the initial password is on the card's boot partition as `pulzr-initial-password.txt`; the card mounts on any laptop. To set your own before first boot, write `pulzr-password.txt` there: it is applied and deleted.
+
+A board without a card, the Opal or a RAK, has nowhere you can read it. Serial, HDMI, the USB cable and `ssh pulzr@` all start the terminal UI, which asks for this same password; before sign-in an unadopted gateway's own ports show its claim code, not its password. The password is printed only in root's login banner, and root takes the fleet key or a Pulzr Cloud certificate. Adopt such a gateway from the cloud instead: plugged into a network with a route out, it waits in the pending list, and adoption needs no local password.
 
 The console will not let you past the initial password without changing it. Once a gateway is adopted, local passwords stop working: sign in with your cloud account, or with offline recovery when the gateway has no uplink. See [Authentication and SSH](/PulzrOS/auth.html).
+
+## The certificate
+
+The console's certificate is self-signed and made on the gateway, so a browser warns the first time. It names every address in the table above, `pulzr-<serial>.local`, `pulzr.local`, `169.254.61.1` and the setup AP's `192.168.62.1`, so once a browser is told to accept it, it holds at each of them. A gateway whose certificate is missing one of them, or is within a month of its end, makes a new one on the first boot after an upgrade.
+
+An adopted gateway serves the certificate Pulzr Cloud's console CA signed for it instead, which is for the cloud's connection to it, not for a browser.
 
 ## The reset button
 

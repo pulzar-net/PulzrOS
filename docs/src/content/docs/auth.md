@@ -35,8 +35,8 @@ key to the gateway, and the console is on the site's network. See
 [`provisioning.md`](/PulzrOS/provisioning.html).
 
 The password is **unique per unit**, generated on first boot from
-`/dev/urandom`, and on the label, the boot partition of a Pi
-(`pulzr-initial-password.txt`) and the root login banner. It is not
+`/dev/urandom`, and shown on the boot partition of a Pi
+(`pulzr-initial-password.txt`) and in the root login banner, nowhere else. It is not
 `pulzr/pulzr` — which is what the previous PulzrOS shipped on every
 image, and which means one published README is root on the entire fleet. It is
 the console's password and nothing else: root has none (below).
