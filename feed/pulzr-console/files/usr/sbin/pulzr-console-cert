@@ -6,6 +6,9 @@
 #                                       is needed; nothing when it is not
 #   pulzr-console-cert install B64    install the signed certificate
 #   pulzr-console-cert facts          its fingerprint, as JSON, or null
+#   pulzr-console-cert selfsigned     make the certificate the console serves
+#                                       until then, or remake it when its
+#                                       names are stale or it is near its end
 #
 # Until this, the console served only the certificate it made for itself,
 # which nothing can check. Through the WireGuard tunnel that costs nothing:
@@ -27,10 +30,17 @@
 
 set -u
 
-STATE=/etc/pulzr/console
+STATE="${PULZR_CONSOLE_STATE:-/etc/pulzr/console}"
+BOARD_CONF="${PULZR_BOARD_CONF:-/etc/pulzr/board.conf}"
 KEY="${STATE}/signed.key"
 CERT="${STATE}/signed.pem"
+SELF_KEY="${STATE}/key.pem"
+SELF_CERT="${STATE}/cert.pem"
 RENEW_SECONDS=2592000
+# 825 days: macOS and iOS refuse a TLS certificate valid for longer, even one
+# the user has trusted by hand, and that is the one way this certificate is
+# ever trusted at all.
+SELF_DAYS=825
 
 die() { echo "$*" >&2; exit 1; }
 
@@ -85,9 +95,107 @@ facts() {
         "$(openssl x509 -in "${CERT}" -outform DER 2>/dev/null | sha256sum | cut -d' ' -f1)"
 }
 
+# Every name and address a browser can be pointed at the console by, in
+# openssl's config syntax. A browser checks only these: Chromium has ignored
+# the subject's CN since version 58, so a certificate with a CN and no SAN
+# fails on the name even after somebody trusts it. Found on the bench Opal,
+# 27 Nov 2026, which served CN=pulzr-c49b1875.local and nothing else.
+#
+#   console    PULZR_LAN_IPADDR, 192.168.61.1 on the label
+#   linklocal  169.254.61.1, a laptop on the end of a cable
+#   devices    PULZR_DEVLAN_IPADDR, 192.168.64.1, the LAN port on a router
+#   setup AP   PULZR_SETUP_IPADDR, 192.168.62.1
+#   USB        PULZR_USB_IPADDR, 192.168.63.1
+#
+# and the names umdns answers to (30-pulzr-console): this gateway's own,
+# pulzr.local, and the ParkezeOS ones a bookmark may still ask for.
+self_names() {
+    local host short
+    host="$(uci -q get pulzr.identity.hostname)"
+    [ -n "${host}" ] || host=pulzr
+    short="${host#*-}"
+    (
+        . "${BOARD_CONF}"
+        printf 'DNS:%s.local,DNS:pulzr.local,' "${host}"
+        [ "${short}" != "${host}" ] && printf 'DNS:parkeze-%s.local,' "${short}"
+        printf 'DNS:parkeze.local,'
+        printf 'IP:%s,' "${PULZR_LAN_IPADDR:-192.168.61.1}" 169.254.61.1 \
+            "${PULZR_DEVLAN_IPADDR:-192.168.64.1}" "${PULZR_SETUP_IPADDR:-192.168.62.1}" \
+            "${PULZR_USB_IPADDR:-192.168.63.1}"
+    ) | sed 's/,$//'
+}
+
+# The names as openssl prints them back from a certificate, spaces dropped,
+# so the two can be compared: "IP:1.2.3.4" reads back as "IP Address:1.2.3.4".
+printed() { printf '%s' "$1" | sed 's/IP:/IPAddress:/g'; }
+
+# Kept when it is a PEM certificate over the key beside it, for exactly these
+# names, and more than a month from its end. Anything else is made again: the
+# certificate px5g made before (DER, no names) on the first boot of this
+# image after an upgrade, a gateway whose board added an address, one about to
+# lapse. Its key goes with it. Nothing outside this gateway has ever seen this
+# key, so a new one costs nothing but the exception a browser kept for the old.
+selfsigned() {
+    local names host cfg
+    names="$(self_names)"
+    host="$(uci -q get pulzr.identity.hostname)"
+    [ -n "${host}" ] || host=pulzr
+
+    if [ -s "${SELF_CERT}" ] && [ -s "${SELF_KEY}" ] \
+        && [ "$(openssl x509 -in "${SELF_CERT}" -noout -pubkey 2>/dev/null)" = \
+             "$(openssl pkey -in "${SELF_KEY}" -pubout 2>/dev/null)" ] \
+        && openssl x509 -in "${SELF_CERT}" -noout -checkend "${RENEW_SECONDS}" >/dev/null 2>&1 \
+        && [ "$(openssl x509 -in "${SELF_CERT}" -noout -ext subjectAltName 2>/dev/null | sed 1d | tr -d ' \n')" = \
+             "$(printed "${names}")" ]; then
+        return 0
+    fi
+
+    mkdir -p "${STATE}"
+    cfg="$(mktemp)" || die "no temporary file"
+    # A config of its own, not /etc/ssl/openssl.cnf: that one's x509
+    # extensions mark the certificate a CA, and -addext on top of them is a
+    # duplicate extension openssl refuses.
+    cat > "${cfg}" <<EOF
+[req]
+prompt = no
+distinguished_name = dn
+x509_extensions = ext
+[dn]
+C = US
+ST = NY
+O = Pulzar
+CN = ${host}.local
+[ext]
+basicConstraints = critical, CA:FALSE
+keyUsage = critical, digitalSignature
+extendedKeyUsage = serverAuth
+subjectKeyIdentifier = hash
+subjectAltName = ${names}
+EOF
+    # P-256, not RSA as OpenWrt's uhttpd defaults to. This runs in
+    # uci-defaults, ahead of the network, so a first boot's LAN waits for it:
+    # an RSA key took 5 to 13 s on the Opal's own build under qemu, P-256 65 ms.
+    # Each handshake is cheaper on a MIPS core too.
+    if ( umask 077
+         openssl ecparam -name prime256v1 -genkey -noout -out "${SELF_KEY}.new" 2>/dev/null \
+         && openssl req -x509 -new -config "${cfg}" -key "${SELF_KEY}.new" \
+                -days "${SELF_DAYS}" -out "${SELF_CERT}.new" 2>/dev/null ); then
+        rm -f "${cfg}"
+        chmod 0600 "${SELF_KEY}.new"
+        chmod 0644 "${SELF_CERT}.new"
+        mv "${SELF_KEY}.new" "${SELF_KEY}"
+        mv "${SELF_CERT}.new" "${SELF_CERT}"
+        logger -t console -p daemon.notice "console certificate made for ${names}"
+    else
+        rm -f "${cfg}" "${SELF_KEY}.new" "${SELF_CERT}.new"
+        die "could not make the console certificate"
+    fi
+}
+
 case "${1:-}" in
-    csr)     csr ;;
-    install) install_cert "${2:-}" ;;
-    facts)   facts ;;
-    *)       die "usage: pulzr-console-cert {csr|install <base64 DER>|facts}" ;;
+    csr)        csr ;;
+    install)    install_cert "${2:-}" ;;
+    facts)      facts ;;
+    selfsigned) selfsigned ;;
+    *)          die "usage: pulzr-console-cert {csr|install <base64 DER>|facts|selfsigned}" ;;
 esac

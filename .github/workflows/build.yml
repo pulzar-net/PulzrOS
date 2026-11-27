@@ -164,14 +164,16 @@ jobs:
       - name: Check add-ons
         run: ./scripts/check-addons.sh
 
-      # The claim's revocation path and sshd's trust: shell that otherwise
-      # only runs on a gateway, against stubs for everything it calls.
+      # The claim's revocation path, sshd's trust and the console's
+      # certificate: shell that otherwise only runs on a gateway, against stubs
+      # for everything it calls.
       - name: Claim, SSH setup and cellular watchdog logic
         run: |
           ./scripts/test-claim.sh
           ./scripts/test-report-stats.sh
           ./scripts/test-apply.sh
           ./scripts/test-ssh-setup.sh
+          ./scripts/test-console-cert.sh
           ./scripts/test-cellular-watchdog.sh
           ./scripts/test-firmware-stash.sh
           ./scripts/test-firmware-handoff.sh

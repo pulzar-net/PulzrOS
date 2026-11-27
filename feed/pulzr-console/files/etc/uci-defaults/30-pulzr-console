@@ -193,22 +193,12 @@ uci commit uhttpd
 # trusted; this exists so that a laptop plugged directly into the LAN port is
 # not sending a password in the clear.
 #
-# P-256, not RSA, as OpenWrt's own uhttpd defaults to. This runs in uci-defaults,
-# ahead of the network, so a first boot's LAN waits for it. An RSA key is a
-# search for two primes, a different length every time: px5g took 5 to 13 s for
-# one on the Opal's own build under qemu, and 65 ms for P-256. Each handshake
-# is cheaper on a MIPS core too.
-if [ ! -f "${STATE}/cert.pem" ]; then
-    hostname="$(uci -q get pulzr.identity.hostname || echo pulzr)"
-    px5g selfsigned -der \
-        -days 3650 -newkey ec -pkeyopt ec_paramgen_curve:P-256 \
-        -certout "${STATE}/cert.pem" -keyout "${STATE}/key.pem" \
-        -subj "/C=US/ST=NY/O=Pulzar/CN=${hostname}.local" 2>/dev/null \
-    || openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 3650 \
-        -keyout "${STATE}/key.pem" -out "${STATE}/cert.pem" \
-        -subj "/C=US/ST=NY/O=Pulzar/CN=${hostname}.local" 2>/dev/null
-    chmod 0600 "${STATE}/key.pem"
-fi
+# Checked on every run of this script, which is first boot and the first boot
+# after every sysupgrade: pulzr-console-cert keeps the one it made unless its
+# names or its dates are stale. Upgrading is how a gateway from before the
+# certificate carried its addresses gets one that does.
+/usr/sbin/pulzr-console-cert selfsigned \
+    || logger -t pulzr -p daemon.err "could not make the console certificate"
 
 # ── mDNS ────────────────────────────────────────────────────────────────────
 #
