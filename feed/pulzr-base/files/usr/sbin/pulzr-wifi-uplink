@@ -133,6 +133,9 @@ TLS_URL="${PULZR_WIFI_TLS_URL:-https://cp.cloudflare.com/generate_204}"
 OPEN_METRIC=15
 BOUNCE_AFTER="${PULZR_WIFI_BOUNCE_AFTER:-180}"
 BOUNCE_EVERY="${PULZR_WIFI_BOUNCE_EVERY:-1800}"
+# A board whose Wi-Fi driver can say why a link went dead ships this: given
+# the station device, it prints what the driver knows of the link.
+WIFI_DIAG=/usr/libexec/pulzr/wifi-diag
 HELD_METRIC=30
 
 log() { logger -t wifi-uplink -p daemon.info "$*"; }
@@ -267,6 +270,10 @@ bounce() {
     radio="$(uci -q get "wireless.${SECTION}.device")"
     case "${radio}" in ''|*[!A-Za-z0-9_]*) return 0 ;; esac
     log "${LABEL} ${net}: offline for $((now - since)) s while associated, restarting ${radio}"
+    # Before the restart clears it: what the driver knew of the dead link.
+    [ -x "${WIFI_DIAG}" ] && "${WIFI_DIAG}" "${dev}" 2>&1 | head -n 40 | while IFS= read -r line; do
+        log "${radio} before restart: ${line}"
+    done
     ubus call network.wireless down "{\"device\":\"${radio}\"}" >/dev/null 2>&1
     for _ in 1 2 3 4 5 6 7 8 9 10; do
         sleep 1

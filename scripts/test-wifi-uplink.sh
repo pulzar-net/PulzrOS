@@ -51,6 +51,7 @@ sed -e "s#/lib/functions/network.sh#${FIX}/network.sh#" \
     -e "s#/usr/share/libubox/jshn.sh#${FIX}/jshn.sh#" \
     -e "s#/var/run/pulzr/#${T}/run/#g" \
     -e "s#/usr/sbin/pulzr-wifi-resolve#pulzr-wifi-resolve#" \
+    -e "s#/usr/libexec/pulzr/wifi-diag#${T}/wifi-diag#" \
     "${ROOT}/feed/pulzr-base/files/usr/sbin/pulzr-wifi-uplink" > "${T}/uplink.sh"
 
 G=connectivitycheck_gstatic_com C=cp_cloudflare_com
@@ -185,6 +186,16 @@ check "offline three minutes while associated: the radio down, then up" \
 check "the restart logged, with how long" \
     "WiFi uplink eduroam: offline for 200 s while associated, restarting radio0" \
     "$(grep restarting "${T}/log")"
+# A board's driver hook, asked about the station before the radio goes down
+printf '#!/bin/sh\necho "diag $1" >> "%s/events"\necho "tid 0 status C"\n' "${T}" > "${T}/wifi-diag"
+chmod +x "${T}/wifi-diag"
+rm -f "${T}/run/wifi-uplink.bounced"
+dead 200; up check
+check "the board's hook asked first, about the station" \
+    "diag phy0-sta0|network.wireless down|network.wireless up" \
+    "$(grep -E 'diag|wireless' "${T}/events" | paste -sd'|' -)"
+check "what it said, logged" "radio0 before restart: tid 0 status C" "$(grep 'before restart' "${T}/log")"
+rm -f "${T}/wifi-diag"
 dead 400; up check
 check "restarted a minute ago: not again" "" "$(grep wireless "${T}/events" || true)"
 rm -f "${T}/run/wifi-uplink.bounced"
