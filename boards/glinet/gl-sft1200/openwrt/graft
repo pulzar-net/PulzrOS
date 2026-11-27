@@ -11,7 +11,9 @@
 # radios' driver and firmware, which the device recipe installs, with the
 # mac80211 package (cfg80211) it builds against: 25.12's backports are made
 # for 6.12 and fail to compile on 6.18 (pre-6.14 debugfs, SOCK_ASYNC_*), which
-# the earlier releases hid behind IGNORE_ERRORS=m. The commit is
-# 2a2b4ddcb2 with the three Wi-Fi commits of branch siflower-siwifi on top
-# (branch siflower-gl-sft1200-wifi), whose STA and AP were run on an Opal.
-https://github.com/The1TrueJoe/openwrt 1ee5be45adae89859280bee6a2f2bcd5adfbc539 target/linux/siflower target/linux/generic/backport-6.18 target/linux/generic/pending-6.18 target/linux/generic/hack-6.18 target/linux/generic/config-6.18 target/linux/generic/kernel-6.18 target/linux/generic/files package/kernel/linux package/kernel/gpio-button-hotplug package/kernel/siwifi package/kernel/mac80211
+# the earlier releases hid behind IGNORE_ERRORS=m. The commit is the tip of
+# branch pulzros-gl-sft1200, the line that ships: the GSW150 reset as sent
+# upstream (v4, 1ee5be45ad) and the siwifi fixes for what a station reports
+# (tx rate, retries and failures, beacon interval and DTIM). The bench work
+# after 1ee5be45ad on siflower-gl-sft1200-wifi (GPIO, LEDs, USB) is not in it.
+https://github.com/The1TrueJoe/openwrt 0a8810c125c459b53728ecd53a3c1132f75aee3b target/linux/siflower target/linux/generic/backport-6.18 target/linux/generic/pending-6.18 target/linux/generic/hack-6.18 target/linux/generic/config-6.18 target/linux/generic/kernel-6.18 target/linux/generic/files package/kernel/linux package/kernel/gpio-button-hotplug package/kernel/siwifi package/kernel/mac80211
