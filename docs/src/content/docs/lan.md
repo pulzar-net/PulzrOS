@@ -30,7 +30,7 @@ the board says otherwise. The first boot builds the rest
 (`feed/pulzr-lan/files/etc/uci-defaults/25-pulzr-lan`).
 
 Those are the ports a gateway starts with. Which ports, and which VLANs,
-serve devices after that is Network > Ports ([ports.md](/PulzrOS/ports.html)): any port
+serve devices after that is a port's role on Network ([ports.md](/PulzrOS/ports.html)): any port
 can be moved in or out of `br-devlan`, and a tagged VLAN can serve devices
 behind a managed switch.
 
@@ -124,8 +124,9 @@ pulzr-lan scan                            scan the clients' management ports now
 pulzr-lan save-usage                      save each client's totals for the next boot
 ```
 
-In the console, Network > LAN (`lib/lan.uc`, `pages/network/Lan.tsx`): the
-clients, each one's policy, reservation and cellular rule, the exposed ports,
+In the console, the Network page's client list (`lib/lan.uc`,
+`pages/network/Lan.tsx`): the clients, each one's policy, reservation and
+cellular rule; and Network > Tunnels and Port Forwarding: the exposed ports,
 the tunnels and the open tunnel forwards. It sets all but the forwards through
 the commands above, audited as `lan.policy`, `lan.reserve`, `lan.cellular`,
 `lan.expose` and `lan.tunnel`, so the `lan` op reports them like any other. It never opens or
@@ -198,7 +199,7 @@ to stay under the agent's 8KB answer.
   upgrades. A device answering ARP right now is `online`, and its `lastSeen`
   is now. A client with no contact for a week is forgotten (`SEEN_KEEP`),
   unless it is reserved; Pulzr Cloud keeps its own record of it.
-- Network > LAN lists clients heard from in the last hour (online, on the
+- The Network page lists clients heard from in the last hour (online, on the
   bridge, learned from their ARP) and configured ones, which stay while off:
   reserved, or an exposed port's target. **All** shows the rest. Pulzr
   Cloud's Devices on LAN uses the same hour.
@@ -250,7 +251,7 @@ start that finds the table already there (a stop that was not a shutdown)
 deletes it, since the counters running are newer.
 
 Wired and WiFi clients are metered alike: a WiFi access point serving devices
-is a member of `br-devlan` (Radios > WiFi, `ATTACH`).
+is a member of `br-devlan` (lib/radios.uc, `ATTACH`).
 
 ## The port scan
 

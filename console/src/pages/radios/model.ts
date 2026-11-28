@@ -163,17 +163,6 @@ export function channelFits(radio: Radio, channel: number, width: number): boole
   return true;
 }
 
-/** What the gateway is, by what runs on its radios. */
-export function gatewayMode(status: RadiosStatus): { label: string; repeater: boolean } {
-  const live = status.radios.flatMap((r) => (r.enabled ? r.interfaces.filter((i) => i.enabled) : []));
-  const uplink = live.some((i) => i.role === 'uplink');
-  const aps = live.some((i) => i.role === 'ap');
-  if (uplink && aps) return { label: 'Repeater', repeater: true };
-  if (aps) return { label: 'Access point', repeater: false };
-  if (uplink) return { label: 'WiFi client', repeater: false };
-  return { label: 'Radios idle', repeater: false };
-}
-
 export const ROLE_NAMES: Record<RadioInterface['role'], string> = {
   uplink: 'Uplink',
   ap: 'Access point',

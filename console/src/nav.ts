@@ -49,7 +49,7 @@ export interface NavEntry {
       every connection, Network's ports and clients. */
   overview?: boolean;
   /** Uses the whole window rather than the reading column — a table that
-      needs every column it can get. */
+      needs every column it can get. On a group, its own page only. */
   wide?: boolean;
 }
 
@@ -87,13 +87,11 @@ export const NAV_GROUPS: NavGroup[] = [
         path: '/network',
         label: 'Network',
         icon: Router, tone: 'violet',
+        // Ports, LAN and WiFi are this page: the diagram, the clients, the
+        // radios. Backhaul's WiFi is the network the uplink joins.
         overview: true,
+        wide: true,
         children: [
-          { path: '/network/ports', label: 'Ports', wide: true },
-          { path: '/network/lan', label: 'LAN', feature: 'lan', wide: true },
-          // What each WiFi radio runs: the uplink, access points, a repeater.
-          // Backhaul's WiFi is the network the uplink joins; this is the radios.
-          { path: '/network/wifi', label: 'WiFi', feature: 'wifi' },
           { path: '/network/tunnels', label: 'Tunnels', feature: 'lan' },
           { path: '/network/forwarding', label: 'Port Forwarding', feature: 'lan' },
           { path: '/network/dns', label: 'DNS', feature: 'dns' },

@@ -695,14 +695,40 @@ writeAp = function(uci, ap) {
     return { ok: true, id: name };
 };
 
+// `replace`: access point mode on a radio that carries a WiFi uplink. The
+// station goes in the same change the AP comes in, so one undo brings the
+// uplink back. As two changes the first, taking the uplink away, could be
+// the last thing that reached the gateway, and the AP would never be asked
+// for.
 setAp = function(req) {
     const uci = cursor();
     const ap = apFromRequest(uci, req ?? {}, saeCapable());
     if (ap.error) return ap;
+    const station = req?.replace && !ap.name ? slotOn(uci, ap.radio) : null;
+    // Off this cursor only, so the fit is counted without it; nothing is
+    // committed from it.
+    if (station) uci.delete('wireless', station.section);
     const refused = checkAp(uci, ap, null);
     if (refused) return refused;
-    const written = writeAp(uci, ap);
-    reload(uci);
+    if (!station) {
+        const written = writeAp(uci, ap);
+        reload(uci);
+        return written;
+    }
+    // As removeUplink: last in the order first, then a cursor read after
+    // pulzr-uplinks has written the metrics.
+    access.demote(station.iface);
+    const after = cursor();
+    access.removeStation(after, station);
+    const written = writeAp(after, ap);
+    after.commit('wireless');
+    after.commit('network');
+    after.commit('firewall');
+    _m_fs.unlink(station.iface == SLOTS[0].iface ? '/var/run/pulzr/wifi-uplink.json'
+                 : sprintf('/var/run/pulzr/wifi-uplink-%s.json', station.iface));
+    if (readHandover()?.iface == station.iface) _m_fs.unlink(HANDOVER);
+    run('(sleep 2; wifi reload; /etc/init.d/firewall reload; /usr/sbin/pulzr-uplinks apply; '
+        + '/usr/sbin/pulzr-wireguard-route apply) >/dev/null 2>&1 &');
     return written;
 };
 

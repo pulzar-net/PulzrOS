@@ -25,7 +25,7 @@ plugged in.
 |---|---|---|---|---|
 | `gnss` | none (pulzr-gps is in pulzr-lorawan, on while it is installed) | GNSS | `/api/gnss` | `PULZR_GPS` not `none`; pulzr-lorawan built in or offered |
 | `wifi` | `PACKAGES_WIFI`: pulzr-ap, wpad-openssl | Backhaul > WiFi, Access's setup AP | `/api/access/wifi`, `scan`, `ap`, `key` | |
-| `lan` | `PACKAGES_LAN`: pulzr-lan | Network > LAN | `/api/lan/` | `PULZR_LAN_PORTS` |
+| `lan` | `PACKAGES_LAN`: pulzr-lan | Network's clients, Tunnels, Port Forwarding | `/api/lan/` | `PULZR_LAN_PORTS` |
 | `dns` | `PACKAGES_DNS`: pulzr-dns | Network > DNS | `/api/dns/` | |
 | `failover` | `PACKAGES_FAILOVER`: pulzr-uplinks | Backhaul's order and Tracking; Overview's Uplink row follows its order | `/api/uplinks/` | cellular (built in or the add-on) or `wifi` |
 | `speedtest` | `PACKAGES_SPEEDTEST`: pulzr-speedtest, librespeed-cli | Network > Speed Test ([speedtest.md](/PulzrOS/speedtest.html)) | `/api/speedtest/` | not `PULZR_FLASH_CONSTRAINED` |
@@ -213,7 +213,7 @@ Three rules follow, and every router page keeps them:
 
 ## DNS and Uplinks
 
-Both follow Network > LAN: a tool on the gateway that owns the state and
+Both follow the LAN: a tool on the gateway that owns the state and
 prints it as JSON (`pulzr-dns`, `pulzr-uplinks`), a console module that
 calls it (`lib/dns.uc`, `lib/uplinks.uc`), audited actions, and a read-only
 MQTT op (`dns`, `uplinks`) that answers with the tool's `status`, as `lan`
@@ -248,7 +248,7 @@ asks `pulzr-uplinks usable wan`, so it leaves a dead cable too. See
 
 Neither opens anything: a name and a metric reach nothing that was not
 reachable before. Dynamic DNS names an address; the exposed ports behind it
-are the LAN page's.
+are Port Forwarding's.
 
 ### On Pulzr Cloud
 
@@ -273,12 +273,12 @@ paragraph explaining itself, which this console does not do.
 | GL.iNet | PulzrOS |
 |---|---|
 | Internet: the Ethernet card (DHCP / static / PPPoE, VLAN, MTU) | Backhaul > Ethernet, one card per wired uplink, on every board |
-| Port roles, VLANs, a second WAN | Network > Ports, on every board ([ports.md](/PulzrOS/ports.html)): each port an uplink, a LAN port or unused, tagged VLANs with roles of their own, applied and undone unless confirmed |
+| Port roles, VLANs, a second WAN | Network, a port in the diagram, on every board ([ports.md](/PulzrOS/ports.html)): each port an uplink, a LAN port or unused, tagged VLANs with roles of their own, applied and undone unless confirmed |
 | Internet: Repeater | Backhaul > WiFi (`wifi`) |
 | Internet: Cellular | Backhaul > Cellular (`cellular`) |
-| Clients, LAN, DHCP, address reservation | Network > LAN (`lan`), built: `pulzr-lan status`, reserve, per-MAC policy and cellular rule, the open tunnel forwards read-only |
-| Port forwarding | Network > LAN (`lan`), Exposed ports: wired and WiFi uplinks only, to reserved clients |
-| Site VPN | Network > LAN (`lan`), Tunnels: WireGuard out to a customer's server, what it reaches on the LAN, internet through it off by default |
+| Clients, LAN, DHCP, address reservation | Network's client list (`lan`), built: `pulzr-lan status`, reserve, per-MAC policy and cellular rule, the open tunnel forwards read-only |
+| Port forwarding | Network > Port Forwarding (`lan`), Exposed ports: wired and WiFi uplinks only, to reserved clients |
+| Site VPN | Network > Tunnels (`lan`): WireGuard out to a customer's server, what it reaches on the LAN, internet through it off by default |
 | Multi-WAN: priority, tracking, failover | Backhaul (`failover`), built: the order by drag and drop, per-uplink tracking, the ping targets and thresholds; failover only, no load balance |
 | DNS: hosts, upstream, rebind protection | Network > DNS (`dns`), built: automatic or custom upstream, local names, rebind protection and its allowed domains |
 | DDNS | Network > DNS (`dns`), Dynamic DNS: the customer's own Cloudflare zone, not a vendor domain |

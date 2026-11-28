@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Cable, MonitorSmartphone } from 'lucide-react';
+import { EthernetPort, MonitorSmartphone, Wifi } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   createColumnHelper,
@@ -11,6 +11,7 @@ import {
 import { api } from '@/services/api';
 import { useVendor } from '@/lib/oui';
 import type { LanClient, LanStatus, LanTraffic, UplinksStatus } from '@/types';
+import { BAND_NAMES, type RadiosStatus } from '@/pages/radios/model';
 import Section from '@/components/ui/Section';
 import Badge from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
@@ -19,23 +20,28 @@ import Notice from '@/components/ui/Notice';
 import Segmented from '@/components/ui/Segmented';
 import { TextField } from '@/components/ui/Field';
 import { useCellular } from '@/hooks/useCellular';
-import Fact, { FactList } from '@/components/Fact';
 import DataTable from '@/components/DataTable';
-import Spinner from '@/components/ui/Spinner';
 import ErrorState from '@/components/ErrorState';
 import { bytes, duration, portLabel } from '@/lib/format';
 import styles from '../Pages.module.css';
 import own from './Lan.module.css';
 
 /**
- * The devlan zone: who is on the LAN ports and what each may reach.
+ * Every client of the gateway, wired and WiFi, on the Network page: what it
+ * is, where it is plugged in or which network it joined, and what it may
+ * reach.
  *
- * Per MAC: the policy (parkeze or internet), the reservation and the cellular
- * rule. Tunnels (Tunnels.tsx) and exposed ports and tunnel forwards
- * (Forwarding.tsx) are pages of their own. Everything set here is in
- * pulzr-lan's state, which is what Pulzr Cloud's `lan` op reads.
+ * The LAN's clients are pulzr-lan's (DHCP leases, the neighbor table, the
+ * bridge's forwarding table and the addresses learned off ARP), each with
+ * its policy (parkeze or internet), reservation and cellular rule. Joined
+ * with each access point's station list from /radios, which is what says a
+ * client is on WiFi and on which network: on the LAN bridge a WiFi client is
+ * only behind the AP's interface. A station on an AP that is not on the LAN
+ * (the setup network) has no lease here and is listed by its MAC alone.
+ * Tunnels (Tunnels.tsx) and exposed ports (Forwarding.tsx) are pages of
+ * their own. Everything set here is in pulzr-lan's state, which is what
+ * Pulzr Cloud's `lan` op reads.
  */
-
 const POLICIES: { value: LanClient['policy']; label: string }[] = [
   // Compat: `parkeze` is the policy value the cloud sends and reads; it stays.
   // It means Pulzr Cloud's own servers (HTTPS and MQTT), NTP and the
@@ -49,7 +55,20 @@ const total = (traffic: LanTraffic, only?: string) =>
     .filter(([uplink]) => !only || uplink === only)
     .reduce((sum, [, t]) => sum + t.txBytes + t.rxBytes, 0);
 
-const column = createColumnHelper<LanClient>();
+interface Row {
+  mac: string;
+  /** Null for a WiFi station the LAN has no record of. */
+  client: LanClient | null;
+  /** The port's label, or the SSID and band. */
+  on: string | null;
+  wifi: boolean;
+  signal: number | null;
+  online: boolean;
+  /** Unix seconds. */
+  lastSeen: number | null;
+}
+
+const column = createColumnHelper<Row>();
 
 /** The MAC's registered organization, looked up only while the uplink in use
  * is not metered (lib/oui.ts). */
@@ -87,24 +106,25 @@ function listed(c: LanClient, exposed: Set<string>, now: number): boolean {
 
 /** pulzr-lan's state, which the LAN, Tunnels and Port Forwarding pages all
  *  read: one query, so a change on one is on the others. */
-export function useLanStatus() {
+export function useLanStatus(enabled = true) {
   return useQuery({
     queryKey: ['lan'],
     queryFn: () => api.get<LanStatus>('/lan/status'),
     refetchInterval: 15_000,
+    enabled,
   });
 }
 
-export default function Lan() {
+export default function Clients({ lan: hasLan, radios }: { lan: boolean; radios: RadiosStatus | undefined }) {
   const queryClient = useQueryClient();
-  const [sorting, setSorting] = useState<SortingState>([{ id: 'ip', desc: false }]);
+  const [sorting, setSorting] = useState<SortingState>([{ id: 'seen', desc: true }]);
   const [editing, setEditing] = useState<LanClient | null>(null);
   const [show, setShow] = useState<'active' | 'all'>('active');
   // No modem, no cellular: its column, total and per-client rule stay off
   // screen (hooks/useCellular).
   const cellularShown = useCellular().shown;
 
-  const lan = useLanStatus();
+  const lan = useLanStatus(hasLan);
 
   const policy = useMutation({
     mutationFn: (body: { mac: string; policy: string }) => api.post('/lan/policy', body),
@@ -116,103 +136,154 @@ export default function Lan() {
   const setPolicy = policy.mutate;
   const policyPending = policy.isPending;
 
+  const rows = useMemo<Row[]>(() => {
+    const now = Math.floor(Date.now() / 1000);
+    // Each AP interface's network and band, and its stations by MAC.
+    const apOf = new Map<string, string>();
+    const stations = new Map<string, { on: string; signal: number | null; seen: number }>();
+    for (const radio of radios?.radios ?? []) {
+      for (const iface of radio.interfaces) {
+        if (iface.role !== 'ap' || !iface.ifname) continue;
+        const on = `${iface.ssid ?? iface.ifname} · ${BAND_NAMES[radio.band] ?? radio.band}`;
+        apOf.set(iface.ifname, on);
+        for (const c of iface.clients ?? []) {
+          stations.set(c.mac.toLowerCase(), {
+            on, signal: c.signal ?? null, seen: now - Math.floor((c.inactive ?? 0) / 1000),
+          });
+        }
+      }
+    }
+    const exposed = new Set((lan.data?.exposed ?? []).map((e) => e.ip));
+    const out = new Map<string, Row>();
+    for (const c of lan.data?.clients ?? []) {
+      const mac = c.mac.toLowerCase();
+      const station = stations.get(mac);
+      if (show === 'active' && !station && !listed(c, exposed, now)) continue;
+      const ap = station?.on ?? (c.port ? apOf.get(c.port) : undefined);
+      out.set(mac, {
+        mac,
+        client: c,
+        on: ap ?? (c.port ? portLabel(c.port) : null),
+        wifi: Boolean(ap),
+        signal: station?.signal ?? null,
+        online: c.online || Boolean(station),
+        lastSeen: Math.max(c.lastSeen ?? 0, station?.seen ?? 0) || null,
+      });
+    }
+    for (const [mac, s] of stations) {
+      if (!out.has(mac)) out.set(mac, { mac, client: null, on: s.on, wifi: true, signal: s.signal, online: true, lastSeen: s.seen });
+    }
+    return [...out.values()];
+  }, [lan.data, radios, show]);
+
   const columns = useMemo(
     () => [
       // The fill column: a hostname is the one value here of no fixed width.
-      column.accessor((c) => c.hostname ?? '', {
+      // The name it leased with, else its maker: what a technician calls it.
+      column.accessor((r) => r.client?.hostname ?? '', {
         id: 'name',
         header: 'Name',
-        cell: (info) => <span className={own.name} title={info.getValue()}>{info.getValue() || '—'}</span>,
+        cell: (info) => info.getValue()
+          ? <span className={own.name} title={info.getValue()}>{info.getValue()}</span>
+          : <VendorCell mac={info.row.original.mac} />,
       }),
-      column.accessor((c) => c.ip ?? '', {
+      column.accessor((r) => r.client?.ip ?? '', {
         id: 'ip',
         header: 'Address',
-        size: 190,
-        sortingFn: (a, b) => ipOrder(a.original.ip) - ipOrder(b.original.ip),
+        size: 150,
+        sortingFn: (a, b) => ipOrder(a.original.client?.ip ?? null) - ipOrder(b.original.client?.ip ?? null),
         cell: (info) => (
           <>
             <span className="mono">{info.getValue() || '—'}</span>{' '}
-            {info.row.original.reserved && <Badge tone="neutral">Reserved</Badge>}
+            {info.row.original.client?.reserved && <Badge tone="neutral">Reserved</Badge>}
           </>
         ),
       }),
       column.accessor('mac', {
         header: 'MAC',
-        size: 140,
+        size: 136,
         cell: (info) => <span className="mono">{info.getValue()}</span>,
       }),
-      column.display({
-        id: 'vendor',
-        header: 'Vendor',
-        size: 170,
-        cell: (info) => <VendorCell mac={info.row.original.mac} />,
+      column.accessor((r) => r.on ?? '', {
+        id: 'on',
+        header: 'On',
+        size: 210,
+        cell: (info) => {
+          const r = info.row.original;
+          if (!r.on) return <span className={styles.dim}>—</span>;
+          return (
+            <span className={own.on}>
+              {r.wifi ? <Wifi size={13} strokeWidth={2} /> : <EthernetPort size={13} strokeWidth={2} />}
+              <span className={own.name} title={r.on}>{r.on}</span>
+              {r.signal != null && <span className={styles.dim}>{r.signal} dBm</span>}
+            </span>
+          );
+        },
       }),
-      column.accessor((c) => c.port ?? '', {
-        id: 'port',
-        header: 'Port',
-        size: 72,
-        cell: (info) => (info.getValue() ? portLabel(info.getValue()) : '—'),
-      }),
-      column.accessor('policy', {
+      column.accessor((r) => r.client?.policy ?? '', {
+        id: 'policy',
         header: 'Policy',
-        size: 160,
+        size: 156,
         enableSorting: false,
-        cell: (info) => (
+        cell: (info) => info.row.original.client ? (
           <Segmented
             size="small"
             aria-label={`Policy for ${info.row.original.mac}`}
-            value={info.getValue()}
+            value={info.row.original.client.policy}
             options={POLICIES}
             disabled={policyPending}
             onChange={(next) => setPolicy({ mac: info.row.original.mac, policy: next })}
           />
-        ),
+        ) : <span className={styles.dim}>—</span>,
       }),
-      column.accessor((c) => total(c.traffic), {
+      column.accessor((r) => (r.client ? total(r.client.traffic) : 0), {
         id: 'traffic',
         header: 'Traffic',
-        size: 82,
+        size: 84,
         meta: { numeric: true },
-        cell: (info) => bytes(info.getValue()),
+        cell: (info) => (info.row.original.client ? bytes(info.getValue()) : '—'),
       }),
       // Both billed interfaces: the modem's, and a dongle's or a phone's.
-      column.accessor((c) => total(c.traffic, 'wwan') + total(c.traffic, 'usbwan'), {
+      column.accessor((r) => (r.client ? total(r.client.traffic, 'wwan') + total(r.client.traffic, 'usbwan') : 0), {
         id: 'cellular',
         header: 'Cellular',
-        size: 82,
+        size: 84,
         meta: { numeric: true },
-        cell: (info) => (
-          <>
-            {bytes(info.getValue())}{' '}
-            {info.row.original.cellular === 'block'
-              ? <Badge tone="neutral">Blocked</Badge>
-              : (info.row.original.cellularBlock ?? []).length > 0 && <Badge tone="neutral">Limited</Badge>}
-          </>
-        ),
+        cell: (info) => {
+          const c = info.row.original.client;
+          if (!c) return '—';
+          return (
+            <>
+              {bytes(info.getValue())}{' '}
+              {c.cellular === 'block'
+                ? <Badge tone="neutral">Blocked</Badge>
+                : (c.cellularBlock ?? []).length > 0 && <Badge tone="neutral">Limited</Badge>}
+            </>
+          );
+        },
       }),
-      // Online is a client answering ARP now; otherwise its last DHCP contact.
-      column.accessor((c) => (c.online ? Number.MAX_SAFE_INTEGER : (c.lastSeen ?? 0)), {
-        id: 'lastSeen',
+      // Online is a client answering ARP or associated now; otherwise its
+      // last DHCP contact.
+      column.accessor((r) => (r.online ? Number.MAX_SAFE_INTEGER : (r.lastSeen ?? 0)), {
+        id: 'seen',
         header: 'Seen',
         size: 100,
-        cell: (info) =>
-          info.row.original.online
-            ? <Badge tone="success">Online</Badge>
-            : info.getValue()
-              ? `${duration(Math.floor(Date.now() / 1000) - info.getValue())} ago`
-              // In the bridge's table and nowhere else: never asked for a
-              // lease, and not on this subnet if it answers no ARP either.
-              : (info.row.original.port && !info.row.original.ip) || info.row.original.learned
-                ? <Badge tone="warning">No lease</Badge>
-                : '—',
+        cell: (info) => {
+          const r = info.row.original;
+          if (r.online) return <Badge tone="success">Online</Badge>;
+          if (r.lastSeen) return `${duration(Math.floor(Date.now() / 1000) - r.lastSeen)} ago`;
+          // In the bridge's table and nowhere else: never asked for a lease,
+          // and not on this subnet if it answers no ARP either.
+          return (r.client?.port && !r.client.ip) || r.client?.learned ? <Badge tone="warning">No lease</Badge> : '—';
+        },
       }),
       column.display({
         id: 'reserve',
         header: '',
         size: 76,
-        cell: (info) => (
-          <Button size="small" onClick={() => setEditing(info.row.original)}>
-            {info.row.original.reserved ? 'Edit' : 'Reserve'}
+        cell: (info) => info.row.original.client && (
+          <Button size="small" onClick={() => setEditing(info.row.original.client)}>
+            {info.row.original.client.reserved ? 'Edit' : 'Reserve'}
           </Button>
         ),
       }),
@@ -220,71 +291,37 @@ export default function Lan() {
     [setPolicy, policyPending],
   );
 
-  const exposedIps = new Set((lan.data?.exposed ?? []).map((e) => e.ip));
-  const now = Math.floor(Date.now() / 1000);
-  const shown = (lan.data?.clients ?? []).filter((c) => show === 'all' || listed(c, exposedIps, now));
-
   const table = useReactTable({
-    data: shown,
+    data: rows,
     columns,
-    state: { sorting, columnVisibility: { cellular: cellularShown } },
+    // Without the LAN there is nothing to set on a client.
+    state: { sorting, columnVisibility: { cellular: cellularShown && hasLan, policy: hasLan, traffic: hasLan, reserve: hasLan } },
     onSortingChange: setSorting,
     getRowId: (row) => row.mac,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
   });
 
-  if (lan.isLoading) return <Spinner label="Reading the LAN" />;
-  if (lan.isError) return <ErrorState error={lan.error} onRetry={lan.refetch} />;
-
-  const state = lan.data!;
-  if (!state.configured) return <Notice tone="warning">No LAN configured on this gateway.</Notice>;
-
-  const clients = state.clients ?? [];
-  const links = state.links ?? (state.ports ?? []).map((name) => ({ name, up: false, speed: null }));
+  const clients = lan.data?.clients ?? [];
   const cellular = clients.reduce((sum, c) => sum + total(c.traffic, 'wwan') + total(c.traffic, 'usbwan'), 0);
+  const online = rows.filter((r) => r.online).length;
 
   return (
-    <div className="fade-in">
-      <Section title="LAN" icon={Cable}>
-        <FactList>
-          <Fact label="Gateway" value={[state.address, ...(state.addresses ?? [])].join(', ')} mono />
-          {links.map((link) => (
-            <Fact
-              key={link.name}
-              label={portLabel(link.name)}
-              value={
-                <span className={styles.status}>
-                  {link.up ? <Badge tone="success">Up</Badge> : <Badge tone="neutral">No link</Badge>}
-                  {link.up && link.speed && (
-                    <span title={link.carrierChanges != null ? `${link.carrierChanges} link changes since boot` : undefined}>
-                      {link.speed >= 1000 ? `${link.speed / 1000} Gb/s` : `${link.speed} Mb/s`}
-                      {link.duplex === 'half' && ' half duplex'}
-                    </span>
-                  )}
-                  <span className={styles.dim}>
-                    {shown
-                      .filter((c) => c.port === link.name)
-                      .map((c) => c.hostname ?? c.ip ?? c.mac)
-                      .join(', ')}
-                  </span>
-                </span>
-              }
-            />
-          ))}
-          {cellularShown && <Fact label="Over cellular" value={bytes(cellular)} />}
-        </FactList>
-      </Section>
-
-      <Section title="Clients" icon={MonitorSmartphone} wide
-               actions={<Segmented aria-label="Clients shown" value={show} options={[...SHOW]} onChange={setShow} />}>
-        {policy.isError && <Notice tone="error">{(policy.error as Error).message}</Notice>}
-        <DataTable table={table} fill="name"
-                   cellClassName={(id) => (id === 'reserve' ? own.reserve : own.cell)} />
-      </Section>
-
+    <Section
+      title="Clients"
+      icon={MonitorSmartphone}
+      wide
+      note={[`${online} online`, cellularShown && hasLan && cellular ? `${bytes(cellular)} over cellular` : null]
+        .filter(Boolean).join(' · ')}
+      actions={hasLan && <Segmented aria-label="Clients shown" value={show} options={[...SHOW]} onChange={setShow} />}
+    >
+      {lan.isError && <ErrorState error={lan.error} onRetry={lan.refetch} />}
+      {policy.isError && <Notice tone="error">{(policy.error as Error).message}</Notice>}
+      {/* The fixed columns and room for a name: narrower scrolls. */}
+      <DataTable table={table} fill="name" minWidth={cellularShown && hasLan ? 1140 : 1060}
+                 cellClassName={(id) => (id === 'reserve' ? own.reserve : own.cell)} />
       {editing && <ReserveDialog client={editing} cellular={cellularShown} onClose={() => setEditing(null)} />}
-    </div>
+    </Section>
   );
 }
 

@@ -43,6 +43,9 @@
   color: var(--text-primary);
 }
 
+/* Row lines and zebra shading both: a wide row read across to its last
+   column stays on its line. */
+.table tbody tr:nth-child(even) td { background: color-mix(in srgb, var(--bg-secondary) 55%, transparent); }
 .table tbody tr:hover td { background: var(--bg-secondary); }
 
 /* Numbers right-aligned in tabular figures, so a column of them reads down. */

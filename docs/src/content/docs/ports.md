@@ -5,8 +5,8 @@ description: "Each Ethernet port is an uplink, a LAN port for devices (the devla
 
 Each Ethernet port is an **uplink**, a **LAN** port for devices (the devlan
 zone, [lan.md](/PulzrOS/lan.html)), or **unused**, and can carry tagged VLANs, each with
-a role of its own. Network > Ports in the console, `pulzr-ports` on the
-gateway.
+a role of its own. In the console a port in the Network page's diagram opens
+its role and VLANs; on the gateway it is `pulzr-ports`.
 
 ## Why roles, and where VLANs come in
 

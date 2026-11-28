@@ -90,6 +90,7 @@ let access = loadfile('${LIB}/access.uc', { raw_mode: true })();
 let call = json(ARGV[0]);
 let fns = { status: radios.status, setRadio: radios.setRadio, setAp: radios.setAp,
             removeAp: radios.removeAp, joinUplink: radios.joinUplink, joinWifi: access.joinWifi,
+            forgetWifi: access.forgetWifi,
             handover: radios.handover, removeUplink: radios.removeUplink, scan: radios.scan,
             parsePhy: radios.parsePhy, fits: radios.fits, channelOk: radios.channelOk,
             widthsOf: radios.widthsOf };
@@ -252,6 +253,28 @@ check "ap: removing the uplink's station is not this" "That access point is not 
 call removeAp '{"id":"pulzr_ap_1"}' >/dev/null
 check "ap: removed" "null" "$(uci .wireless.pulzr_ap_1)"
 
+# Access point mode on the uplink's radio: the station goes in the same
+# change as the AP comes, and the network stays saved to go back to.
+repeater_uci
+echo '{"order":["wwifi","wwan"]}' > "${T}/uplinks.json"
+: > "${T}/events"
+out="$(call setAp '{"radio":"radio0","replace":true,"ssid":"Yard","security":"psk2","key":"yard-secret","network":"devlan"}')"
+check "ap mode: the AP in place of the uplink's station, the network still saved" \
+    '["pulzr_ap_1",null,null,"wan","radio0","Yard","Site-Ops"]' \
+    "$(jq -c --argjson out "${out}" '[$out.id, .wireless.parkeze_sta, .network.wwifi, .firewall.wan.network,
+        .wireless.pulzr_ap_1.device, .wireless.pulzr_ap_1.ssid, .pulzr.s.ssid]' "${UCI_JSON}")"
+check "ap mode: the station last in the order before it goes" "pulzr-uplinks order wwan wwifi" \
+    "$(grep -m1 'pulzr-uplinks order' "${T}/events")"
+
+# Disconnect: off the network, which stays saved; Forget is both.
+repeater_uci
+call forgetWifi '{"keep":true}' >/dev/null
+check "disconnect: the station gone, the network still saved" '[null,"Site-Ops"]' \
+    "$(uci '[.wireless.parkeze_sta, .pulzr.s.ssid]')"
+repeater_uci
+call forgetWifi '{}' >/dev/null
+check "forget: the station and the saved network gone" '[null,null]' "$(uci '[.wireless.parkeze_sta, .pulzr.s]')"
+
 # ── joins keep the access points ────────────────────────────────────────────
 
 repeater_uci
@@ -408,6 +431,17 @@ check "station or AP: both on one radio refused, with what to do" \
     "This radio cannot be the uplink and an access point at once. Use two radios." \
     "$(err joinUplink '{"radio":"radio0","ssid":"Cafe","key":"cafe-pass","ap":{"radio":"radio0","ssid":"Cafe Ext","security":"psk2","key":"ext-secret","network":"devlan"}}')"
 check "station or AP: nothing written" "same" "$([ "$(cat "${UCI_JSON}")" = "${before}" ] && echo same || echo changed)"
+
+# Access point mode on such a radio: the AP fits once its station is counted
+# out, and goes in its place.
+jq '.wireless.parkeze_sta = {".type": "wifi-iface", ".name": "parkeze_sta", "device": "radio0", "mode": "sta", "network": "wwifi", "ssid": "Cafe", "encryption": "psk2", "key": "cafe-pass"}' \
+    "${UCI_JSON}" > "${T}/u" && mv "${T}/u" "${UCI_JSON}"
+before="$(cat "${UCI_JSON}")"
+ap='{"radio":"radio0","ssid":"Cafe Ext","security":"psk2","key":"ext-secret","network":"devlan"}'
+check "station or AP: an AP beside the station refused" "true" "$(err setAp "${ap}" | jq -R 'test("none") | not')"
+check "station or AP: that refusal wrote nothing" "same" "$([ "$(cat "${UCI_JSON}")" = "${before}" ] && echo same || echo changed)"
+check "station or AP: access point mode, the AP in the station's place" '[null,"radio0","Cafe Ext"]' \
+    "$(call setAp "$(jq -c '.replace = true' <<< "${ap}")" >/dev/null; uci '[.wireless.parkeze_sta, .wireless.pulzr_ap_0.device, .wireless.pulzr_ap_0.ssid]')"
 
 # ── no WiFi ─────────────────────────────────────────────────────────────────
 

@@ -30,7 +30,7 @@ Join a network from **Backhaul > WiFi**. The gateway does not trust a lease: it 
 
 The WiFi page says why a network is not `open`, and keeps a roam history.
 
-Which radio the uplink runs on, access points on the others, and a one-step repeater are on **Radios > WiFi**: [WiFi radios and repeaters](/PulzrOS/radios.html).
+Which radio the uplink runs on, access points on the others, and a one-step repeater are on **Network**: [WiFi radios and repeaters](/PulzrOS/radios.html).
 
 ## Captive portals
 

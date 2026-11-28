@@ -5,7 +5,7 @@ description: "The console is a web app the gateway serves itself, over HTTPS, fr
 
 The console is a web app the gateway serves itself, over HTTPS, from its ethernet port, LAN ports, USB cable or setup AP. There is no LuCI. The [terminal UI](/PulzrOS/tui.html) has the same pages for serial, SSH, HDMI and USB.
 
-A page appears only on a board built with its feature: a router has no LoRaWAN page, and a RAK unit has no LAN page. The feature list per board is on each [hardware page](/PulzrOS/hardware.html).
+A page appears only on a board built with its feature: a router has no LoRaWAN page, and a RAK unit has no LAN clients on Network. The feature list per board is on each [hardware page](/PulzrOS/hardware.html).
 
 ## Signing in
 
@@ -32,11 +32,8 @@ The gateway at a glance: uplink in use, LoRaWAN and radio state, CPU, memory and
 | **Backhaul > Cellular** | APN, on or off, signal and the modem's state; which SIM slot on a modem with several | `cellular` |
 | **Backhaul > WiFi** | scan and join a network, see why it is not online, sign in to a captive portal | `wifi` |
 | **Backhaul > Tracking** | tracking on or off per uplink, its ping targets and thresholds | `failover` |
-| **Network** | every jack with its role and speed, as on Network > Ports; what each WiFi radio runs (role, network, security, channel, clients or signal) and the setup access point; every client on the LAN and the access points, with its MAC, address, port or SSID, the services the LAN port scan found open and when it was last seen | every board; WiFi with `wifi`, clients with `lan` or `wifi` |
-| **Network > Ports** | each port an uplink, a LAN port or unused; tagged VLANs. Undone unless confirmed. | every board |
-| **Network > LAN** | the LAN ports, clients, reservations, per-device policy and cellular rule | `lan` |
+| **Network** | one diagram of the gateway: the internet, every uplink (WAN port, WiFi station, modem) with the one in use marked, and every LAN port, access point and idle radio with its link speed, or band, channel and signal. A port opens its role and VLANs, a radio its settings. Below it every client, wired and WiFi, with its port or SSID and band, address, name or maker, policy, reservation and cellular rule; then the WiFi uplink (**Disconnect**, **Change Network**, rejoin the last network), each radio and what runs on it (access points, a second uplink, **Switch to Access Point**), and the setup access point. Every change is undone unless confirmed. | every board; WiFi with `wifi`, clients with `lan` or `wifi` |
 | **Network > Tunnels** | WireGuard tunnels to a customer's own servers: what each reaches, the internet through it | `lan` |
-| **Network > WiFi** | each radio, what runs on it, the path from the internet to its clients; channels, access points, the uplink's radio, a repeater. Undone unless confirmed. | `wifi` |
 | **Network > Port Forwarding** | exposed ports on the uplinks, and the tunnel forwards Pulzr Cloud opens | `lan` |
 | **Network > DNS** | upstream servers, local names, rebind protection, dynamic DNS | `dns` |
 | **Network > Speed Test** | a test out of each uplink, never cellular | `speedtest` |

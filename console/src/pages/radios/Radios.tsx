@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  ArrowUpFromLine, ChevronDown, Pencil, Plus, RadioTower, SlidersHorizontal, Trash2, Waypoints, Wifi,
+  ArrowUpFromLine, ChevronDown, Pencil, Plus, RadioTower, SlidersHorizontal, Trash2, Waypoints, Wifi, WifiOff,
 } from 'lucide-react';
 import { api } from '@/services/api';
 import type { AccessStatus, UplinksStatus } from '@/types';
@@ -12,14 +12,13 @@ import Button from '@/components/ui/Button';
 import Notice from '@/components/ui/Notice';
 import Spinner from '@/components/ui/Spinner';
 import ErrorState from '@/components/ErrorState';
-import ApplyChangeNotice from '@/components/ApplyChangeNotice';
-import { useApplyChange, type Pending } from '@/hooks/useApplyChange';
+import type { useApplyChange, Pending } from '@/hooks/useApplyChange';
+import { addressList } from '@/lib/format';
 import { useVendor } from '@/lib/oui';
 import JoinWizard from '@/pages/backhaul/JoinWizard';
 import { useWifiSignIn } from '@/pages/backhaul/signin';
-import { signalBars } from '@/pages/backhaul/wifiFormat';
+import { SECURITY_NAMES, signalBars } from '@/pages/backhaul/wifiFormat';
 import { explain, type WifiFailureInfo } from '@/pages/backhaul/WifiFailure';
-import SignalPath from './SignalPath';
 import {
   ApDialog, RadioDialog, RemoveApDialog, RemoveUplinkDialog, UplinkDialog,
 } from './dialogs';
@@ -28,20 +27,39 @@ import {
   type Radio, type RadioClient, type RadioInterface, type RadiosStatus,
 } from './model';
 import styles from './Radios.module.css';
+import hero from '@/pages/backhaul/Wifi.module.css';
 
 /**
- * The WiFi radios: what each one is, what runs on it, and the path from the
- * internet through them to the networks this gateway serves.
+ * The WiFi part of the Network page: the network the uplink is on, with
+ * the three things done to it from a gateway in the field (leave it, join
+ * another, give its radio to an access point instead), then each radio and
+ * what runs on it.
  *
- * The uplink's own page (Backhaul, WiFi) stays where the network it joins is
- * looked after: saved networks, 802.1X, roaming. This one decides which radio
- * it is on, and what the others do beside it. A second radio joins as a
- * second uplink, onto the same network or another, and takes the traffic
- * only once it is online (the handover in lib/radios.uc).
+ * Backhaul > WiFi stays where the network it joins is looked after: saved
+ * networks, 802.1X, roaming. This decides which radio it is on, and what the
+ * others do beside it. A second radio joins as a second uplink, onto the
+ * same network or another, and takes the traffic only once it is online (the
+ * handover in lib/radios.uc).
+ *
+ * Every change here is the page's one apply-with-undo (`change`): a wrong
+ * choice on a gateway whose only way home is this WiFi comes back on its own.
  */
-export default function Radios() {
+
+interface SavedNetwork {
+  ssid: string;
+  lastJoined: number | null;
+  active: boolean;
+}
+
+type Change = ReturnType<typeof useApplyChange>;
+
+export default function WifiSettings({ change, radio: openRadio, onRadio }: {
+  change: Change;
+  /** The radio whose settings are open, from the page's diagram. */
+  radio: string | null;
+  onRadio: (radio: string | null) => void;
+}) {
   const queryClient = useQueryClient();
-  const change = useApplyChange();
   const [watchUntil, setWatchUntil] = useState(0);
   // Quick while a change settles, and while a handover runs: it can take two
   // minutes, longer than the change's own watch.
@@ -60,20 +78,20 @@ export default function Radios() {
   });
   const detail = useQuery({
     queryKey: ['wifi-detail'],
-    queryFn: () => api.get<{ failure?: WifiFailureInfo | null }>('/access/wifi'),
+    queryFn: () => api.get<{ failure?: WifiFailureInfo | null; saved?: SavedNetwork[] }>('/access/wifi'),
     refetchInterval: interval,
   });
   const signIn = useWifiSignIn();
 
-  const [editRadio, setEditRadio] = useState<Radio | null>(null);
-  const [apTarget, setApTarget] = useState<{ iface?: RadioInterface; radio?: Radio } | null>(null);
+  const [apTarget, setApTarget] = useState<{ iface?: RadioInterface; radio?: Radio; replace?: boolean } | null>(null);
   const [removing, setRemoving] = useState<RadioInterface | null>(null);
   const [removingUplink, setRemovingUplink] = useState<RadioInterface | null>(null);
   const [moving, setMoving] = useState<Radio | null>(null);
-  // `handover`: another radio's uplink carries the traffic while this join
-  // runs, and the page's own notice follows it, not the wizard's outcome
-  // step (which watches the WiFi page's station).
-  const [wizard, setWizard] = useState<{ extra: Record<string, unknown>; handover?: boolean } | null>(null);
+  // `extra`: the join is onto a chosen radio (/radios/uplink). `handover`:
+  // another radio's uplink carries the traffic while it runs, and the page's
+  // own notice follows it, not the wizard's outcome step. `rejoin`: a saved
+  // network just posted, the wizard opening on how it went.
+  const [wizard, setWizard] = useState<{ extra?: Record<string, unknown>; handover?: boolean; rejoin?: string } | null>(null);
 
   const applied = (pending?: Pending | null) => {
     change.watch(pending);
@@ -83,22 +101,30 @@ export default function Radios() {
     }, 3000);
   };
 
+  // Leave the network, keeping it saved: Join puts it back without the
+  // password. Forgetting it is Backhaul > WiFi's.
+  const disconnect = useMutation({
+    mutationFn: (ssid: string) => api.post<{ pending?: Pending }>('/access/wifi/forget', { ssid, keep: true }),
+    onSuccess: (answer) => applied(answer.pending),
+  });
+  const rejoin = useMutation({
+    mutationFn: (ssid: string) => api.post<{ pending?: Pending }>('/access/wifi', { ssid, saved: true }),
+    onSuccess: (answer, ssid) => {
+      applied(answer.pending);
+      setWizard({ rejoin: ssid });
+    },
+  });
+
   if (radios.isLoading) return <Spinner label="Reading the radios" />;
   if (radios.isError) return <ErrorState error={radios.error} onRetry={radios.refetch} />;
 
   const status = radios.data!;
   const wifi = access.data?.wifi;
   const current = wifi?.configured ? wifi.ssid : null;
+  const busy = change.applying || change.phase === 'confirming' || disconnect.isPending || rejoin.isPending;
+  const editRadio = status.radios.find((r) => r.id === openRadio) ?? null;
 
-  if (!status.radios.length) {
-    return (
-      <div className="fade-in">
-        <Section wide>
-          <div className={styles.empty}>No WiFi radio on this gateway.</div>
-        </Section>
-      </div>
-    );
-  }
+  if (!status.radios.length) return null;
 
   // Another radio's uplink keeps carrying while this one joins, so there is
   // a choice of network; with none, it is a plain join.
@@ -108,32 +134,81 @@ export default function Radios() {
     else setWizard({ extra: { radio: radio.id } });
   };
 
+  const uplinkRadio = status.radios.find((r) => r.id === status.uplink);
+  const last = (detail.data?.saved ?? []).filter((n) => !n.active)
+    .sort((a, b) => (b.lastJoined ?? 0) - (a.lastJoined ?? 0))[0];
+  const blocked = wifi?.configured && wifi.up && (wifi.uplink === 'portal' || wifi.uplink === 'offline');
+  const problem = wifi?.configured && !wifi.up ? detail.data?.failure : null;
+  const state = !wifi?.configured ? null
+    : !wifi.up ? { label: 'Not connected', tone: 'error' as const }
+    : wifi.uplink === 'portal' ? { label: 'Sign-in needed', tone: 'warning' as const }
+    : wifi.uplink === 'offline' ? { label: 'No internet', tone: 'warning' as const }
+    : wifi.uplink === 'unchecked' ? { label: 'Checking', tone: 'neutral' as const }
+    : { label: 'Connected', tone: 'success' as const };
+  const bars = signalBars(wifi?.configured && wifi.up ? wifi.signal : null);
+  const Bars = wifi?.configured ? bars.icon : WifiOff;
+  const failed = disconnect.error ?? rejoin.error ?? signIn.error;
+
   return (
-    <div className="fade-in">
-      <ApplyChangeNotice change={change} />
+    <>
       <HandoverNotice status={status} />
-      <Section
-        title="Topology"
-        icon={Wifi}
-        wide
-        note={status.country ? `Country ${status.country}` : undefined}
-      >
-        <SignalPath
-          status={status}
-          wifi={wifi}
-          onSignIn={signIn.start}
-          signingIn={signIn.isPending}
-        />
-        {signIn.isError && <Notice tone="error">{(signIn.error as Error).message}</Notice>}
-      </Section>
+      {wifi && (
+        <Section title="WiFi Uplink" icon={Wifi} wide note={status.country ? `Country ${status.country}` : undefined}>
+          <div className={hero.hero}>
+            <span className={`${hero.badge} ${hero[bars.tone]} ${!wifi.configured || !wifi.up ? hero.down : ''}`}>
+              <Bars size={26} strokeWidth={2} />
+            </span>
+            <div className={hero.heroText}>
+              <div className={hero.heroTitle}>
+                <span className={hero.heroSsid}>{wifi.configured ? wifi.ssid : 'Not connected'}</span>
+                {state && <Badge tone={state.tone}>{state.label}</Badge>}
+              </div>
+              {wifi.configured && (
+                <div className={hero.heroMeta}>
+                  {[
+                    uplinkRadio ? `${BAND_NAMES[uplinkRadio.band]}, channel ${channelText(uplinkRadio)}` : null,
+                    wifi.up && wifi.signal != null ? `${wifi.signal} dBm` : null,
+                    wifi.up ? addressList(wifi) : null,
+                    SECURITY_NAMES[wifi.security],
+                  ].filter(Boolean).join(' · ')}
+                </div>
+              )}
+              {problem && <div className={hero.heroMeta}>{explain(problem, current ?? '').title}</div>}
+            </div>
+            <div className={hero.heroActions}>
+              {blocked && (
+                <Button variant="primary" loading={signIn.isPending} onClick={signIn.start}>Sign In</Button>
+              )}
+              {!wifi.configured && last && (
+                <Button variant="primary" disabled={busy} loading={rejoin.isPending}
+                        onClick={() => rejoin.mutate(last.ssid)}>
+                  Join {last.ssid}
+                </Button>
+              )}
+              <Button disabled={busy} onClick={() => setWizard({})}>
+                {wifi.configured ? 'Change Network' : 'Join a Network'}
+              </Button>
+              {wifi.configured && (
+                <Button variant="quiet" disabled={busy} loading={disconnect.isPending}
+                        onClick={() => disconnect.mutate(wifi.ssid)}>
+                  Disconnect
+                </Button>
+              )}
+            </div>
+          </div>
+          {failed && <Notice tone="error">{(failed as Error).message}</Notice>}
+        </Section>
+      )}
 
       {status.radios.map((radio) => (
         <RadioCard
           key={radio.id}
           status={status}
           radio={radio}
-          onSettings={() => setEditRadio(radio)}
+          busy={busy}
+          onSettings={() => onRadio(radio.id)}
           onAddAp={() => setApTarget({ radio })}
+          onApMode={() => setApTarget({ radio, replace: true })}
           onEditAp={(iface) => setApTarget({ iface, radio })}
           onRemoveAp={setRemoving}
           onRemoveUplink={setRemovingUplink}
@@ -141,7 +216,7 @@ export default function Radios() {
         />
       ))}
 
-      <RadioDialog status={status} radio={editRadio} onClose={() => setEditRadio(null)} onApplied={applied} />
+      <RadioDialog status={status} radio={editRadio} onClose={() => onRadio(null)} onApplied={applied} />
       <ApDialog status={status} target={apTarget} onClose={() => setApTarget(null)} onApplied={applied} />
       <RemoveApDialog status={status} iface={removing} onClose={() => setRemoving(null)} onApplied={applied} />
       <UplinkDialog
@@ -159,9 +234,10 @@ export default function Radios() {
       {wifi && (
         <JoinWizard
           open={!!wizard}
+          rejoin={wizard?.rejoin}
           wifi={wifi}
           failure={detail.data?.failure}
-          endpoint="/radios/uplink"
+          endpoint={wizard?.extra ? '/radios/uplink' : '/access/wifi'}
           extra={wizard?.extra}
           onClose={() => setWizard(null)}
           onJoined={(pending) => {
@@ -171,15 +247,17 @@ export default function Radios() {
           onFailureShown={() => undefined}
         />
       )}
-    </div>
+    </>
   );
 }
 
 function RadioCard({
   status,
   radio,
+  busy,
   onSettings,
   onAddAp,
+  onApMode,
   onEditAp,
   onRemoveAp,
   onRemoveUplink,
@@ -187,8 +265,10 @@ function RadioCard({
 }: {
   status: RadiosStatus;
   radio: Radio;
+  busy: boolean;
   onSettings: () => void;
   onAddAp: () => void;
+  onApMode: () => void;
   onEditAp: (iface: RadioInterface) => void;
   onRemoveAp: (iface: RadioInterface) => void;
   onRemoveUplink: (iface: RadioInterface) => void;
@@ -203,6 +283,9 @@ function RadioCard({
   // radio that is not joined to anything; a radio carrying the uplink takes
   // no access point until it is disconnected.
   const canAp = radio.present && !carriesUplink && status.networks.length > 0 && radio.capabilities.room.ap;
+  // Or it gives the uplink up for one, in the same change (setAp's replace).
+  const canApMode = radio.present && carriesUplink && status.networks.length > 0
+    && (!radio.capabilities.known || radio.capabilities.modes.includes('AP'));
   const state = !radio.present ? { label: 'Not detected', tone: 'error' as const }
     : !radio.enabled ? { label: 'Off', tone: 'neutral' as const }
     : radio.up ? { label: 'Up', tone: 'success' as const }
@@ -263,15 +346,20 @@ function RadioCard({
         <div className={styles.unused}>Unused</div>
       )}
 
-      {(canAp || canUplink) && (
+      {(canAp || canApMode || canUplink) && (
         <div className={styles.cardActions}>
           {canAp && (
-            <Button onClick={onAddAp}>
+            <Button disabled={busy} onClick={onAddAp}>
               <Plus size={14} strokeWidth={2} /> Add Access Point
             </Button>
           )}
+          {canApMode && (
+            <Button disabled={busy} onClick={onApMode}>
+              <RadioTower size={14} strokeWidth={2} /> Switch to Access Point
+            </Button>
+          )}
           {canUplink && (
-            <Button variant="quiet" onClick={onUseForUplink}>
+            <Button variant="quiet" disabled={busy} onClick={onUseForUplink}>
               <ArrowUpFromLine size={14} strokeWidth={2} /> Use for Uplink
             </Button>
           )}
@@ -357,7 +445,6 @@ function InterfaceRow({
             </button>
           )}
           {iface.owner === 'uplink' && <Link className={styles.rowLink} to="/backhaul/wifi">Network</Link>}
-          {iface.owner === 'setup' && <Link className={styles.rowLink} to="/access">Access</Link>}
         </div>
       </div>
       {open && clients.length > 0 && (

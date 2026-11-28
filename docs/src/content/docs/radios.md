@@ -1,32 +1,39 @@
 ---
 title: "WiFi radios and repeaters"
-description: "The uplink's network is still managed on Backhaul > WiFi: saved networks, 802.1X, roaming and the portal check."
+description: "The uplink's saved networks, 802.1X, roaming and the portal check stay on Backhaul > WiFi."
 ---
 
-**Radios > WiFi** in the console lists every WiFi radio on the gateway, shows what runs on each one, and lets you change it. The page is there on any board built with the `wifi` feature. It lists the radios the board actually has (each UCI `wifi-device` whose phy is present), so a board with no WiFi has no page.
+The console's **Network** page shows every WiFi radio on the gateway beside its Ethernet ports, what runs on each one, and lets you change it. Its WiFi part is there on any board built with the `wifi` feature. It lists the radios the board actually has (each UCI `wifi-device` whose phy is present), so a board with no WiFi has none.
 
-The uplink's network is still managed on **Backhaul > WiFi**: saved networks, 802.1X, roaming and the portal check. This page decides which radio the uplink runs on and what the other radios do.
+The uplink's saved networks, 802.1X, roaming and the portal check stay on **Backhaul > WiFi**. The Network page decides which radio the uplink runs on and what the other radios do, and leaves or changes the uplink's network.
 
-## The topology
+## The diagram
 
-At the top of the page the gateway's WiFi is drawn as a path, left to right:
+At the top of the page the gateway is drawn as Pulzr Cloud's Topology draws one (React Flow, the same cards), left to right:
 
 ```
-Internet ── Site-Ops ──[2.4 GHz, Radio 1, ch 6]── gateway ──[5 GHz, Radio 2, ch 36]── Shop Floor  (LAN, 3 clients)
-                                                          └─[5 GHz, Radio 2, ch 36]── Cameras     (LAN, 1 client)
+Internet ── WAN        (No cable)                   ── gateway ── LAN 1        (100 Mb/s, 1 client)
+         ── Site-Ops   (2.4 GHz, ch 6, -61 dBm) In Use          ── Shop Floor  (5 GHz, ch 36, 3 clients)
+         ── Cellular   (Online)                                 ── 6 GHz Radio (Off)
 ```
 
-- **Left:** what the gateway reaches the internet through. That is the WiFi uplink, a client of the site's network, with its signal and the portal check's state. If traffic goes out another way, that uplink is drawn too (Ethernet or cellular). An uplink stopped at a sign-in page is drawn dashed amber and has a **Sign In** button. The button uses the same proxy as the WiFi page.
-- **Middle:** the gateway and its radios, each in its band's colour (2.4 GHz amber, 5 GHz indigo, 6 GHz violet).
-- **Right:** every access point and mesh, on the radio it runs on, with its network and the number of connected clients.
+- **Left:** every uplink: a port whose role is uplink, each WiFi station, the modem. The one carrying traffic is marked **In Use** and drawn heavy; a standby one is dashed, one that is down dotted.
+- **Middle:** the gateway, by its name and LAN address.
+- **Right:** every LAN port with its speed and clients, every access point and mesh with its band, channel and clients, and every radio running nothing.
 
-A hop that is a radio is labelled with its band, radio and channel, so a two-radio repeater reads at a glance. A live radio hop pulses; a dashed hop is down (red) or off (grey). The gateway's badge says what it is doing: **Repeater** (an uplink and an access point), **Access point**, **WiFi client** or **Radios idle**.
+A WiFi card and its line are in its band's colour (2.4 GHz amber, 5 GHz indigo, 6 GHz violet). A port opens its role and VLANs; a WiFi card opens its radio's settings.
 
-On a phone the path runs down the screen instead.
+## The WiFi uplink
+
+Below the client list, the network the uplink is on, with its band, channel, signal and address:
+
+- **Disconnect** leaves it and keeps it saved (`POST /api/access/wifi/forget` with `keep`). Nothing rejoins it on its own: roaming needs a station. **Join** with its name then puts it back without the password.
+- **Change Network** scans, lists what is in range, and joins the one picked with the password typed (the join wizard, as on Backhaul > WiFi).
+- **Sign In** while the network wants a sign-in page or answers nothing.
 
 ## Each radio
 
-Below the topology there is one card per radio. Each card shows:
+Below the uplink there is one card per radio. Each card shows:
 
 - the band, channel, width and transmit power;
 - the chip, as iwinfo names it;
@@ -37,10 +44,10 @@ Below the topology there is one card per radio. Each card shows:
 | Uplink | the WiFi uplink's station (`parkeze_sta`) | Backhaul > WiFi |
 | Uplink | a second radio's WiFi uplink (`pulzr_sta2`, interface `wwifi2`) | this page: **Use for Uplink**, remove |
 | Access point | an SSID onto a LAN-side network (`pulzr_ap_<n>`) | this page: edit, remove |
-| Setup network | the setup AP (`parkeze_ap`, `pulzr-ap`) | Access |
+| Setup network | the setup AP (`parkeze_ap`, `pulzr-ap`) | Setup Access Point, on the same page |
 | Mesh, monitor, client | anything made by hand | shown only |
 
-An access point's row opens to its clients: MAC address, maker (looked up only while the uplink in use is not metered, as on the LAN page), signal and rate.
+An access point's row opens to its clients: MAC address, maker (looked up only while the uplink in use is not metered, as in the client list), signal and rate.
 
 **Settings** on a radio sets:
 
@@ -69,11 +76,15 @@ When you edit an access point, a blank passphrase keeps the current one. The gat
 
 ## Repeater
 
-A repeater is a network joined on one radio and another broadcast on a different radio. Join the site's network (Backhaul > WiFi, or **Use for Uplink** on a radio), then **Add Access Point** on a radio that is not joined to anything. There is no separate repeater button, and a radio carrying a WiFi uplink offers no access point until its uplink is removed. On a two-radio router, 2.4 GHz for the uplink usually reaches further, and 5 GHz for the access point gives its clients more throughput.
+A repeater is a network joined on one radio and another broadcast on a different radio. Join the site's network (Backhaul > WiFi, or **Use for Uplink** on a radio), then **Add Access Point** on a radio that is not joined to anything. There is no separate repeater button.
+
+### Switch to Access Point
+
+A radio carrying a WiFi uplink offers **Switch to Access Point** instead of **Add Access Point**. It asks what an access point does, and then takes the uplink's station off that radio and writes the access point in one change (`POST /api/radios/ap` with `replace`), so one undo brings the uplink back. As two changes, the first would cut off a gateway whose only way home is that WiFi before the second was asked for. The network stays saved. The station goes to the back of the uplink order first, so the traffic is on whatever is next before it lets go. On a two-radio router, 2.4 GHz for the uplink usually reaches further, and 5 GHz for the access point gives its clients more throughput.
 
 ### Another radio as the uplink
 
-**Use for Uplink** on a radio with no station joins that radio as a second WiFi uplink, onto the network the uplink is on now or another one (**Another network** opens the join wizard for that radio). The network the uplink is on now is offered only when that radio hears it (`GET /api/radios/scan?radio=`). A site whose 5 GHz network has a name of its own gets "Charter is not heard on 5 GHz." and the join wizard, listing what the 5 GHz radio hears. Without a WiFi uplink yet, it opens the join wizard. The wizard on the radios page always lists the chosen radio's scan. A rejoin from Backhaul > WiFi, and a roam, keep the uplink on the radio it is on.
+**Use for Uplink** on a radio with no station joins that radio as a second WiFi uplink, onto the network the uplink is on now or another one (**Another network** opens the join wizard for that radio). The network the uplink is on now is offered only when that radio hears it (`GET /api/radios/scan?radio=`). A site whose 5 GHz network has a name of its own gets "Charter is not heard on 5 GHz." and the join wizard, listing what the 5 GHz radio hears. Without a WiFi uplink yet, it opens the join wizard. The wizard for a chosen radio always lists that radio's scan. A rejoin from Backhaul > WiFi, and a roam, keep the uplink on the radio it is on.
 
 The old uplink keeps carrying the traffic until the new one is proven. This is make-before-break:
 
@@ -117,10 +128,10 @@ So a channel change that drops the laptop you are working from, or an uplink mov
 |---|---|
 | `GET /api/radios` | the radios, their interfaces and clients, what each radio allows, the networks an AP may use, the route, every WiFi uplink (`uplinks`) and the latest handover (`handover`) |
 | `POST /api/radios/radio` | `{radio, channel, width, txpower, country, enabled}` |
-| `POST /api/radios/ap` | `{id?, radio, ssid, security, key, network, hidden, isolate, enabled, allowOpen}` |
+| `POST /api/radios/ap` | `{id?, radio, ssid, security, key, network, hidden, isolate, enabled, allowOpen, replace?}`; `replace` takes the WiFi uplink off that radio in the same change |
 | `POST /api/radios/ap/remove` | `{id}` |
 | `GET /api/radios/scan?radio=` | the networks that radio hears, as `GET /api/access/scan` answers |
 | `POST /api/radios/uplink` | a join (as `POST /api/access/wifi`) with `radio`; onto a radio with no station while another has one, a second uplink and a handover. `ap` still writes an access point with it (no page sends it now) |
 | `POST /api/radios/uplink/remove` | `{radio}`: the second WiFi uplink off that radio |
 
-All of them need a session and the CSRF header, and every POST answers with the rollback window (`pending`). Every change is audited (`radio.set`, `radio.ap.add`, `radio.ap.edit`, `radio.ap.remove`, `radio.uplink`, `radio.uplink.remove`, `radio.repeater`). Tests: `scripts/test-radios.sh`.
+All of them need a session and the CSRF header, and every POST answers with the rollback window (`pending`). Every change is audited (`wifi.disconnect`, `radio.set`, `radio.ap.add`, `radio.ap.edit`, `radio.ap.remove`, `radio.uplink`, `radio.uplink.remove`, `radio.repeater`). Tests: `scripts/test-radios.sh`.

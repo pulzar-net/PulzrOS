@@ -272,8 +272,9 @@ export function ApDialog({
   onApplied,
 }: {
   status: RadiosStatus;
-  /** The AP being edited, or the radio a new one goes on (null: choose). */
-  target: { iface?: RadioInterface; radio?: Radio } | null;
+  /** The AP being edited, or the radio a new one goes on (null: choose);
+      `replace`, in place of the uplink's station there. */
+  target: { iface?: RadioInterface; radio?: Radio; replace?: boolean } | null;
   onClose: () => void;
   onApplied: (pending?: Pending | null) => void;
 }) {
@@ -292,7 +293,9 @@ export function ApDialog({
   }, [target]);
 
   const problem = draftProblem(draft, !!editing);
-  const title = editing ? `Edit ${editing.ssid ?? 'Access Point'}` : 'Add Access Point';
+  const title = editing ? `Edit ${editing.ssid ?? 'Access Point'}`
+    : target?.replace && target.radio ? `Switch ${radioName(status.radios, target.radio.id)} to Access Point`
+    : 'Add Access Point';
 
   return (
     <Dialog
@@ -309,10 +312,10 @@ export function ApDialog({
             loading={post.isPending}
             onClick={() => post.mutate({
               path: '/radios/ap',
-              body: { ...bodyOf(draft), ...(editing ? { id: editing.id } : { radio }) },
+              body: { ...bodyOf(draft), ...(editing ? { id: editing.id } : { radio, replace: target?.replace }) },
             })}
           >
-            {editing ? 'Save' : 'Add'}
+            {editing ? 'Save' : target?.replace ? 'Switch' : 'Add'}
           </Button>
         </>
       }

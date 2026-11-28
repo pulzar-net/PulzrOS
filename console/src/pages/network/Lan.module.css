@@ -11,6 +11,15 @@
   white-space: nowrap;
 }
 
+/* Where a client is, its icon and its signal on one line. */
+.on {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
 .reserve {
   vertical-align: middle;
   text-align: right;

@@ -1,0 +1,125 @@
+/* The cards and lines of Pulzr Cloud's Topology (parkeze.net
+   MeshView.module.css), cut to the roles a single gateway has. */
+
+.canvas {
+  width: 100%;
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* About three quarters of the cards' own size: still read at a glance. */
+.flow {
+  min-width: 760px;
+}
+
+.canvas :global(.react-flow) {
+  --xy-background-color: transparent;
+  --xy-background-pattern-color: color-mix(in srgb, var(--text-tertiary) 35%, transparent);
+}
+
+.node {
+  width: 100%;
+  height: 46px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px 0 12px;
+  box-sizing: border-box;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  position: relative;
+}
+
+.clickable { cursor: pointer; }
+.clickable:hover { border-color: var(--border-secondary); }
+
+.internet {
+  border: 1.5px solid var(--text-primary);
+  border-radius: 999px;
+}
+
+.gateway {
+  border: 2px solid var(--text-primary);
+}
+
+/* A radio's band down its edge: the only colored card. */
+.side[style] {
+  border-left: 4px solid var(--stripe);
+  padding-left: 9px;
+}
+
+.idle { opacity: 0.62; }
+
+.icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+}
+
+.text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.title {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sub {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 14px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+
+.tag {
+  flex: 0 0 auto;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 16px;
+  padding: 0 6px;
+  border-radius: 999px;
+  color: var(--text-secondary);
+  border: 1px solid var(--card-border);
+}
+
+.inUse {
+  color: var(--status-success);
+  border-color: color-mix(in srgb, var(--status-success) 45%, transparent);
+  background: color-mix(in srgb, var(--status-success) 12%, transparent);
+}
+
+.health {
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 2px solid var(--bg-secondary);
+}
+
+.health.up { background: var(--status-success); }
+.health.down { background: var(--status-error); }
+.health.off { background: var(--status-off); }
+
+.handle {
+  opacity: 0;
+  pointer-events: none;
+}

@@ -49,6 +49,9 @@ Built to static files at image build time and served by uhttpd.
 | @dnd-kit/core, @dnd-kit/sortable, @dnd-kit/modifiers, @dnd-kit/utilities | MIT |
 | lucide-react | ISC |
 | uPlot | MIT |
+| @xyflow/react, @xyflow/system (React Flow), zustand, classcat | MIT |
+| d3-zoom, d3-drag, d3-selection, d3-transition, d3-interpolate, d3-color, d3-dispatch, d3-timer (React Flow's) | ISC |
+| d3-ease (React Flow's) | BSD-3-Clause |
 | vite, @vitejs/plugin-react | MIT |
 | typescript (build only) | Apache-2.0 |
 

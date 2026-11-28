@@ -297,7 +297,7 @@ whatever was working, and is very hard for the site to trace back to a LoRaWAN
 gateway on a pole.
 
 The installer-facing consequence — a laptop that says "no internet" and
-self-assigns `169.254.x.x` — is stated on the Ports page rather than left to
+self-assigns `169.254.x.x` — is stated on the Network page rather than left to
 be discovered.
 
 ### Reaching it

@@ -1,5 +1,5 @@
 import { lazy, useState, type ReactNode } from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useSession } from '@/contexts/SessionContext';
 import { api } from '@/services/api';
@@ -25,15 +25,12 @@ const Wifi = lazy(() => import('@/pages/backhaul/Wifi'));
 const Tracking = lazy(() => import('@/pages/backhaul/Tracking'));
 const Forwarders = lazy(() => import('@/pages/lorawan/Forwarders'));
 const LorawanSettings = lazy(() => import('@/pages/lorawan/Settings'));
-const Ports = lazy(() => import('@/pages/network/Ports'));
-const Lan = lazy(() => import('@/pages/network/Lan'));
 const Tunnels = lazy(() => import('@/pages/network/Tunnels'));
 const Forwarding = lazy(() => import('@/pages/network/Forwarding'));
 const Dns = lazy(() => import('@/pages/network/Dns'));
 const SpeedTest = lazy(() => import('@/pages/network/SpeedTest'));
 const Gnss = lazy(() => import('@/pages/Gnss'));
 const Bluetooth = lazy(() => import('@/pages/Bluetooth'));
-const Radios = lazy(() => import('@/pages/radios/Radios'));
 const Panel = lazy(() => import('@/pages/Panel'));
 const Logs = lazy(() => import('@/pages/Logs'));
 const Resources = lazy(() => import('@/pages/system/Resources'));
@@ -106,16 +103,18 @@ export default function App() {
         <Route path="lorawan/forwarders/:forwarder/:tab" element={<Gated feature="lorawan"><Forwarders /></Gated>} />
         <Route path="lorawan/settings" element={<Gated feature="lorawan"><LorawanSettings /></Gated>} />
         <Route path="network" element={<Network />} />
-        <Route path="network/ports" element={<Ports />} />
-        <Route path="network/lan" element={<Gated feature="lan"><Lan /></Gated>} />
+        {/* Ports, LAN and WiFi became the Network page (27 Nov 2026); a
+            port or a radio named in an old link opens there. */}
+        <Route path="network/ports" element={<Moved />} />
+        <Route path="network/lan" element={<Navigate to="/network" replace />} />
+        <Route path="network/wifi" element={<Navigate to="/network" replace />} />
         <Route path="network/tunnels" element={<Gated feature="lan"><Tunnels /></Gated>} />
         <Route path="network/forwarding" element={<Gated feature="lan"><Forwarding /></Gated>} />
         <Route path="network/dns" element={<Gated feature="dns"><Dns /></Gated>} />
         <Route path="network/speed" element={<Gated feature="speedtest"><SpeedTest /></Gated>} />
         <Route path="gnss" element={<Gated feature="gnss"><Gnss /></Gated>} />
-        <Route path="network/wifi" element={<Gated feature="wifi"><Radios /></Gated>} />
         {/* WiFi moved under Network (23 Nov 2026); old links still land. */}
-        <Route path="wifi" element={<Navigate to="/network/wifi" replace />} />
+        <Route path="wifi" element={<Navigate to="/network" replace />} />
         <Route path="bluetooth" element={<Gated feature="bluetooth"><Bluetooth /></Gated>} />
         {/* Where concentrator hardware used to be; it is a forwarder's tab now. */}
         <Route path="hardware" element={<Navigate to="/lorawan/forwarders/1/concentrator" replace />} />
@@ -141,4 +140,10 @@ function Gated({ feature, children }: { feature: Feature; children: ReactNode })
   const features = useFeatures();
   if (features.loading) return <Spinner label="Loading" />;
   return features.has(feature) ? children : <Navigate to="/" replace />;
+}
+
+/** Network > Ports' ?port= kept, so a link to one port still opens it. */
+function Moved() {
+  const { search } = useLocation();
+  return <Navigate to={`/network${search}`} replace />;
 }

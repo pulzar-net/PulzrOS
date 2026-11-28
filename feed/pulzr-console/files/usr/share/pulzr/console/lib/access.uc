@@ -554,11 +554,13 @@ joinWifi = function(req, slot) {
                     + 'network, it will drop while the radio switches over.' };
 };
 
-// Leave the network, and stop remembering it.
+// Leave the network, and stop remembering it; or, with `keep`, only leave
+// it (Disconnect), so joining it again is one click and no password.
 //
 // The way back from a joined network that does not work. Without it the only
 // way off a WiFi uplink whose password has changed is a serial cable, which
-// on a roof is the same as a truck.
+// on a roof is the same as a truck. A kept network is not rejoined behind
+// anybody's back: roam() does nothing without a station.
 forgetWifi = function(req) {
     const uci = cursor();
     const active = uci.get('wireless', 'parkeze_sta', 'ssid');
@@ -566,7 +568,7 @@ forgetWifi = function(req) {
     if (!ssid) return { ok: true, message: 'No WiFi network is configured.' };
 
     const saved = findSaved(uci, ssid);
-    if (saved) uci.delete('pulzr', saved['.name']);
+    if (saved && !req?.keep) uci.delete('pulzr', saved['.name']);
     uci.commit('pulzr');
 
     if (ssid != active) return { ok: true, message: 'Forgot ' + ssid + '.' };

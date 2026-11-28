@@ -140,7 +140,7 @@ keeps traffic off the SIM treats it as cellular anyway, through one list:
 | Management tunnel | refused unless `PULZR_WIREGUARD_ALLOW_CELLULAR` (`pulzr-wireguard-route`) |
 | LoRaWAN uplinks | refused when `pulzr.lorawan.allow_cellular` is 0 (`pulzr-lora-route`) |
 | `pulzr-backhaul-check` | the cellular path |
-| Traffic | the Cellular column on Network > LAN; `pulzr-cellular-usage` |
+| Traffic | the Cellular column of Network's client list; `pulzr-cellular-usage` |
 | Report | `modemPresent`, `modemModel` and `modemKind`, no `simIccid`; the cloud keeps `modemKind` once its report handler lists it |
 | "Use cellular as a backhaul" | turns it off with `wwan` |
 | Firewall zone | wan, not cellular |

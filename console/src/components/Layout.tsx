@@ -144,7 +144,9 @@ export default function Layout({
           style={{ '--tone': `var(--hue-${areaTone(location.pathname)})` } as CSSProperties}
           className={`${styles.content} ${
             NAV.flatMap((entry) => [entry, ...(entry.children ?? [])]).some(
-              (entry) => entry.wide && location.pathname.startsWith(entry.path),
+              // A group's own page only, not its children's.
+              (entry) => entry.wide && ('children' in entry && entry.children ? location.pathname === entry.path
+                : location.pathname.startsWith(entry.path)),
             )
               ? styles.wide
               : ''

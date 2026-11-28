@@ -88,7 +88,7 @@ const ACTIONS = {
     raiseAp: (req, s) => { auth.audit('ap.raise', { by: s.subject }); return access.raiseAp(req); },
     lowerAp: (req, s) => { auth.audit('ap.lower', { by: s.subject }); return access.lowerAp(); },
     forgetWifi: (req, s) => {
-        auth.audit('wifi.forget', { by: s.subject, ssid: req.ssid });
+        auth.audit(req.keep ? 'wifi.disconnect' : 'wifi.forget', { by: s.subject, ssid: req.ssid });
         return access.forgetWifi(req);
     },
     joinWifi: (req, s) => audited('wifi.join',
@@ -110,7 +110,7 @@ const ACTIONS = {
         radios.setRadio(req)),
     setRadioAp: (req, s) => audited(req.id ? 'radio.ap.edit' : 'radio.ap.add',
         { by: s.subject, id: req.id, radio: req.radio, ssid: req.ssid, security: req.security,
-          network: req.network, enabled: req.enabled },
+          network: req.network, enabled: req.enabled, replace: !!req.replace },
         radios.setAp(req)),
     removeRadioAp: (req, s) => audited('radio.ap.remove', { by: s.subject, id: req.id }, radios.removeAp(req)),
     joinRadioUplink: (req, s) => audited(req.ap ? 'radio.repeater' : 'radio.uplink',

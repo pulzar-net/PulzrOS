@@ -85,8 +85,8 @@ export function linkSpeed(mbps: number | null | undefined) {
 
 function pageFor(kind: Uplink['kind'], iface: string) {
   // The first WiFi uplink is the WiFi page's; a second radio's is joined and
-  // removed on the radios page.
-  if (kind === 'wifi') return iface === 'wwifi' ? '/backhaul/wifi' : '/network/wifi';
+  // removed on the Network page.
+  if (kind === 'wifi') return iface === 'wwifi' ? '/backhaul/wifi' : '/network';
   if (kind === 'ethernet') return '/backhaul/ethernet';
   return '/backhaul/cellular';
 }
