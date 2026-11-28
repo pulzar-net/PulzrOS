@@ -17,6 +17,7 @@ import { useFeatures } from '@/hooks/useFeatures';
 import { countdown } from '@/lib/format';
 import Clients, { useLanStatus } from './Lan';
 import { PortEditor, same, toDraft, type Draft } from './Ports';
+import PortStrip from './PortStrip';
 import SetupAccessPoint from './SetupAccessPoint';
 import Topology from './Topology';
 import styles from './Ports.module.css';
@@ -87,6 +88,12 @@ export default function Network() {
       )}
 
       <Section title="Ports and Radios" icon={NetworkIcon} wide>
+        <PortStrip
+          ports={state.ports}
+          roleOf={(port) => draft.find((p) => p.name === port.name)!.role}
+          selected={editing}
+          onSelect={setEditing}
+        />
         <Topology
           ports={state.ports}
           roleOf={(port) => draft.find((p) => p.name === port.name)!.role}

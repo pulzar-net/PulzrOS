@@ -1,3 +1,8 @@
+/* The case's face, above the topology. */
+.face {
+  padding: 4px 0 16px;
+}
+
 /* ── the port dialog ──────────────────────────────────────────────────── */
 .heading {
   margin-bottom: 4px;

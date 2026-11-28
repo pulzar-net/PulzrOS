@@ -9,7 +9,7 @@ The uplink's saved networks, 802.1X, roaming and the portal check stay on **Back
 
 ## The diagram
 
-At the top of the page the gateway is drawn as Pulzr Cloud's Topology draws one (React Flow, the same cards), left to right:
+At the top of the page is the case's face (`@pulzr/ui`'s `PortsDiagram`, from the board's `hardware.json`); a jack opens its port. Under it the gateway is drawn as Pulzr Cloud's Topology draws one (React Flow, the same cards), left to right:
 
 ```
 Internet ── WAN        (No cable)                   ── gateway ── LAN 1        (100 Mb/s, 1 client)
