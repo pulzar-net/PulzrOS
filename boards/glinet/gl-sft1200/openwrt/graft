@@ -14,6 +14,7 @@
 # the earlier releases hid behind IGNORE_ERRORS=m. The commit is the tip of
 # branch pulzros-gl-sft1200, the line that ships: the GSW150 reset as sent
 # upstream (v4, 1ee5be45ad) and the siwifi fixes for what a station reports
-# (tx rate, retries and failures, beacon interval and DTIM). The bench work
+# (tx rate, retries and failures, beacon interval and DTIM, the last
+# from the connected AP's own beacons). The bench work
 # after 1ee5be45ad on siflower-gl-sft1200-wifi (GPIO, LEDs, USB) is not in it.
-https://github.com/The1TrueJoe/openwrt 0a8810c125c459b53728ecd53a3c1132f75aee3b target/linux/siflower target/linux/generic/backport-6.18 target/linux/generic/pending-6.18 target/linux/generic/hack-6.18 target/linux/generic/config-6.18 target/linux/generic/kernel-6.18 target/linux/generic/files package/kernel/linux package/kernel/gpio-button-hotplug package/kernel/siwifi package/kernel/mac80211
+https://github.com/The1TrueJoe/openwrt 1d5b9b1700637ba7f008bc93b24308ddad1b65ef target/linux/siflower target/linux/generic/backport-6.18 target/linux/generic/pending-6.18 target/linux/generic/hack-6.18 target/linux/generic/config-6.18 target/linux/generic/kernel-6.18 target/linux/generic/files package/kernel/linux package/kernel/gpio-button-hotplug package/kernel/siwifi package/kernel/mac80211
