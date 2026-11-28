@@ -82,7 +82,7 @@ lan1 and lan2 come up at 1 Gbps on a warm reboot and from a cold power-on.
   `siflower-gl-sft1200`, the work meant for upstream. Taking it to 25.12's 6.12
   would also mean every lantiq_gswip change from 6.13 to 6.18 under it.
 - **The userland.** A build from OpenWrt main would give this one board a
-  different ucode, netifd and fw4 from every other ParkezeOS gateway, and
+  different ucode, netifd and fw4 from every other PulzrOS gateway, and
   main's package feeds change daily.
 
 So `scripts/device-imagebuilder-graft.sh` builds the v25.12.6 tree with the kernel side grafted in from a

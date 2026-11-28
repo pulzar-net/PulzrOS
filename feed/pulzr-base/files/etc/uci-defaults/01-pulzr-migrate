@@ -27,4 +27,8 @@ done
 uci -q commit dhcp
 uci -q commit firewall
 
+# The WiFi uplink's station and the setup AP under their Pulzr names, and
+# the way back for an older image; see pulzr-legacy names.
+/usr/sbin/pulzr-legacy names || exit 1
+
 exit 0

@@ -6,6 +6,8 @@
 #                          running ParkezeOS: bring its state to the new paths
 #   pulzr-legacy back      just before a sysupgrade: write the state to the old
 #                          paths as well, so a rollback to ParkezeOS finds it
+#   pulzr-legacy names     the WiFi uplink's station and the setup AP from
+#                          their ParkezeOS section names to the Pulzr ones
 #
 # ── WHY THIS EXISTS ────────────────────────────────────────────────────────
 #
@@ -125,8 +127,26 @@ back)
     log "state written to the ParkezeOS paths for a possible rollback"
     ;;
 
+names)
+    # parkeze_sta and parkeze_ap were kept until 27 Nov 2026. Renamed, not
+    # copied: two sections would be two stations on one radio. The way back,
+    # for an image that knows only the old names, travels in the sysupgrade
+    # backup (/lib/upgrade/pulzr-names.sh).
+    # A board with no WiFi has no wireless config to commit.
+    renamed=""
+    for pair in parkeze_sta:pulzr_sta parkeze_ap:pulzr_setup_ap; do
+        old="${pair%%:*}"; new="${pair#*:}"
+        [ -n "$(uci -q get "wireless.${old}")" ] && [ -z "$(uci -q get "wireless.${new}")" ] || continue
+        uci -q rename "wireless.${old}=${new}" || exit 1
+        renamed="${renamed} ${old}"
+    done
+    [ -n "${renamed}" ] || exit 0
+    uci -q commit wireless || exit 1
+    log "wireless sections under their Pulzr names:${renamed}"
+    ;;
+
 *)
-    echo "usage: pulzr-legacy {forward|back}" >&2
+    echo "usage: pulzr-legacy {forward|back|names}" >&2
     exit 2
     ;;
 esac

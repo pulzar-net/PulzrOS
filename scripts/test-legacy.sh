@@ -283,6 +283,59 @@ check "any other broker is left alone" grep -qx 'mqtt.example.net' "${H}/mqtt.ho
 check "and a second run changes nothing" grep -q '"wg.pulzr.net:51820"' "${H}/root/etc/pulzr/wireguard/tunnel.json"
 check "it runs after the migration" test "$(ls "${ROOT_DIR}/feed/pulzr-base/files/etc/uci-defaults" | sort | sed -n 2p)" = 02-pulzr-hosts
 
+# ── the wireless section names ────────────────────────────────────────────
+#
+# Forward, `pulzr-legacy names` (01-pulzr-migrate); back, the script every
+# sysupgrade backup carries (/lib/upgrade/pulzr-names.sh), which acts only on
+# an image that does not ship that file. A uci that keeps section names, one
+# a line.
+
+W="${SANDBOX}/names"
+mkdir -p "${W}/bin" "${W}/root"
+cat > "${W}/bin/uci" <<'UCI'
+#!/bin/sh
+d="$(dirname "$0")/.."
+[ "$1" = -q ] && shift
+case "$1" in
+    get) grep -qx "${2#wireless.}" "${d}/sections" && echo wifi-iface ;;
+    rename) a="${2#wireless.}"; a="${a%%=*}"; sed -i.bak "s/^${a}\$/${2#*=}/" "${d}/sections"; rm -f "${d}/sections.bak" ;;
+    commit) echo "$2" >> "${d}/commits" ;;
+esac
+exit 0
+UCI
+chmod +x "${W}/bin/uci"
+names() { PATH="${W}/bin:${PATH}" PULZR_ROOT="${W}/root" sh "${ROOT_DIR}/feed/pulzr-base/files/usr/sbin/pulzr-legacy" names; }
+sections() { tr '\n' ' ' < "${W}/sections"; }
+
+printf 'radio0\nparkeze_sta\nparkeze_ap\npulzr_sta2\npulzr_ap_0\n' > "${W}/sections"
+names
+check "names: the station and the setup AP under the Pulzr names, the rest as they were" \
+    test "$(sections)" = "radio0 pulzr_sta pulzr_setup_ap pulzr_sta2 pulzr_ap_0 "
+names
+check "names: a second run changes and commits nothing" test "$(wc -l < "${W}/commits")" -eq 1
+: > "${W}/sections"; rm -f "${W}/commits"
+names
+check "names: a board with no WiFi has nothing to commit" test ! -e "${W}/commits"
+
+HOOK="${ROOT_DIR}/feed/pulzr-base/files/lib/upgrade/pulzr-names.sh"
+: > "${W}/list"
+( append() { eval "$1=\"\${$1:+\$$1 }$2\""; }; sysupgrade_init_conffiles=""
+  . "${HOOK}"; PULZR_ROOT="${W}/root"; export PULZR_ROOT
+  for hook in ${sysupgrade_init_conffiles}; do "${hook}" "${W}/list"; done )
+BACK="${W}/root/etc/uci-defaults/00-pulzr-names-back"
+check "backup: the script is in the backup's file list" grep -qx "${BACK}" "${W}/list"
+check "backup: it has the IPKG_INSTROOT guard" grep -q '^\[ -n "${IPKG_INSTROOT}" \] && exit 0' "${BACK}"
+check "backup: it runs before the migration" test "$(printf '%s\n' 01-pulzr-migrate "$(basename "${BACK}")" | sort | head -n1)" = 00-pulzr-names-back
+back_names() { PATH="${W}/bin:${PATH}" PULZR_ROOT="${W}/root" sh "${BACK}"; }
+printf 'radio0\npulzr_sta\npulzr_setup_ap\npulzr_sta2\n' > "${W}/sections"
+back_names
+check "backup: on an image without the hook, the old names come back" \
+    test "$(sections)" = "radio0 parkeze_sta parkeze_ap pulzr_sta2 "
+printf 'radio0\npulzr_sta\npulzr_setup_ap\n' > "${W}/sections"
+mkdir -p "${W}/root/lib/upgrade"; cp "${HOOK}" "${W}/root/lib/upgrade/"
+back_names
+check "backup: on an image that ships it, nothing changes" test "$(sections)" = "radio0 pulzr_sta pulzr_setup_ap "
+
 # ── mDNS, SSH, boot-time pieces ────────────────────────────────────────────
 
 check "mDNS answers pulzr.local" grep -q '"pulzr.local"' "${ROOT_DIR}/feed/pulzr-console/files/etc/umdns/pulzr-local.json"

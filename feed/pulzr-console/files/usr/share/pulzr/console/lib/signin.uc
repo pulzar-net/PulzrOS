@@ -75,16 +75,14 @@ randomId = function() {
 // before is no answer about this one.
 uplink = function() {
     const u = readJson(UPLINK);
-    const ssid = cursor().get('wireless', 'parkeze_sta', 'ssid');
+    const ssid = cursor().get('wireless', 'pulzr_sta', 'ssid');
     if (!u || !ssid || u.ssid != ssid) return { state: 'unchecked' };
     return u;
 };
 
 // Whether the proxy may fetch anything right now. { ok } or { error }.
 available = function() {
-    // Compat: the wireless section ids parkeze_sta and parkeze_ap are kept from ParkezeOS; a gateway
-    // upgraded or rolled back keeps its saved WiFi only if both images agree on them.
-    if (!cursor().get('wireless', 'parkeze_sta', 'ssid'))
+    if (!cursor().get('wireless', 'pulzr_sta', 'ssid'))
         return { error: 'No WiFi network is joined.' };
     const u = uplink();
     if (u.state == 'portal' || u.state == 'offline') return { ok: true, uplink: u };

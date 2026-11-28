@@ -110,9 +110,9 @@ buffer() {
 wifi_signal() {
     local ifname dbm
     command -v iwinfo >/dev/null 2>&1 || return
-    [ -n "$(uci -q get wireless.parkeze_sta.ssid 2>/dev/null)" ] || return
+    [ -n "$(uci -q get wireless.pulzr_sta.ssid 2>/dev/null)" ] || return
     ifname="$(pulzr-timeout 3 ubus call network.wireless status 2>/dev/null \
-        | jsonfilter -e '@[*].interfaces[@.section="parkeze_sta"].ifname' 2>/dev/null | head -n1)"
+        | jsonfilter -e '@[*].interfaces[@.section="pulzr_sta"].ifname' 2>/dev/null | head -n1)"
     [ -n "${ifname}" ] || return
     dbm="$(pulzr-timeout 3 iwinfo "${ifname}" info 2>/dev/null | sed -n 's/.*Signal: *\(-[0-9]\{1,3\}\) dBm.*/\1/p' | head -n1)"
     [ -n "${dbm}" ] && printf '%s' "${dbm}"

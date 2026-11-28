@@ -158,11 +158,9 @@ ensure_secret() {
 
 hold_station() {
     local dev="$1"
-    # Compat: the wireless section ids parkeze_sta and parkeze_ap are kept from ParkezeOS; a gateway
-    # upgraded or rolled back keeps its saved WiFi only if both images agree on them.
-    [ "$(uci -q get wireless.parkeze_sta.device)" = "${dev}" ] || return 0
-    [ "$(uci -q get wireless.parkeze_sta.disabled)" != "1" ] || return 0
-    uci -q set wireless.parkeze_sta.disabled='1'
+    [ "$(uci -q get wireless.pulzr_sta.device)" = "${dev}" ] || return 0
+    [ "$(uci -q get wireless.pulzr_sta.disabled)" != "1" ] || return 0
+    uci -q set wireless.pulzr_sta.disabled='1'
     mkdir -p "${HELD%/*}"
     : > "${HELD}"
     log "station off the radio for setup mode"
@@ -171,8 +169,8 @@ hold_station() {
 release_station() {
     [ -e "${HELD}" ] || return 0
     rm -f "${HELD}"
-    [ -n "$(uci -q get wireless.parkeze_sta.ssid)" ] || return 0
-    uci -q set wireless.parkeze_sta.disabled='0'
+    [ -n "$(uci -q get wireless.pulzr_sta.ssid)" ] || return 0
+    uci -q set wireless.pulzr_sta.disabled='0'
 }
 
 # Once a minute from the watchdog, in setup mode. A station that was given a
@@ -184,8 +182,8 @@ release_station() {
 station_check() {
     local dev now since
     dev="$(radio)"
-    if [ -z "${dev}" ] || [ "$(uci -q get wireless.parkeze_sta.device)" != "${dev}" ] \
-       || [ "$(uci -q get wireless.parkeze_sta.disabled)" = "1" ] \
+    if [ -z "${dev}" ] || [ "$(uci -q get wireless.pulzr_sta.device)" != "${dev}" ] \
+       || [ "$(uci -q get wireless.pulzr_sta.disabled)" = "1" ] \
        || ubus call network.interface.wwifi status 2>/dev/null \
             | jsonfilter -e '@.up' 2>/dev/null | grep -qx true; then
         rm -f "${STATE}/joining"
@@ -241,16 +239,16 @@ up() {
 
     uci -q batch <<EOF
 set wireless.${dev}.disabled='0'
-delete wireless.parkeze_ap
-set wireless.parkeze_ap=wifi-iface
-set wireless.parkeze_ap.device='${dev}'
-set wireless.parkeze_ap.mode='ap'
-set wireless.parkeze_ap.network='setup'
-set wireless.parkeze_ap.ssid='${net_ssid}'
-set wireless.parkeze_ap.encryption='${encryption}'
-$([ -n "${net_key}" ] && echo "set wireless.parkeze_ap.key='${net_key}'")
-set wireless.parkeze_ap.isolate='1'
-set wireless.parkeze_ap.disabled='0'
+delete wireless.pulzr_setup_ap
+set wireless.pulzr_setup_ap=wifi-iface
+set wireless.pulzr_setup_ap.device='${dev}'
+set wireless.pulzr_setup_ap.mode='ap'
+set wireless.pulzr_setup_ap.network='setup'
+set wireless.pulzr_setup_ap.ssid='${net_ssid}'
+set wireless.pulzr_setup_ap.encryption='${encryption}'
+$([ -n "${net_key}" ] && echo "set wireless.pulzr_setup_ap.key='${net_key}'")
+set wireless.pulzr_setup_ap.isolate='1'
+set wireless.pulzr_setup_ap.disabled='0'
 EOF
     # isolate=1 stops associated clients talking to each other. Two installers
     # on the same AP have no business reaching each other's laptops, and on an
@@ -332,7 +330,7 @@ down() {
     local dev; dev="$(radio)"
     [ -n "${dev}" ] || return 0
 
-    uci -q delete wireless.parkeze_ap || true
+    uci -q delete wireless.pulzr_setup_ap || true
     release_station
     uci commit wireless
     wifi reload >/dev/null 2>&1 || true
@@ -370,7 +368,7 @@ status() {
     #
     # So: `|| true` to satisfy `set -e` without adding output, then validate
     # that what came back is actually a number.
-    clients="$(iw dev "$(uci -q get wireless.parkeze_ap.ifname || echo wlan0)" \
+    clients="$(iw dev "$(uci -q get wireless.pulzr_setup_ap.ifname || echo wlan0)" \
                station dump 2>/dev/null | grep -c '^Station' || true)"
     case "${clients}" in
         ''|*[!0-9]*) clients=0 ;;

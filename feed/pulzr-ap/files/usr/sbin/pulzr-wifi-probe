@@ -127,25 +127,23 @@ if [ -z "$(uci -q get network.wwifi)" ]; then
     ubus call network reload >/dev/null 2>&1
 fi
 
-# Compat: the wireless section ids parkeze_sta and parkeze_ap are kept from ParkezeOS; a gateway
-# upgraded or rolled back keeps its saved WiFi only if both images agree on them.
 uci -q batch <<EOF
-set wireless.parkeze_sta=wifi-iface
-set wireless.parkeze_sta.device=${radio}
-set wireless.parkeze_sta.mode=sta
-set wireless.parkeze_sta.network=wwifi
-set wireless.parkeze_sta.disabled=0
+set wireless.pulzr_sta=wifi-iface
+set wireless.pulzr_sta.device=${radio}
+set wireless.pulzr_sta.mode=sta
+set wireless.pulzr_sta.network=wwifi
+set wireless.pulzr_sta.disabled=0
 set wireless.${radio}.disabled=0
-delete wireless.parkeze_sta.key
+delete wireless.pulzr_sta.key
 EOF
 # Values with spaces or quotes in them go through uci set one by one, not the
 # batch above, which would split them.
-uci -q set wireless.parkeze_sta.ssid="${ssid}"
-uci -q set wireless.parkeze_sta.encryption=wpa2
-uci -q set wireless.parkeze_sta.eap_type="${method}"
-uci -q set wireless.parkeze_sta.identity="${outer}"
-uci -q set wireless.parkeze_sta.password=probe
-uci -q set wireless.parkeze_sta.ca_cert='probe://'
+uci -q set wireless.pulzr_sta.ssid="${ssid}"
+uci -q set wireless.pulzr_sta.encryption=wpa2
+uci -q set wireless.pulzr_sta.eap_type="${method}"
+uci -q set wireless.pulzr_sta.identity="${outer}"
+uci -q set wireless.pulzr_sta.password=probe
+uci -q set wireless.pulzr_sta.ca_cert='probe://'
 uci -q commit wireless
 
 nonce="$$-$(date +%s)"

@@ -49,7 +49,7 @@ expr = sys.argv[sys.argv.index('-e') + 1]
 try:
     value = json.load(sys.stdin)
     if expr.startswith('@[*].interfaces['):
-        value = [i['ifname'] for r in value.values() for i in r['interfaces'] if i['section'] == 'parkeze_sta'][0]
+        value = [i['ifname'] for r in value.values() for i in r['interfaces'] if i['section'] == 'pulzr_sta'][0]
     else:
         import re
         for name, idx in re.findall(r'\.(\w+)|\[(\d+)\]', expr[1:]):
@@ -85,7 +85,7 @@ full_board() {
     echo 6 > "${PULZR_STATS_SYS}/class/net/wwan0/statistics/tx_bytes"
     stub df 'printf "Filesystem 1K-blocks Used Available Use%% Mounted on\n/dev/x 1000 420 580 42%% /overlay\n"'
     stub uci 'echo Home'
-    stub ubus 'echo "{\"radio0\":{\"interfaces\":[{\"section\":\"parkeze_sta\",\"ifname\":\"wlan0-sta\"}]}}"'
+    stub ubus 'echo "{\"radio0\":{\"interfaces\":[{\"section\":\"pulzr_sta\",\"ifname\":\"wlan0-sta\"}]}}"'
     stub iwinfo 'echo "          Signal: -61 dBm  Noise: -95 dBm"'
     stub pulzr-uplinks 'echo "{\"uplinks\":[{\"iface\":\"wan\",\"kind\":\"ethernet\",\"device\":\"eth0\"},{\"iface\":\"wwifi\",\"kind\":\"wifi\",\"device\":\"wlan0-sta\"},{\"iface\":\"wwan\",\"kind\":\"cellular\",\"device\":\"wwan0\"}]}"'
     stub pulzr-lora-buffer 'echo "{\"enabled\":true,\"running\":true}"'

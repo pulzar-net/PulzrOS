@@ -5,7 +5,7 @@
 # There used to be one, wwifi, and every script named it. A gateway with two
 # radios can have two:
 #
-#   wwifi    the station the WiFi page joins (wireless.parkeze_sta)
+#   wwifi    the station the WiFi page joins (wireless.pulzr_sta)
 #   wwifi2   a second radio's station, joined from the radios page
 #            (wireless.pulzr_sta2), on the same network or another one
 #

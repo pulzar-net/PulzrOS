@@ -321,8 +321,8 @@ EOF
 reset_ap
 rc=0; "${AP}" button >/dev/null || rc=$?
 check "master switch off: the button still raises it" 0 "${rc}"
-check "on the setup network" setup "$(db wireless.parkeze_ap.network)"
-check "unadopted: open" none "$(db wireless.parkeze_ap.encryption)"
+check "on the setup network" setup "$(db wireless.pulzr_setup_ap.network)"
+check "unadopted: open" none "$(db wireless.pulzr_setup_ap.encryption)"
 check "for the configured window" 1800 "$(cat "${SANDBOX}/run/ap/window")"
 check "and journalled as the button" 1 "$(grep -c '"reason":"button"' "${SANDBOX}/etc/pulzr/ap/raises.log")"
 # The shape, not the value: a machine with an eth0 uses its MAC.
@@ -332,8 +332,8 @@ check "its name reads Pulzar, and ends in six hex" yes \
 reset_ap
 echo 'pulzr.adoption.state=adopted' >> "${UCI_DB}"
 "${AP}" button >/dev/null
-check "adopted: never open" psk2+ccmp "$(db wireless.parkeze_ap.encryption)"
-key="$(db wireless.parkeze_ap.key)"
+check "adopted: never open" psk2+ccmp "$(db wireless.pulzr_setup_ap.encryption)"
+key="$(db wireless.pulzr_setup_ap.key)"
 check "adopted: a 16 character key" 16 "${#key}"
 check "the report carries that key" "${key}" \
     "$("${AP}" report | jsonfilter -e '@.key')"
@@ -346,14 +346,14 @@ reset_ap
 export PULZR_BACKHAUL_CHECK_RC=0
 rc=0; "${AP}" button >/dev/null || rc=$?
 check "a working uplink refuses, with its own exit" 2 "${rc}"
-check "and raises nothing" "" "$(db wireless.parkeze_ap.mode)"
+check "and raises nothing" "" "$(db wireless.pulzr_setup_ap.mode)"
 check "and leaves no marker" no "$([ -e "${SANDBOX}/run/ap/button" ] && echo yes || echo no)"
 
 reset_ap
 echo 'pulzr.ap.button=0' >> "${UCI_DB}"
 rc=0; "${AP}" button >/dev/null || rc=$?
 check "turned off for the button" 4 "${rc}"
-check "and raises nothing" "" "$(db wireless.parkeze_ap.mode)"
+check "and raises nothing" "" "$(db wireless.pulzr_setup_ap.mode)"
 
 reset_ap
 sed -i.bak '/^wireless.radio0/d' "${UCI_DB}"
@@ -374,40 +374,40 @@ check "and starts its window again" yes "$([ "$(cat "${SANDBOX}/run/ap/raised")"
 # The stale station: a moved gateway's old network is not in range, and hostapd
 # holds the AP down until a station on the radio has associated.
 station() { cat >> "${UCI_DB}" <<'EOF'
-wireless.parkeze_sta=wifi-iface
-wireless.parkeze_sta.device=radio0
-wireless.parkeze_sta.ssid=old-site
+wireless.pulzr_sta=wifi-iface
+wireless.pulzr_sta.device=radio0
+wireless.pulzr_sta.ssid=old-site
 EOF
 }
 reset_ap; station
 "${AP}" button >/dev/null
-check "the old station comes off the radio" 1 "$(db wireless.parkeze_sta.disabled)"
+check "the old station comes off the radio" 1 "$(db wireless.pulzr_sta.disabled)"
 "${AP}" down
-check "and goes back when the AP comes down" 0 "$(db wireless.parkeze_sta.disabled)"
-check "the AP is gone" "" "$(db wireless.parkeze_ap.mode)"
+check "and goes back when the AP comes down" 0 "$(db wireless.pulzr_sta.disabled)"
+check "the AP is gone" "" "$(db wireless.pulzr_setup_ap.mode)"
 check "and so are its markers" "" "$(ls "${SANDBOX}/run/ap")"
 
 reset_ap; station
-echo 'wireless.parkeze_sta.disabled=1' >> "${UCI_DB}"
+echo 'wireless.pulzr_sta.disabled=1' >> "${UCI_DB}"
 "${AP}" button >/dev/null
 "${AP}" down
-check "a station somebody turned off stays off" 1 "$(db wireless.parkeze_sta.disabled)"
+check "a station somebody turned off stays off" 1 "$(db wireless.pulzr_sta.disabled)"
 
 reset_ap; station
 "${AP}" button >/dev/null
-uci set wireless.parkeze_sta.disabled=0      # the console joined a network
+uci set wireless.pulzr_sta.disabled=0      # the console joined a network
 "${AP}" station-check
-check "a join gets its time" 0 "$(db wireless.parkeze_sta.disabled)"
+check "a join gets its time" 0 "$(db wireless.pulzr_sta.disabled)"
 echo 1 > "${SANDBOX}/run/ap/joining"
 "${AP}" station-check
-check "a join that goes nowhere gives the radio back to the AP" 1 "$(db wireless.parkeze_sta.disabled)"
+check "a join that goes nowhere gives the radio back to the AP" 1 "$(db wireless.pulzr_sta.disabled)"
 
 reset_ap; station
 "${AP}" button >/dev/null
-uci set wireless.parkeze_sta.disabled=0
+uci set wireless.pulzr_sta.disabled=0
 echo 1 > "${SANDBOX}/run/ap/joining"
 UBUS_WWIFI='{"up":true}' "${AP}" station-check
-check "an association is left alone" 0 "$(db wireless.parkeze_sta.disabled)"
+check "an association is left alone" 0 "$(db wireless.pulzr_sta.disabled)"
 
 # ── what goes up on the report ──────────────────────────────────────────────
 

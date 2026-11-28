@@ -21,7 +21,7 @@ import { speed } from './Ports';
 import styles from './Topology.module.css';
 
 /**
- * The gateway as Pulzr Cloud's Topology draws one (parkeze.net MeshView, the
+ * The gateway as Pulzr Cloud's Topology draws one (MeshView in app.pulzr.net, the
  * same React Flow and the same cards), left to right: the internet, every
  * uplink that could reach it (a WAN port, a WiFi station, the modem), the
  * gateway, and what it serves (LAN ports, access points, the radios doing

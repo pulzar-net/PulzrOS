@@ -41,10 +41,10 @@ Below the uplink there is one card per radio. Each card shows:
 
 | Role | What it is | Changed from |
 |---|---|---|
-| Uplink | the WiFi uplink's station (`parkeze_sta`) | Backhaul > WiFi |
+| Uplink | the WiFi uplink's station (`pulzr_sta`) | Backhaul > WiFi |
 | Uplink | a second radio's WiFi uplink (`pulzr_sta2`, interface `wwifi2`) | this page: **Use for Uplink**, remove |
 | Access point | an SSID onto a LAN-side network (`pulzr_ap_<n>`) | this page: edit, remove |
-| Setup network | the setup AP (`parkeze_ap`, `pulzr-ap`) | Setup Access Point, on the same page |
+| Setup network | the setup AP (`pulzr_setup_ap`, `pulzr-ap`) | Setup Access Point, on the same page |
 | Mesh, monitor, client | anything made by hand | shown only |
 
 An access point's row opens to its clients: MAC address, maker (looked up only while the uplink in use is not metered, as in the client list), signal and rate.

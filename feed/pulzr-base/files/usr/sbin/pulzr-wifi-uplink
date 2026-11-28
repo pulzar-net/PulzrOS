@@ -6,7 +6,7 @@
 #   pulzr-wifi-uplink usable [iface]    exit 0 when the WiFi may carry traffic
 #   pulzr-wifi-uplink status [iface]    the last answer, as JSON
 #
-# iface is wwifi, the station the WiFi page joins (wireless.parkeze_sta), or
+# iface is wwifi, the station the WiFi page joins (wireless.pulzr_sta), or
 # wwifi2, a second radio's station (wireless.pulzr_sta2, the radios page), and
 # wwifi when not given. `check` with no iface asks of every WiFi uplink there
 # is. Each has its own answer: a second radio joining a network is proved
@@ -119,7 +119,7 @@
 use() {
     IFACE="$1"
     case "${IFACE}" in
-        wwifi)  SECTION=parkeze_sta; STATE=/var/run/pulzr/wifi-uplink.json; LABEL='WiFi uplink' ;;
+        wwifi)  SECTION=pulzr_sta; STATE=/var/run/pulzr/wifi-uplink.json; LABEL='WiFi uplink' ;;
         wwifi2) SECTION=pulzr_sta2; STATE=/var/run/pulzr/wifi-uplink-wwifi2.json; LABEL='Second WiFi uplink' ;;
         *) echo "not a WiFi uplink: ${IFACE}" >&2; exit 2 ;;
     esac
@@ -347,7 +347,7 @@ check() {
     restart=''
     if [ "${verdict}" = offline ] && [ $((now - since)) -ge "${BOUNCE_AFTER}" ] \
             && [ $((now - bounced)) -ge "${BOUNCE_EVERY}" ] \
-            && [ "$(uci -q get wireless.parkeze_ap.device)" != "$(uci -q get "wireless.${SECTION}.device")" ]; then
+            && [ "$(uci -q get wireless.pulzr_setup_ap.device)" != "$(uci -q get "wireless.${SECTION}.device")" ]; then
         restart=1
         echo "${now}" > "${STATE%.json}.bounced"
     fi

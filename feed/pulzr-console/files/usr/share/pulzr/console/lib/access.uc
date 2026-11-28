@@ -46,7 +46,7 @@ let writefile = _m_fs.writefile;; let unlink = _m_fs.unlink;; let mkdir = _m_fs.
 // networks, roaming, the portal. A second radio's station (pulzr_sta2,
 // wwifi2) is lib/radios.uc's, and joins through joinWifi with its own slot so
 // it is written exactly as this one is.
-const PRIMARY = { section: 'parkeze_sta', iface: 'wwifi' };
+const PRIMARY = { section: 'pulzr_sta', iface: 'wwifi' };
 
 const PROBE_REQ = '/tmp/pulzr-wifi-probe.req';
 const PROBE_OUT = '/tmp/pulzr-wifi-probe.json';
@@ -124,9 +124,7 @@ status = function() {
         // that is the radio serving a setup network, this is the radio using
         // somebody else's. They share one chip and are rarely both wanted.
         wifi: (() => {
-            // Compat: the wireless section ids parkeze_sta and parkeze_ap are kept from ParkezeOS; a gateway
-            // upgraded or rolled back keeps its saved WiFi only if both images agree on them.
-            const ssid = uci.get('wireless', 'parkeze_sta', 'ssid');
+            const ssid = uci.get('wireless', 'pulzr_sta', 'ssid');
             if (!ssid) return { configured: false };
             const link = runJson('ubus call network.interface.wwifi status') || {};
             const addresses = link['ipv4-address'] || [];
@@ -138,7 +136,7 @@ status = function() {
             const radios = runJson('ubus call network.wireless status') || {};
             for (let name in radios)
                 for (let iface in (radios[name].interfaces || []))
-                    if (iface.section == 'parkeze_sta' && iface.ifname) {
+                    if (iface.section == 'pulzr_sta' && iface.ifname) {
                         const info = runJson(sprintf('ubus call iwinfo info \'{"device":"%s"}\'', iface.ifname)) || {};
                         signal = info.signal ?? null;
                         mac = trim(readfile(sprintf('/sys/class/net/%s/address', iface.ifname)) || '') || null;
@@ -149,7 +147,7 @@ status = function() {
                 // The kind, and nothing more: this endpoint is public, and
                 // the username and pinned certificate are behind sign-in in
                 // wifiDetail().
-                security: security(uci.get('wireless', 'parkeze_sta', 'encryption')),
+                security: security(uci.get('wireless', 'pulzr_sta', 'encryption')),
                 up: link.up == true,
                 // Whether it reaches the internet or only a sign-in page — see
                 // pulzr-wifi-uplink. The portal's address is behind sign-in,
@@ -470,7 +468,7 @@ radioName = function(wanted) {
     if (wanted != null)
         return type(wanted) == 'string' && match(wanted, /^[A-Za-z0-9_]{1,32}$/)
             && uci.get('wireless', wanted) == 'wifi-device' ? wanted : null;
-    const current = uci.get('wireless', 'parkeze_sta', 'device');
+    const current = uci.get('wireless', 'pulzr_sta', 'device');
     if (current && uci.get('wireless', current) == 'wifi-device') return current;
     return run("uci -q show wireless | sed -n 's/^wireless\\.\\([^.]*\\)=wifi-device$/\\1/p' | head -n1");
 };
@@ -564,7 +562,7 @@ joinWifi = function(req, slot) {
 // anybody's back: roam() does nothing without a station.
 forgetWifi = function(req) {
     const uci = cursor();
-    const active = uci.get('wireless', 'parkeze_sta', 'ssid');
+    const active = uci.get('wireless', 'pulzr_sta', 'ssid');
     const ssid = (req && req.ssid) || active;
     if (!ssid) return { ok: true, message: 'No WiFi network is configured.' };
 
@@ -603,9 +601,9 @@ forgetWifi = function(req) {
 // person on it is presumably fixing things already.
 roam = function() {
     const uci = cursor();
-    const active = uci.get('wireless', 'parkeze_sta', 'ssid');
+    const active = uci.get('wireless', 'pulzr_sta', 'ssid');
     if (!active) return { action: 'none', reason: 'no wifi uplink' };
-    if (uci.get('wireless', 'parkeze_ap')) return { action: 'none', reason: 'setup AP is up' };
+    if (uci.get('wireless', 'pulzr_setup_ap')) return { action: 'none', reason: 'setup AP is up' };
     if (signin.active()) return { action: 'none', reason: 'signing in' };
 
     let state = {};
@@ -717,7 +715,7 @@ recordRoam = function(entry) {
 // because the check can take most of a minute on a network that answers
 // nothing; the console polls for the answer.
 checkWifi = function() {
-    if (!cursor().get('wireless', 'parkeze_sta', 'ssid')) return { error: 'No WiFi network is joined.' };
+    if (!cursor().get('wireless', 'pulzr_sta', 'ssid')) return { error: 'No WiFi network is joined.' };
     run('/usr/sbin/pulzr-wifi-uplink check >/dev/null 2>&1 &');
     return { ok: true };
 };
@@ -754,7 +752,7 @@ probeResult = function() {
 // password. Behind sign-in, unlike status().
 wifiDetail = function() {
     const uci = cursor();
-    const ssid = uci.get('wireless', 'parkeze_sta', 'ssid');
+    const ssid = uci.get('wireless', 'pulzr_sta', 'ssid');
     const saved = map(savedNetworks(uci), (n) => ({
         ssid: n.ssid,
         security: n.security,
@@ -783,11 +781,11 @@ wifiDetail = function() {
         // Why it is not connected, when wpa_supplicant said. The RADIUS
         // server's own words are in it, so it is here and not in status().
         failure: wififail.last(),
-        security: security(uci.get('wireless', 'parkeze_sta', 'encryption')),
-        method: uci.get('wireless', 'parkeze_sta', 'eap_type'),
-        phase2: uci.get('wireless', 'parkeze_sta', 'auth'),
-        identity: uci.get('wireless', 'parkeze_sta', 'identity'),
-        anonymousIdentity: uci.get('wireless', 'parkeze_sta', 'anonymous_identity'),
+        security: security(uci.get('wireless', 'pulzr_sta', 'encryption')),
+        method: uci.get('wireless', 'pulzr_sta', 'eap_type'),
+        phase2: uci.get('wireless', 'pulzr_sta', 'auth'),
+        identity: uci.get('wireless', 'pulzr_sta', 'identity'),
+        anonymousIdentity: uci.get('wireless', 'pulzr_sta', 'anonymous_identity'),
         certSubject: current.cert_subject,
         certHash: current.cert_hash,
         saved,

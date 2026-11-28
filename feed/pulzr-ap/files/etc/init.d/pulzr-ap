@@ -14,9 +14,7 @@ boot() {
     # Whatever was up before the reboot. Its window and its markers were in
     # /var/run and are gone, so an AP left in the config would otherwise stand
     # with nothing to take it down, and a station held for it would stay off.
-    # Compat: the wireless section ids parkeze_sta and parkeze_ap are kept from ParkezeOS; a gateway
-    # upgraded or rolled back keeps its saved WiFi only if both images agree on them.
-    if [ -n "$(uci -q get wireless.parkeze_ap)" ] || [ -e /etc/pulzr/ap/sta-held ]; then
+    if [ -n "$(uci -q get wireless.pulzr_setup_ap)" ] || [ -e /etc/pulzr/ap/sta-held ]; then
         /usr/sbin/pulzr-ap down >/dev/null 2>&1
     fi
 

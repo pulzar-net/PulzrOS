@@ -168,7 +168,7 @@ repeater_uci() {
 {"wireless": {
    "radio0": {".type": "wifi-device", ".name": "radio0", "type": "mac80211", "path": "platform/soc/18000000.wifi", "band": "2g", "channel": "1", "htmode": "HE20", "country": "US"},
    "radio1": {".type": "wifi-device", ".name": "radio1", "type": "mac80211", "path": "platform/soc/18000000.wifi+1", "band": "5g", "channel": "36", "htmode": "HE80", "country": "US"},
-   "parkeze_sta": {".type": "wifi-iface", ".name": "parkeze_sta", "device": "radio0", "mode": "sta", "network": "wwifi", "ssid": "Site-Ops", "encryption": "psk2", "key": "upstream-pass"},
+   "pulzr_sta": {".type": "wifi-iface", ".name": "pulzr_sta", "device": "radio0", "mode": "sta", "network": "wwifi", "ssid": "Site-Ops", "encryption": "psk2", "key": "upstream-pass"},
    "pulzr_ap_0": {".type": "wifi-iface", ".name": "pulzr_ap_0", "device": "radio1", "mode": "ap", "network": "devlan", "ssid": "Shop", "encryption": "sae-mixed", "key": "shop-secret"}},
  "network": {"devlan": {".type": "interface", ".name": "devlan", "proto": "static", "ipaddr": "192.168.64.1"},
              "wwifi": {".type": "interface", ".name": "wwifi", "proto": "dhcp"},
@@ -179,7 +179,7 @@ EOF
 }
 repeater_uci
 cat > "${T}/wireless.json" <<'EOF'
-{"radio0": {"up": true, "interfaces": [{"section": "parkeze_sta", "ifname": "phy0-sta0"}]},
+{"radio0": {"up": true, "interfaces": [{"section": "pulzr_sta", "ifname": "phy0-sta0"}]},
  "radio1": {"up": true, "interfaces": [{"section": "pulzr_ap_0", "ifname": "phy1-ap0"}]}}
 EOF
 echo '{"phy":"phy0","ssid":"Site-Ops","bssid":"aa:bb:cc:00:00:01","country":"US","mode":"Client","channel":6,"frequency":2437,"txpower":20,"signal":-61,"htmodes":["HT20","HT40","HE20","HE40"],"hwmodes":["b","g","n","ax"],"hardware":{"name":"MediaTek MT7981"}}' > "${T}/iwinfo/phy0-sta0.json"
@@ -238,7 +238,7 @@ check "ap: open onto the LAN refused unless confirmed" \
 check "ap: onto an uplink refused" "Choose a network for the access point." \
     "$(err setAp '{"radio":"radio0","ssid":"Yard","security":"psk2","key":"yard-secret","network":"wan"}')"
 check "ap: the setup AP is not this page's" "That access point is not one made here." \
-    "$(err setAp '{"id":"parkeze_ap","ssid":"x"}')"
+    "$(err setAp '{"id":"pulzr_setup_ap","ssid":"x"}')"
 check "ap: WPA3 refused without SAE" "This gateway has no WPA3 support." \
     "$(HOSTAPD_SAE=1 err setAp '{"radio":"radio0","ssid":"Yard","security":"sae","key":"yard-secret","network":"devlan"}')"
 out="$(call setAp '{"radio":"radio0","ssid":"Yard","security":"sae","key":"yard-secret","network":"devlan","hidden":true}')"
@@ -249,7 +249,7 @@ call setAp '{"id":"pulzr_ap_1","ssid":"Yard 2","security":"psk2","key":""}' >/de
 check "ap: an edit with the passphrase blank keeps it" '["Yard 2","psk2","yard-secret","1"]' \
     "$(uci '.wireless.pulzr_ap_1 | [.ssid, .encryption, .key, .hidden]')"
 check "ap: removing the uplink's station is not this" "That access point is not one made here." \
-    "$(err removeAp '{"id":"parkeze_sta"}')"
+    "$(err removeAp '{"id":"pulzr_sta"}')"
 call removeAp '{"id":"pulzr_ap_1"}' >/dev/null
 check "ap: removed" "null" "$(uci .wireless.pulzr_ap_1)"
 
@@ -261,7 +261,7 @@ echo '{"order":["wwifi","wwan"]}' > "${T}/uplinks.json"
 out="$(call setAp '{"radio":"radio0","replace":true,"ssid":"Yard","security":"psk2","key":"yard-secret","network":"devlan"}')"
 check "ap mode: the AP in place of the uplink's station, the network still saved" \
     '["pulzr_ap_1",null,null,"wan","radio0","Yard","Site-Ops"]' \
-    "$(jq -c --argjson out "${out}" '[$out.id, .wireless.parkeze_sta, .network.wwifi, .firewall.wan.network,
+    "$(jq -c --argjson out "${out}" '[$out.id, .wireless.pulzr_sta, .network.wwifi, .firewall.wan.network,
         .wireless.pulzr_ap_1.device, .wireless.pulzr_ap_1.ssid, .pulzr.s.ssid]' "${UCI_JSON}")"
 check "ap mode: the station last in the order before it goes" "pulzr-uplinks order wwan wwifi" \
     "$(grep -m1 'pulzr-uplinks order' "${T}/events")"
@@ -270,10 +270,10 @@ check "ap mode: the station last in the order before it goes" "pulzr-uplinks ord
 repeater_uci
 call forgetWifi '{"keep":true}' >/dev/null
 check "disconnect: the station gone, the network still saved" '[null,"Site-Ops"]' \
-    "$(uci '[.wireless.parkeze_sta, .pulzr.s.ssid]')"
+    "$(uci '[.wireless.pulzr_sta, .pulzr.s.ssid]')"
 repeater_uci
 call forgetWifi '{}' >/dev/null
-check "forget: the station and the saved network gone" '[null,null]' "$(uci '[.wireless.parkeze_sta, .pulzr.s]')"
+check "forget: the station and the saved network gone" '[null,null]' "$(uci '[.wireless.pulzr_sta, .pulzr.s]')"
 
 # ── joins keep the access points ────────────────────────────────────────────
 
@@ -290,7 +290,7 @@ wwifi_before="$(uci .network.wwifi)"
 call joinUplink '{"radio":"radio1","ssid":"Site-Ops","saved":true}' >/dev/null
 check "move: a second station on the other radio, the first left as it is" \
     '["radio0","Site-Ops","radio1","Site-Ops","wwifi2","Shop"]' \
-    "$(uci '.wireless | [.parkeze_sta.device, .parkeze_sta.ssid, .pulzr_sta2.device, .pulzr_sta2.ssid, .pulzr_sta2.network, .pulzr_ap_0.ssid]')"
+    "$(uci '.wireless | [.pulzr_sta.device, .pulzr_sta.ssid, .pulzr_sta2.device, .pulzr_sta2.ssid, .pulzr_sta2.network, .pulzr_ap_0.ssid]')"
 check "move: its own interface, behind every uplink, in the wan zone" '["dhcp","200","wan wwifi wwifi2"]' \
     "$(uci '[.network.wwifi2.proto, .network.wwifi2.metric, .firewall.wan.network]')"
 check "move: the first one's interface untouched" "${wwifi_before}" "$(uci .network.wwifi)"
@@ -298,9 +298,9 @@ check "move: a handover from the WiFi carrying now" '["wwifi2","radio1","Site-Op
     "$(jq -c '[.iface, .radio, .ssid, .from, .fromRadio, .state]' "${T}/run/wifi-handover.json")"
 call joinWifi '{"ssid":"Site-Ops","saved":true}' >/dev/null
 check "join: a rejoin from the WiFi page leaves both stations where they are" '["radio0","radio1"]' \
-    "$(uci '[.wireless.parkeze_sta.device, .wireless.pulzr_sta2.device]')"
+    "$(uci '[.wireless.pulzr_sta.device, .wireless.pulzr_sta2.device]')"
 st="$(call status '{}')"
-check "status: both WiFi uplinks, the WiFi page's first" '[["parkeze_sta","wwifi","radio0"],["pulzr_sta2","wwifi2","radio1"]]' \
+check "status: both WiFi uplinks, the WiFi page's first" '[["pulzr_sta","wwifi","radio0"],["pulzr_sta2","wwifi2","radio1"]]' \
     "$(jq -c '[.uplinks[] | [.id, .iface, .radio]]' <<< "${st}")"
 check "status: the second station is this page's, an uplink" '["uplink","radios"]' \
     "$(jq -c '[.radios[1].interfaces[] | select(.id == "pulzr_sta2") | .role, .owner]' <<< "${st}")"
@@ -326,7 +326,7 @@ echo '{"order":["wan","wwifi","wwan"]}' > "${T}/uplinks.json"
 out="$(call handover '"wwifi2"')"
 check "handover: done once it is open" "done" "$(jq -r .state <<< "${out}")"
 check "handover: first among the WiFi uplinks, behind the cable" "pulzr-uplinks order wan wwifi2 wwifi wwan" "$(cat "${T}/events")"
-check "handover: both stations stay" '["radio0","radio1"]' "$(uci '[.wireless.parkeze_sta.device, .wireless.pulzr_sta2.device]')"
+check "handover: both stations stay" '["radio0","radio1"]' "$(uci '[.wireless.pulzr_sta.device, .wireless.pulzr_sta2.device]')"
 
 # Not proven in time: the new station goes, the old one was never touched.
 handover_again() {
@@ -339,7 +339,7 @@ echo "{\"state\":\"offline\",\"step\":\"dns\",\"detail\":\"10.0.0.1\",\"ssid\":\
 out="$(call handover '"wwifi2"')"
 check "handover: given up, with why" '["failed","DNS 10.0.0.1 did not answer."]' "$(jq -c '[.state, .reason]' <<< "${out}")"
 check "handover: the new station removed, the old one as it was" '[null,null,"wan wwifi","radio0","Site-Ops"]' \
-    "$(uci '[.wireless.pulzr_sta2, .network.wwifi2, .firewall.wan.network, .wireless.parkeze_sta.device, .wireless.parkeze_sta.ssid]')"
+    "$(uci '[.wireless.pulzr_sta2, .network.wwifi2, .firewall.wan.network, .wireless.pulzr_sta.device, .wireless.pulzr_sta.ssid]')"
 check "handover: the order not touched" "" "$(grep 'pulzr-uplinks order' "${T}/events" || true)"
 
 call joinUplink '{"radio":"radio1","ssid":"Site-Ops","saved":true}' >/dev/null
@@ -371,7 +371,7 @@ check "remove: the WiFi page's station is forgotten there" "Forget this network 
 call removeUplink '{"radio":"radio1"}' >/dev/null
 check "remove: last in the order before it goes" "pulzr-uplinks order wwifi wwan wwifi2" "$(head -n1 "${T}/events")"
 check "remove: the station, its interface and its zone membership" '[null,null,"wan wwifi","radio0"]' \
-    "$(uci '[.wireless.pulzr_sta2, .network.wwifi2, .firewall.wan.network, .wireless.parkeze_sta.device]')"
+    "$(uci '[.wireless.pulzr_sta2, .network.wwifi2, .firewall.wan.network, .wireless.pulzr_sta.device]')"
 check "remove: nothing on a radio with no uplink" "No uplink on this radio." "$(err removeUplink '{"radio":"radio1"}')"
 
 # ── the one-step repeater ───────────────────────────────────────────────────
@@ -394,7 +394,7 @@ check "repeater: a refusal changed nothing" "same" "$([ "$(cat "${UCI_JSON}")" =
 out="$(call joinUplink '{"radio":"radio0","ssid":"Cafe","key":"cafe-pass","ap":{"radio":"radio1","ssid":"Cafe Ext","security":"psk2","key":"ext-secret","network":"devlan"}}')"
 check "repeater: joined, with its AP" "pulzr_ap_0" "$(jq -r .ap <<< "${out}")"
 check "repeater: uplink on radio0, AP on radio1, both radios on" '["radio0","Cafe","radio1","Cafe Ext","0","0"]' \
-    "$(uci '.wireless | [.parkeze_sta.device, .parkeze_sta.ssid, .pulzr_ap_0.device, .pulzr_ap_0.ssid, .radio0.disabled, .radio1.disabled]')"
+    "$(uci '.wireless | [.pulzr_sta.device, .pulzr_sta.ssid, .pulzr_ap_0.device, .pulzr_ap_0.ssid, .radio0.disabled, .radio1.disabled]')"
 check "repeater: the upstream network saved, as any join" '"Cafe"' "$(uci '[.pulzr[] | select(.[".type"] == "wifi_network")][0].ssid')"
 
 # ── one radio ───────────────────────────────────────────────────────────────
@@ -424,7 +424,7 @@ check "one radio: 40 MHz is not on offer" "[20]" "$(jq -c '.radios[0].capabiliti
 
 reset_phys
 phy phy0 platform/ahb/18100000.wmac single
-jq '.wireless.radio0.path = "platform/ahb/18100000.wmac" | del(.wireless.parkeze_sta) | del(.wireless.pulzr_ap_0)' \
+jq '.wireless.radio0.path = "platform/ahb/18100000.wmac" | del(.wireless.pulzr_sta) | del(.wireless.pulzr_ap_0)' \
     "${UCI_JSON}" > "${T}/u" && mv "${T}/u" "${UCI_JSON}"
 before="$(cat "${UCI_JSON}")"
 check "station or AP: both on one radio refused, with what to do" \
@@ -434,14 +434,14 @@ check "station or AP: nothing written" "same" "$([ "$(cat "${UCI_JSON}")" = "${b
 
 # Access point mode on such a radio: the AP fits once its station is counted
 # out, and goes in its place.
-jq '.wireless.parkeze_sta = {".type": "wifi-iface", ".name": "parkeze_sta", "device": "radio0", "mode": "sta", "network": "wwifi", "ssid": "Cafe", "encryption": "psk2", "key": "cafe-pass"}' \
+jq '.wireless.pulzr_sta = {".type": "wifi-iface", ".name": "pulzr_sta", "device": "radio0", "mode": "sta", "network": "wwifi", "ssid": "Cafe", "encryption": "psk2", "key": "cafe-pass"}' \
     "${UCI_JSON}" > "${T}/u" && mv "${T}/u" "${UCI_JSON}"
 before="$(cat "${UCI_JSON}")"
 ap='{"radio":"radio0","ssid":"Cafe Ext","security":"psk2","key":"ext-secret","network":"devlan"}'
 check "station or AP: an AP beside the station refused" "true" "$(err setAp "${ap}" | jq -R 'test("none") | not')"
 check "station or AP: that refusal wrote nothing" "same" "$([ "$(cat "${UCI_JSON}")" = "${before}" ] && echo same || echo changed)"
 check "station or AP: access point mode, the AP in the station's place" '[null,"radio0","Cafe Ext"]' \
-    "$(call setAp "$(jq -c '.replace = true' <<< "${ap}")" >/dev/null; uci '[.wireless.parkeze_sta, .wireless.pulzr_ap_0.device, .wireless.pulzr_ap_0.ssid]')"
+    "$(call setAp "$(jq -c '.replace = true' <<< "${ap}")" >/dev/null; uci '[.wireless.pulzr_sta, .wireless.pulzr_ap_0.device, .wireless.pulzr_ap_0.ssid]')"
 
 # ── no WiFi ─────────────────────────────────────────────────────────────────
 

@@ -21,7 +21,7 @@
 # the generic 6.18 patches and config, and the kernel packages) grafted from
 # the pinned commits in boards/<maker>/<board>/openwrt/graft. Userland is the release's
 # exactly: the ImageBuilder installs it from the release's feeds, so a
-# ParkezeOS image for this board runs the same ucode, netifd and fw4 as every
+# PulzrOS image for this board runs the same ucode, netifd and fw4 as every
 # other. The kernel and every kmod are built here and carried in the
 # ImageBuilder's own packages/, since nothing upstream has them.
 #

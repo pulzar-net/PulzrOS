@@ -10,9 +10,7 @@
 # See 30-pulzr-console: at image assembly this would run on the build host.
 [ -n "${IPKG_INSTROOT}" ] && exit 0
 
-# Compat: the wireless section ids parkeze_sta and parkeze_ap are kept from ParkezeOS; a gateway
-# upgraded or rolled back keeps its saved WiFi only if both images agree on them.
-ssid="$(uci -q get wireless.parkeze_sta.ssid)"
+ssid="$(uci -q get wireless.pulzr_sta.ssid)"
 if [ -n "${ssid}" ]; then
     known=0
     for s in $(uci -q show pulzr | sed -n 's/^pulzr\.\([^.=]*\)=wifi_network$/\1/p'); do
@@ -21,14 +19,14 @@ if [ -n "${ssid}" ]; then
     if [ "${known}" = 0 ]; then
         name="$(uci add pulzr wifi_network)"
         uci set "pulzr.${name}.ssid=${ssid}"
-        case "$(uci -q get wireless.parkeze_sta.encryption)" in
+        case "$(uci -q get wireless.pulzr_sta.encryption)" in
             wpa*)
                 uci set "pulzr.${name}.security=eap"
                 for opt in eap_type auth identity anonymous_identity password; do
-                    v="$(uci -q get "wireless.parkeze_sta.${opt}")"
+                    v="$(uci -q get "wireless.pulzr_sta.${opt}")"
                     [ -n "${v}" ] && uci set "pulzr.${name}.${opt}=${v}"
                 done
-                ca="$(uci -q get wireless.parkeze_sta.ca_cert)"
+                ca="$(uci -q get wireless.pulzr_sta.ca_cert)"
                 hash="${ca#hash://server/sha256/}"
                 [ "${hash}" != "${ca}" ] && uci set "pulzr.${name}.cert_hash=${hash}"
                 subject="$(uci -q get pulzr.wifi.cert_subject)"
@@ -39,7 +37,7 @@ if [ -n "${ssid}" ]; then
                 ;;
             *)
                 uci set "pulzr.${name}.security=psk"
-                key="$(uci -q get wireless.parkeze_sta.key)"
+                key="$(uci -q get wireless.pulzr_sta.key)"
                 [ -n "${key}" ] && uci set "pulzr.${name}.key=${key}"
                 ;;
         esac

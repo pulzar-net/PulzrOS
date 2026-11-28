@@ -3,15 +3,15 @@
 // A radio is a UCI wifi-device; what runs on it is its wifi-ifaces. Three
 // kinds belong to somebody already and keep their owner:
 //
-//   parkeze_sta    the WiFi uplink, access.uc's (the join flow, saved
-//                  networks, roaming, the captive portal). Joined onto a
-//                  radio here, written by access.joinWifi.
-//   pulzr_sta2     a second WiFi uplink, on another radio, onto the same
-//                  network or another one (interface wwifi2). This page's:
-//                  joined and removed here, written by access.joinWifi with
-//                  its own slot. No roaming and no portal sign-in.
-//   parkeze_ap     the setup AP, pulzr-ap's. Read here, never written.
-//   pulzr_ap_<n>   access points made here: an SSID onto a LAN-side network.
+//   pulzr_sta       the WiFi uplink, access.uc's (the join flow, saved
+//                   networks, roaming, the captive portal). Joined onto a
+//                   radio here, written by access.joinWifi.
+//   pulzr_sta2      a second WiFi uplink, on another radio, onto the same
+//                   network or another one (interface wwifi2). This page's:
+//                   joined and removed here, written by access.joinWifi with
+//                   its own slot. No roaming and no portal sign-in.
+//   pulzr_setup_ap  the setup AP, pulzr-ap's. Read here, never written.
+//   pulzr_ap_<n>    access points made here: an SSID onto a LAN-side network.
 //
 // Anything else on a radio was put there by hand, or is OpenWrt's stock open
 // AP that 60-pulzr-ap deletes. It is shown for what it is and not offered for
@@ -34,7 +34,7 @@
 //
 // ── CHANGING THE UPLINK'S RADIO, WITHOUT A GAP ─────────────────────────────
 //
-// Moving the uplink to another radio used to rewrite parkeze_sta's device.
+// Moving the uplink to another radio used to rewrite pulzr_sta's device.
 // The old radio let go of the network at the reload, and for the ten seconds
 // the new one took to associate and get a lease the gateway had no uplink:
 // the tunnel moved to none and back. So a join on a radio with no station,
@@ -89,7 +89,7 @@ const MAX_APS = 8;
 
 // The WiFi uplinks' stations, first the WiFi page's. See the header.
 const SLOTS = [
-    { section: 'parkeze_sta', iface: 'wwifi' },
+    { section: 'pulzr_sta', iface: 'wwifi' },
     { section: 'pulzr_sta2', iface: 'wwifi2' },
 ];
 // The latest handover, for the console. tmpfs: a reboot ends one anyway.
@@ -345,9 +345,9 @@ iftypeOf = (s) => IFTYPE[s.mode ?? 'ap'] ?? s.mode;
 
 // Who owns an interface, which is what may be done with it here.
 roleOf = function(s) {
-    if (s['.name'] == 'parkeze_sta') return { role: 'uplink', owner: 'uplink' };
+    if (s['.name'] == 'pulzr_sta') return { role: 'uplink', owner: 'uplink' };
     if (s['.name'] == 'pulzr_sta2') return { role: 'uplink', owner: 'radios' };
-    if (s['.name'] == 'parkeze_ap') return { role: 'ap', owner: 'setup' };
+    if (s['.name'] == 'pulzr_setup_ap') return { role: 'ap', owner: 'setup' };
     const mode = s.mode ?? 'ap';
     const role = { ap: 'ap', sta: 'client', mesh: 'mesh', monitor: 'monitor', adhoc: 'adhoc' }[mode] ?? 'other';
     if (mode == 'ap' && substr(s['.name'], 0, length(AP_PREFIX)) == AP_PREFIX) return { role, owner: 'console' };
@@ -514,7 +514,7 @@ status = function() {
         networks: attachable(uci),
         route: defaultRoute(),
         hostname: trim(readfile('/proc/sys/kernel/hostname') ?? '') || null,
-        uplink: uci.get('wireless', 'parkeze_sta', 'ssid') ? uci.get('wireless', 'parkeze_sta', 'device') : null,
+        uplink: uci.get('wireless', 'pulzr_sta', 'ssid') ? uci.get('wireless', 'pulzr_sta', 'device') : null,
         // Every WiFi uplink, the WiFi page's first, with its address: the
         // Backhaul rows show the second one's from here (the WiFi page's
         // status knows only the first).

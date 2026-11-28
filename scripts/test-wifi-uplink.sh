@@ -267,7 +267,7 @@ now="$(date +%s)"
 uci_on() {
     cat > "${UCI_JSON}" <<EOF
 {"wireless": {"radio0": {".type": "wifi-device", ".name": "radio0"},
-              "parkeze_sta": {".type": "wifi-iface", ".name": "parkeze_sta", "ssid": "$1"}},
+              "pulzr_sta": {".type": "wifi-iface", ".name": "pulzr_sta", "ssid": "$1"}},
  "network": {"wwifi": {".type": "interface", ".name": "wwifi"}},
  "firewall": {"wan": {".type": "zone", ".name": "wan", "network": "wan wwifi"}},
  "pulzr": {"a": {".type": "wifi_network", ".name": "a", "ssid": "eduroam", "security": "psk", "key": "abcdefgh"},
@@ -306,7 +306,7 @@ out="$(console join,roam,roam eduroam)"
 check "join: the guest network's verdict goes with it" "gone" \
     "$([ -f "${T}/run/wifi-uplink.json" ] && echo kept || echo gone)"
 check "join: roam() does not undo it the next minute" "none" "$(jq -r .roam.action <<< "${out}")"
-check "join: still on eduroam" "eduroam" "$(jq -r .wireless.parkeze_sta.ssid "${UCI_JSON}")"
+check "join: still on eduroam" "eduroam" "$(jq -r .wireless.pulzr_sta.ssid "${UCI_JSON}")"
 
 uci_on eduroam
 echo '{"up": true, "l3_device": "phy0-sta0"}' > "${T}/wwifi.json"

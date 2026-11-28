@@ -74,9 +74,16 @@ the previous image after a rollback, reads them:
 
 - the MQTT management topic root `parkeze/gateway/<eui>/...` and the LAN client
   policy value `parkeze`, which the cloud sends and reads;
-- the keys `parkeze_version` and `parkeze_build` in the gateway facts;
-- the wireless section ids `parkeze_sta` and `parkeze_ap`, so saved Wi-Fi
-  survives an upgrade and a rollback;
+- the keys `parkeze_version` and `parkeze_build` in the gateway facts.
+
+The wireless section ids were kept too until 27 Nov 2026, and are now
+`pulzr_sta` and `pulzr_setup_ap`. `pulzr-legacy names` (from `01-pulzr-migrate`)
+renames `parkeze_sta` and `parkeze_ap` on the first boot of the new image. The
+way back travels in the backup: `/lib/upgrade/pulzr-names.sh` adds a
+uci-defaults script to every sysupgrade's config backup that renames them back,
+and acts only on an image that does not ship that file. So a rollback, by hand
+or by `pulzr-firmware` after an upgrade that failed its health check, finds the
+WiFi it is on still its uplink.
 
 The aliases and shims (`parkeze.local`, the `parkeze` SSH account,
 `/usr/libexec/parkeze-tui-console`, the old-path copies) are meant to go once no
