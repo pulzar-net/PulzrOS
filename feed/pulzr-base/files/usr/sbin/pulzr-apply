@@ -3,14 +3,17 @@
 # A change that is undone unless somebody confirms it in time.
 #
 #   pulzr-apply status                JSON: the pending change, the default window
-#   pulzr-apply arm [-e] [-w seconds] [by]
+#   pulzr-apply arm [-e] [-w seconds] [-d what] [by]
 #                                     keep what is on flash now and start the timer;
-#                                     the caller changes the configuration after it
-#   pulzr-apply settle                count the window from now (after a reload)
+#                                     the caller changes the configuration after it;
+#                                     `what` names it for whoever sees it pending
+#   pulzr-apply settle [-p iface]     count the window from now (after a reload);
+#                                     with -p, keep it on its own once that WiFi
+#                                     uplink reaches the internet
 #   pulzr-apply confirm               keep the change (exit 3 while it settles)
 #   pulzr-apply revert                undo it now
 #   pulzr-apply discard               forget it without undoing (the change failed)
-#   pulzr-apply expire <seconds>      the timer `arm` starts
+#   pulzr-apply expire                the timer `arm` starts
 #   pulzr-apply boot                  undo a change a reboot interrupted
 #   pulzr-apply reload                make the network, firewall and DHCP re-read
 #
@@ -44,6 +47,8 @@ MAX_WINDOW=600
 # firewall and tunnel are still moving, and a browser that answers before the
 # new configuration has taken effect has proved nothing about it.
 SETTLE=15
+# How often the timer looks at an uplink the change is waiting on.
+PROVE_EVERY=5
 
 die() { echo "$1" >&2; exit "${2:-1}"; }
 log() { logger -t apply -p daemon.notice "$1"; }
@@ -59,12 +64,30 @@ is_pending() { [ -f "${PENDING}" ]; }
 # Names only what a person could have typed as an address, so it is safe in
 # the file and in the answer.
 clean_by() { printf '%s' "$1" | tr -cd 'A-Za-z0-9@._+-' | cut -c 1-80; }
+# A change's name carries an SSID: everything printable but what JSON would
+# need escaped. A name in another alphabet loses those letters, not the line.
+clean_what() { printf '%s' "$1" | tr -cd "A-Za-z0-9 @._+:,()/#&!?'-" | cut -c 1-80; }
+clean_iface() { printf '%s' "$1" | tr -cd 'A-Za-z0-9_' | cut -c 1-15; }
 
 write_pending() {
-    # until window applied since by
-    printf 'until=%s\nwindow=%s\napplied=%s\nsince=%s\nby=%s\n' "$1" "$2" "$3" "$4" "$5" > "${PENDING}.new" \
-        && mv "${PENDING}.new" "${PENDING}"
+    # until window applied since by what prove
+    printf 'until=%s\nwindow=%s\napplied=%s\nsince=%s\nby=%s\nwhat=%s\nprove=%s\n' \
+        "$1" "$2" "$3" "$4" "$5" "$6" "$7" > "${PENDING}.new" && mv "${PENDING}.new" "${PENDING}"
     sync
+}
+
+# What a WiFi uplink's own check (pulzr-wifi-uplink) said after the change
+# settled: open, out of that radio, asked no earlier than the change took
+# effect. An answer from before it is about the network the change left.
+proven() {
+    local answer state at applied n
+    command -v pulzr-wifi-uplink >/dev/null 2>&1 || return 1
+    applied="$(field applied)"; n="$(now)"
+    [ "${n}" -ge "$((${applied:-0} + SETTLE))" ] || return 1
+    answer="$(pulzr-wifi-uplink status "$1" 2>/dev/null)" || return 1
+    state="$(printf '%s' "${answer}" | sed -n 's/.*"state": *"\([a-z_]*\)".*/\1/p')"
+    at="$(printf '%s' "${answer}" | sed -n 's/.*"checkedAt": *\([0-9]*\).*/\1/p')"
+    [ "${state}" = open ] && [ "${at:-0}" -ge "${applied:-0}" ]
 }
 
 snapshot() {
@@ -117,14 +140,15 @@ reload() {
 }
 
 status() {
-    local until applied window by n
+    local until applied window by what n
     n="$(now)"
     until="$(field until)"
     if [ -n "${until}" ] && [ "${until}" -gt "${n}" ]; then
-        applied="$(field applied)"; window="$(field window)"; by="$(field by)"
+        applied="$(field applied)"; window="$(field window)"; by="$(field by)"; what="$(field what)"
         [ -n "${by}" ] && by="\"${by}\"" || by=null
-        printf '{"pending":{"until":%d,"in":%d,"by":%s,"confirmableIn":%d,"window":%d},"window":%d,"settle":%d}\n' \
-            "${until}" "$((until - n))" "${by}" "$(max0 $((${applied:-0} + SETTLE - n)))" "${window:-${WINDOW}}" "${WINDOW}" "${SETTLE}"
+        [ -n "${what}" ] && what="\"${what}\"" || what=null
+        printf '{"pending":{"until":%d,"in":%d,"by":%s,"what":%s,"confirmableIn":%d,"window":%d},"window":%d,"settle":%d}\n' \
+            "${until}" "$((until - n))" "${by}" "${what}" "$(max0 $((${applied:-0} + SETTLE - n)))" "${window:-${WINDOW}}" "${WINDOW}" "${SETTLE}"
     else
         printf '{"pending":null,"window":%d,"settle":%d}\n' "${WINDOW}" "${SETTLE}"
     fi
@@ -133,15 +157,16 @@ status() {
 max0() { [ "$1" -gt 0 ] && echo "$1" || echo 0; }
 
 start_timer() {
-    start-stop-daemon -S -b -x /usr/sbin/pulzr-apply -- expire "$(($1 + 1))"
+    start-stop-daemon -S -b -x /usr/sbin/pulzr-apply -- expire
 }
 
 arm() {
-    local extend="" window="${WINDOW}" by was_since n
+    local extend="" window="${WINDOW}" by what was_since n
     while [ "$#" -gt 0 ]; do
         case "$1" in
             -e) extend=1 ;;
             -w) shift; window="${1:-}" ;;
+            -d) shift; what="$(clean_what "${1:-}")" ;;
             *) by="$(clean_by "$1")" ;;
         esac
         shift
@@ -155,11 +180,12 @@ arm() {
         [ -n "${extend}" ] || die "a change is waiting to be confirmed" 4
         was_since="$(field since)"
         [ -n "${by}" ] || by="$(field by)"
+        [ -n "${what}" ] || what="$(field what)"
     else
         snapshot
     fi
-    write_pending "$((n + window))" "${window}" "${n}" "${was_since:-${n}}" "${by:-}"
-    start_timer "${window}"
+    write_pending "$((n + window))" "${window}" "${n}" "${was_since:-${n}}" "${by:-}" "${what:-}" "$(field prove)"
+    start_timer
     status
 }
 
@@ -168,11 +194,14 @@ arm() {
 # The timer armed before the reload, so a reload that never returns is still
 # undone.
 settle() {
-    local n window
+    local n window prove
     is_pending || die "there is no change to settle" 2
+    prove="$(field prove)"
+    [ "${1:-}" = -p ] && prove="$(clean_iface "${2:-}")"
     n="$(now)"
     window="$(field window)"
-    write_pending "$((n + ${window:-${WINDOW}}))" "${window:-${WINDOW}}" "${n}" "$(field since)" "$(field by)"
+    write_pending "$((n + ${window:-${WINDOW}}))" "${window:-${WINDOW}}" "${n}" "$(field since)" "$(field by)" \
+        "$(field what)" "${prove}"
     status
 }
 
@@ -195,9 +224,14 @@ revert() {
     printf '{"reverted":true}\n'
 }
 
+# A change that names a WiFi uplink (settle -p) is kept here, on the
+# gateway, as soon as that uplink reaches the internet: what a WiFi join has
+# to prove is that it works, not that the browser that asked for it is still
+# open on the right page. Kept by the browser's confirm as before too, and
+# undone at the deadline if neither came. It is looked at every few seconds,
+# since `settle` names the uplink after this has started.
 expire() {
-    local until n
-    sleep "${1:-${WINDOW}}"
+    local until n prove
     # Each `arm` starts one of these and moves the deadline; only the one that
     # wakes past it acts.
     while :; do
@@ -205,7 +239,12 @@ expire() {
         until="$(field until)"
         n="$(now)"
         [ "${until}" -le "${n}" ] && break
-        sleep "$((until - n + 1))"
+        prove="$(field prove)"
+        if [ -n "${prove}" ] && proven "${prove}" && confirm >/dev/null 2>&1; then
+            log "change kept: ${prove} reaches the internet"
+            return 0
+        fi
+        [ "$((until - n))" -lt "${PROVE_EVERY}" ] && sleep "$((until - n + 1))" || sleep "${PROVE_EVERY}"
     done
     restore
     discard
@@ -227,7 +266,7 @@ cmd="${1:-status}"
 case "${cmd}" in
     status) status ;;
     arm) arm "$@" ;;
-    settle) settle ;;
+    settle) settle "$@" ;;
     confirm) confirm ;;
     revert) revert ;;
     discard) discard ;;

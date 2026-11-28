@@ -80,7 +80,7 @@ export default function Network() {
       <ApplyChangeNotice change={change} />
       {foreign && (
         <Notice tone="warning">
-          A change{foreign.by ? ` by ${foreign.by}` : ''} is undone in {countdown(foreign.in)} unless it is kept.{' '}
+          {foreign.what ?? 'A change'}{foreign.by ? ` (by ${foreign.by})` : ''} is undone in {countdown(foreign.in)} unless it is kept.{' '}
           <Button onClick={() => api.post('/ports/confirm').then(() => ports.refetch())}>Keep</Button>{' '}
           <Button onClick={change.undo}>Undo</Button>
         </Notice>

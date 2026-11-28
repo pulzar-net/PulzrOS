@@ -458,6 +458,8 @@ unguarded="$(grep -A1 "'POST /api/radios" "${API}" | grep -c 'apply.guard' || tr
 check "routes: every radios setter is inside the rollback window" \
     "$(grep -c "'POST /api/radios" "${API}")" "${unguarded}"
 check "routes: the radios belong to the wifi feature" "1" "$(grep -c "\['/api/radios', *'wifi'\]" "${API}")"
+check "routes: both WiFi joins are kept once they reach the internet" "2" \
+    "$(grep -c "named('Wi-Fi uplink', req.ssid), true)" "${API}")"
 for f in feed/pulzr-ap/files/etc/uci-defaults/60-pulzr-ap feed/pulzr-ap/files/usr/sbin/pulzr-ap; do
     check "$(basename "${f}"): keeps this page's access points" "1" \
         "$(grep -c 'parkeze_\*|pulzr_\*) ;;' "${ROOT}/${f}")"

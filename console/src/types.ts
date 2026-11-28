@@ -885,7 +885,8 @@ export interface PortsStatus {
   /** Whether this gateway has a LAN to put devices on. */
   devices: boolean;
   /** A change applied and not yet confirmed: undone at `until` (Unix s). */
-  pending: { until: number; in: number; by: string | null; confirmableIn: number } | null;
+  /** `what` names it: "Wi-Fi uplink: Campo", "Port layout". */
+  pending: { until: number; in: number; by: string | null; what?: string | null; confirmableIn: number } | null;
   /** Seconds a change has to be confirmed in. */
   window: number;
   /** Seconds after a change before a confirm counts. */

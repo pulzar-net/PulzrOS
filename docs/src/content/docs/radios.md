@@ -117,8 +117,8 @@ Every change on this page goes through `pulzr-apply`, the same window that prote
 
 1. The API arms the window, which keeps `/etc/config/wireless`, `network`, `firewall`, `dhcp` and `pulzr` as they were.
 2. The change is written, and the radios reload two seconds later, so the answer reaches the browser before the radio it is on goes down.
-3. The console confirms once it reaches the gateway again over a new connection, no sooner than 15 seconds after.
-4. If nothing confirms within 90 seconds, the old configuration comes back and the radios reload. A reboot inside the window undoes the change at boot. **Undo Now** puts it back at once.
+3. The console confirms once it reaches the gateway again over a new connection, no sooner than 15 seconds after. A join (**Use for Uplink**, **Change Network**) is also kept by the gateway as soon as the new station's portal check says open.
+4. If nothing confirms within 90 seconds (150 for a join), the old configuration comes back and the radios reload. A reboot inside the window undoes the change at boot. **Undo Now** puts it back at once.
 
 So a channel change that drops the laptop you are working from, or an uplink moved onto a radio that cannot reach the site's network, undoes itself.
 

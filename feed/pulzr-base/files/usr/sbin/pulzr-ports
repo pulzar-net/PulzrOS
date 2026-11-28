@@ -644,7 +644,7 @@ let status = () => {
         console: accessPort(ports, b),
         consoleAddress: cur.get('network', 'console', 'ipaddr') ?? null,
         devices: devlanPresent(cur),
-        pending: p?.pending ? { until: p.pending.until, in: p.pending.in, by: p.pending.by,
+        pending: p?.pending ? { until: p.pending.until, in: p.pending.in, by: p.pending.by, what: p.pending.what,
                                 confirmableIn: p.pending.confirmableIn } : null,
         window: p?.window ?? 90,
         settle: p?.settle ?? 15,
@@ -667,7 +667,7 @@ let commands = {
         // The snapshot is taken before anything is written; a second `set`
         // inside the window keeps the first.
         let armed = null;
-        try { armed = json(capture([APPLY, 'arm', '-e', ...(by ? [by] : [])]) ?? 'null'); } catch (e) { armed = null; }
+        try { armed = json(capture([APPLY, 'arm', '-e', '-d', 'Port layout', ...(by ? [by] : [])]) ?? 'null'); } catch (e) { armed = null; }
         if (!armed?.pending) die('the change could not be armed', 1);
         writeLayout(cur, ports);
         render(cur, ports, b);

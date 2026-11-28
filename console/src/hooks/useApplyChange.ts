@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '@/services/api';
 
@@ -17,6 +17,13 @@ import { api } from '@/services/api';
  * `apply` posts the change and confirms it. A page that posts its own
  * mutation hands the answer's `pending` to `watch`. An answer without one
  * (a gateway that predates the window) needs no confirm.
+ *
+ * The confirm outlives the page that made the change. It used to stop when
+ * the page unmounted: a WiFi uplink moved on the radios page, then a look at
+ * Ports while it joined, and the change that worked was undone ninety
+ * seconds later with nobody left asking for it (Campo, 26 Nov 2026). A WiFi
+ * join is also kept by the gateway itself once it reaches the internet
+ * (pulzr-apply settle -p).
  */
 export type ApplyPhase = 'idle' | 'confirming' | 'kept' | 'undone';
 
@@ -37,8 +44,6 @@ export function useApplyChange() {
   const [error, setError] = useState<string | null>(null);
   const [applying, setApplying] = useState(false);
   const run = useRef(0);
-
-  useEffect(() => () => { run.current++; }, []);
 
   const refresh = useCallback(() => {
     for (const key of ['ports', 'network-status', 'backhaul', 'uplinks', 'lan', 'access', 'wifi-detail', 'dns', 'radios']) {

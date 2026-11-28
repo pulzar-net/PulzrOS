@@ -541,7 +541,8 @@ joinWifi = function(req, slot) {
     applyNetwork(uci, radio, net, slot);
     saveNetwork(uci, net);
     commitAndReload(uci, slot);
-    if (slot && slot.iface != PRIMARY.iface) return { ok: true, message: 'Joining ' + net.ssid + '.' };
+    // `iface`: what apply.guard watches to keep the change once it works.
+    if (slot && slot.iface != PRIMARY.iface) return { ok: true, iface: slot.iface, message: 'Joining ' + net.ssid + '.' };
     // A join starts roam()'s clock again and holds it off as a switch does.
     // The clock used to carry on from the network before: a gateway that had
     // sat behind a guest portal for an hour was joined to eduroam, and the
@@ -549,7 +550,7 @@ joinWifi = function(req, slot) {
     // minutes long gone and put it back on the guest network.
     writefile(ROAM_STATE, sprintf('%J', { roamedAt: time() }));
 
-    return { ok: true,
+    return { ok: true, iface: PRIMARY.iface,
              message: 'Joining ' + net.ssid + '. If you are connected to the setup '
                     + 'network, it will drop while the radio switches over.' };
 };

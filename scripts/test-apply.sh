@@ -66,7 +66,7 @@ check "arm: a change is pending" "tech@example.com" "$(echo "${out}" | field pen
 check "arm: the default window is 90 s" "90" "$(echo "${out}" | field pending.window)"
 check "arm: it counts down from the window" "90" "$(near 90 "$(echo "${out}" | field pending.in)")"
 check "arm: the first confirm waits out the settle time" "15" "$(near 15 "$(echo "${out}" | field pending.confirmableIn)")"
-check "arm: the timer outlives the window by a second" "1" "$(grep -c 'timer .* expire 91' "${CALLS}")"
+check "arm: the timer is started" "1" "$(grep -c 'timer .* expire$' "${CALLS}")"
 for c in network wireless firewall dhcp pulzr; do
     check "arm: ${c} is kept on flash" "${c} before" "$(cat "${PULZR_APPLY_STATE}/rollback/${c}")"
 done
@@ -137,6 +137,62 @@ age applied 1
 apply confirm >/dev/null
 apply expire 1
 check "expire: a confirmed change is left alone" "network after" "$(cfg network)"
+
+# ── what it is, and a WiFi uplink that proves itself ───────────────────────
+
+reset
+apply arm -d 'Wi-Fi uplink: Silence of the Lan-5G' 'tech@example.com' >/dev/null
+check "what: named in the answer" "Wi-Fi uplink: Silence of the Lan-5G" "$(apply status | field pending.what)"
+apply arm -e >/dev/null
+check "what: kept by a second step of the same change" "Wi-Fi uplink: Silence of the Lan-5G" "$(apply status | field pending.what)"
+reset
+apply arm -d "Wi-Fi uplink: \"Joe's\"\\" >/dev/null
+check "what: nothing JSON would need escaped" "Wi-Fi uplink: Joe's" "$(apply status | field pending.what)"
+reset
+check "what: none is null" "null" "$(apply arm | field pending.what)"
+
+# pulzr-wifi-uplink's answer, as the stub gives it.
+answer() { stub pulzr-wifi-uplink "echo '{ \"state\": \"$1\", \"checkedAt\": $2 }'"; }
+proving() {
+    reset
+    apply arm -d 'Wi-Fi uplink: Silence of the Lan-5G' >/dev/null
+    echo "wireless after" > "${SANDBOX}/config/wireless"
+    apply settle -p wwifi2 >/dev/null
+    age applied "$(( $(date +%s) - 20 ))"
+}
+
+proving
+answer open "$(date +%s)"
+age until "$(( $(date +%s) + 3 ))"
+apply expire
+check "prove: an uplink that reaches the internet keeps the change" "wireless after" "$(cfg wireless)"
+check "prove: nothing is left pending" "" "$(ls "${PULZR_APPLY_STATE}")"
+
+proving
+answer portal "$(date +%s)"
+age until 1
+apply expire
+check "prove: one behind a sign-in page is undone at the deadline" "wireless before" "$(cfg wireless)"
+
+proving
+answer open "$(( $(date +%s) - 60 ))"
+age until 1
+apply expire
+check "prove: an answer from before the change proves nothing" "wireless before" "$(cfg wireless)"
+
+proving
+answer open "$(date +%s)"
+age applied "$(date +%s)"
+age until 1
+apply expire
+check "prove: not inside the settle time" "wireless before" "$(cfg wireless)"
+rm -f "${BIN}/pulzr-wifi-uplink"
+
+reset
+apply arm >/dev/null
+age until 1
+apply expire
+check "prove: a change naming no uplink is undone as before" "network before" "$(cfg network)"
 
 # ── revert ──────────────────────────────────────────────────────────────────
 

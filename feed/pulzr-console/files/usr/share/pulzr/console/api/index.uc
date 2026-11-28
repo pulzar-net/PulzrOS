@@ -66,6 +66,15 @@ const SESSION_COOKIE = 'pulzr_session';
 // configuration back (pulzr-apply).
 const APPLY_WINDOW = 90;
 const CELLULAR_WINDOW = 240;
+// A WiFi join is kept by the gateway once the network reaches the internet,
+// and a second radio's join is given two minutes to prove itself before the
+// handover gives up (lib/radios.uc HANDOVER_WAIT): longer than that, so a
+// join still proving is not undone under it.
+const WIFI_WINDOW = 150;
+
+// "Wi-Fi uplink: Campo", for the pending change's name; the prefix alone
+// when the request names nothing.
+const named = (prefix, value) => type(value) == 'string' && length(value) ? prefix + ': ' + value : prefix;
 
 // Routes reachable without a session. Everything needed to *get* a session,
 // and nothing else.
@@ -426,13 +435,13 @@ const ROUTES = {
     // again. Re-attaching with a new APN can take a minute, so cellular
     // gets longer than the rest.
     'POST /api/network/cellular': (env, req, s) => {
-        const result = apply.guard(CELLULAR_WINDOW, s, () => actions.setCellular(req, s));
+        const result = apply.guard(CELLULAR_WINDOW, s, () => actions.setCellular(req, s), 'Cellular settings');
         return result.error ? error(409, result.error) : respond(200, result);
     },
     // Inside the window too: a SIM that is empty or not provisioned cuts off
     // a gateway whose only way in is cellular.
     'POST /api/network/cellular/slot': (env, req, s) => {
-        const result = apply.guard(CELLULAR_WINDOW, s, () => actions.setSimSlot(req, s));
+        const result = apply.guard(CELLULAR_WINDOW, s, () => actions.setSimSlot(req, s), 'SIM slot');
         return result.error ? error(409, result.error) : respond(200, result);
     },
 
@@ -497,11 +506,13 @@ const ROUTES = {
     'POST /api/access/ap/up':     (env, req, s) => respond(200, actions.raiseAp(req, s)),
     'POST /api/access/ap/down':   (env, req, s) => respond(200, actions.lowerAp(req, s)),
     'POST /api/access/wifi/forget': (env, req, s) => {
-        const result = apply.guard(APPLY_WINDOW, s, () => actions.forgetWifi(req, s));
+        const result = apply.guard(APPLY_WINDOW, s, () => actions.forgetWifi(req, s),
+            named(req.keep ? 'Wi-Fi uplink left' : 'Wi-Fi network forgotten', req.ssid));
         return result.error ? error(409, result.error) : respond(200, result);
     },
     'POST /api/access/wifi':      (env, req, s) => {
-        const result = apply.guard(APPLY_WINDOW, s, () => actions.joinWifi(req, s));
+        const result = apply.guard(WIFI_WINDOW, s, () => actions.joinWifi(req, s),
+                                   named('Wi-Fi uplink', req.ssid), true);
         if (result.error) return error(400, result.error);
         return respond(200, result);
     },
@@ -532,23 +543,24 @@ const ROUTES = {
     // second radio it is a second station, proven before it carries anything.
     'GET  /api/radios':           () => respond(200, radios.status()),
     'POST /api/radios/radio':     (env, req, s) => {
-        const result = apply.guard(APPLY_WINDOW, s, () => actions.setRadio(req, s));
+        const result = apply.guard(APPLY_WINDOW, s, () => actions.setRadio(req, s), 'Radio settings');
         return result.error ? error(400, result.error) : respond(200, result);
     },
     'POST /api/radios/ap':        (env, req, s) => {
-        const result = apply.guard(APPLY_WINDOW, s, () => actions.setRadioAp(req, s));
+        const result = apply.guard(APPLY_WINDOW, s, () => actions.setRadioAp(req, s), named('Access point', req.ssid));
         return result.error ? error(400, result.error) : respond(200, result);
     },
     'POST /api/radios/ap/remove': (env, req, s) => {
-        const result = apply.guard(APPLY_WINDOW, s, () => actions.removeRadioAp(req, s));
+        const result = apply.guard(APPLY_WINDOW, s, () => actions.removeRadioAp(req, s), 'Access point removed');
         return result.error ? error(400, result.error) : respond(200, result);
     },
     'POST /api/radios/uplink':    (env, req, s) => {
-        const result = apply.guard(APPLY_WINDOW, s, () => actions.joinRadioUplink(req, s));
+        const result = apply.guard(WIFI_WINDOW, s, () => actions.joinRadioUplink(req, s),
+                                   named('Wi-Fi uplink', req.ssid), true);
         return result.error ? error(400, result.error) : respond(200, result);
     },
     'POST /api/radios/uplink/remove': (env, req, s) => {
-        const result = apply.guard(APPLY_WINDOW, s, () => actions.removeRadioUplink(req, s));
+        const result = apply.guard(APPLY_WINDOW, s, () => actions.removeRadioUplink(req, s), 'Second Wi-Fi uplink removed');
         return result.error ? error(400, result.error) : respond(200, result);
     },
 
@@ -578,7 +590,7 @@ const ROUTES = {
     // ── dns: the resolver, see lib/dns.uc ───────────────────────────────────
     'GET  /api/dns/status':    () => respond(200, dns.status()),
     'POST /api/dns/upstream':  (env, req, s) => {
-        const result = apply.guard(APPLY_WINDOW, s, () => actions.setDnsUpstream(req, s));
+        const result = apply.guard(APPLY_WINDOW, s, () => actions.setDnsUpstream(req, s), 'DNS servers');
         return result.error ? error(400, result.error) : respond(200, result);
     },
     'POST /api/dns/host':      (env, req, s) => {
@@ -597,15 +609,15 @@ const ROUTES = {
     // ── uplinks: order and failover, see lib/uplinks.uc ─────────────────────
     'GET  /api/uplinks/status':   () => respond(200, uplinks.status()),
     'POST /api/uplinks/order':    (env, req, s) => {
-        const result = apply.guard(APPLY_WINDOW, s, () => actions.setUplinkOrder(req, s));
+        const result = apply.guard(APPLY_WINDOW, s, () => actions.setUplinkOrder(req, s), 'Uplink order');
         return result.error ? error(400, result.error) : respond(200, result);
     },
     'POST /api/uplinks/track':    (env, req, s) => {
-        const result = apply.guard(APPLY_WINDOW, s, () => actions.setUplinkTrack(req, s));
+        const result = apply.guard(APPLY_WINDOW, s, () => actions.setUplinkTrack(req, s), 'Uplink tracking');
         return result.error ? error(400, result.error) : respond(200, result);
     },
     'POST /api/uplinks/tracking': (env, req, s) => {
-        const result = apply.guard(APPLY_WINDOW, s, () => actions.setUplinkTracking(req, s));
+        const result = apply.guard(APPLY_WINDOW, s, () => actions.setUplinkTracking(req, s), 'Uplink tracking');
         return result.error ? error(400, result.error) : respond(200, result);
     },
 

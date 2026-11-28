@@ -33,12 +33,12 @@ status = function() {
     return apply(['status']);
 };
 
-arm = function(window, by) {
-    return apply(['arm', '-w', sprintf('%d', window), ...(by ? [by] : [])]);
+arm = function(window, by, what) {
+    return apply(['arm', '-w', sprintf('%d', window), ...(what ? ['-d', what] : []), ...(by ? [by] : [])]);
 };
 
-settle = function() {
-    return apply(['settle']);
+settle = function(prove) {
+    return apply(['settle', ...(prove ? ['-p', prove] : [])]);
 };
 
 discard = function() {
@@ -57,15 +57,20 @@ revert = function() {
 // first so the snapshot is what the gateway was running; a change that is
 // refused changed nothing, so its window is dropped. The window counts from
 // the end of the change: the confirm has to wait for the network to settle.
-guard = function(window, session, change) {
-    const armed = arm(window, session?.subject);
+//
+// `what` names the change for whoever sees it pending. With `prove`, the
+// WiFi uplink the change joined (the answer's `iface`) keeps it on its own
+// once it reaches the internet (pulzr-apply's expire): a join that works is
+// kept whether or not the browser that asked is still there to confirm.
+guard = function(window, session, change, what, prove) {
+    const armed = arm(window, session?.subject, what);
     if (armed.error) return armed;
     const result = change();
     if (result?.error) {
         discard();
         return result;
     }
-    const settled = settle();
+    const settled = settle(prove && type(result?.iface) == 'string' ? result.iface : null);
     return { ...result, pending: settled.pending ?? armed.pending };
 };
 

@@ -56,6 +56,21 @@ the change came through Pulzr Cloud. So:
    reboot inside the window undoes it at boot, before the network starts
    (`/etc/init.d/pulzr-ports`, START=11).
 
+A pending change has a name (`pulzr-apply arm -d`: "Port layout", "Wi-Fi
+uplink: Campo"), which `status` and the console's notice show, so a change
+somebody else made says what it was.
+
+A WiFi join is also kept by the gateway itself: the API settles it with the
+uplink it joined (`pulzr-apply settle -p wwifi2`), and the timer keeps the
+change as soon as that uplink's own check (`pulzr-wifi-uplink status`) says
+open, asked after the change took effect. A join that never gets there is
+undone at the deadline as before. WiFi joins get 150 seconds: a second
+radio's handover takes up to two minutes to prove itself.
+
+The console keeps confirming after you leave the page the change was made
+on. It used to stop, which is how a WiFi uplink moved on the Campo gateway
+(26 Nov 2026) joined fine and was undone ninety seconds later anyway.
+
 A second change inside the window keeps the first snapshot, the one known to
 work. At least one port has to stay an uplink or a LAN port untagged, so a
 plain cable always finds the console.
