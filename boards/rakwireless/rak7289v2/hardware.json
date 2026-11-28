@@ -34,7 +34,7 @@
   "photo": {
     "file": "photo.webp",
     "credit": "RAKwireless",
-    "license": "Used with attribution; trimmed and resized",
+    "license": "Used with attribution; cut out and resized",
     "source": "https://github.com/RAKWireless/rakwireless-docs/blob/master/docs/.vuepress/public/assets/images/wisgate/rak7289/RAK7289.png"
   }
 }

@@ -33,7 +33,7 @@
   "photo": {
     "file": "photo.webp",
     "credit": "Raspberry Pi Ltd",
-    "license": "CC BY-SA 4.0; trimmed and resized",
+    "license": "CC BY-SA 4.0; cut out and resized",
     "source": "https://github.com/raspberrypi/documentation/blob/master/documentation/asciidoc/computers/sbcs/images/rpi3b.jpg"
   }
 }

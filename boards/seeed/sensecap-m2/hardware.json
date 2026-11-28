@@ -25,7 +25,7 @@
   "photo": {
     "file": "photo.webp",
     "credit": "Seeed Studio",
-    "license": "Used with attribution; cropped and resized",
+    "license": "Used with attribution; cut out and resized",
     "source": "https://www.seeedstudio.com/SenseCAP-Multi-Platform-LoRaWAN-Indoor-Gateway-SX1302-US915-p-5472.html"
   }
 }
